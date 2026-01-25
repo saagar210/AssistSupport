@@ -21,7 +21,15 @@ A local-first AI-powered customer support response generator built with Tauri, R
 - **Fully Local**: All processing happens on your machine
 - **Encrypted Database**: SQLCipher with AES-256 encryption
 - **Secure Token Storage**: API tokens protected with zeroize-on-drop
-- **Input Validation**: Path traversal protection and size limits
+- **Input Validation**: Path traversal protection, URL/ticket ID validation, and size limits
+- **Encrypted Backups**: Optional password protection for exported data (Argon2id + AES-256-GCM)
+- **Content Security Policy**: Minimal CSP allowlist for app security
+
+### Model Management
+- **Pre-configured Models**: Llama 3.2, Phi-3 with one-click download
+- **Custom GGUF Support**: Load any GGUF model file from your computer
+- **Download Management**: Progress display with cancel support
+- **Context Window Control**: Configurable context length with budget enforcement
 
 ## Tech Stack
 
