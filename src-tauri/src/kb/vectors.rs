@@ -1,9 +1,14 @@
 //! Vector storage module for AssistSupport
 //! LanceDB-based vector search with encryption awareness
+//!
+//! # Security
+//! Filter sanitization uses Unicode-aware processing and allowlist-based ID validation
+//! to prevent SQL/filter injection attacks. See `sanitize_filter_value` and `sanitize_id`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
 
 use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray, FixedSizeListArray};
 use arrow_array::types::Float32Type;
@@ -11,40 +16,145 @@ use arrow_schema::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{connect, Connection, Table};
 
+/// Check if a character is a Unicode confusable for common injection characters.
+/// Includes various Unicode characters that visually resemble quotes, operators, etc.
+fn is_unicode_confusable(c: char) -> bool {
+    matches!(
+        c,
+        // Quotes and apostrophes
+        '\u{02BC}' | // MODIFIER LETTER APOSTROPHE
+        '\u{02B9}' | // MODIFIER LETTER PRIME
+        '\u{2018}' | // LEFT SINGLE QUOTATION MARK
+        '\u{2019}' | // RIGHT SINGLE QUOTATION MARK
+        '\u{201C}' | // LEFT DOUBLE QUOTATION MARK
+        '\u{201D}' | // RIGHT DOUBLE QUOTATION MARK
+        '\u{02BA}' | // MODIFIER LETTER DOUBLE PRIME
+        '\u{02EE}' | // MODIFIER LETTER DOUBLE APOSTROPHE
+        '\u{0060}' | // GRAVE ACCENT
+        '\u{00B4}' | // ACUTE ACCENT
+        // Dashes that could be confused with minus/hyphens
+        '\u{2010}' | // HYPHEN
+        '\u{2011}' | // NON-BREAKING HYPHEN
+        '\u{2012}' | // FIGURE DASH
+        '\u{2013}' | // EN DASH
+        '\u{2014}' | // EM DASH
+        '\u{2212}' | // MINUS SIGN
+        // Slashes and asterisks for comments
+        '\u{2215}' | // DIVISION SLASH
+        '\u{2217}' | // ASTERISK OPERATOR
+        '\u{FF0A}' | // FULLWIDTH ASTERISK
+        '\u{FF0F}' | // FULLWIDTH SOLIDUS
+        // Semicolons and equals
+        '\u{FF1B}' | // FULLWIDTH SEMICOLON
+        '\u{FF1D}' | // FULLWIDTH EQUALS SIGN
+        // Parentheses
+        '\u{FF08}' | // FULLWIDTH LEFT PARENTHESIS
+        '\u{FF09}'   // FULLWIDTH RIGHT PARENTHESIS
+    )
+}
+
 /// Sanitize a string value for use in LanceDB filter expressions.
 /// This prevents filter injection attacks by escaping/rejecting malicious input.
 ///
 /// # Security
-/// Escapes single quotes and validates that the input doesn't contain
-/// SQL injection patterns. Returns None if the input appears malicious.
+/// - Uses Unicode NFC normalization before comparison to prevent normalization attacks
+/// - Preserves original case (avoids Unicode case folding issues like Turkish İ/i)
+/// - Detects both ASCII and Unicode confusable injection patterns
+/// - Returns None if the input appears malicious
 fn sanitize_filter_value(value: &str) -> Option<String> {
-    // Reject obviously malicious patterns
-    let lower = value.to_lowercase();
-    let suspicious_patterns = [
-        "' or ", "' and ", "';", "'--", "/*", "*/",
-        "union", "select", "insert", "update", "delete",
-        "drop", "truncate", "exec", "execute",
-    ];
+    // Normalize to NFC form for consistent comparison
+    let normalized: String = value.nfc().collect();
 
-    for pattern in &suspicious_patterns {
-        if lower.contains(pattern) {
+    // Check for Unicode confusables that might be used to bypass filters
+    for c in normalized.chars() {
+        if is_unicode_confusable(c) {
             return None;
         }
     }
 
-    // Escape single quotes by doubling them
-    Some(value.replace('\'', "''"))
+    // ASCII-fold for pattern matching (case-insensitive check)
+    // This avoids the Turkish İ/i and German ß case folding issues
+    let ascii_lower: String = normalized
+        .chars()
+        .map(|c| {
+            if c.is_ascii_uppercase() {
+                c.to_ascii_lowercase()
+            } else {
+                c
+            }
+        })
+        .collect();
+
+    // SQL keywords to block
+    let sql_keywords = [
+        "select", "insert", "update", "delete", "drop", "truncate",
+        "exec", "execute", "union", "alter", "create",
+    ];
+
+    // Keywords that need word boundary checking (to avoid false positives)
+    let word_bounded_keywords = ["or", "and", "not"];
+
+    // Exact patterns to block
+    let exact_patterns = [
+        "' or ", "' and ", "';", "'--", "/*", "*/",
+        "1=1", "1 = 1",
+    ];
+
+    // Check SQL keywords
+    for keyword in &sql_keywords {
+        if ascii_lower.contains(keyword) {
+            return None;
+        }
+    }
+
+    // Check word-bounded keywords (surrounded by spaces or at boundaries)
+    for keyword in &word_bounded_keywords {
+        let patterns = [
+            format!(" {} ", keyword),
+            format!("'{} ", keyword),
+            format!(" {}'", keyword),
+        ];
+        for pattern in &patterns {
+            if ascii_lower.contains(pattern.as_str()) {
+                return None;
+            }
+        }
+    }
+
+    // Check exact patterns
+    for pattern in &exact_patterns {
+        if ascii_lower.contains(pattern) {
+            return None;
+        }
+    }
+
+    // Escape single quotes by doubling them (preserve original characters)
+    Some(normalized.replace('\'', "''"))
 }
 
-/// Sanitize a chunk/document ID for use in filter expressions.
-/// IDs should only contain alphanumeric characters, hyphens, and underscores.
+/// Sanitize a chunk/document/namespace ID for use in filter expressions.
+///
+/// Uses allowlist approach: IDs must contain ONLY ASCII alphanumeric characters,
+/// hyphens, and underscores. This is the most secure approach as it completely
+/// prevents injection without needing to detect all possible attack patterns.
+///
+/// # Security
+/// - Allowlist-based: only permits `[a-zA-Z0-9_-]`
+/// - Rejects rather than sanitizes suspicious input (fail-safe)
+/// - No Unicode allowed in IDs to prevent normalization attacks
+/// - Maximum length of 256 characters
 fn sanitize_id(id: &str) -> Option<String> {
-    // UUIDs and similar IDs should only have alphanumeric, hyphens, underscores
+    // Length check
+    if id.is_empty() || id.len() > 256 {
+        return None;
+    }
+
+    // Strict allowlist: only ASCII alphanumeric, hyphens, and underscores
+    // Do NOT fall back to sanitize_filter_value - IDs should be strictly validated
     if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         Some(id.to_string())
     } else {
-        // Fallback: escape the value
-        sanitize_filter_value(id)
+        None
     }
 }
 
@@ -639,16 +749,66 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_id_with_special_chars() {
-        // IDs with special chars should be sanitized
-        let result = sanitize_id("test'id");
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("''"));
+    fn test_sanitize_id_rejects_special_chars() {
+        // IDs with special chars should be REJECTED (not sanitized)
+        // This is the secure allowlist approach
+        assert_eq!(sanitize_id("test'id"), None);
+        assert_eq!(sanitize_id("test id"), None);
+        assert_eq!(sanitize_id("test@id"), None);
+        assert_eq!(sanitize_id("test;id"), None);
     }
 
     #[test]
     fn test_sanitize_id_blocks_injection() {
         // Injection attempts in IDs should be rejected
         assert_eq!(sanitize_id("'; DROP TABLE --"), None);
+    }
+
+    #[test]
+    fn test_sanitize_id_length_limits() {
+        // Empty IDs should be rejected
+        assert_eq!(sanitize_id(""), None);
+
+        // Very long IDs should be rejected
+        let long_id = "a".repeat(300);
+        assert_eq!(sanitize_id(&long_id), None);
+
+        // IDs at max length should pass
+        let max_id = "a".repeat(256);
+        assert!(sanitize_id(&max_id).is_some());
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_unicode_confusables() {
+        // Unicode confusables should be rejected
+        assert_eq!(sanitize_filter_value("test\u{2019}value"), None); // right single quote
+        assert_eq!(sanitize_filter_value("test\u{2014}value"), None); // em dash
+        assert_eq!(sanitize_filter_value("test\u{FF0A}value"), None); // fullwidth asterisk
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_preserves_unicode() {
+        // Non-confusable Unicode should pass and be preserved
+        assert!(sanitize_filter_value("日本語").is_some());
+        assert!(sanitize_filter_value("café").is_some());
+        assert!(sanitize_filter_value("münchen").is_some());
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_case_insensitive_keywords() {
+        // SQL keywords should be blocked regardless of case
+        assert_eq!(sanitize_filter_value("SELECT"), None);
+        assert_eq!(sanitize_filter_value("Select"), None);
+        assert_eq!(sanitize_filter_value("sElEcT"), None);
+    }
+
+    #[test]
+    fn test_unicode_confusable_detection() {
+        // Test the confusable detection function
+        assert!(is_unicode_confusable('\u{2019}')); // right single quote
+        assert!(is_unicode_confusable('\u{201C}')); // left double quote
+        assert!(is_unicode_confusable('\u{2212}')); // minus sign
+        assert!(!is_unicode_confusable('a')); // regular ascii
+        assert!(!is_unicode_confusable('-')); // regular hyphen
     }
 }

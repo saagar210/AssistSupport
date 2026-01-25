@@ -7,6 +7,7 @@ pub use executor::{DbExecutor, DbExecutorError};
 
 use crate::jobs::{Job, JobLog, JobStatus, JobType, LogLevel};
 use crate::security::{MasterKey, SecurityError};
+use crate::validation::{normalize_and_validate_namespace_id, ValidationError};
 use chrono::Utc;
 use rusqlite::{Connection, Result as SqliteResult, params};
 use std::path::{Path, PathBuf};
@@ -20,6 +21,8 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("Security error: {0}")]
     Security(#[from] SecurityError),
+    #[error("Validation error: {0}")]
+    Validation(#[from] ValidationError),
     #[error("Database not initialized")]
     NotInitialized,
     #[error("Migration failed: {0}")]
@@ -1702,6 +1705,13 @@ impl Database {
     }
 
     /// Create a new namespace with name, description, and color
+    ///
+    /// The namespace ID is normalized using the centralized validation rules:
+    /// - Converted to lowercase
+    /// - Spaces and underscores become hyphens
+    /// - Special characters removed
+    /// - Multiple hyphens collapsed
+    /// - Max length 64 characters
     pub fn create_namespace(
         &self,
         name: &str,
@@ -1709,7 +1719,8 @@ impl Database {
         color: Option<&str>,
     ) -> Result<Namespace, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
-        let id = name.to_lowercase().replace(' ', "-");
+        // Use centralized normalization for consistency
+        let id = normalize_and_validate_namespace_id(name)?;
 
         let namespace = Namespace {
             id: id.clone(),
@@ -1745,13 +1756,16 @@ impl Database {
     }
 
     /// Rename a namespace (updates all references)
+    ///
+    /// Uses centralized namespace ID normalization for consistency.
     pub fn rename_namespace(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
         if old_id == "default" {
             return Err(DbError::Migration("Cannot rename default namespace".into()));
         }
 
         let now = chrono::Utc::now().to_rfc3339();
-        let new_id_normalized = new_id.to_lowercase().replace(' ', "-");
+        // Use centralized normalization for consistency
+        let new_id_normalized = normalize_and_validate_namespace_id(new_id)?;
 
         // Update namespace
         self.conn.execute(
@@ -1778,6 +1792,96 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    /// Migrate existing namespace IDs to the canonical normalized form
+    ///
+    /// This function scans all namespaces and normalizes their IDs using
+    /// the centralized validation rules. It updates all references (documents,
+    /// chunks, ingest sources) to use the new canonical ID.
+    ///
+    /// Returns a list of (old_id, new_id) pairs for namespaces that were migrated.
+    pub fn migrate_namespace_ids(&self) -> Result<Vec<(String, String)>, DbError> {
+        use crate::validation::normalize_namespace_id;
+
+        let mut migrated = Vec::new();
+
+        // Get all namespaces
+        let mut stmt = self.conn.prepare("SELECT id, name FROM namespaces")?;
+        let namespaces: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (old_id, name) in namespaces {
+            // Compute canonical ID
+            let canonical_id = normalize_namespace_id(&name);
+
+            // Skip if already canonical
+            if old_id == canonical_id {
+                continue;
+            }
+
+            // Skip if canonical is empty (shouldn't happen, but be safe)
+            if canonical_id.is_empty() {
+                tracing::warn!(
+                    "Skipping namespace '{}' - normalized ID is empty",
+                    old_id
+                );
+                continue;
+            }
+
+            // Check if canonical ID already exists (collision)
+            let exists: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM namespaces WHERE id = ?)",
+                [&canonical_id],
+                |row| row.get(0),
+            )?;
+
+            if exists && old_id != canonical_id {
+                tracing::warn!(
+                    "Skipping namespace '{}' - canonical ID '{}' already exists",
+                    old_id,
+                    canonical_id
+                );
+                continue;
+            }
+
+            let now = chrono::Utc::now().to_rfc3339();
+
+            // Update namespace ID
+            self.conn.execute(
+                "UPDATE namespaces SET id = ?, updated_at = ? WHERE id = ?",
+                params![canonical_id, now, old_id],
+            )?;
+
+            // Update references in documents
+            self.conn.execute(
+                "UPDATE kb_documents SET namespace_id = ? WHERE namespace_id = ?",
+                params![canonical_id, old_id],
+            )?;
+
+            // Update references in chunks
+            self.conn.execute(
+                "UPDATE kb_chunks SET namespace_id = ? WHERE namespace_id = ?",
+                params![canonical_id, old_id],
+            )?;
+
+            // Update references in ingest sources
+            self.conn.execute(
+                "UPDATE ingest_sources SET namespace_id = ? WHERE namespace_id = ?",
+                params![canonical_id, old_id],
+            )?;
+
+            tracing::info!(
+                "Migrated namespace ID '{}' -> '{}'",
+                old_id,
+                canonical_id
+            );
+            migrated.push((old_id, canonical_id));
+        }
+
+        Ok(migrated)
     }
 
     // ============================================================================

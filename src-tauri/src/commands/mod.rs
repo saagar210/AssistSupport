@@ -40,6 +40,31 @@ static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(Atomi
 /// Initialize the application
 #[tauri::command]
 pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, String> {
+    // Run data migration from old path (com.d.assistsupport -> AssistSupport)
+    // This must happen BEFORE any other operations to ensure data is in the right place
+    match crate::migration::migrate_data_directories() {
+        Ok(report) => {
+            if report.migration_performed {
+                tracing::info!(
+                    "Data migration completed: {} items migrated, {} skipped, {} conflicts",
+                    report.migrated.len(),
+                    report.skipped.len(),
+                    report.conflicts.len()
+                );
+                for item in &report.migrated {
+                    tracing::info!("  Migrated: {}", item.name);
+                }
+                for conflict in &report.conflicts {
+                    tracing::warn!("  Conflict: {} - {}", conflict.name, conflict.reason);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Data migration failed: {}", e);
+            // Continue anyway - migration failures shouldn't block app startup
+        }
+    }
+
     // Ensure app data directory exists with secure permissions (0o700)
     let app_dir = get_app_data_dir();
     crate::security::create_secure_dir(&app_dir).map_err(|e| e.to_string())?;
@@ -80,6 +105,25 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
 
     // Ensure response_templates table exists
     db.ensure_templates_table().map_err(|e| e.to_string())?;
+
+    // Migrate namespace IDs to canonical normalized form
+    match db.migrate_namespace_ids() {
+        Ok(migrated) => {
+            if !migrated.is_empty() {
+                tracing::info!(
+                    "Namespace ID migration: {} namespaces updated",
+                    migrated.len()
+                );
+                for (old_id, new_id) in &migrated {
+                    tracing::info!("  '{}' -> '{}'", old_id, new_id);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Namespace ID migration failed: {}", e);
+            // Continue anyway - this shouldn't block app startup
+        }
+    }
 
     // Check vector consent from database
     let vector_enabled = db.get_vector_consent()
@@ -212,6 +256,12 @@ pub async fn search_kb_with_options(
     // Validate query input
     validate_non_empty(&query).map_err(|e| e.to_string())?;
     validate_text_size(&query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
+
+    // Validate and normalize namespace_id if provided
+    let namespace_id = namespace_id
+        .map(|ns| normalize_and_validate_namespace_id(&ns))
+        .transpose()
+        .map_err(|e| e.to_string())?;
 
     let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
 
@@ -1396,6 +1446,12 @@ pub fn list_kb_documents(
     namespace_id: Option<String>,
     source_id: Option<String>,
 ) -> Result<Vec<KbDocumentInfo>, String> {
+    // Validate and normalize namespace_id if provided
+    let namespace_id = namespace_id
+        .map(|ns| normalize_and_validate_namespace_id(&ns))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -2695,18 +2751,19 @@ pub fn ingest_url(
     db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
 
     let config = WebIngestConfig::default();
-    let ingester = WebIngester::new(config).map_err(|e| e.to_string())?;
     let cancel_token = CancellationToken::new();
 
     // Use block_in_place to run async code in sync context
+    // The ingester now requires async initialization for DNS resolver
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
+            let ingester = WebIngester::new(config).await.map_err(|e| e.to_string())?;
             ingester
                 .ingest_page(db, &url, &namespace_id, &cancel_token, None)
                 .await
+                .map_err(|e| e.to_string())
         })
-    })
-    .map_err(|e| e.to_string())?;
+    })?;
 
     Ok(IngestResult {
         document_id: result.id,
@@ -2866,18 +2923,21 @@ pub fn process_source_file(
         .collect();
 
     let config = BatchIngestConfig::default();
-    let ingester = BatchIngester::new(config).map_err(|e| e.to_string())?;
     let cancel_token = CancellationToken::new();
     let namespace = source_file.namespace.clone();
 
     // Use block_in_place to run async code in sync context
+    // The batch ingester now requires async initialization for DNS resolver
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
-            ingester
-                .ingest_from_strings(db, &sources, &namespace, &cancel_token, None)
-                .await
+            let ingester = BatchIngester::new(config).await.map_err(|e| e.to_string())?;
+            Ok::<_, String>(
+                ingester
+                    .ingest_from_strings(db, &sources, &namespace, &cancel_token, None)
+                    .await
+            )
         })
-    });
+    })?;
 
     Ok(BatchIngestResult {
         successful: result
@@ -2959,6 +3019,12 @@ pub fn list_ingest_sources(
     state: State<'_, AppState>,
     namespace_id: Option<String>,
 ) -> Result<Vec<crate::db::IngestSource>, String> {
+    // Validate and normalize namespace_id if provided
+    let namespace_id = namespace_id
+        .map(|ns| normalize_and_validate_namespace_id(&ns))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.list_ingest_sources(namespace_id.as_deref()).map_err(|e| e.to_string())
@@ -3001,6 +3067,12 @@ pub fn get_source_health(
     state: State<'_, AppState>,
     namespace_id: Option<String>,
 ) -> Result<SourceHealthSummary, String> {
+    // Validate and normalize namespace_id if provided
+    let namespace_id = namespace_id
+        .map(|ns| normalize_and_validate_namespace_id(&ns))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -3197,6 +3269,12 @@ pub fn clear_knowledge_data(
     state: State<'_, AppState>,
     namespace_id: Option<String>,
 ) -> Result<(), String> {
+    // Validate and normalize namespace_id if provided
+    let namespace_id = namespace_id
+        .map(|ns| normalize_and_validate_namespace_id(&ns))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 

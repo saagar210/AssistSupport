@@ -1,9 +1,15 @@
 //! Network security module for AssistSupport
 //! Implements SSRF protection with IP blocking and allowlist support
+//!
+//! Security Note: This module now supports DNS pinning to prevent TOCTOU attacks.
+//! Use `validate_url_for_ssrf_with_pinning()` for the most secure validation,
+//! which returns both the validated URL and the pinned IP addresses.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use thiserror::Error;
 use url::Url;
+
+use super::dns::{DnsError, PinnedDnsResolver, ValidatedUrl};
 
 #[derive(Debug, Error)]
 pub enum NetworkError {
@@ -222,7 +228,10 @@ fn is_host_in_allowlist(host: &str, allowlist: &[String]) -> bool {
     false
 }
 
-/// Validate a URL for SSRF protection
+/// Validate a URL for SSRF protection (legacy, without DNS pinning)
+///
+/// WARNING: This function is vulnerable to DNS rebinding attacks.
+/// Use `validate_url_for_ssrf_with_pinning()` for new code.
 ///
 /// This function:
 /// 1. Parses and validates the URL
@@ -283,6 +292,88 @@ pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, 
     }
 
     Ok(url)
+}
+
+/// Validate a URL for SSRF protection with DNS pinning
+///
+/// This function prevents DNS rebinding attacks by:
+/// 1. Resolving DNS once at validation time
+/// 2. Validating ALL resolved IPs against SSRF rules
+/// 3. Returning the validated IPs for use in subsequent connections
+///
+/// The caller MUST use the returned pinned IPs for the actual connection,
+/// bypassing any further DNS resolution.
+///
+/// # Security
+/// This is the recommended function for SSRF protection. It eliminates
+/// the TOCTOU vulnerability where DNS could change between validation
+/// and connection time.
+pub async fn validate_url_for_ssrf_with_pinning(
+    url_str: &str,
+    resolver: &PinnedDnsResolver,
+) -> Result<ValidatedUrl, NetworkError> {
+    // Parse URL
+    let url = Url::parse(url_str)
+        .map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
+
+    // Only allow http and https schemes
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(NetworkError::InvalidUrl(format!(
+                "Invalid scheme '{}'. Only http and https are allowed.",
+                scheme
+            )));
+        }
+    }
+
+    // Get host for allowlist check
+    let host = url.host_str()
+        .ok_or_else(|| NetworkError::InvalidUrl("URL has no host".into()))?;
+
+    // Check allowlist first (explicit user opt-in bypasses DNS validation)
+    if is_host_in_allowlist(host, &resolver.ssrf_config().allowlist) {
+        // For allowlisted hosts, still resolve but don't validate IPs
+        let port = url.port_or_known_default().unwrap_or(80);
+        return Ok(ValidatedUrl {
+            url: url.clone(),
+            host: host.to_string(),
+            port,
+            pinned_ips: vec![], // Empty = use normal DNS
+        });
+    }
+
+    // Use pinned resolver to validate and get IPs
+    resolver.resolve_and_validate(&url).await.map_err(|e| match e {
+        DnsError::ResolutionFailed(msg) => NetworkError::DnsResolutionFailed(msg),
+        DnsError::NoAddresses(host) => NetworkError::DnsResolutionFailed(
+            format!("DNS resolution returned no addresses for {}", host)
+        ),
+        DnsError::AllBlocked(msg) => NetworkError::SsrfBlocked(msg),
+        DnsError::NotValidated(host) => NetworkError::SsrfBlocked(
+            format!("Host '{}' was not pre-validated", host)
+        ),
+        DnsError::ResolverError(msg) => NetworkError::DnsResolutionFailed(msg),
+    })
+}
+
+/// Validate a redirect target URL with DNS pinning
+///
+/// This should be called for each redirect to prevent SSRF via redirect chains.
+pub async fn validate_redirect_with_pinning(
+    url_str: &str,
+    resolver: &PinnedDnsResolver,
+    redirect_count: usize,
+    max_redirects: usize,
+) -> Result<ValidatedUrl, NetworkError> {
+    if redirect_count >= max_redirects {
+        return Err(NetworkError::RequestFailed(format!(
+            "Too many redirects (max: {})",
+            max_redirects
+        )));
+    }
+
+    validate_url_for_ssrf_with_pinning(url_str, resolver).await
 }
 
 /// Canonicalize a URL (normalize for deduplication)

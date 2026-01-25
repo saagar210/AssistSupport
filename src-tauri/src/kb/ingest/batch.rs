@@ -114,8 +114,10 @@ pub struct BatchIngester {
 
 impl BatchIngester {
     /// Create a new batch ingester
-    pub fn new(config: BatchIngestConfig) -> IngestResult<Self> {
-        let web_ingester = WebIngester::new(config.web.clone())?;
+    ///
+    /// This is async because the web ingester requires async DNS resolver initialization.
+    pub async fn new(config: BatchIngestConfig) -> IngestResult<Self> {
+        let web_ingester = WebIngester::new(config.web.clone()).await?;
         let youtube_ingester = YouTubeIngester::new(config.youtube.clone());
         let github_ingester = GitHubIngester::new(config.github.clone());
 

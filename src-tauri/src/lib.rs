@@ -12,6 +12,7 @@ pub mod jira;
 pub mod jobs;
 pub mod kb;
 pub mod llm;
+pub mod migration;
 pub mod model_integrity;
 pub mod prompts;
 pub mod security;

@@ -1,16 +1,22 @@
 //! Web page ingestion module for AssistSupport
 //! Fetches and indexes web pages with SSRF protection
+//!
+//! Security: This module uses DNS pinning to prevent DNS rebinding attacks.
+//! All DNS resolution is performed once at validation time, and the validated
+//! IPs are used for the actual HTTP connection.
 
 use crate::db::{Database, IngestSource};
+use crate::kb::dns::{build_ip_url, PinnedDnsResolver, ValidatedUrl};
 use crate::kb::network::{
-    canonicalize_url, extract_same_origin_links, is_login_page, validate_url_for_ssrf,
-    NetworkError, SsrfConfig,
+    canonicalize_url, extract_same_origin_links, is_login_page,
+    validate_url_for_ssrf_with_pinning, NetworkError, SsrfConfig,
 };
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
 use futures::StreamExt;
 use reqwest::Client;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
@@ -56,71 +62,163 @@ pub struct FetchedPage {
     pub title: Option<String>,
 }
 
-/// Web page ingester
+/// Web page ingester with DNS pinning for SSRF protection
 pub struct WebIngester {
     config: WebIngestConfig,
     client: Client,
+    resolver: Arc<PinnedDnsResolver>,
 }
 
 impl WebIngester {
-    /// Create a new web ingester
-    pub fn new(config: WebIngestConfig) -> IngestResult<Self> {
-        let ssrf_config = config.ssrf.clone();
+    /// Create a new web ingester with DNS pinning
+    ///
+    /// The resolver is created async and shared across all requests.
+    pub async fn new(config: WebIngestConfig) -> IngestResult<Self> {
+        // Create pinned DNS resolver
+        let resolver = PinnedDnsResolver::new(config.ssrf.clone())
+            .await
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        // Create client without automatic redirect following
+        // We handle redirects manually to validate each hop with DNS pinning
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .user_agent(&config.user_agent)
-            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                match validate_redirect_target(attempt.url().as_str(), &ssrf_config, attempt.previous().len()) {
-                    Ok(()) => attempt.follow(),
-                    Err(err) => attempt.error(err),
-                }
-            }))
+            .redirect(reqwest::redirect::Policy::none()) // Manual redirect handling
             .build()
             .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
-        Ok(Self { config, client })
+        Ok(Self {
+            config,
+            client,
+            resolver: Arc::new(resolver),
+        })
     }
 
-    /// Fetch a single web page
-    pub async fn fetch_page(&self, url: &str) -> IngestResult<FetchedPage> {
-        // Validate URL for SSRF
-        let validated_url = validate_url_for_ssrf(url, &self.config.ssrf)?;
+    /// Create a new web ingester (sync wrapper for backward compatibility)
+    pub fn new_sync(config: WebIngestConfig) -> IngestResult<Self> {
+        // For sync contexts, create a basic resolver
+        // This is a fallback - prefer new() when possible
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_secs))
+            .user_agent(&config.user_agent)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
-        // Make request
+        // Create resolver in a blocking context
+        let resolver = futures::executor::block_on(async {
+            PinnedDnsResolver::new(config.ssrf.clone()).await
+        }).map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        Ok(Self {
+            config,
+            client,
+            resolver: Arc::new(resolver),
+        })
+    }
+
+    /// Fetch a single web page with DNS pinning
+    ///
+    /// Security: DNS is resolved once and pinned IPs are used for the connection,
+    /// preventing DNS rebinding attacks.
+    pub async fn fetch_page(&self, url: &str) -> IngestResult<FetchedPage> {
+        // Validate URL and get pinned IPs
+        let validated = validate_url_for_ssrf_with_pinning(url, &self.resolver).await?;
+
+        // Fetch with redirect handling
+        self.fetch_with_redirects(validated, 0).await
+    }
+
+    /// Fetch a page following redirects with DNS pinning on each hop
+    ///
+    /// Uses Box::pin for recursive async call to avoid infinitely sized future.
+    fn fetch_with_redirects<'a>(
+        &'a self,
+        validated: ValidatedUrl,
+        redirect_count: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = IngestResult<FetchedPage>> + Send + 'a>> {
+        Box::pin(async move {
+        const MAX_REDIRECTS: usize = 10;
+
+        if redirect_count >= MAX_REDIRECTS {
+            return Err(IngestError::Network(NetworkError::RequestFailed(
+                "Too many redirects".into()
+            )));
+        }
+
+        // Build request URL - use IP directly to bypass DNS
+        let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
+            build_ip_url(&validated).map_err(|e| {
+                IngestError::Network(NetworkError::RequestFailed(e.to_string()))
+            })?
+        } else {
+            // Allowlisted host - use original URL
+            (validated.url.to_string(), validated.host.clone())
+        };
+
+        // Make request with proper Host header
         let response = self
             .client
-            .get(validated_url.as_str())
+            .get(&request_url)
+            .header("Host", &host_header)
             .send()
             .await
             .map_err(|e| {
                 if e.is_timeout() {
-                    IngestError::Timeout(format!("Request to {} timed out", url))
+                    IngestError::Timeout(format!("Request to {} timed out", validated.url))
                 } else {
                     IngestError::Network(NetworkError::RequestFailed(e.to_string()))
                 }
             })?;
 
-        // Check status
+        // Check status - handle redirects manually with DNS pinning
         let status = response.status();
+
+        // Handle redirects with DNS validation
+        if status.is_redirection() {
+            if let Some(location) = response.headers().get("location") {
+                let location_str = location.to_str().map_err(|_| {
+                    IngestError::Network(NetworkError::RequestFailed(
+                        "Invalid redirect location header".into()
+                    ))
+                })?;
+
+                // Resolve relative URLs against the current URL
+                let redirect_url = validated.url.join(location_str).map_err(|e| {
+                    IngestError::Network(NetworkError::InvalidUrl(e.to_string()))
+                })?;
+
+                // Validate redirect target with DNS pinning
+                let redirect_validated = validate_url_for_ssrf_with_pinning(
+                    redirect_url.as_str(),
+                    &self.resolver,
+                ).await?;
+
+                // Follow redirect recursively
+                return self.fetch_with_redirects(redirect_validated, redirect_count + 1).await;
+            }
+        }
+
         if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(IngestError::NotFound(url.to_string()));
+            return Err(IngestError::NotFound(validated.url.to_string()));
         }
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(IngestError::AuthRequired(format!(
                 "Authentication required for {}",
-                url
+                validated.url
             )));
         }
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(IngestError::RateLimited(format!(
                 "Rate limited for {}",
-                url
+                validated.url
             )));
         }
         if !status.is_success() {
             return Err(IngestError::Network(NetworkError::RequestFailed(format!(
                 "HTTP {} for {}",
-                status, url
+                status, validated.url
             ))));
         }
 
@@ -146,7 +244,7 @@ impl WebIngester {
             if !ct.contains("text/html") && !ct.contains("application/xhtml") {
                 return Err(IngestError::InvalidSource(format!(
                     "URL {} is not HTML (content-type: {})",
-                    url, ct
+                    validated.url, ct
                 )));
             }
         }
@@ -161,8 +259,6 @@ impl WebIngester {
             }
         }
 
-        let final_url = response.url().clone();
-
         // Read body with streaming size limit
         // This ensures we stop reading early if content exceeds max size
         let bytes = read_body_with_limit(response, self.config.max_page_size).await?;
@@ -170,13 +266,14 @@ impl WebIngester {
         // Convert to string
         let content = String::from_utf8_lossy(&bytes).to_string();
 
-        let canonical = canonicalize_url(final_url.as_str())?;
+        // Use the original URL for canonical (not the IP-based request URL)
+        let canonical = canonicalize_url(validated.url.as_str())?;
 
         // Check for login page
-        if is_login_page(&final_url, Some(&content)) {
+        if is_login_page(&validated.url, Some(&content)) {
             return Err(IngestError::AuthRequired(format!(
                 "URL {} appears to be a login page. Please download the content manually after authenticating.",
-                url
+                validated.url
             )));
         }
 
@@ -184,7 +281,7 @@ impl WebIngester {
         let title = extract_html_title(&content);
 
         Ok(FetchedPage {
-            url: final_url.to_string(),
+            url: validated.url.to_string(),
             canonical_url: canonical,
             content,
             content_type,
@@ -192,20 +289,32 @@ impl WebIngester {
             last_modified,
             title,
         })
+        }) // Close Box::pin(async move {
     }
 
     /// Check if a page needs refresh based on ETag/Last-Modified
+    ///
+    /// Uses DNS pinning for SSRF protection.
     pub async fn check_needs_refresh(
         &self,
         url: &str,
         etag: Option<&str>,
         last_modified: Option<&str>,
     ) -> IngestResult<bool> {
-        // Validate URL for SSRF
-        let validated_url = validate_url_for_ssrf(url, &self.config.ssrf)?;
+        // Validate URL with DNS pinning
+        let validated = validate_url_for_ssrf_with_pinning(url, &self.resolver).await?;
+
+        // Build request URL using pinned IP
+        let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
+            build_ip_url(&validated).map_err(|e| {
+                IngestError::Network(NetworkError::RequestFailed(e.to_string()))
+            })?
+        } else {
+            (validated.url.to_string(), validated.host.clone())
+        };
 
         // Build conditional request
-        let mut request = self.client.head(validated_url.as_str());
+        let mut request = self.client.head(&request_url).header("Host", &host_header);
 
         if let Some(etag) = etag {
             request = request.header("If-None-Match", etag);
@@ -519,17 +628,8 @@ impl WebIngester {
     }
 }
 
-fn validate_redirect_target(
-    url: &str,
-    config: &SsrfConfig,
-    previous_len: usize,
-) -> Result<(), NetworkError> {
-    if previous_len > 10 {
-        return Err(NetworkError::RequestFailed("too many redirects".into()));
-    }
-
-    validate_url_for_ssrf(url, config).map(|_| ())
-}
+// Note: validate_redirect_target removed - redirect validation now uses DNS pinning
+// directly in fetch_with_redirects()
 
 /// Read response body with streaming size limit.
 ///
@@ -732,24 +832,57 @@ mod tests {
         assert_eq!(headings[1], (2, "Subtitle".to_string()));
     }
 
-    #[test]
-    fn test_redirect_validation_blocks_private() {
+    #[tokio::test]
+    async fn test_dns_pinning_blocks_private_ip() {
         let config = SsrfConfig::default();
-        let result = validate_redirect_target("http://127.0.0.1", &config, 0);
-        assert!(matches!(result, Err(NetworkError::SsrfBlocked(_))));
+        let resolver = PinnedDnsResolver::new(config).await.unwrap();
+
+        // Direct IP should be blocked
+        let result = validate_url_for_ssrf_with_pinning("http://127.0.0.1/", &resolver).await;
+        assert!(result.is_err());
+
+        let result = validate_url_for_ssrf_with_pinning("http://192.168.1.1/", &resolver).await;
+        assert!(result.is_err());
     }
 
-    #[test]
-    fn test_redirect_validation_allows_public() {
+    #[tokio::test]
+    async fn test_dns_pinning_allows_public_ip() {
         let config = SsrfConfig::default();
-        let result = validate_redirect_target("http://8.8.8.8", &config, 0);
+        let resolver = PinnedDnsResolver::new(config).await.unwrap();
+
+        // Public IP should be allowed
+        let result = validate_url_for_ssrf_with_pinning("http://8.8.8.8/", &resolver).await;
         assert!(result.is_ok());
+
+        let validated = result.unwrap();
+        assert_eq!(validated.pinned_ips.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_dns_pinning_returns_pinned_ips() {
+        let config = SsrfConfig::default();
+        let resolver = PinnedDnsResolver::new(config).await.unwrap();
+
+        let result = validate_url_for_ssrf_with_pinning("http://1.1.1.1/path?query=1", &resolver).await;
+        assert!(result.is_ok());
+
+        let validated = result.unwrap();
+        assert!(!validated.pinned_ips.is_empty());
+        assert_eq!(validated.host, "1.1.1.1");
+        assert_eq!(validated.port, 80);
     }
 
     #[test]
-    fn test_redirect_validation_too_many_hops() {
-        let config = SsrfConfig::default();
-        let result = validate_redirect_target("http://8.8.8.8", &config, 11);
-        assert!(matches!(result, Err(NetworkError::RequestFailed(_))));
+    fn test_build_ip_url() {
+        let validated = ValidatedUrl {
+            url: Url::parse("https://example.com/path").unwrap(),
+            host: "example.com".to_string(),
+            port: 443,
+            pinned_ips: vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34))],
+        };
+
+        let (ip_url, host_header) = build_ip_url(&validated).unwrap();
+        assert_eq!(ip_url, "https://93.184.216.34:443/path");
+        assert_eq!(host_header, "example.com");
     }
 }
