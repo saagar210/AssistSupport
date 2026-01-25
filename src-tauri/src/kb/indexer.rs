@@ -40,6 +40,39 @@ pub enum DocumentType {
     Image,
     Docx,
     Xlsx,
+    Code(CodeLanguage),
+}
+
+/// Supported code languages for indexing
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeLanguage {
+    Python,
+    JavaScript,
+    TypeScript,
+    Rust,
+    Go,
+    Java,
+    Cpp,
+    C,
+    CSharp,
+    Ruby,
+    Shell,
+}
+
+impl CodeLanguage {
+    /// Get function detection patterns for this language
+    pub fn function_patterns(&self) -> &'static [&'static str] {
+        match self {
+            Self::Python => &["def ", "class ", "async def "],
+            Self::JavaScript | Self::TypeScript => &["function ", "const ", "class ", "async function ", "export function ", "export const ", "export class ", "export default "],
+            Self::Rust => &["fn ", "pub fn ", "impl ", "struct ", "enum ", "trait ", "mod "],
+            Self::Go => &["func ", "type "],
+            Self::Java | Self::CSharp => &["public ", "private ", "protected ", "class ", "interface ", "enum "],
+            Self::Cpp | Self::C => &["void ", "int ", "char ", "bool ", "class ", "struct ", "template "],
+            Self::Ruby => &["def ", "class ", "module "],
+            Self::Shell => &["function ", "()"],
+        }
+    }
 }
 
 impl DocumentType {
@@ -51,6 +84,18 @@ impl DocumentType {
             "png" | "jpg" | "jpeg" | "gif" | "tiff" | "tif" => Some(Self::Image),
             "docx" => Some(Self::Docx),
             "xlsx" | "xls" => Some(Self::Xlsx),
+            // Code files
+            "py" => Some(Self::Code(CodeLanguage::Python)),
+            "js" | "jsx" | "mjs" => Some(Self::Code(CodeLanguage::JavaScript)),
+            "ts" | "tsx" => Some(Self::Code(CodeLanguage::TypeScript)),
+            "rs" => Some(Self::Code(CodeLanguage::Rust)),
+            "go" => Some(Self::Code(CodeLanguage::Go)),
+            "java" => Some(Self::Code(CodeLanguage::Java)),
+            "cpp" | "cxx" | "cc" | "hpp" | "hxx" => Some(Self::Code(CodeLanguage::Cpp)),
+            "c" | "h" => Some(Self::Code(CodeLanguage::C)),
+            "cs" => Some(Self::Code(CodeLanguage::CSharp)),
+            "rb" => Some(Self::Code(CodeLanguage::Ruby)),
+            "sh" | "bash" | "zsh" => Some(Self::Code(CodeLanguage::Shell)),
             _ => None,
         }
     }
@@ -168,6 +213,7 @@ impl KbIndexer {
             DocumentType::Image => self.parse_image(path),
             DocumentType::Docx => self.parse_docx(path),
             DocumentType::Xlsx => self.parse_xlsx(path),
+            DocumentType::Code(lang) => self.parse_code(path, lang),
         }
     }
 
@@ -361,6 +407,107 @@ impl KbIndexer {
                 content,
             }],
         })
+    }
+
+    /// Parse a code file into logical chunks (functions, classes, etc.)
+    fn parse_code(&self, path: &Path, lang: CodeLanguage) -> Result<ParsedDocument, IndexerError> {
+        let content = std::fs::read_to_string(path)?;
+        let title = path.file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string());
+
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.is_empty() {
+            return Ok(ParsedDocument {
+                title,
+                sections: vec![],
+            });
+        }
+
+        let patterns = lang.function_patterns();
+        let mut sections = Vec::new();
+        let mut current_section_start = 0;
+        let mut current_heading: Option<String> = None;
+
+        // Try function-level chunking first
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+
+            // Check if line starts with a function/class pattern
+            for pattern in patterns {
+                if trimmed.starts_with(pattern) {
+                    // Save previous section if it has content
+                    if i > current_section_start {
+                        let section_content = lines[current_section_start..i].join("\n");
+                        if !section_content.trim().is_empty() {
+                            sections.push(Section {
+                                heading: current_heading.clone(),
+                                level: 1,
+                                content: section_content,
+                            });
+                        }
+                    }
+
+                    // Start new section with function name as heading
+                    current_section_start = i;
+                    current_heading = Some(Self::extract_function_name(trimmed));
+                    break;
+                }
+            }
+        }
+
+        // Add final section
+        if current_section_start < lines.len() {
+            let section_content = lines[current_section_start..].join("\n");
+            if !section_content.trim().is_empty() {
+                sections.push(Section {
+                    heading: current_heading,
+                    level: 1,
+                    content: section_content,
+                });
+            }
+        }
+
+        // Fallback: if no functions found, chunk by line count
+        if sections.is_empty() || (sections.len() == 1 && lines.len() > 100) {
+            sections = self.chunk_code_by_lines(&content, 50);
+        }
+
+        Ok(ParsedDocument { title, sections })
+    }
+
+    /// Extract function/method name from a line
+    fn extract_function_name(line: &str) -> String {
+        // Try to extract just the name part
+        let line = line.trim();
+
+        // Common patterns: "def name(", "function name(", "fn name(", etc.
+        if let Some(paren_pos) = line.find('(') {
+            let before_paren = &line[..paren_pos];
+            // Get last word before parenthesis
+            if let Some(name) = before_paren.split_whitespace().last() {
+                return name.to_string();
+            }
+        }
+
+        // Fallback: first 50 chars
+        line.chars().take(50).collect()
+    }
+
+    /// Chunk code by line count (fallback method)
+    fn chunk_code_by_lines(&self, content: &str, lines_per_chunk: usize) -> Vec<Section> {
+        let lines: Vec<&str> = content.lines().collect();
+        let mut sections = Vec::new();
+
+        for (i, chunk) in lines.chunks(lines_per_chunk).enumerate() {
+            sections.push(Section {
+                heading: Some(format!("Lines {}-{}", i * lines_per_chunk + 1, i * lines_per_chunk + chunk.len())),
+                level: 1,
+                content: chunk.join("\n"),
+            });
+        }
+
+        sections
     }
 
     /// Chunk a parsed document

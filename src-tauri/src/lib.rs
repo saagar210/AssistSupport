@@ -57,6 +57,8 @@ pub fn run() {
             // LLM commands
             commands::init_llm_engine,
             commands::load_model,
+            commands::load_custom_model,
+            commands::validate_gguf_file,
             commands::unload_model,
             commands::get_model_info,
             commands::is_model_loaded,

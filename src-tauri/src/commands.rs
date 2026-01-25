@@ -264,6 +264,93 @@ pub fn load_model(
     engine.load_model(&path, layers).map_err(|e| e.to_string())
 }
 
+/// Load a custom GGUF model from a file path
+#[tauri::command]
+pub fn load_custom_model(
+    state: State<'_, AppState>,
+    model_path: String,
+    n_gpu_layers: Option<u32>,
+) -> Result<ModelInfo, String> {
+    use std::path::Path;
+
+    let path = Path::new(&model_path);
+
+    // Validate path exists
+    if !path.exists() {
+        return Err(format!("Model file not found: {}", model_path));
+    }
+
+    // Validate GGUF extension
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext.to_lowercase() != "gguf" {
+        return Err("Invalid file type. Only .gguf files are supported.".into());
+    }
+
+    // Validate file size (at least 1MB, sanity check)
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if metadata.len() < 1_000_000 {
+        return Err("File too small to be a valid GGUF model.".into());
+    }
+
+    let llm_guard = state.llm.read();
+    let engine = llm_guard.as_ref().ok_or("LLM engine not initialized")?;
+
+    let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
+
+    engine.load_model(path, layers).map_err(|e| e.to_string())
+}
+
+/// Validate a GGUF file without loading it (returns model metadata)
+#[tauri::command]
+pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
+    use std::path::Path;
+    use std::fs;
+
+    let path = Path::new(&model_path);
+
+    if !path.exists() {
+        return Err(format!("File not found: {}", model_path));
+    }
+
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext.to_lowercase() != "gguf" {
+        return Err("Invalid file type. Only .gguf files are supported.".into());
+    }
+
+    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    let filename = path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Check GGUF magic bytes (optional, basic validation)
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut magic = [0u8; 4];
+    use std::io::Read;
+    file.read_exact(&mut magic).map_err(|e| e.to_string())?;
+
+    // GGUF magic is "GGUF" in ASCII
+    if &magic != b"GGUF" {
+        return Err("Invalid GGUF file: magic bytes mismatch".into());
+    }
+
+    Ok(GgufFileInfo {
+        path: model_path,
+        filename,
+        size_bytes: metadata.len(),
+        is_valid: true,
+    })
+}
+
+/// Information about a GGUF file
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GgufFileInfo {
+    pub path: String,
+    pub filename: String,
+    pub size_bytes: u64,
+    pub is_valid: bool,
+}
+
 /// Unload the current model
 #[tauri::command]
 pub fn unload_model(state: State<'_, AppState>) -> Result<(), String> {
