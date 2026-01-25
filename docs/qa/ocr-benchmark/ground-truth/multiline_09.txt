@@ -1,0 +1,4 @@
+SSL Certificate Info:
+Domain: example.com
+Issuer: Let's Encrypt
+Expires: 2026-03-15

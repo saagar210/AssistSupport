@@ -1,0 +1,5 @@
+Backup Summary:
+- /home: 45.2 GB
+- /var/www: 12.8 GB
+- /etc: 128 MB
+Total: 58.1 GB

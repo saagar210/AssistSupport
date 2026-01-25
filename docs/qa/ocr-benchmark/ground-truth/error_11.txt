@@ -1,0 +1,1 @@
+Process apache2 killed (PID 1234)

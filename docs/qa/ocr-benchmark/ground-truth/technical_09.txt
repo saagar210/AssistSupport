@@ -1,0 +1,1 @@
+Docker Desktop 4.35.0 (173168)

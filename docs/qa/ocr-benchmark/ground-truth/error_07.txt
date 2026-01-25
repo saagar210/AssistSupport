@@ -1,0 +1,1 @@
+Network interface eth0 is DOWN

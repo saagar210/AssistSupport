@@ -1,0 +1,1 @@
+Permission denied: Access to /etc/passwd

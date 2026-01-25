@@ -1,0 +1,112 @@
+/* AssistSupport Theme System - Tailwind-inspired Slate palette */
+
+:root {
+  /* Light theme (default) - Tailwind Slate palette */
+  --bg-primary: #ffffff;          /* white */
+  --bg-secondary: #f8fafc;        /* slate-50 */
+  --bg-tertiary: #f1f5f9;         /* slate-100 */
+  --bg-hover: #e2e8f0;            /* slate-200 */
+  --text-primary: #0f172a;        /* slate-900 */
+  --text-secondary: #475569;      /* slate-600 */
+  --text-muted: #94a3b8;          /* slate-400 */
+  --border-color: #e2e8f0;        /* slate-200 */
+  --border-strong: #cbd5e1;       /* slate-300 */
+
+  /* Accent colors - Tailwind Blue */
+  --accent-primary: #2563eb;      /* blue-600 */
+  --accent-hover: #1d4ed8;        /* blue-700 */
+  --accent-light: #dbeafe;        /* blue-100 */
+
+  /* Semantic colors */
+  --success: #16a34a;             /* green-600 */
+  --success-light: #dcfce7;       /* green-100 */
+  --warning: #d97706;             /* amber-600 */
+  --warning-light: #fef3c7;       /* amber-100 */
+  --error: #dc2626;               /* red-600 */
+  --error-light: #fee2e2;         /* red-100 */
+  --info: #2563eb;                /* blue-600 */
+  --info-light: #dbeafe;          /* blue-100 */
+
+  /* Component-specific */
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;        /* slate-300 */
+  --input-focus: #2563eb;         /* blue-600 */
+  --card-bg: #ffffff;
+  --card-shadow: rgba(0, 0, 0, 0.1);
+
+  /* Tab bar */
+  --tab-bg: #f8fafc;
+  --tab-active-bg: #ffffff;
+  --tab-text: #64748b;
+  --tab-active-text: #0f172a;
+
+  /* Scrollbar */
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
+:root[data-theme="dark"] {
+  /* Dark theme - Tailwind Slate palette inverted */
+  --bg-primary: #0f172a;          /* slate-900 */
+  --bg-secondary: #1e293b;        /* slate-800 */
+  --bg-tertiary: #334155;         /* slate-700 */
+  --bg-hover: #475569;            /* slate-600 */
+  --text-primary: #f8fafc;        /* slate-50 */
+  --text-secondary: #cbd5e1;      /* slate-300 */
+  --text-muted: #64748b;          /* slate-500 */
+  --border-color: #334155;        /* slate-700 */
+  --border-strong: #475569;       /* slate-600 */
+
+  /* Accent colors - slightly brighter for dark mode */
+  --accent-primary: #3b82f6;      /* blue-500 */
+  --accent-hover: #60a5fa;        /* blue-400 */
+  --accent-light: #1e3a5f;        /* custom dark blue */
+
+  /* Semantic colors - adjusted for dark */
+  --success: #22c55e;             /* green-500 */
+  --success-light: #14532d;       /* green-900 */
+  --warning: #f59e0b;             /* amber-500 */
+  --warning-light: #78350f;       /* amber-900 */
+  --error: #ef4444;               /* red-500 */
+  --error-light: #7f1d1d;         /* red-900 */
+  --info: #3b82f6;                /* blue-500 */
+  --info-light: #1e3a5f;          /* custom */
+
+  /* Component-specific */
+  --input-bg: #1e293b;            /* slate-800 */
+  --input-border: #475569;        /* slate-600 */
+  --input-focus: #3b82f6;         /* blue-500 */
+  --card-bg: #1e293b;             /* slate-800 */
+  --card-shadow: rgba(0, 0, 0, 0.3);
+
+  /* Tab bar */
+  --tab-bg: #1e293b;
+  --tab-active-bg: #0f172a;
+  --tab-text: #94a3b8;
+  --tab-active-text: #f8fafc;
+
+  /* Scrollbar */
+  --scrollbar-track: #1e293b;
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+}
+
+/* Global scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}

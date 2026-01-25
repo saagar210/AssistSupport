@@ -1,0 +1,565 @@
+{
+  "summary": {
+    "total_images": 55,
+    "exact_matches": 29,
+    "exact_match_rate": 0.5273,
+    "average_wer": 0.2312,
+    "average_cer": 0.1016,
+    "image_only_count": 20,
+    "image_only_wer": 0.2401,
+    "text_based_count": 35,
+    "text_based_wer": 0.2261
+  },
+  "results": [
+    {
+      "image": "error_01.png",
+      "ground_truth": "Error: Connection timed out after 30 seconds",
+      "ocr_output": "Error: Connection timed out after 30 seconds",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_02.png",
+      "ground_truth": "WARNING: Disk space low on /dev/sda1",
+      "ocr_output": "WARNING: Disk\nspace low on /dev/sda1",
+      "wer": 0.3333,
+      "cer": 0.0278,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "error_03.png",
+      "ground_truth": "Failed to authenticate user: Invalid credentials",
+      "ocr_output": "Failed to authenticate user: Invalid credentials",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_04.png",
+      "ground_truth": "Service 'nginx' restarted successfully",
+      "ocr_output": "Service 'ngin' restarted successfully",
+      "wer": 0.25,
+      "cer": 0.0263,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "error_05.png",
+      "ground_truth": "CRITICAL: Memory usage exceeded 95%",
+      "ocr_output": "CRITICAL: Memory usage exceeded 95%",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_06.png",
+      "ground_truth": "Permission denied: Access to /etc/passwd",
+      "ocr_output": "Permission denied: Access to /etc/passwd",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_07.png",
+      "ground_truth": "Network interface eth0 is DOWN",
+      "ocr_output": "Network interface eth0 is DOWN",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_08.png",
+      "ground_truth": "SSL certificate expires in 7 days",
+      "ocr_output": "SSL certificate expires in 7 days",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "error_09.png",
+      "ground_truth": "Database backup completed: 2.5GB",
+      "ocr_output": "Database backup completed: 2.5GB",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_10.png",
+      "ground_truth": "Firewall rule added: Allow TCP 443",
+      "ocr_output": "Firewall rule added: Allow TCP 443",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_11.png",
+      "ground_truth": "Process apache2 killed (PID 1234)",
+      "ocr_output": "Process apache2 killed (PID 1234)",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_12.png",
+      "ground_truth": "USB device disconnected unexpectedly",
+      "ocr_output": "USB device disconnected unexpectedly",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_13.png",
+      "ground_truth": "SMART warning: Bad sectors detected",
+      "ocr_output": "SMART warning: Bad sectors detected",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_14.png",
+      "ground_truth": "Login attempt from unknown IP: 192.168.1.100",
+      "ocr_output": "Login attempt from unknown IP: 192.168.1.100",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_15.png",
+      "ground_truth": "System reboot required for kernel update",
+      "ocr_output": "System reboot required for kernel update",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_16.png",
+      "ground_truth": "DNS resolution failed for api.example.com",
+      "ocr_output": "DNS resolution failed for api.example.com",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_17.png",
+      "ground_truth": "Cache cleared: 1.2GB freed",
+      "ocr_output": "Cache cleared: 1.2GB freed",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_18.png",
+      "ground_truth": "User account locked after 3 failed attempts",
+      "ocr_output": "User account locked after 3 failed attempts",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_19.png",
+      "ground_truth": "Antivirus scan completed: No threats found",
+      "ocr_output": "Antivirus scan completed: No threats found",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "error_20.png",
+      "ground_truth": "VPN connection established to 10.0.0.1",
+      "ocr_output": "VPN connection established to 10.0.0.1",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "instruction_01.png",
+      "ground_truth": "Step 1: Open Terminal and run 'sudo apt update'",
+      "ocr_output": "Step 1: Open Terminal and run 'sudo\napt update'",
+      "wer": 0.2222,
+      "cer": 0.0213,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_02.png",
+      "ground_truth": "Step 2: Install required packages with 'apt instal...",
+      "ocr_output": "Step 2: Install required\npackages with 'apt instal...",
+      "wer": 0.2222,
+      "cer": 0.0172,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_03.png",
+      "ground_truth": "To reset password: Click Settings > Security > Res...",
+      "ocr_output": "To reset password: Click Settings > Security\n> Res...",
+      "wer": 0.2222,
+      "cer": 0.0192,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_04.png",
+      "ground_truth": "Configure firewall: ufw allow 22/tcp",
+      "ocr_output": "Configure firewall: ufw\nallow 22/tcp",
+      "wer": 0.4,
+      "cer": 0.0278,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_05.png",
+      "ground_truth": "Check disk usage: df -h /home",
+      "ocr_output": "Check disk\nusage:\ndf -h /home",
+      "wer": 0.5,
+      "cer": 0.069,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_06.png",
+      "ground_truth": "Restart service: systemctl restart apache2",
+      "ocr_output": "Restart service: systemctl restart apache2",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "instruction_07.png",
+      "ground_truth": "View logs: tail -f /var/log/syslog",
+      "ocr_output": "View logs:\ntail -f\n/var/log/sys1og",
+      "wer": 0.8,
+      "cer": 0.0882,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "instruction_08.png",
+      "ground_truth": "Backup database: pg_dump mydb > backup.sql",
+      "ocr_output": "Backup database: pg_dump mydb > backup.sql",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "instruction_09.png",
+      "ground_truth": "Update software: brew upgrade --all",
+      "ocr_output": "Update software: brew upgrade --all",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "instruction_10.png",
+      "ground_truth": "Check network: ping -c 4 google.com",
+      "ocr_output": "Check network: ping\n-c 4 google.com",
+      "wer": 0.3333,
+      "cer": 0.0286,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_01.png",
+      "ground_truth": "System Status Report\n-------------------\nCPU: 45% ...",
+      "ocr_output": "System Status Report\nCPU: 45% | RAM: 8.2GB/16GB\nDi...",
+      "wer": 0.0909,
+      "cer": 0.2151,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_02.png",
+      "ground_truth": "User Session Log\n================\nLogin: 09:15 AM\n...",
+      "ocr_output": "User Session Log\nLogin: 09:15\nAM\nIP: 192.168.1.50\n...",
+      "wer": 0.375,
+      "cer": 0.2169,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_03.png",
+      "ground_truth": "Error Stack Trace:\nTypeError: Cannot read property...",
+      "ocr_output": "Error Stack Trace:\nTypeError: Cannot read property...",
+      "wer": 0.4167,
+      "cer": 0.0407,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_04.png",
+      "ground_truth": "Package Updates Available:\n- openssl: 3.0.12 -> 3....",
+      "ocr_output": "Package Updates Available:\n- openssl: 3.0.12 -> 3....",
+      "wer": 0.1333,
+      "cer": 0.0206,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_05.png",
+      "ground_truth": "Network Statistics:\nPackets Sent: 1,234,567\nPacket...",
+      "ocr_output": "Network\nStatistics:\nPackets Sent: 1,234, 567\nPacke...",
+      "wer": 0.4,
+      "cer": 0.0211,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_06.png",
+      "ground_truth": "Firewall Rules:\n[ALLOW] TCP 22 (SSH)\n[ALLOW] TCP 8...",
+      "ocr_output": "Firewall Rules:\n[ALLOW] TCP 22 (SSH)\n[ALLOW] TCP 8...",
+      "wer": 0.1818,
+      "cer": 0.0119,
+      "confidence": 0.875,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "multiline_07.png",
+      "ground_truth": "Backup Summary:\n- /home: 45.2 GB\n- /var/www: 12.8 ...",
+      "ocr_output": "Backup Summary:\n- /home: 45.2 GB\n- /var/www: 12.8 ...",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "multiline_08.png",
+      "ground_truth": "Process List (Top 5):\n1. chrome (12% CPU, 2.1GB)\n2...",
+      "ocr_output": "Process List (Top 5):\n1. chrome (12% CPU, 2.1GB)\n2...",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "multiline_09.png",
+      "ground_truth": "SSL Certificate Info:\nDomain: example.com\nIssuer: ...",
+      "ocr_output": "SSL Certificate Info:\nDomain: example.com\nIssuer: ...",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "multiline_10.png",
+      "ground_truth": "Docker Containers:\n[running] nginx:latest\n[running...",
+      "ocr_output": "Docker Containers:\n[running] nginx:latest\n[running...",
+      "wer": 0.4,
+      "cer": 0.0247,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "network_01.png",
+      "ground_truth": "192.168.1.1 gateway",
+      "ocr_output": "",
+      "wer": 1.0,
+      "cer": 1.0,
+      "confidence": 0.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "network_02.png",
+      "ground_truth": "10.0.0.50 fileserver",
+      "ocr_output": "",
+      "wer": 1.0,
+      "cer": 1.0,
+      "confidence": 0.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "network_03.png",
+      "ground_truth": "172.16.0.100 database",
+      "ocr_output": "100\ndatahaca",
+      "wer": 1.0,
+      "cer": 0.619,
+      "confidence": 0.5,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "network_04.png",
+      "ground_truth": "fe80::1 link-local",
+      "ocr_output": "FaRa.. 1\nnatanal",
+      "wer": 1.0,
+      "cer": 0.7778,
+      "confidence": 0.65,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "network_05.png",
+      "ground_truth": "2001:db8::1 ipv6-host",
+      "ocr_output": "inuh-hnct\nL\u2022\u2022 E4N\u2022 LODC",
+      "wer": 1.5,
+      "cer": 1.0476,
+      "confidence": 0.75,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "technical_01.png",
+      "ground_truth": "CPU: Intel Core i7-12700K @ 3.6GHz",
+      "ocr_output": "CPU: Intel Core i7-12700K @ 3.6GHz",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": true
+    },
+    {
+      "image": "technical_02.png",
+      "ground_truth": "RAM: 32GB DDR5-4800 (2x16GB)",
+      "ocr_output": "RAM: 32GB DDR5-4800 (2x16GB) -",
+      "wer": 0.25,
+      "cer": 0.0714,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "technical_03.png",
+      "ground_truth": "Storage: 1TB NVMe SSD (Samsung 980 Pro)",
+      "ocr_output": "Storage: 1TB NVMe SSD (Samsung\n980 Pro)",
+      "wer": 0.2857,
+      "cer": 0.0256,
+      "confidence": 1.0,
+      "is_image_only": true,
+      "exact_match": false
+    },
+    {
+      "image": "technical_04.png",
+      "ground_truth": "GPU: NVIDIA RTX 3080 12GB VRAM",
+      "ocr_output": "GPU: NVIDIA RTX 3080\n12GB(\nVRAM",
+      "wer": 0.5,
+      "cer": 0.1,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "technical_05.png",
+      "ground_truth": "OS: macOS Sequoia 15.2 (24C101)",
+      "ocr_output": "OS: macOS Sequoia 15.2 (24C101)",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "technical_06.png",
+      "ground_truth": "Kernel: Darwin 24.2.0 arm64",
+      "ocr_output": "Kernel: Darwin 24.2.0 arm64",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "technical_07.png",
+      "ground_truth": "Python 3.12.0 | pip 23.3.1",
+      "ocr_output": "Python 3.12.0 | pip 23.3.1",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    },
+    {
+      "image": "technical_08.png",
+      "ground_truth": "Node.js v22.5.1 | npm 10.8.2",
+      "ocr_output": "Node. js v22.5.1 | npm 10.8.2",
+      "wer": 0.4,
+      "cer": 0.0357,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "technical_09.png",
+      "ground_truth": "Docker Desktop 4.35.0 (173168)",
+      "ocr_output": "Docker\nDesktop 4.35.0 (173168)",
+      "wer": 0.5,
+      "cer": 0.0333,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": false
+    },
+    {
+      "image": "technical_10.png",
+      "ground_truth": "Homebrew 4.4.0 | Git 2.43.0",
+      "ocr_output": "Homebrew 4.4.0 | Git 2.43.0",
+      "wer": 0.0,
+      "cer": 0.0,
+      "confidence": 1.0,
+      "is_image_only": false,
+      "exact_match": true
+    }
+  ]
+}

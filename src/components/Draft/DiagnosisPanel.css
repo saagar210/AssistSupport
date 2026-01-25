@@ -1,0 +1,140 @@
+.diagnosis-collapsed-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  height: 100%;
+}
+
+.diagnosis-collapsed-strip:hover {
+  background: var(--bg-hover);
+}
+
+.collapse-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.collapse-btn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+}
+
+.collapse-btn:hover {
+  color: var(--text-primary);
+}
+
+.diagnosis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.diagnosis-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.diagnosis-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 14px;
+}
+
+.check-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.check-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.check-list input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--accent-primary);
+}
+
+.check-list label {
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.notes-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+}
+
+.notes-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Tree Selector */
+.tree-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tree-dropdown {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tree-dropdown:focus {
+  outline: none;
+  border-color: var(--input-focus);
+}
+
+.tree-dropdown:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tree-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}

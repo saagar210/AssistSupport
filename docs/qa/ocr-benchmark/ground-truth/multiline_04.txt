@@ -1,0 +1,4 @@
+Package Updates Available:
+- openssl: 3.0.12 -> 3.0.13
+- curl: 8.4.0 -> 8.5.0
+- git: 2.42 -> 2.43

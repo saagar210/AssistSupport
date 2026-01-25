@@ -1,0 +1,100 @@
+{
+  "root_node_id": "vpn-root",
+  "nodes": {
+    "vpn-root": {
+      "id": "vpn-root",
+      "type": "question",
+      "title": "What's the VPN issue?",
+      "content": null,
+      "options": [
+        { "label": "Can't connect at all", "next_node_id": "vpn-no-connect" },
+        { "label": "Connection is slow", "next_node_id": "vpn-slow" },
+        { "label": "Keeps disconnecting", "next_node_id": "vpn-disconnect" },
+        { "label": "Connected but can't access resources", "next_node_id": "vpn-no-access" }
+      ]
+    },
+    "vpn-no-connect": {
+      "id": "vpn-no-connect",
+      "type": "question",
+      "title": "Connection failure details",
+      "content": "What happens when you try to connect?",
+      "options": [
+        { "label": "Error message appears", "next_node_id": "vpn-error" },
+        { "label": "Times out / hangs", "next_node_id": "vpn-timeout" },
+        { "label": "Credentials rejected", "next_node_id": "vpn-creds" }
+      ]
+    },
+    "vpn-error": {
+      "id": "vpn-error",
+      "type": "action",
+      "title": "VPN error troubleshooting",
+      "content": "Common VPN errors and fixes:\n\n1. 'Connection refused' - Check if VPN service is running\n2. 'Certificate error' - Update VPN client or reimport profile\n3. 'Network unreachable' - Check internet connection first\n4. 'Authentication failed' - See credentials section\n\nTry: Restart VPN client, then retry connection.",
+      "options": [
+        { "label": "Now working", "next_node_id": "vpn-resolved" },
+        { "label": "Still failing", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-timeout": {
+      "id": "vpn-timeout",
+      "type": "action",
+      "title": "Connection timeout",
+      "content": "1. Verify internet connection is working (try a website)\n2. Check if VPN server is reachable: ping vpn.company.com\n3. Try a different VPN server/endpoint if available\n4. Disable any local firewall temporarily to test\n5. If on corporate network, VPN may be blocked - try from home",
+      "options": [
+        { "label": "Connected now", "next_node_id": "vpn-resolved" },
+        { "label": "Still timing out", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-creds": {
+      "id": "vpn-creds",
+      "type": "action",
+      "title": "VPN credential issues",
+      "content": "1. VPN password is often different from Windows password\n2. Check if VPN password expired (usually 90 days)\n3. Reset VPN password via self-service portal\n4. If using certificate auth, check certificate expiration\n5. Re-import VPN profile if certificate was renewed",
+      "options": [
+        { "label": "Credentials fixed", "next_node_id": "vpn-resolved" },
+        { "label": "Still rejected", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-slow": {
+      "id": "vpn-slow",
+      "type": "action",
+      "title": "Slow VPN connection",
+      "content": "1. Test internet speed without VPN first\n2. Try connecting to a geographically closer VPN server\n3. Check if split tunneling is available (routes only work traffic through VPN)\n4. Close bandwidth-heavy applications (video streaming, large downloads)\n5. If using WiFi, try wired connection\n6. Check VPN protocol - IKEv2/WireGuard faster than OpenVPN",
+      "options": [
+        { "label": "Speed improved", "next_node_id": "vpn-resolved" },
+        { "label": "Still slow", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-disconnect": {
+      "id": "vpn-disconnect",
+      "type": "action",
+      "title": "Frequent disconnections",
+      "content": "1. Check VPN idle timeout setting (may need IT to extend)\n2. Disable 'sleep' on laptop while working\n3. If on WiFi, check for signal strength issues\n4. Update VPN client to latest version\n5. Check if ISP is doing connection resets\n6. Enable 'reconnect automatically' in VPN settings",
+      "options": [
+        { "label": "Stable now", "next_node_id": "vpn-resolved" },
+        { "label": "Still disconnecting", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-no-access": {
+      "id": "vpn-no-access",
+      "type": "action",
+      "title": "Connected but no resource access",
+      "content": "1. Verify VPN shows 'Connected' status\n2. Try accessing by IP instead of hostname\n3. Check if DNS is resolving internal names: nslookup server.internal\n4. Verify you have permissions to the resource\n5. Check if resource requires additional authentication\n6. Some resources may require specific VPN profile/group",
+      "options": [
+        { "label": "Can access now", "next_node_id": "vpn-resolved" },
+        { "label": "Still can't access", "next_node_id": "vpn-escalate" }
+      ]
+    },
+    "vpn-resolved": {
+      "id": "vpn-resolved",
+      "type": "terminal",
+      "title": "VPN issue resolved",
+      "content": "VPN connectivity restored. Document the solution and any steps taken."
+    },
+    "vpn-escalate": {
+      "id": "vpn-escalate",
+      "type": "terminal",
+      "title": "Escalate to Network Team",
+      "content": "Escalate to Network/Infrastructure team with:\n- VPN client version and type\n- Exact error message or behavior\n- User's location (office/home/travel)\n- ISP if known\n- Steps already attempted\n- Time issue started"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+System Status Report
+-------------------
+CPU: 45% | RAM: 8.2GB/16GB
+Disk: 234GB free of 500GB

@@ -1,0 +1,4 @@
+Docker Containers:
+[running] nginx:latest
+[running] postgres:15
+[stopped] redis:7

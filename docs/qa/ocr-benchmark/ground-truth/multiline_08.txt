@@ -1,0 +1,4 @@
+Process List (Top 5):
+1. chrome (12% CPU, 2.1GB)
+2. code (8% CPU, 1.5GB)
+3. node (5% CPU, 800MB)

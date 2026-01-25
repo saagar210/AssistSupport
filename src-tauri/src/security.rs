@@ -1,0 +1,412 @@
+//! Security module for AssistSupport
+//! Handles encryption, key management, and Keychain operations
+
+use aes_gcm::{
+    aead::{Aead, KeyInit, OsRng},
+    Aes256Gcm, Nonce,
+};
+use argon2::{Argon2, Params, Version};
+use rand::RngCore;
+use std::path::Path;
+use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+const SERVICE_NAME: &str = "com.d.assistsupport";
+const MASTER_KEY_ENTRY: &str = "master-key";
+const HF_TOKEN_ENTRY: &str = "huggingface-token";
+const JIRA_TOKEN_ENTRY: &str = "jira-api-token";
+
+const ARGON2_MEMORY_COST: u32 = 65536; // 64 MiB
+const ARGON2_TIME_COST: u32 = 3;
+const ARGON2_PARALLELISM: u32 = 4;
+const SALT_LEN: usize = 32;
+const NONCE_LEN: usize = 12;
+const KEY_LEN: usize = 32;
+
+#[derive(Debug, Error)]
+pub enum SecurityError {
+    #[error("Keychain error: {0}")]
+    Keychain(String),
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+    #[error("Decryption error: {0}")]
+    Decryption(String),
+    #[error("Key derivation error: {0}")]
+    KeyDerivation(String),
+    #[error("Master key not found")]
+    MasterKeyNotFound,
+    #[error("Invalid key format")]
+    InvalidKeyFormat,
+}
+
+/// Securely zeroed master key wrapper
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct MasterKey {
+    key: [u8; KEY_LEN],
+}
+
+impl MasterKey {
+    /// Generate a new random master key
+    pub fn generate() -> Self {
+        let mut key = [0u8; KEY_LEN];
+        OsRng.fill_bytes(&mut key);
+        Self { key }
+    }
+
+    /// Create from existing bytes (takes ownership)
+    pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
+        Self { key: bytes }
+    }
+
+    /// Get reference to key bytes
+    pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
+        &self.key
+    }
+
+    /// Get hex-encoded key for SQLCipher
+    pub fn to_hex(&self) -> String {
+        hex::encode(&self.key)
+    }
+}
+
+/// Encrypted data with metadata for decryption
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EncryptedData {
+    pub ciphertext: Vec<u8>,
+    pub nonce: [u8; NONCE_LEN],
+}
+
+/// Key wrapping data for passphrase-based protection
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WrappedKey {
+    pub encrypted_key: EncryptedData,
+    pub salt: [u8; SALT_LEN],
+    pub argon2_memory: u32,
+    pub argon2_time: u32,
+    pub argon2_parallelism: u32,
+}
+
+/// Keychain manager for macOS
+pub struct KeychainManager;
+
+impl KeychainManager {
+    /// Store master key in Keychain
+    pub fn store_master_key(key: &MasterKey) -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, MASTER_KEY_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        entry
+            .set_secret(key.as_bytes())
+            .map_err(|e| SecurityError::Keychain(e.to_string()))
+    }
+
+    /// Retrieve master key from Keychain
+    pub fn get_master_key() -> Result<MasterKey, SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, MASTER_KEY_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        let secret = entry
+            .get_secret()
+            .map_err(|e| match e {
+                keyring::Error::NoEntry => SecurityError::MasterKeyNotFound,
+                _ => SecurityError::Keychain(e.to_string()),
+            })?;
+
+        if secret.len() != KEY_LEN {
+            return Err(SecurityError::InvalidKeyFormat);
+        }
+
+        let mut key_bytes = [0u8; KEY_LEN];
+        key_bytes.copy_from_slice(&secret);
+        Ok(MasterKey::from_bytes(key_bytes))
+    }
+
+    /// Delete master key from Keychain
+    pub fn delete_master_key() -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, MASTER_KEY_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        entry
+            .delete_credential()
+            .map_err(|e| SecurityError::Keychain(e.to_string()))
+    }
+
+    /// Check if Keychain is available
+    pub fn is_available() -> bool {
+        keyring::Entry::new(SERVICE_NAME, "test")
+            .map(|_| true)
+            .unwrap_or(false)
+    }
+
+    /// Store HuggingFace token
+    pub fn store_hf_token(token: &str) -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, HF_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        entry
+            .set_password(token)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))
+    }
+
+    /// Get HuggingFace token
+    pub fn get_hf_token() -> Result<Option<String>, SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, HF_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        match entry.get_password() {
+            Ok(token) => Ok(Some(token)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(SecurityError::Keychain(e.to_string())),
+        }
+    }
+
+    /// Delete HuggingFace token
+    pub fn delete_hf_token() -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, HF_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(SecurityError::Keychain(e.to_string())),
+        }
+    }
+
+    /// Store Jira API token
+    pub fn store_jira_token(token: &str) -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, JIRA_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        entry
+            .set_password(token)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))
+    }
+
+    /// Get Jira API token
+    pub fn get_jira_token() -> Result<Option<String>, SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, JIRA_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        match entry.get_password() {
+            Ok(token) => Ok(Some(token)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(SecurityError::Keychain(e.to_string())),
+        }
+    }
+
+    /// Delete Jira API token
+    pub fn delete_jira_token() -> Result<(), SecurityError> {
+        let entry = keyring::Entry::new(SERVICE_NAME, JIRA_TOKEN_ENTRY)
+            .map_err(|e| SecurityError::Keychain(e.to_string()))?;
+
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(SecurityError::Keychain(e.to_string())),
+        }
+    }
+}
+
+/// AES-256-GCM encryption utilities
+pub struct Crypto;
+
+impl Crypto {
+    /// Encrypt data with AES-256-GCM
+    pub fn encrypt(key: &[u8; KEY_LEN], plaintext: &[u8]) -> Result<EncryptedData, SecurityError> {
+        let cipher = Aes256Gcm::new_from_slice(key)
+            .map_err(|e| SecurityError::Encryption(e.to_string()))?;
+
+        let mut nonce_bytes = [0u8; NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext)
+            .map_err(|e| SecurityError::Encryption(e.to_string()))?;
+
+        Ok(EncryptedData {
+            ciphertext,
+            nonce: nonce_bytes,
+        })
+    }
+
+    /// Decrypt data with AES-256-GCM
+    pub fn decrypt(key: &[u8; KEY_LEN], encrypted: &EncryptedData) -> Result<Vec<u8>, SecurityError> {
+        let cipher = Aes256Gcm::new_from_slice(key)
+            .map_err(|e| SecurityError::Decryption(e.to_string()))?;
+
+        let nonce = Nonce::from_slice(&encrypted.nonce);
+
+        cipher
+            .decrypt(nonce, encrypted.ciphertext.as_ref())
+            .map_err(|e| SecurityError::Decryption(e.to_string()))
+    }
+
+    /// Derive key from passphrase using Argon2id
+    pub fn derive_key_from_passphrase(
+        passphrase: &str,
+        salt: &[u8; SALT_LEN],
+    ) -> Result<[u8; KEY_LEN], SecurityError> {
+        let params = Params::new(
+            ARGON2_MEMORY_COST,
+            ARGON2_TIME_COST,
+            ARGON2_PARALLELISM,
+            Some(KEY_LEN),
+        )
+        .map_err(|e| SecurityError::KeyDerivation(e.to_string()))?;
+
+        let argon2 = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, params);
+
+        let mut key = [0u8; KEY_LEN];
+        argon2
+            .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+            .map_err(|e| SecurityError::KeyDerivation(e.to_string()))?;
+
+        Ok(key)
+    }
+
+    /// Generate random salt
+    pub fn generate_salt() -> [u8; SALT_LEN] {
+        let mut salt = [0u8; SALT_LEN];
+        OsRng.fill_bytes(&mut salt);
+        salt
+    }
+
+    /// Wrap master key with passphrase-derived key
+    pub fn wrap_key(master_key: &MasterKey, passphrase: &str) -> Result<WrappedKey, SecurityError> {
+        let salt = Self::generate_salt();
+        let kek = Self::derive_key_from_passphrase(passphrase, &salt)?;
+        let encrypted_key = Self::encrypt(&kek, master_key.as_bytes())?;
+
+        Ok(WrappedKey {
+            encrypted_key,
+            salt,
+            argon2_memory: ARGON2_MEMORY_COST,
+            argon2_time: ARGON2_TIME_COST,
+            argon2_parallelism: ARGON2_PARALLELISM,
+        })
+    }
+
+    /// Unwrap master key with passphrase
+    pub fn unwrap_key(wrapped: &WrappedKey, passphrase: &str) -> Result<MasterKey, SecurityError> {
+        let kek = Self::derive_key_from_passphrase(passphrase, &wrapped.salt)?;
+        let key_bytes = Self::decrypt(&kek, &wrapped.encrypted_key)?;
+
+        if key_bytes.len() != KEY_LEN {
+            return Err(SecurityError::InvalidKeyFormat);
+        }
+
+        let mut key = [0u8; KEY_LEN];
+        key.copy_from_slice(&key_bytes);
+        Ok(MasterKey::from_bytes(key))
+    }
+}
+
+/// Export encryption utilities (Argon2id + AES-256-GCM with separate password)
+pub struct ExportCrypto;
+
+impl ExportCrypto {
+    /// Encrypt data for export with user-provided password
+    pub fn encrypt_for_export(data: &[u8], password: &str) -> Result<(Vec<u8>, [u8; SALT_LEN], [u8; NONCE_LEN]), SecurityError> {
+        let salt = Crypto::generate_salt();
+        let key = Crypto::derive_key_from_passphrase(password, &salt)?;
+        let encrypted = Crypto::encrypt(&key, data)?;
+        Ok((encrypted.ciphertext, salt, encrypted.nonce))
+    }
+
+    /// Decrypt exported data
+    pub fn decrypt_export(
+        ciphertext: &[u8],
+        salt: &[u8; SALT_LEN],
+        nonce: &[u8; NONCE_LEN],
+        password: &str,
+    ) -> Result<Vec<u8>, SecurityError> {
+        let key = Crypto::derive_key_from_passphrase(password, salt)?;
+        let encrypted = EncryptedData {
+            ciphertext: ciphertext.to_vec(),
+            nonce: *nonce,
+        };
+        Crypto::decrypt(&key, &encrypted)
+    }
+}
+
+/// Secure file deletion (best-effort)
+pub fn secure_delete_file(path: &Path) -> std::io::Result<()> {
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+
+    if path.exists() {
+        // Overwrite with zeros (best-effort on SSD)
+        if let Ok(metadata) = fs::metadata(path) {
+            let size = metadata.len() as usize;
+            if let Ok(mut file) = OpenOptions::new().write(true).open(path) {
+                let zeros = vec![0u8; size.min(1024 * 1024)];
+                let mut remaining = size;
+                while remaining > 0 {
+                    let to_write = remaining.min(zeros.len());
+                    if file.write_all(&zeros[..to_write]).is_err() {
+                        break;
+                    }
+                    remaining -= to_write;
+                }
+                let _ = file.sync_all();
+            }
+        }
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_master_key_generation() {
+        let key1 = MasterKey::generate();
+        let key2 = MasterKey::generate();
+        assert_ne!(key1.as_bytes(), key2.as_bytes());
+    }
+
+    #[test]
+    fn test_encryption_roundtrip() {
+        let key = MasterKey::generate();
+        let plaintext = b"Hello, World!";
+
+        let encrypted = Crypto::encrypt(key.as_bytes(), plaintext).unwrap();
+        let decrypted = Crypto::decrypt(key.as_bytes(), &encrypted).unwrap();
+
+        assert_eq!(plaintext.as_slice(), decrypted.as_slice());
+    }
+
+    #[test]
+    fn test_key_wrapping() {
+        let master_key = MasterKey::generate();
+        let passphrase = "test-passphrase-123";
+
+        let wrapped = Crypto::wrap_key(&master_key, passphrase).unwrap();
+        let unwrapped = Crypto::unwrap_key(&wrapped, passphrase).unwrap();
+
+        assert_eq!(master_key.as_bytes(), unwrapped.as_bytes());
+    }
+
+    #[test]
+    fn test_wrong_passphrase_fails() {
+        let master_key = MasterKey::generate();
+        let wrapped = Crypto::wrap_key(&master_key, "correct-passphrase").unwrap();
+
+        let result = Crypto::unwrap_key(&wrapped, "wrong-passphrase");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_crypto() {
+        let data = b"Export test data";
+        let password = "export-password";
+
+        let (ciphertext, salt, nonce) = ExportCrypto::encrypt_for_export(data, password).unwrap();
+        let decrypted = ExportCrypto::decrypt_export(&ciphertext, &salt, &nonce, password).unwrap();
+
+        assert_eq!(data.as_slice(), decrypted.as_slice());
+    }
+}

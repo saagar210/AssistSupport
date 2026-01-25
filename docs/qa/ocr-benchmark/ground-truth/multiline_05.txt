@@ -1,0 +1,4 @@
+Network Statistics:
+Packets Sent: 1,234,567
+Packets Received: 2,345,678
+Errors: 0 | Dropped: 12
