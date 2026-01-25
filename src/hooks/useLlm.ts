@@ -9,6 +9,8 @@ import type {
   GenerateWithContextResult,
   ResponseLength,
   StreamToken,
+  TreeDecisions,
+  JiraTicketContext,
 } from '../types';
 
 export interface LlmState {
@@ -188,7 +190,12 @@ export function useLlm() {
   const generateStreaming = useCallback(async (
     query: string,
     responseLength: ResponseLength = 'Medium',
-    onToken?: (token: string) => void
+    options?: {
+      onToken?: (token: string) => void;
+      treeDecisions?: TreeDecisions;
+      diagnosticNotes?: string;
+      jiraTicket?: JiraTicketContext;
+    }
   ): Promise<GenerateWithContextResult> => {
     // Clean up any previous listener
     if (unlistenRef.current) {
@@ -213,7 +220,7 @@ export function useLlm() {
           ...prev,
           streamingText: prev.streamingText + event.payload.token,
         }));
-        onToken?.(event.payload.token);
+        options?.onToken?.(event.payload.token);
       }
     });
     unlistenRef.current = unlisten;
@@ -222,6 +229,9 @@ export function useLlm() {
       const params: GenerateWithContextParams = {
         user_input: query,
         response_length: responseLength,
+        diagnostic_notes: options?.diagnosticNotes,
+        tree_decisions: options?.treeDecisions,
+        jira_ticket: options?.jiraTicket,
       };
       const result = await invoke<GenerateWithContextResult>('generate_streaming', {
         params,

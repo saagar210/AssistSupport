@@ -127,7 +127,7 @@ export function useDrafts() {
     }
   }, []);
 
-  const triggerAutosave = useCallback((draftData: Omit<SavedDraft, 'id' | 'created_at' | 'updated_at' | 'is_autosave'>) => {
+  const triggerAutosave = useCallback((draftData: Omit<SavedDraft, 'id' | 'created_at' | 'updated_at' | 'is_autosave'> & { model_name?: string | null }) => {
     // Cancel any pending autosave
     if (autosaveTimeoutRef.current) {
       clearTimeout(autosaveTimeoutRef.current);
@@ -163,6 +163,31 @@ export function useDrafts() {
       clearTimeout(autosaveTimeoutRef.current);
       autosaveTimeoutRef.current = null;
     }
+  }, []);
+
+  /**
+   * Get draft versions (autosaves) by input hash
+   * The hash is computed as SHA256(input_text)[0:16]
+   */
+  const getDraftVersions = useCallback(async (inputHash: string): Promise<SavedDraft[]> => {
+    try {
+      return await invoke<SavedDraft[]>('get_draft_versions', { inputHash });
+    } catch (err) {
+      console.error('Failed to get draft versions:', err);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Compute SHA256 hash of input text (first 16 chars)
+   * Used to match autosave versions
+   */
+  const computeInputHash = useCallback(async (inputText: string): Promise<string> => {
+    const msgBuffer = new TextEncoder().encode(inputText);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex.slice(0, 16);
   }, []);
 
   const getTemplate = useCallback(async (templateId: string): Promise<ResponseTemplate | null> => {
@@ -235,6 +260,8 @@ export function useDrafts() {
     triggerAutosave,
     cancelAutosave,
     cleanupAutosaves,
+    getDraftVersions,
+    computeInputHash,
     getTemplate,
     saveTemplate,
     updateTemplate,

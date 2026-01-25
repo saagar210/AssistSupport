@@ -46,12 +46,32 @@ export interface StreamToken {
   done: boolean;
 }
 
+export interface TreeDecisions {
+  tree_name: string;
+  path_summary: string;
+}
+
+export interface JiraTicketContext {
+  key: string;
+  summary: string;
+  description: string | null;
+  status: string;
+  priority: string | null;
+  assignee: string | null;
+  reporter: string;
+  created: string;
+  updated: string;
+  issue_type: string;
+}
+
 export interface GenerateWithContextParams {
   user_input: string;
   kb_query?: string;
   kb_limit?: number;
   ocr_text?: string;
   diagnostic_notes?: string;
+  tree_decisions?: TreeDecisions;
+  jira_ticket?: JiraTicketContext;
   response_length?: ResponseLength;
   gen_params?: GenerationParams;
 }
@@ -230,6 +250,8 @@ export interface SavedDraft {
   created_at: string;
   updated_at: string;
   is_autosave: boolean;
+  /** Name of the model that generated this response (e.g., "Llama 3.2 3B Instruct") */
+  model_name?: string | null;
 }
 
 export interface ResponseTemplate {

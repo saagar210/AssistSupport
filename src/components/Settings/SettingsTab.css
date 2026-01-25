@@ -370,3 +370,238 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Embedding model config */
+.embedding-model-config {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.embedding-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.not-downloaded {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.status-badge.downloaded {
+  background: var(--warning-light, #fff3cd);
+  color: var(--warning, #856404);
+}
+
+.status-badge.loaded {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.embedding-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.embedding-info .model-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.embedding-info .model-dim {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.download-progress-container {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.download-progress-container .download-progress {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.generate-embeddings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.generate-embeddings-row .setting-note {
+  padding-left: 0;
+}
+
+/* Template Variables */
+.variables-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.variables-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.variables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.variable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.variable-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.variable-info .variable-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.variable-info .variable-value {
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variable-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Variable Form Modal */
+.variable-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.variable-form-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 360px;
+  max-width: 480px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.variable-form-modal h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.variable-form-error {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--error-light);
+  color: var(--error);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.variable-form-modal .form-field textarea {
+  padding: 10px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.variable-form-modal .form-field textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+}
+
+.variable-form-modal .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Backup section */
+.backup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.backup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-info strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.backup-info span {
+  font-size: 13px;
+  color: var(--text-secondary);
+}

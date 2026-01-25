@@ -1,6 +1,6 @@
 //! Tauri commands for AssistSupport
 
-use crate::db::{Database, get_db_path, get_app_data_dir};
+use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
 use crate::security::{KeychainManager, MasterKey, SecurityError};
@@ -45,14 +45,50 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
     // Ensure response_templates table exists
     db.ensure_templates_table().map_err(|e| e.to_string())?;
 
-    // Store in app state
-    let mut db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    *db_lock = Some(db);
+    // Check vector consent from database
+    let vector_enabled = db.get_vector_consent()
+        .map(|c| c.enabled)
+        .unwrap_or(false);
+
+    // Store in app state - use scope to ensure lock is dropped before async operations
+    {
+        let mut db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        *db_lock = Some(db);
+    } // db_lock dropped here
+
+    // Initialize vector store if consent given
+    let vector_store_ready = if vector_enabled {
+        let vectors_path = get_vectors_dir();
+        let config = VectorStoreConfig {
+            path: vectors_path,
+            embedding_dim: 768, // nomic-embed-text default
+            encryption_enabled: false,
+        };
+
+        let mut vector_store = VectorStore::new(config);
+        match vector_store.init().await {
+            Ok(()) => {
+                // Enable with user consent (already given)
+                let _ = vector_store.enable(true);
+                // Create table if needed
+                let _ = vector_store.create_table().await;
+                *state.vectors.write().await = Some(vector_store);
+                true
+            }
+            Err(e) => {
+                eprintln!("Vector store init failed (continuing without vectors): {}", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
 
     Ok(InitResult {
         is_first_run,
         keychain_available: true,
         fts5_available: true,
+        vector_store_ready,
     })
 }
 
@@ -167,6 +203,7 @@ pub struct InitResult {
     pub is_first_run: bool,
     pub keychain_available: bool,
     pub fts5_available: bool,
+    pub vector_store_ready: bool,
 }
 
 // ============================================================================
@@ -338,6 +375,10 @@ pub struct GenerateWithContextParams {
     pub ocr_text: Option<String>,
     /// Diagnostic notes
     pub diagnostic_notes: Option<String>,
+    /// Decision tree results
+    pub tree_decisions: Option<crate::prompts::TreeDecisions>,
+    /// Jira ticket for context
+    pub jira_ticket: Option<crate::jira::JiraTicket>,
     /// Response length preference
     pub response_length: Option<crate::prompts::ResponseLength>,
     /// Generation parameters
@@ -417,6 +458,14 @@ pub async fn generate_with_context(
         builder = builder.with_diagnostic_notes(notes);
     }
 
+    if let Some(tree) = params.tree_decisions {
+        builder = builder.with_tree_decisions(tree);
+    }
+
+    if let Some(ticket) = params.jira_ticket {
+        builder = builder.with_jira_ticket(ticket);
+    }
+
     if let Some(length) = params.response_length {
         builder = builder.with_response_length(length);
     }
@@ -493,6 +542,14 @@ pub async fn generate_streaming(
 
     if let Some(notes) = &params.diagnostic_notes {
         builder = builder.with_diagnostic_notes(notes);
+    }
+
+    if let Some(tree) = params.tree_decisions {
+        builder = builder.with_tree_decisions(tree);
+    }
+
+    if let Some(ticket) = params.jira_ticket {
+        builder = builder.with_jira_ticket(ticket);
     }
 
     if let Some(length) = params.response_length {
@@ -714,6 +771,30 @@ pub fn list_downloaded_models() -> Result<Vec<String>, String> {
     Ok(model_ids)
 }
 
+/// Check if embedding model is downloaded and return its path if so
+#[tauri::command]
+pub fn get_embedding_model_path(model_id: String) -> Result<Option<String>, String> {
+    let filename = get_embedding_model_filename(&model_id)
+        .ok_or_else(|| format!("Unknown embedding model ID: {}", model_id))?;
+
+    let app_dir = get_app_data_dir();
+    let model_path = app_dir.join("models").join(filename);
+
+    if model_path.exists() {
+        Ok(Some(model_path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Check if the default embedding model is downloaded
+#[tauri::command]
+pub fn is_embedding_model_downloaded() -> Result<bool, String> {
+    let app_dir = get_app_data_dir();
+    let model_path = app_dir.join("models").join("nomic-embed-text-v1.5.Q5_K_M.gguf");
+    Ok(model_path.exists())
+}
+
 /// Get models directory path
 #[tauri::command]
 pub fn get_models_dir() -> Result<String, String> {
@@ -758,7 +839,16 @@ fn get_model_source(model_id: &str) -> Result<(&'static str, &'static str), Stri
         "llama-3.2-1b-instruct" => Ok(("bartowski/Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q4_K_M.gguf")),
         "llama-3.2-3b-instruct" => Ok(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
         "phi-3-mini-4k-instruct" => Ok(("bartowski/Phi-3.1-mini-4k-instruct-GGUF", "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf")),
+        "nomic-embed-text" => Ok(("nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text-v1.5.Q5_K_M.gguf")),
         _ => Err(format!("Unknown model ID: {}", model_id)),
+    }
+}
+
+/// Get the filename for an embedding model ID
+fn get_embedding_model_filename(model_id: &str) -> Option<&'static str> {
+    match model_id {
+        "nomic-embed-text" => Some("nomic-embed-text-v1.5.Q5_K_M.gguf"),
+        _ => None,
     }
 }
 
@@ -942,6 +1032,110 @@ pub struct KbDocument {
     pub title: Option<String>,
     pub indexed_at: Option<String>,
     pub chunk_count: Option<i64>,
+}
+
+/// Remove a document from the KB index
+#[tauri::command]
+pub fn remove_kb_document(file_path: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let indexer = KbIndexer::new();
+    indexer.remove_document(db, &file_path).map_err(|e| e.to_string())
+}
+
+/// Generate embeddings for all KB chunks
+/// This should be called after indexing if vector search is enabled
+#[tauri::command]
+pub async fn generate_kb_embeddings(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<EmbeddingGenerationResult, String> {
+    // Check if vector search is enabled and embedding model is loaded
+    {
+        let vectors_lock = state.vectors.read().await;
+        let embeddings_lock = state.embeddings.read();
+
+        let vectors = vectors_lock.as_ref().ok_or("Vector store not initialized")?;
+        if !vectors.is_enabled() {
+            return Err("Vector search is disabled".into());
+        }
+
+        let embeddings = embeddings_lock.as_ref().ok_or("Embedding engine not initialized")?;
+        if !embeddings.is_model_loaded() {
+            return Err("Embedding model not loaded".into());
+        }
+    }
+
+    // Get all chunks from database
+    let chunks: Vec<(String, String)> = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.get_all_chunks_for_embedding().map_err(|e| e.to_string())?
+    };
+
+    if chunks.is_empty() {
+        return Ok(EmbeddingGenerationResult {
+            chunks_processed: 0,
+            vectors_created: 0,
+        });
+    }
+
+    let total_chunks = chunks.len();
+    let batch_size = 32; // Process in batches for efficiency
+    let mut vectors_created = 0;
+
+    // Emit start event
+    let _ = app_handle.emit("kb:embeddings:start", serde_json::json!({
+        "total_chunks": total_chunks
+    }));
+
+    // Process chunks in batches
+    for (batch_idx, batch) in chunks.chunks(batch_size).enumerate() {
+        let chunk_ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
+        let chunk_texts: Vec<String> = batch.iter().map(|(_, text)| text.clone()).collect();
+
+        // Generate embeddings (sync operation)
+        let embeddings: Vec<Vec<f32>> = {
+            let embeddings_lock = state.embeddings.read();
+            let engine = embeddings_lock.as_ref().ok_or("Embedding engine not available")?;
+            engine.embed_batch(&chunk_texts).map_err(|e| e.to_string())?
+        };
+
+        // Store in vector store (async operation)
+        {
+            let vectors_lock = state.vectors.read().await;
+            let vectors = vectors_lock.as_ref().ok_or("Vector store not available")?;
+            vectors.insert_embeddings(&chunk_ids, &embeddings).await.map_err(|e| e.to_string())?;
+        }
+
+        vectors_created += embeddings.len();
+
+        // Emit progress event
+        let progress = ((batch_idx + 1) * batch_size).min(total_chunks);
+        let _ = app_handle.emit("kb:embeddings:progress", serde_json::json!({
+            "processed": progress,
+            "total": total_chunks,
+            "percentage": (progress * 100) / total_chunks
+        }));
+    }
+
+    // Emit complete event
+    let _ = app_handle.emit("kb:embeddings:complete", serde_json::json!({
+        "vectors_created": vectors_created
+    }));
+
+    Ok(EmbeddingGenerationResult {
+        chunks_processed: total_chunks,
+        vectors_created,
+    })
+}
+
+/// Result of embedding generation
+#[derive(serde::Serialize)]
+pub struct EmbeddingGenerationResult {
+    pub chunks_processed: usize,
+    pub vectors_created: usize,
 }
 
 // ============================================================================
@@ -1416,6 +1610,18 @@ pub fn cleanup_autosaves(
     db.cleanup_autosaves(keep_count.unwrap_or(10)).map_err(|e| e.to_string())
 }
 
+/// Get draft versions by input hash (autosaves with matching input_text hash)
+/// Used for version history UI
+#[tauri::command]
+pub fn get_draft_versions(
+    state: State<'_, AppState>,
+    input_hash: String,
+) -> Result<Vec<SavedDraft>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.get_draft_versions(&input_hash).map_err(|e| e.to_string())
+}
+
 /// List all response templates
 #[tauri::command]
 pub fn list_templates(state: State<'_, AppState>) -> Result<Vec<ResponseTemplate>, String> {
@@ -1592,5 +1798,95 @@ pub async fn export_draft(
             // User cancelled
             Ok(false)
         }
+    }
+}
+
+// ============================================================================
+// Backup/Restore Commands
+// ============================================================================
+
+use crate::backup::{ExportSummary, ImportPreview, ImportSummary};
+
+/// Export all app data to a ZIP backup file
+#[tauri::command]
+pub async fn export_backup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ExportSummary, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Show save file dialog
+    let file_handle = app.dialog()
+        .file()
+        .set_file_name("assistsupport-backup.zip")
+        .add_filter("ZIP Archive", &["zip"])
+        .blocking_save_file();
+
+    match file_handle {
+        Some(path) => {
+            let file_path = path.as_path()
+                .ok_or_else(|| "Invalid file path".to_string())?;
+
+            crate::backup::export_backup(db, file_path)
+                .map_err(|e| e.to_string())
+        }
+        None => Err("Export cancelled".to_string()),
+    }
+}
+
+/// Preview what will be imported from a backup file
+#[tauri::command]
+pub async fn preview_backup_import(
+    app: tauri::AppHandle,
+) -> Result<ImportPreview, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    // Show open file dialog
+    let file_handle = app.dialog()
+        .file()
+        .add_filter("ZIP Archive", &["zip"])
+        .blocking_pick_file();
+
+    match file_handle {
+        Some(path) => {
+            let file_path = path.as_path()
+                .ok_or_else(|| "Invalid file path".to_string())?;
+
+            crate::backup::preview_import(file_path)
+                .map_err(|e| e.to_string())
+        }
+        None => Err("Import cancelled".to_string()),
+    }
+}
+
+/// Import data from a backup ZIP file
+#[tauri::command]
+pub async fn import_backup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ImportSummary, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Show open file dialog
+    let file_handle = app.dialog()
+        .file()
+        .add_filter("ZIP Archive", &["zip"])
+        .blocking_pick_file();
+
+    match file_handle {
+        Some(path) => {
+            let file_path = path.as_path()
+                .ok_or_else(|| "Invalid file path".to_string())?;
+
+            crate::backup::import_backup(db, file_path)
+                .map_err(|e| e.to_string())
+        }
+        None => Err("Import cancelled".to_string()),
     }
 }

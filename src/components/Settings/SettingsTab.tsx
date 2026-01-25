@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { useLlm } from '../../hooks/useLlm';
 import { useKb } from '../../hooks/useKb';
 import { useDownload } from '../../hooks/useDownload';
 import { useJira } from '../../hooks/useJira';
+import { useEmbedding } from '../../hooks/useEmbedding';
+import { useCustomVariables } from '../../hooks/useCustomVariables';
 import { useTheme } from '../../contexts/ThemeContext';
-import type { ModelInfo } from '../../types';
+import { useToastContext } from '../../contexts/ToastContext';
+import type { ModelInfo, CustomVariable } from '../../types';
 import './SettingsTab.css';
 
 const AVAILABLE_MODELS: ModelInfo[] = [
@@ -40,10 +44,28 @@ const CONTEXT_WINDOW_OPTIONS = [
 
 export function SettingsTab() {
   const { loadModel, unloadModel, getLoadedModel, listModels, getContextWindow, setContextWindow } = useLlm();
-  const { setKbFolder, getKbFolder, rebuildIndex, getIndexStats, getVectorConsent, setVectorConsent } = useKb();
+  const { setKbFolder, getKbFolder, rebuildIndex, getIndexStats, getVectorConsent, setVectorConsent, generateEmbeddings } = useKb();
   const { downloadModel, downloadProgress, isDownloading } = useDownload();
   const { checkConfiguration: checkJiraConfig, configure: configureJira, disconnect: disconnectJira, config: jiraConfig, loading: jiraLoading } = useJira();
+  const {
+    initEngine: initEmbeddingEngine,
+    loadModel: loadEmbeddingModel,
+    unloadModel: unloadEmbeddingModel,
+    checkModelStatus: checkEmbeddingStatus,
+    isModelDownloaded: isEmbeddingDownloaded,
+    getModelPath: getEmbeddingModelPath,
+    isLoaded: isEmbeddingLoaded,
+    modelInfo: embeddingModelInfo,
+    loading: embeddingLoading,
+  } = useEmbedding();
   const { theme, setTheme } = useTheme();
+  const { success: showSuccess, error: showError } = useToastContext();
+  const {
+    variables: customVariables,
+    loadVariables,
+    saveVariable,
+    deleteVariable,
+  } = useCustomVariables();
 
   const [loadedModel, setLoadedModel] = useState<string | null>(null);
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
@@ -53,16 +75,26 @@ export function SettingsTab() {
   const [jiraConfigured, setJiraConfigured] = useState(false);
   const [jiraForm, setJiraForm] = useState({ baseUrl: '', email: '', apiToken: '' });
   const [contextWindowSize, setContextWindowSize] = useState<number | null>(null);
+  const [embeddingDownloaded, setEmbeddingDownloaded] = useState(false);
+  const [generatingEmbeddings, setGeneratingEmbeddings] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState<'export' | 'import' | null>(null);
+
+  // Custom variables state
+  const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
+  const [variableForm, setVariableForm] = useState({ name: '', value: '' });
+  const [showVariableForm, setShowVariableForm] = useState(false);
+  const [variableFormError, setVariableFormError] = useState<string | null>(null);
 
   useEffect(() => {
     loadInitialState();
-  }, []);
+    loadVariables();
+  }, [loadVariables]);
 
   async function loadInitialState() {
     try {
-      const [loaded, downloaded, folder, stats, consent, jiraConfigResult, ctxWindow] = await Promise.all([
+      const [loaded, downloaded, folder, stats, consent, jiraConfigResult, ctxWindow, embDownloaded] = await Promise.all([
         getLoadedModel(),
         listModels(),
         getKbFolder(),
@@ -70,6 +102,7 @@ export function SettingsTab() {
         getVectorConsent().catch(() => null),
         checkJiraConfig().catch(() => false),
         getContextWindow().catch(() => null),
+        isEmbeddingDownloaded().catch(() => false),
       ]);
       setLoadedModel(loaded);
       setDownloadedModels(downloaded);
@@ -80,6 +113,10 @@ export function SettingsTab() {
       }
       setJiraConfigured(jiraConfigResult);
       setContextWindowSize(ctxWindow);
+      setEmbeddingDownloaded(embDownloaded);
+
+      // Check embedding model status
+      await checkEmbeddingStatus();
     } catch (err) {
       console.error('Failed to load settings state:', err);
     }
@@ -194,10 +231,165 @@ export function SettingsTab() {
     try {
       await setContextWindow(newSize);
       setContextWindowSize(newSize);
+      showSuccess('Context window updated');
     } catch (err) {
       setError(`Failed to update context window: ${err}`);
     }
   }
+
+  async function handleDownloadEmbeddingModel() {
+    setError(null);
+    try {
+      await downloadModel('nomic-embed-text');
+      setEmbeddingDownloaded(true);
+      showSuccess('Embedding model downloaded');
+    } catch (err) {
+      setError(`Failed to download embedding model: ${err}`);
+    }
+  }
+
+  async function handleLoadEmbeddingModel() {
+    setError(null);
+    try {
+      // Initialize engine if needed
+      await initEmbeddingEngine();
+      // Get model path
+      const path = await getEmbeddingModelPath('nomic-embed-text');
+      if (!path) {
+        setError('Embedding model not found');
+        return;
+      }
+      await loadEmbeddingModel(path);
+      showSuccess('Embedding model loaded');
+    } catch (err) {
+      setError(`Failed to load embedding model: ${err}`);
+    }
+  }
+
+  async function handleUnloadEmbeddingModel() {
+    setError(null);
+    try {
+      await unloadEmbeddingModel();
+      showSuccess('Embedding model unloaded');
+    } catch (err) {
+      setError(`Failed to unload embedding model: ${err}`);
+    }
+  }
+
+  async function handleGenerateEmbeddings() {
+    if (!vectorEnabled || !isEmbeddingLoaded) {
+      setError('Vector search and embedding model must be enabled');
+      return;
+    }
+    setGeneratingEmbeddings(true);
+    setError(null);
+    try {
+      const result = await generateEmbeddings();
+      showSuccess(`Generated embeddings for ${result.chunks_processed} chunks`);
+    } catch (err) {
+      showError(`Failed to generate embeddings: ${err}`);
+    } finally {
+      setGeneratingEmbeddings(false);
+    }
+  }
+
+  // Custom variable handlers
+  const handleEditVariable = useCallback((variable: CustomVariable) => {
+    setEditingVariable(variable);
+    setVariableForm({ name: variable.name, value: variable.value });
+    setShowVariableForm(true);
+    setVariableFormError(null);
+  }, []);
+
+  const handleAddVariable = useCallback(() => {
+    setEditingVariable(null);
+    setVariableForm({ name: '', value: '' });
+    setShowVariableForm(true);
+    setVariableFormError(null);
+  }, []);
+
+  const handleCancelVariableForm = useCallback(() => {
+    setShowVariableForm(false);
+    setEditingVariable(null);
+    setVariableForm({ name: '', value: '' });
+    setVariableFormError(null);
+  }, []);
+
+  const handleSaveVariable = useCallback(async () => {
+    const name = variableForm.name.trim();
+    const value = variableForm.value.trim();
+
+    // Validate name format (alphanumeric and underscores only)
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      setVariableFormError('Name must start with a letter or underscore and contain only letters, numbers, and underscores');
+      return;
+    }
+
+    if (!value) {
+      setVariableFormError('Value is required');
+      return;
+    }
+
+    // Check for duplicate name (except when editing the same variable)
+    const isDuplicate = customVariables.some(
+      (v) => v.name.toLowerCase() === name.toLowerCase() && v.id !== editingVariable?.id
+    );
+    if (isDuplicate) {
+      setVariableFormError('A variable with this name already exists');
+      return;
+    }
+
+    const success = await saveVariable(name, value, editingVariable?.id);
+    if (success) {
+      showSuccess(editingVariable ? 'Variable updated' : 'Variable created');
+      handleCancelVariableForm();
+    } else {
+      setVariableFormError('Failed to save variable');
+    }
+  }, [variableForm, editingVariable, customVariables, saveVariable, showSuccess, handleCancelVariableForm]);
+
+  const handleDeleteVariable = useCallback(async (variableId: string) => {
+    const success = await deleteVariable(variableId);
+    if (success) {
+      showSuccess('Variable deleted');
+    } else {
+      showError('Failed to delete variable');
+    }
+  }, [deleteVariable, showSuccess, showError]);
+
+  // Backup handlers
+  const handleExportBackup = useCallback(async () => {
+    setBackupLoading('export');
+    setError(null);
+    try {
+      const result = await invoke<{ drafts_count: number; templates_count: number; variables_count: number; trees_count: number; path: string }>('export_backup');
+      showSuccess(`Exported ${result.drafts_count} drafts, ${result.templates_count} templates, ${result.variables_count} variables, ${result.trees_count} trees`);
+    } catch (err) {
+      if (String(err) !== 'Export cancelled') {
+        showError(`Export failed: ${err}`);
+      }
+    } finally {
+      setBackupLoading(null);
+    }
+  }, [showSuccess, showError]);
+
+  const handleImportBackup = useCallback(async () => {
+    setBackupLoading('import');
+    setError(null);
+    try {
+      const result = await invoke<{ drafts_imported: number; templates_imported: number; variables_imported: number; trees_imported: number }>('import_backup');
+      showSuccess(`Imported ${result.drafts_imported} drafts, ${result.templates_imported} templates, ${result.variables_imported} variables, ${result.trees_imported} trees`);
+      // Reload data
+      loadInitialState();
+      loadVariables();
+    } catch (err) {
+      if (String(err) !== 'Import cancelled') {
+        showError(`Import failed: ${err}`);
+      }
+    } finally {
+      setBackupLoading(null);
+    }
+  }, [showSuccess, showError, loadVariables]);
 
   return (
     <div className="settings-tab">
@@ -339,6 +531,83 @@ export function SettingsTab() {
       </section>
 
       <section className="settings-section">
+        <h2>Embedding Model</h2>
+        <p className="settings-description">
+          Embedding model for semantic search. Uses nomic-embed-text (768-dim, ~550MB).
+        </p>
+
+        <div className="embedding-model-config">
+          {isDownloading && downloadProgress?.model_id === 'nomic-embed-text' ? (
+            <div className="download-progress-container">
+              <div className="download-progress">
+                <div
+                  className="download-bar"
+                  style={{ width: `${downloadProgress?.percent || 0}%` }}
+                />
+                <span>{Math.round(downloadProgress?.percent || 0)}%</span>
+              </div>
+              <p className="setting-note">Downloading embedding model...</p>
+            </div>
+          ) : !embeddingDownloaded ? (
+            <div className="embedding-status">
+              <span className="status-badge not-downloaded">Not Downloaded</span>
+              <Button
+                variant="primary"
+                size="small"
+                onClick={handleDownloadEmbeddingModel}
+                disabled={isDownloading}
+              >
+                Download Model
+              </Button>
+            </div>
+          ) : !isEmbeddingLoaded ? (
+            <div className="embedding-status">
+              <span className="status-badge downloaded">Downloaded</span>
+              <Button
+                variant="primary"
+                size="small"
+                onClick={handleLoadEmbeddingModel}
+                disabled={embeddingLoading}
+              >
+                {embeddingLoading ? 'Loading...' : 'Load Model'}
+              </Button>
+            </div>
+          ) : (
+            <div className="embedding-status">
+              <span className="status-badge loaded">Loaded</span>
+              <div className="embedding-info">
+                <span className="model-name">{embeddingModelInfo?.name || 'nomic-embed-text'}</span>
+                <span className="model-dim">{embeddingModelInfo?.embedding_dim || 768} dimensions</span>
+              </div>
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={handleUnloadEmbeddingModel}
+              >
+                Unload
+              </Button>
+            </div>
+          )}
+
+          {vectorEnabled && isEmbeddingLoaded && (
+            <div className="generate-embeddings-row">
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleGenerateEmbeddings}
+                disabled={generatingEmbeddings}
+              >
+                {generatingEmbeddings ? 'Generating...' : 'Generate Embeddings for KB'}
+              </Button>
+              <p className="setting-note">
+                Creates vector embeddings for all indexed documents.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="settings-section">
         <h2>Knowledge Base</h2>
         <p className="settings-description">
           Configure the folder containing your knowledge base documents.
@@ -400,6 +669,99 @@ export function SettingsTab() {
             All processing happens locally on your machine.
           </p>
         </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>Template Variables</h2>
+        <p className="settings-description">
+          Define custom variables to use in response templates. Use as <code>{`{{variable_name}}`}</code> in your prompts.
+        </p>
+
+        <div className="variables-container">
+          {customVariables.length === 0 ? (
+            <p className="variables-empty">No custom variables defined yet.</p>
+          ) : (
+            <div className="variables-list">
+              {customVariables.map((variable) => (
+                <div key={variable.id} className="variable-item">
+                  <div className="variable-info">
+                    <code className="variable-name">{`{{${variable.name}}}`}</code>
+                    <span className="variable-value">{variable.value}</span>
+                  </div>
+                  <div className="variable-actions">
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      onClick={() => handleEditVariable(variable)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      onClick={() => handleDeleteVariable(variable.id)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={handleAddVariable}
+          >
+            + Add Variable
+          </Button>
+        </div>
+
+        {showVariableForm && (
+          <div className="variable-form-overlay" onClick={handleCancelVariableForm}>
+            <div className="variable-form-modal" onClick={(e) => e.stopPropagation()}>
+              <h3>{editingVariable ? 'Edit Variable' : 'Add Variable'}</h3>
+              {variableFormError && (
+                <div className="variable-form-error">{variableFormError}</div>
+              )}
+              <div className="form-field">
+                <label htmlFor="var-name">Name</label>
+                <input
+                  id="var-name"
+                  type="text"
+                  placeholder="my_variable"
+                  value={variableForm.name}
+                  onChange={(e) => setVariableForm((f) => ({ ...f, name: e.target.value }))}
+                  autoFocus
+                />
+                <p className="field-hint">Letters, numbers, and underscores only</p>
+              </div>
+              <div className="form-field">
+                <label htmlFor="var-value">Value</label>
+                <textarea
+                  id="var-value"
+                  placeholder="The value to substitute..."
+                  value={variableForm.value}
+                  onChange={(e) => setVariableForm((f) => ({ ...f, value: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+              <div className="form-actions">
+                <Button variant="ghost" onClick={handleCancelVariableForm}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleSaveVariable}
+                  disabled={!variableForm.name.trim() || !variableForm.value.trim()}
+                >
+                  {editingVariable ? 'Save' : 'Add'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="settings-section">
@@ -471,6 +833,43 @@ export function SettingsTab() {
             </Button>
           </form>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h2>Data Backup</h2>
+        <p className="settings-description">
+          Export or import your drafts, templates, variables, and settings.
+        </p>
+        <div className="backup-actions">
+          <div className="backup-row">
+            <div className="backup-info">
+              <strong>Export</strong>
+              <span>Save all your data to a ZIP file for backup.</span>
+            </div>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleExportBackup}
+              disabled={backupLoading === 'export'}
+            >
+              {backupLoading === 'export' ? 'Exporting...' : 'Export Data'}
+            </Button>
+          </div>
+          <div className="backup-row">
+            <div className="backup-info">
+              <strong>Import</strong>
+              <span>Restore data from a backup ZIP file.</span>
+            </div>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleImportBackup}
+              disabled={backupLoading === 'import'}
+            >
+              {backupLoading === 'import' ? 'Importing...' : 'Import Data'}
+            </Button>
+          </div>
+        </div>
       </section>
 
       <section className="settings-section">

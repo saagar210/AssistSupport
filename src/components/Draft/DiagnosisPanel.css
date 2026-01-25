@@ -56,6 +56,22 @@
   font-size: 14px;
 }
 
+.check-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.check-legend {
+  margin: 0 0 12px 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .check-list {
   list-style: none;
   padding: 0;
@@ -137,4 +153,49 @@
   font-size: 12px;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* Tree Result Display */
+.tree-result {
+  background: var(--success-light);
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.tree-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.tree-result-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--success);
+}
+
+.tree-result-clear {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.tree-result-clear:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
+}
+
+.tree-result-path {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
 }

@@ -115,72 +115,183 @@
   background: var(--success-light);
 }
 
-/* Jira import modal */
-.jira-import-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+/* Jira Ticket Section */
+.ticket-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.ticket-input-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  gap: 8px;
 }
 
-.jira-import-modal {
-  background: var(--bg-primary);
-  border-radius: 8px;
-  padding: 20px;
-  min-width: 320px;
-  max-width: 400px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+.ticket-input-row label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
-.jira-import-modal h4 {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.jira-import-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.jira-import-form input {
-  padding: 10px 12px;
+.ticket-input {
+  flex: 1;
+  max-width: 140px;
+  padding: 6px 10px;
   border: 1px solid var(--input-border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--input-bg);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
 }
 
-.jira-import-form input:focus {
+.ticket-input:focus {
   outline: none;
   border-color: var(--input-focus);
 }
 
-.jira-import-form input::placeholder {
+.ticket-input::placeholder {
   color: var(--text-muted);
+  text-transform: none;
 }
 
-.jira-import-error {
-  margin: 0;
-  padding: 8px 12px;
+.ticket-clear {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.6;
+  color: var(--text-secondary);
+  padding: 4px;
+}
+
+.ticket-clear:hover {
+  opacity: 1;
+}
+
+.ticket-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ticket-error {
+  margin-top: 8px;
+  padding: 6px 10px;
   background: var(--error-light);
   color: var(--error);
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.jira-import-actions {
+.ticket-preview {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.ticket-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.ticket-key {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+}
+
+.ticket-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.ticket-status.status-in-progress,
+.ticket-status.status-in-review {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.ticket-status.status-done,
+.ticket-status.status-resolved,
+.ticket-status.status-closed {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.ticket-status.status-open,
+.ticket-status.status-new,
+.ticket-status.status-to-do {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.ticket-priority {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.ticket-priority.priority-highest,
+.ticket-priority.priority-high {
+  background: var(--error-light);
+  color: var(--error);
+}
+
+.ticket-priority.priority-medium {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.ticket-priority.priority-low,
+.ticket-priority.priority-lowest {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.ticket-summary {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.ticket-description-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ticket-description-toggle:hover {
+  text-decoration: underline;
+}
+
+.ticket-description {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
 }

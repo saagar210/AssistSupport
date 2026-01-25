@@ -2,13 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../shared/Button';
 import { Skeleton } from '../shared/Skeleton';
 import { useKb } from '../../hooks/useKb';
+import { useToastContext } from '../../contexts/ToastContext';
 import type { IndexedFile, SearchResult } from '../../types';
 import './SourcesTab.css';
 
 type SearchMode = 'files' | 'content';
 
 export function SourcesTab() {
-  const { getKbFolder, listFiles, rebuildIndex, getIndexStats, search } = useKb();
+  const { getKbFolder, listFiles, rebuildIndex, getIndexStats, search, removeDocument } = useKb();
+  const { success: showSuccess, error: showError } = useToastContext();
 
   const [kbFolder, setKbFolder] = useState<string | null>(null);
   const [files, setFiles] = useState<IndexedFile[]>([]);
@@ -20,6 +22,8 @@ export function SourcesTab() {
   const [searchMode, setSearchMode] = useState<SearchMode>('files');
   const [contentResults, setContentResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -56,6 +60,22 @@ export function SourcesTab() {
       setRebuilding(false);
     }
   }
+
+  const handleRemoveFile = useCallback(async (filePath: string) => {
+    setRemoving(true);
+    try {
+      const removed = await removeDocument(filePath);
+      if (removed) {
+        showSuccess('File removed from knowledge base');
+        await loadData();
+      }
+    } catch (err) {
+      showError(`Failed to remove file: ${err}`);
+    } finally {
+      setRemoving(false);
+      setRemoveConfirm(null);
+    }
+  }, [removeDocument, loadData, showSuccess, showError]);
 
   const filteredFiles = files.filter(file =>
     file.file_path.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -134,7 +154,14 @@ export function SourcesTab() {
         </div>
       </header>
 
-      {error && <div className="sources-error">{error}</div>}
+      {error && (
+        <div className="sources-error">
+          <span>{error}</span>
+          <Button variant="ghost" size="small" onClick={loadData}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="sources-stats">
         <div className="stat-card">
@@ -235,6 +262,7 @@ export function SourcesTab() {
             <span className="col-name">File</span>
             <span className="col-chunks">Chunks</span>
             <span className="col-date">Indexed</span>
+            <span className="col-actions"></span>
           </div>
           {filteredFiles.map(file => (
             <div key={file.file_path} className="file-item">
@@ -246,8 +274,43 @@ export function SourcesTab() {
               </div>
               <span className="col-chunks">{file.chunk_count}</span>
               <span className="col-date">{formatDate(file.indexed_at)}</span>
+              <div className="col-actions">
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => setRemoveConfirm(file.file_path)}
+                  title="Remove from index"
+                >
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Remove Confirmation Modal */}
+      {removeConfirm && (
+        <div className="modal-overlay" onClick={() => setRemoveConfirm(null)}>
+          <div className="modal-content modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <h3>Remove from Knowledge Base</h3>
+            <p>
+              Are you sure you want to remove this file from the index? The original file will not be deleted.
+            </p>
+            <p className="modal-file-path">{formatPath(removeConfirm)}</p>
+            <div className="modal-actions">
+              <Button variant="ghost" onClick={() => setRemoveConfirm(null)} disabled={removing}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => handleRemoveFile(removeConfirm)}
+                disabled={removing}
+              >
+                {removing ? 'Removing...' : 'Remove'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

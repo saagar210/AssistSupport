@@ -126,6 +126,22 @@ export function useKb() {
     await indexKb();
   }, [indexKb]);
 
+  const generateEmbeddings = useCallback(async (): Promise<{ chunks_processed: number; vectors_created: number }> => {
+    setState(prev => ({ ...prev, indexing: true, error: null }));
+    try {
+      const result = await invoke<{ chunks_processed: number; vectors_created: number }>('generate_kb_embeddings');
+      setState(prev => ({ ...prev, indexing: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        indexing: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
   const search = useCallback(async (
     query: string,
     limit?: number
@@ -177,6 +193,31 @@ export function useKb() {
     });
   }, []);
 
+  const removeDocument = useCallback(async (filePath: string): Promise<boolean> => {
+    try {
+      const removed = await invoke<boolean>('remove_kb_document', { filePath });
+
+      // Refresh stats and documents after removal
+      if (removed) {
+        const stats = await invoke<IndexStats>('get_kb_stats');
+        const docs = await invoke<KbDocument[]>('list_kb_documents');
+        setState(prev => ({
+          ...prev,
+          stats,
+          documents: docs,
+        }));
+      }
+
+      return removed;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
   return {
     ...state,
     loadKbInfo,
@@ -186,9 +227,11 @@ export function useKb() {
     setKbFolder,
     indexKb,
     rebuildIndex,
+    generateEmbeddings,
     search,
     getSearchContext,
     getVectorConsent,
     setVectorConsent,
+    removeDocument,
   };
 }

@@ -9,7 +9,7 @@ export interface ToastProps {
 
 export function Toast({ message, type, onClose }: ToastProps) {
   return (
-    <div className={`toast toast-${type}`}>
+    <div className={`toast toast-${type}`} role="alert">
       <span className="toast-message">{message}</span>
       <button
         className="toast-dismiss"
@@ -27,5 +27,9 @@ interface ToastContainerProps {
 }
 
 export function ToastContainer({ children }: ToastContainerProps) {
-  return <div className="toast-container">{children}</div>;
+  return (
+    <div className="toast-container" aria-live="polite" aria-atomic="false">
+      {children}
+    </div>
+  );
 }

@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result as SqliteResult, params};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-const CURRENT_SCHEMA_VERSION: i32 = 1;
+const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -155,6 +155,14 @@ impl Database {
             self.migrate_v1()?;
         }
 
+        if from_version < 2 {
+            self.migrate_v2()?;
+        }
+
+        if from_version < 3 {
+            self.migrate_v3()?;
+        }
+
         tx.commit()?;
         self.set_schema_version(CURRENT_SCHEMA_VERSION)?;
 
@@ -182,7 +190,8 @@ impl Database {
                 kb_sources_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                is_autosave INTEGER DEFAULT 0
+                is_autosave INTEGER DEFAULT 0,
+                model_name TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_drafts_created ON drafts(created_at);
             CREATE INDEX IF NOT EXISTS idx_drafts_ticket ON drafts(ticket_id);
@@ -322,6 +331,43 @@ impl Database {
         Ok(())
     }
 
+    /// Migration to v2: Add index for drafts.updated_at (FollowUps performance)
+    fn migrate_v2(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Add index for faster draft sorting by updated_at (used in FollowUps tab)
+            CREATE INDEX IF NOT EXISTS idx_drafts_updated ON drafts(updated_at DESC);
+            "#,
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration to v3: Add model_name column to drafts (track which model generated response)
+    fn migrate_v3(&self) -> Result<(), DbError> {
+        // Check if model_name column already exists (may exist if created from fresh schema)
+        let has_model_name: bool = self
+            .conn
+            .prepare("PRAGMA table_info(drafts)")?
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                Ok(name)
+            })?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "model_name");
+
+        if !has_model_name {
+            self.conn.execute_batch(
+                r#"
+                -- Add model_name column to track which model generated each response
+                ALTER TABLE drafts ADD COLUMN model_name TEXT;
+                "#,
+            )?;
+        }
+
+        Ok(())
+    }
+
     /// Create backup of database
     /// Note: For SQLCipher encrypted databases, we use file copy instead of SQLite backup API
     pub fn backup(&self) -> Result<PathBuf, DbError> {
@@ -447,6 +493,25 @@ impl Database {
         Ok(tree)
     }
 
+    /// Save or update a decision tree
+    pub fn save_decision_tree(&self, tree: &DecisionTree) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO decision_trees
+             (id, name, category, tree_json, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &tree.id,
+                &tree.name,
+                &tree.category,
+                &tree.tree_json,
+                &tree.source,
+                &tree.created_at,
+                &tree.updated_at,
+            ],
+        )?;
+        Ok(tree.id.clone())
+    }
+
     /// Ensure response_templates table exists (called during init)
     pub fn ensure_templates_table(&self) -> Result<(), DbError> {
         self.conn.execute_batch(
@@ -472,7 +537,7 @@ impl Database {
     pub fn list_drafts(&self, limit: usize) -> Result<Vec<SavedDraft>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
              FROM drafts
              ORDER BY updated_at DESC
              LIMIT ?"
@@ -490,6 +555,7 @@ impl Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
+                model_name: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -501,7 +567,7 @@ impl Database {
         let pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
              FROM drafts
              WHERE is_autosave = 0
                AND (input_text LIKE ?1 OR response_text LIKE ?1 OR ticket_id LIKE ?1)
@@ -521,6 +587,7 @@ impl Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
+                model_name: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -531,7 +598,7 @@ impl Database {
     pub fn get_draft(&self, draft_id: &str) -> Result<SavedDraft, DbError> {
         let draft = self.conn.query_row(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
              FROM drafts WHERE id = ?",
             [draft_id],
             |row| Ok(SavedDraft {
@@ -545,6 +612,7 @@ impl Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
+                model_name: row.get(10)?,
             })
         )?;
         Ok(draft)
@@ -555,8 +623,8 @@ impl Database {
         self.conn.execute(
             "INSERT OR REPLACE INTO drafts
              (id, input_text, summary_text, diagnosis_json, response_text,
-              ticket_id, kb_sources_json, created_at, updated_at, is_autosave)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &draft.id,
                 &draft.input_text,
@@ -568,6 +636,7 @@ impl Database {
                 &draft.created_at,
                 &draft.updated_at,
                 draft.is_autosave as i32,
+                &draft.model_name,
             ],
         )?;
         Ok(draft.id.clone())
@@ -596,7 +665,7 @@ impl Database {
     pub fn list_autosaves(&self, limit: usize) -> Result<Vec<SavedDraft>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
              FROM drafts
              WHERE is_autosave = 1
              ORDER BY created_at DESC
@@ -615,10 +684,32 @@ impl Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
+                model_name: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
         Ok(drafts)
+    }
+
+    /// Get draft versions by input hash (autosaves with matching input_text hash)
+    /// The hash is computed as SHA256(input_text)[0:16]
+    pub fn get_draft_versions(&self, input_hash: &str) -> Result<Vec<SavedDraft>, DbError> {
+        use sha2::{Sha256, Digest};
+
+        // Get all autosaves and filter by input hash
+        let all_autosaves = self.list_autosaves(100)?; // Get more to search through
+
+        let matching: Vec<SavedDraft> = all_autosaves
+            .into_iter()
+            .filter(|draft| {
+                let mut hasher = Sha256::new();
+                hasher.update(draft.input_text.as_bytes());
+                let hash = hex::encode(hasher.finalize());
+                hash[..16] == *input_hash
+            })
+            .collect();
+
+        Ok(matching)
     }
 
     // ============================================================================
@@ -799,6 +890,28 @@ impl Database {
 
         Ok(())
     }
+
+    /// Get all chunk IDs and content for embedding generation
+    pub fn get_all_chunks_for_embedding(&self) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content FROM kb_chunks ORDER BY document_id, chunk_index"
+        )?;
+
+        let chunks = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(chunks)
+    }
+
+    /// Get chunk content by ID
+    pub fn get_chunk_content(&self, chunk_id: &str) -> Result<String, DbError> {
+        self.conn.query_row(
+            "SELECT content FROM kb_chunks WHERE id = ?",
+            [chunk_id],
+            |row| row.get(0),
+        ).map_err(DbError::Sqlite)
+    }
 }
 
 /// FTS5 search result
@@ -820,7 +933,7 @@ pub struct VectorConsent {
 }
 
 /// Decision tree from database
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DecisionTree {
     pub id: String,
     pub name: String,
@@ -844,6 +957,9 @@ pub struct SavedDraft {
     pub created_at: String,
     pub updated_at: String,
     pub is_autosave: bool,
+    /// Name of the model that generated this response (e.g., "Llama 3.2 3B Instruct")
+    #[serde(default)]
+    pub model_name: Option<String>,
 }
 
 /// Response template from database

@@ -759,7 +759,9 @@ mod tests {
         assert_eq!(DocumentType::from_extension("PDF"), Some(DocumentType::Pdf));
         assert_eq!(DocumentType::from_extension("txt"), Some(DocumentType::PlainText));
         assert_eq!(DocumentType::from_extension("png"), Some(DocumentType::Image));
-        assert_eq!(DocumentType::from_extension("docx"), None);
+        assert_eq!(DocumentType::from_extension("docx"), Some(DocumentType::Docx));
+        assert_eq!(DocumentType::from_extension("xlsx"), Some(DocumentType::Xlsx));
+        assert_eq!(DocumentType::from_extension("unknown"), None);
     }
 
     #[test]
@@ -845,14 +847,16 @@ Nested content.
         // Create some test files
         std::fs::write(dir.path().join("doc1.md"), "# Test").unwrap();
         std::fs::write(dir.path().join("doc2.txt"), "Plain text").unwrap();
-        std::fs::write(dir.path().join("ignored.docx"), "").unwrap();
+        std::fs::write(dir.path().join("doc3.docx"), "").unwrap();
+        std::fs::write(dir.path().join("ignored.xyz"), "").unwrap(); // Unsupported extension
         std::fs::create_dir(dir.path().join("subdir")).unwrap();
         std::fs::write(dir.path().join("subdir/nested.md"), "# Nested").unwrap();
 
         let indexer = KbIndexer::new();
         let files = indexer.scan_folder(dir.path()).unwrap();
 
-        assert_eq!(files.len(), 3); // doc1.md, doc2.txt, nested.md
+        // doc1.md, doc2.txt, doc3.docx, nested.md (ignored.xyz excluded)
+        assert_eq!(files.len(), 4);
     }
 
     #[test]

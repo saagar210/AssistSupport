@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, KeyboardEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
-import { useJira } from '../../hooks/useJira';
+import { useJira, JiraTicket } from '../../hooks/useJira';
 import type { ResponseLength, OcrResult } from '../../types';
 import './InputPanel.css';
 
@@ -16,6 +16,10 @@ interface InputPanelProps {
   modelLoaded: boolean;
   responseLength: ResponseLength;
   onResponseLengthChange: (length: ResponseLength) => void;
+  ticketId: string | null;
+  onTicketIdChange: (id: string | null) => void;
+  ticket: JiraTicket | null;
+  onTicketChange: (ticket: JiraTicket | null) => void;
 }
 
 export function InputPanel({
@@ -29,16 +33,83 @@ export function InputPanel({
   modelLoaded,
   responseLength,
   onResponseLengthChange,
+  ticketId,
+  onTicketIdChange,
+  ticket,
+  onTicketChange,
 }: InputPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { checkConfiguration, getTicket, configured, loading: jiraLoading } = useJira();
-  const [showJiraImport, setShowJiraImport] = useState(false);
-  const [jiraTicketKey, setJiraTicketKey] = useState('');
-  const [jiraError, setJiraError] = useState<string | null>(null);
+  const { checkConfiguration, getTicket, configured } = useJira();
+  const [ticketInputValue, setTicketInputValue] = useState(ticketId || '');
+  const [ticketFetching, setTicketFetching] = useState(false);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [showDescription, setShowDescription] = useState(false);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     checkConfiguration();
   }, [checkConfiguration]);
+
+  // Sync external ticketId changes to local input
+  useEffect(() => {
+    setTicketInputValue(ticketId || '');
+  }, [ticketId]);
+
+  // Debounced ticket fetch
+  const handleTicketInputChange = useCallback((value: string) => {
+    const upperValue = value.toUpperCase();
+    setTicketInputValue(upperValue);
+    setTicketError(null);
+
+    // Clear existing timeout
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    // If empty, clear ticket
+    if (!upperValue.trim()) {
+      onTicketIdChange(null);
+      onTicketChange(null);
+      return;
+    }
+
+    // Debounce fetch by 500ms
+    fetchTimeoutRef.current = setTimeout(async () => {
+      // Only fetch if it looks like a ticket key (e.g., PROJ-123)
+      if (!/^[A-Z]+-\d+$/.test(upperValue.trim())) {
+        return;
+      }
+
+      setTicketFetching(true);
+      try {
+        const fetchedTicket = await getTicket(upperValue.trim());
+        onTicketIdChange(upperValue.trim());
+        onTicketChange(fetchedTicket);
+        setTicketError(null);
+      } catch (err) {
+        setTicketError(err instanceof Error ? err.message : String(err));
+        onTicketChange(null);
+      } finally {
+        setTicketFetching(false);
+      }
+    }, 500);
+  }, [getTicket, onTicketIdChange, onTicketChange]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleClearTicket = useCallback(() => {
+    setTicketInputValue('');
+    onTicketIdChange(null);
+    onTicketChange(null);
+    setTicketError(null);
+  }, [onTicketIdChange, onTicketChange]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Cmd+G to generate
@@ -91,32 +162,6 @@ export function InputPanel({
     }
   }, [onOcrTextChange]);
 
-  const handleJiraImport = useCallback(async () => {
-    if (!jiraTicketKey.trim()) return;
-
-    setJiraError(null);
-    try {
-      const ticket = await getTicket(jiraTicketKey.trim().toUpperCase());
-
-      // Format ticket content
-      let content = `[${ticket.key}] ${ticket.summary}\n\n`;
-      if (ticket.description) {
-        content += ticket.description;
-      }
-      content += `\n\nStatus: ${ticket.status}`;
-      if (ticket.priority) {
-        content += ` | Priority: ${ticket.priority}`;
-      }
-      content += ` | Type: ${ticket.issue_type}`;
-
-      onChange(content);
-      setShowJiraImport(false);
-      setJiraTicketKey('');
-    } catch (err) {
-      setJiraError(err instanceof Error ? err.message : String(err));
-    }
-  }, [jiraTicketKey, getTicket, onChange]);
-
   const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
 
   return (
@@ -124,16 +169,6 @@ export function InputPanel({
       <div className="panel-header">
         <h3>Input</h3>
         <div className="input-actions">
-          {configured && (
-            <Button
-              variant="ghost"
-              size="small"
-              onClick={() => setShowJiraImport(true)}
-              disabled={jiraLoading}
-            >
-              Import Jira
-            </Button>
-          )}
           <select
             className="response-length-select"
             value={responseLength}
@@ -147,7 +182,7 @@ export function InputPanel({
             variant="ghost"
             size="small"
             onClick={onClear}
-            disabled={!value && !ocrText}
+            disabled={!value && !ocrText && !ticket}
           >
             Clear
           </Button>
@@ -190,6 +225,65 @@ export function InputPanel({
           </div>
         )}
 
+        {/* Jira Ticket Section */}
+        {configured && (
+          <div className="ticket-section">
+            <div className="ticket-input-row">
+              <label htmlFor="ticket-id">Ticket:</label>
+              <input
+                id="ticket-id"
+                type="text"
+                className="ticket-input"
+                placeholder="PROJ-123"
+                value={ticketInputValue}
+                onChange={e => handleTicketInputChange(e.target.value)}
+              />
+              {ticketInputValue && (
+                <button
+                  className="ticket-clear"
+                  onClick={handleClearTicket}
+                  aria-label="Clear ticket"
+                >
+                  &times;
+                </button>
+              )}
+              {ticketFetching && <span className="ticket-loading">Loading...</span>}
+            </div>
+
+            {ticketError && (
+              <div className="ticket-error">{ticketError}</div>
+            )}
+
+            {ticket && !ticketError && (
+              <div className="ticket-preview">
+                <div className="ticket-header">
+                  <span className="ticket-key">{ticket.key}</span>
+                  <span className={`ticket-status status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                    {ticket.status}
+                  </span>
+                  {ticket.priority && (
+                    <span className={`ticket-priority priority-${ticket.priority.toLowerCase()}`}>
+                      {ticket.priority}
+                    </span>
+                  )}
+                </div>
+                <div className="ticket-summary">{ticket.summary}</div>
+                {ticket.description && (
+                  <button
+                    className="ticket-description-toggle"
+                    onClick={() => setShowDescription(!showDescription)}
+                  >
+                    {showDescription ? '▼ Hide description' : '▶ Show description'}
+                  </button>
+                )}
+                {showDescription && ticket.description && (
+                  <div className="ticket-description">{ticket.description}</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="input-footer">
           <span className="word-count">{wordCount} words</span>
           <span className={`model-status ${modelLoaded ? 'model-ready' : 'model-warning'}`}>
@@ -198,47 +292,6 @@ export function InputPanel({
         </div>
       </div>
 
-      {/* Jira Import Modal */}
-      {showJiraImport && (
-        <div className="jira-import-overlay" onClick={() => setShowJiraImport(false)}>
-          <div className="jira-import-modal" onClick={e => e.stopPropagation()}>
-            <h4>Import from Jira</h4>
-            <div className="jira-import-form">
-              <input
-                type="text"
-                placeholder="Ticket key (e.g., HELP-123)"
-                value={jiraTicketKey}
-                onChange={e => setJiraTicketKey(e.target.value.toUpperCase())}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    handleJiraImport();
-                  }
-                }}
-                autoFocus
-              />
-              {jiraError && <p className="jira-import-error">{jiraError}</p>}
-              <div className="jira-import-actions">
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={() => setShowJiraImport(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  size="small"
-                  onClick={handleJiraImport}
-                  loading={jiraLoading}
-                  disabled={!jiraTicketKey.trim()}
-                >
-                  Import
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

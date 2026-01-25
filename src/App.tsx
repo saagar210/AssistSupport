@@ -5,6 +5,8 @@ import { FollowUpsTab } from './components/FollowUps/FollowUpsTab';
 import { SourcesTab } from './components/Sources/SourcesTab';
 import { SettingsTab } from './components/Settings/SettingsTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { Button } from './components/shared/Button';
 import { useInitialize } from './hooks/useInitialize';
 import { useToastContext } from './contexts/ToastContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboard';
@@ -104,6 +106,9 @@ function App() {
         <p className="error-hint">
           Try restarting the application. If the problem persists, check the console for details.
         </p>
+        <Button variant="primary" onClick={() => window.location.reload()}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -111,13 +116,29 @@ function App() {
   function renderTab() {
     switch (activeTab) {
       case 'draft':
-        return <DraftTab ref={draftRef} />;
+        return (
+          <ErrorBoundary fallbackTitle="Draft tab encountered an error">
+            <DraftTab ref={draftRef} />
+          </ErrorBoundary>
+        );
       case 'followups':
-        return <FollowUpsTab onLoadDraft={handleLoadDraft} />;
+        return (
+          <ErrorBoundary fallbackTitle="Follow-ups tab encountered an error">
+            <FollowUpsTab onLoadDraft={handleLoadDraft} />
+          </ErrorBoundary>
+        );
       case 'sources':
-        return <SourcesTab />;
+        return (
+          <ErrorBoundary fallbackTitle="Sources tab encountered an error">
+            <SourcesTab />
+          </ErrorBoundary>
+        );
       case 'settings':
-        return <SettingsTab />;
+        return (
+          <ErrorBoundary fallbackTitle="Settings tab encountered an error">
+            <SettingsTab />
+          </ErrorBoundary>
+        );
     }
   }
 

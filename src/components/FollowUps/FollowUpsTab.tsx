@@ -29,9 +29,12 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     searchDrafts,
     loadTemplates,
     deleteDraft,
+    updateDraft,
     saveTemplate,
     updateTemplate,
     deleteTemplate,
+    getDraftVersions,
+    computeInputHash,
   } = useDrafts();
 
   const { variables: customVariables, loadVariables: loadCustomVariables } = useCustomVariables();
@@ -50,9 +53,15 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
 
   // Draft search state
   const [draftSearchQuery, setDraftSearchQuery] = useState('');
+  const [ticketFilter, setTicketFilter] = useState('');
   const [filteredDrafts, setFilteredDrafts] = useState<SavedDraft[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Version history state
+  const [expandedVersions, setExpandedVersions] = useState<string | null>(null);
+  const [versionData, setVersionData] = useState<Record<string, SavedDraft[]>>({});
+  const [loadingVersions, setLoadingVersions] = useState<string | null>(null);
 
   useEffect(() => {
     loadDrafts();
@@ -60,12 +69,22 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     loadCustomVariables();
   }, [loadDrafts, loadTemplates, loadCustomVariables]);
 
-  // Update filtered drafts when drafts change or search clears
+  // Update filtered drafts when drafts change or filters change
   useEffect(() => {
-    if (!draftSearchQuery.trim()) {
-      setFilteredDrafts(drafts);
+    let result = drafts;
+
+    // Apply ticket filter if set
+    if (ticketFilter.trim()) {
+      result = result.filter(
+        (d) => d.ticket_id?.toLowerCase().includes(ticketFilter.toLowerCase())
+      );
     }
-  }, [drafts, draftSearchQuery]);
+
+    // If no text search, use the ticket-filtered result
+    if (!draftSearchQuery.trim()) {
+      setFilteredDrafts(result);
+    }
+  }, [drafts, draftSearchQuery, ticketFilter]);
 
   // Debounced search
   const handleDraftSearch = useCallback((query: string) => {
@@ -76,18 +95,68 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     }
 
     if (!query.trim()) {
-      setFilteredDrafts(drafts);
+      // Apply ticket filter even when no text search
+      let result = drafts;
+      if (ticketFilter.trim()) {
+        result = result.filter(
+          (d) => d.ticket_id?.toLowerCase().includes(ticketFilter.toLowerCase())
+        );
+      }
+      setFilteredDrafts(result);
       setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
     searchDebounceRef.current = setTimeout(async () => {
-      const results = await searchDrafts(query);
+      let results = await searchDrafts(query);
+      // Apply ticket filter on top of text search
+      if (ticketFilter.trim()) {
+        results = results.filter(
+          (d) => d.ticket_id?.toLowerCase().includes(ticketFilter.toLowerCase())
+        );
+      }
       setFilteredDrafts(results);
       setIsSearching(false);
     }, 300);
-  }, [drafts, searchDrafts]);
+  }, [drafts, searchDrafts, ticketFilter]);
+
+  // Handle ticket filter changes
+  const handleTicketFilter = useCallback((filter: string) => {
+    const upperFilter = filter.toUpperCase();
+    setTicketFilter(upperFilter);
+
+    // Re-apply filters
+    let result = drafts;
+
+    // Apply ticket filter
+    if (upperFilter.trim()) {
+      result = result.filter(
+        (d) => d.ticket_id?.toLowerCase().includes(upperFilter.toLowerCase())
+      );
+    }
+
+    // If there's also a text search, re-run it with the ticket filter
+    if (draftSearchQuery.trim()) {
+      setIsSearching(true);
+      searchDrafts(draftSearchQuery).then((searchResults) => {
+        if (upperFilter.trim()) {
+          searchResults = searchResults.filter(
+            (d) => d.ticket_id?.toLowerCase().includes(upperFilter.toLowerCase())
+          );
+        }
+        setFilteredDrafts(searchResults);
+        setIsSearching(false);
+      });
+    } else {
+      setFilteredDrafts(result);
+    }
+  }, [drafts, searchDrafts, draftSearchQuery]);
+
+  // Handle clicking on a ticket badge to filter
+  const handleTicketBadgeClick = useCallback((ticketId: string) => {
+    handleTicketFilter(ticketId);
+  }, [handleTicketFilter]);
 
   const handleLoadDraft = useCallback((draft: SavedDraft) => {
     onLoadDraft?.(draft);
@@ -97,6 +166,43 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     await deleteDraft(draftId);
     setDeleteConfirm(null);
   }, [deleteDraft]);
+
+  // Toggle version history for a draft
+  const handleToggleVersions = useCallback(async (draft: SavedDraft) => {
+    if (expandedVersions === draft.id) {
+      setExpandedVersions(null);
+      return;
+    }
+
+    setExpandedVersions(draft.id);
+    setLoadingVersions(draft.id);
+
+    try {
+      const inputHash = await computeInputHash(draft.input_text);
+      const versions = await getDraftVersions(inputHash);
+      // Filter out the current draft from versions
+      const filteredVersions = versions.filter(v => v.id !== draft.id);
+      setVersionData(prev => ({ ...prev, [draft.id]: filteredVersions }));
+    } catch (err) {
+      console.error('Failed to load versions:', err);
+    } finally {
+      setLoadingVersions(null);
+    }
+  }, [expandedVersions, computeInputHash, getDraftVersions]);
+
+  // Restore a version by updating the current draft
+  const handleRestoreVersion = useCallback(async (currentDraft: SavedDraft, version: SavedDraft) => {
+    const updatedDraft: SavedDraft = {
+      ...currentDraft,
+      response_text: version.response_text,
+      summary_text: version.summary_text,
+      diagnosis_json: version.diagnosis_json,
+      kb_sources_json: version.kb_sources_json,
+      model_name: version.model_name,
+    };
+    await updateDraft(updatedDraft);
+    setExpandedVersions(null);
+  }, [updateDraft]);
 
   const handleUseTemplate = useCallback((template: ResponseTemplate) => {
     // Apply template variable replacement
@@ -186,28 +292,48 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
   };
 
   const renderHistorySection = () => {
-    const displayDrafts = filteredDrafts.length > 0 || draftSearchQuery ? filteredDrafts : drafts;
+    const displayDrafts = filteredDrafts.length > 0 || draftSearchQuery || ticketFilter ? filteredDrafts : drafts;
 
     return (
       <>
-        {/* Search input */}
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="Search drafts..."
-            value={draftSearchQuery}
-            onChange={(e) => handleDraftSearch(e.target.value)}
-            className="search-input"
-          />
-          {draftSearchQuery && (
-            <button
-              className="search-clear"
-              onClick={() => handleDraftSearch('')}
-              aria-label="Clear search"
-            >
-              x
-            </button>
-          )}
+        {/* Search and filter inputs */}
+        <div className="search-filters">
+          <div className="search-bar">
+            <input
+              type="text"
+              placeholder="Search drafts..."
+              value={draftSearchQuery}
+              onChange={(e) => handleDraftSearch(e.target.value)}
+              className="search-input"
+            />
+            {draftSearchQuery && (
+              <button
+                className="search-clear"
+                onClick={() => handleDraftSearch('')}
+                aria-label="Clear search"
+              >
+                &times;
+              </button>
+            )}
+          </div>
+          <div className="ticket-filter-bar">
+            <input
+              type="text"
+              placeholder="Filter by ticket..."
+              value={ticketFilter}
+              onChange={(e) => handleTicketFilter(e.target.value)}
+              className="ticket-filter-input"
+            />
+            {ticketFilter && (
+              <button
+                className="search-clear"
+                onClick={() => handleTicketFilter('')}
+                aria-label="Clear ticket filter"
+              >
+                &times;
+              </button>
+            )}
+          </div>
         </div>
 
         {loading && drafts.length === 0 ? (
@@ -224,10 +350,15 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
           <div className="section-loading">Searching...</div>
         ) : displayDrafts.length === 0 ? (
           <div className="section-empty">
-            {draftSearchQuery ? (
+            {draftSearchQuery || ticketFilter ? (
               <>
-                <p>No drafts found matching "{draftSearchQuery}"</p>
-                <p className="empty-hint">Try a different search term.</p>
+                <p>
+                  No drafts found
+                  {draftSearchQuery && ` matching "${draftSearchQuery}"`}
+                  {draftSearchQuery && ticketFilter && ' and'}
+                  {ticketFilter && ` for ticket "${ticketFilter}"`}
+                </p>
+                <p className="empty-hint">Try different search terms or clear the filters.</p>
               </>
             ) : (
               <>
@@ -244,9 +375,25 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
           <div key={draft.id} className="draft-card">
             <div className="draft-header">
               <span className="draft-date">{formatDate(draft.created_at)}</span>
-              {draft.ticket_id && (
-                <span className="draft-ticket">{draft.ticket_id}</span>
-              )}
+              <div className="draft-badges">
+                {draft.model_name && (
+                  <span className="draft-model" title={`Generated by ${draft.model_name}`}>
+                    {draft.model_name}
+                  </span>
+                )}
+                {draft.ticket_id && (
+                  <button
+                    className="draft-ticket"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTicketBadgeClick(draft.ticket_id!);
+                    }}
+                    title="Click to filter by this ticket"
+                  >
+                    {draft.ticket_id}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="draft-preview">
               <div className="draft-input-preview">
@@ -271,11 +418,50 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
               <Button
                 variant="ghost"
                 size="small"
+                onClick={() => handleToggleVersions(draft)}
+              >
+                {loadingVersions === draft.id ? 'Loading...' : expandedVersions === draft.id ? 'Hide Versions' : 'Versions'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
                 onClick={() => setDeleteConfirm({ type: 'draft', id: draft.id })}
               >
                 Delete
               </Button>
             </div>
+
+            {/* Version History */}
+            {expandedVersions === draft.id && (
+              <div className="version-history">
+                <h4>Version History</h4>
+                {loadingVersions === draft.id ? (
+                  <div className="version-loading">Loading versions...</div>
+                ) : versionData[draft.id]?.length === 0 ? (
+                  <div className="version-empty">No previous versions found.</div>
+                ) : (
+                  <div className="version-list">
+                    {versionData[draft.id]?.map((version) => (
+                      <div key={version.id} className="version-item">
+                        <div className="version-info">
+                          <span className="version-date">{formatDate(version.created_at)}</span>
+                          <span className="version-preview">
+                            {truncateText(version.response_text || 'No response', 80)}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="small"
+                          onClick={() => handleRestoreVersion(draft, version)}
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
             ))}
           </div>

@@ -21,9 +21,10 @@ export function Button({
     <button
       className={`btn btn-${variant} btn-${size} ${loading ? 'btn-loading' : ''} ${className}`}
       disabled={disabled || loading}
+      aria-busy={loading}
       {...props}
     >
-      {loading && <span className="btn-spinner" />}
+      {loading && <span className="btn-spinner" aria-hidden="true" />}
       <span className={loading ? 'btn-text-loading' : ''}>{children}</span>
     </button>
   );

@@ -1,6 +1,7 @@
 //! Prompt templates and context injection for AssistSupport
 //! Handles system prompts, KB context formatting, and prompt safety
 
+use crate::jira::JiraTicket;
 use crate::kb::search::SearchResult;
 
 /// Default system prompt for IT support assistant
@@ -60,6 +61,15 @@ impl Default for ResponseLength {
     }
 }
 
+/// Decision tree path result
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TreeDecisions {
+    /// Name of the decision tree used
+    pub tree_name: String,
+    /// Summary of the path taken (formatted)
+    pub path_summary: String,
+}
+
 /// Context from various sources for prompt building
 #[derive(Debug, Default)]
 pub struct PromptContext {
@@ -69,6 +79,10 @@ pub struct PromptContext {
     pub ocr_text: Option<String>,
     /// Diagnostic checklist findings
     pub diagnostic_notes: Option<String>,
+    /// Decision tree results
+    pub tree_decisions: Option<TreeDecisions>,
+    /// Jira ticket context
+    pub jira_ticket: Option<JiraTicket>,
     /// User's input/ticket text
     pub user_input: String,
     /// Desired response length
@@ -111,6 +125,18 @@ impl PromptBuilder {
     /// Set diagnostic notes
     pub fn with_diagnostic_notes(mut self, notes: &str) -> Self {
         self.context.diagnostic_notes = Some(notes.to_string());
+        self
+    }
+
+    /// Set decision tree results
+    pub fn with_tree_decisions(mut self, decisions: TreeDecisions) -> Self {
+        self.context.tree_decisions = Some(decisions);
+        self
+    }
+
+    /// Set Jira ticket context
+    pub fn with_jira_ticket(mut self, ticket: JiraTicket) -> Self {
+        self.context.jira_ticket = Some(ticket);
         self
     }
 
@@ -174,9 +200,59 @@ impl PromptBuilder {
         match &self.context.diagnostic_notes {
             Some(notes) if !notes.trim().is_empty() => {
                 format!(
-                    "## Diagnostic Findings\n\n{}\n\n",
+                    "## Diagnostic Notes\n\n{}\n\n",
                     notes.trim()
                 )
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Format decision tree results for context
+    fn format_tree_context(&self) -> String {
+        match &self.context.tree_decisions {
+            Some(tree) => {
+                format!(
+                    "## Decision Tree Diagnostic Results\n\nTree: {}\nPath: {}\n\nUse these diagnostic findings when crafting your response.\n\n",
+                    tree.tree_name,
+                    tree.path_summary
+                )
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Format Jira ticket for context
+    fn format_jira_context(&self) -> String {
+        match &self.context.jira_ticket {
+            Some(ticket) => {
+                let mut parts = vec![
+                    format!("## Support Ticket Context\n"),
+                    format!("**Ticket:** {}", ticket.key),
+                    format!("**Summary:** {}", ticket.summary),
+                    format!("**Status:** {}", ticket.status),
+                ];
+
+                if let Some(priority) = &ticket.priority {
+                    parts.push(format!("**Priority:** {}", priority));
+                }
+
+                parts.push(format!("**Type:** {}", ticket.issue_type));
+                parts.push(format!("**Reporter:** {}", ticket.reporter));
+
+                if let Some(assignee) = &ticket.assignee {
+                    parts.push(format!("**Assignee:** {}", assignee));
+                }
+
+                if let Some(desc) = &ticket.description {
+                    if !desc.trim().is_empty() {
+                        parts.push(format!("\n**Description:**\n{}", desc.trim()));
+                    }
+                }
+
+                parts.push(String::from("\nAddress this specific ticket when crafting your response.\n"));
+
+                parts.join("\n")
             }
             _ => String::new(),
         }
@@ -211,6 +287,18 @@ impl PromptBuilder {
         let diagnostic_context = self.format_diagnostic_context();
         if !diagnostic_context.is_empty() {
             parts.push(diagnostic_context);
+        }
+
+        // Tree decision context (if any)
+        let tree_context = self.format_tree_context();
+        if !tree_context.is_empty() {
+            parts.push(tree_context);
+        }
+
+        // Jira ticket context (if any)
+        let jira_context = self.format_jira_context();
+        if !jira_context.is_empty() {
+            parts.push(jira_context);
         }
 
         // User input

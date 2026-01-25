@@ -408,11 +408,10 @@ impl LlmEngine {
     }
 }
 
-impl Default for LlmEngine {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize LLM engine")
-    }
-}
+// NOTE: We intentionally do NOT implement Default for LlmEngine.
+// Initialization can fail (missing Metal support, memory issues, etc.)
+// and we want to handle that gracefully with Result, not panic.
+// Callers should use LlmEngine::new() and handle the Result appropriately.
 
 #[cfg(test)]
 mod tests {

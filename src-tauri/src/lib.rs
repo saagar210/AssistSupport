@@ -1,5 +1,6 @@
 //! AssistSupport - Self-contained local KB + LLM app for IT support
 
+pub mod backup;
 pub mod commands;
 pub mod db;
 pub mod downloads;
@@ -81,12 +82,16 @@ pub fn run() {
             commands::index_kb,
             commands::get_kb_stats,
             commands::list_kb_documents,
+            commands::remove_kb_document,
+            commands::generate_kb_embeddings,
             // Embedding commands
             commands::init_embedding_engine,
             commands::load_embedding_model,
             commands::unload_embedding_model,
             commands::get_embedding_model_info,
             commands::is_embedding_model_loaded,
+            commands::get_embedding_model_path,
+            commands::is_embedding_model_downloaded,
             // Vector store commands
             commands::init_vector_store,
             commands::set_vector_enabled,
@@ -113,6 +118,7 @@ pub fn run() {
             commands::delete_draft,
             commands::list_autosaves,
             commands::cleanup_autosaves,
+            commands::get_draft_versions,
             commands::list_templates,
             commands::get_template,
             commands::save_template,
@@ -124,6 +130,10 @@ pub fn run() {
             commands::delete_custom_variable,
             // Export commands
             commands::export_draft,
+            // Backup/Restore commands
+            commands::export_backup,
+            commands::preview_backup_import,
+            commands::import_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
