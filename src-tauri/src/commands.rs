@@ -15,6 +15,7 @@ use once_cell::sync::Lazy;
 
 /// Global cancel flag for generation - shared between generate and cancel commands
 static GENERATION_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
 /// Initialize the application
 #[tauri::command]
@@ -261,7 +262,7 @@ pub fn load_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(&path, layers).map_err(|e| e.to_string())
+    engine.load_model(&path, layers, model_id).map_err(|e| e.to_string())
 }
 
 /// Load a custom GGUF model from a file path
@@ -292,12 +293,18 @@ pub fn load_custom_model(
         return Err("File too small to be a valid GGUF model.".into());
     }
 
+    let model_id = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("custom-model")
+        .to_string();
+
     let llm_guard = state.llm.read();
     let engine = llm_guard.as_ref().ok_or("LLM engine not initialized")?;
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(path, layers).map_err(|e| e.to_string())
+    engine.load_model(path, layers, model_id).map_err(|e| e.to_string())
 }
 
 /// Validate a GGUF file without loading it (returns model metadata)
@@ -530,6 +537,18 @@ pub async fn generate_with_context(
 ) -> Result<GenerateWithContextResult, String> {
     use crate::prompts::PromptBuilder;
 
+    validate_non_empty(&params.user_input).map_err(|e| e.to_string())?;
+    validate_text_size(&params.user_input, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    if let Some(query) = &params.kb_query {
+        validate_text_size(query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
+    }
+    if let Some(ocr) = &params.ocr_text {
+        validate_text_size(ocr, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    }
+    if let Some(notes) = &params.diagnostic_notes {
+        validate_text_size(notes, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    }
+
     // Search KB if database is available
     let kb_results = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -583,6 +602,8 @@ pub async fn generate_with_context(
 
     let source_chunk_ids = builder.get_source_chunk_ids();
     let prompt = builder.build();
+
+    validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
     // Generate using the built prompt
     let gen_result = generate_text(
@@ -616,6 +637,18 @@ pub async fn generate_streaming(
 ) -> Result<GenerateWithContextResult, String> {
     use crate::prompts::PromptBuilder;
 
+    validate_non_empty(&params.user_input).map_err(|e| e.to_string())?;
+    validate_text_size(&params.user_input, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    if let Some(query) = &params.kb_query {
+        validate_text_size(query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
+    }
+    if let Some(ocr) = &params.ocr_text {
+        validate_text_size(ocr, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    }
+    if let Some(notes) = &params.diagnostic_notes {
+        validate_text_size(notes, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+    }
+
     // Search KB if database is available
     let kb_results = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -669,6 +702,8 @@ pub async fn generate_streaming(
 
     let source_chunk_ids = builder.get_source_chunk_ids();
     let prompt = builder.build();
+
+    validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
     // Get engine state
     let llm = state.llm.clone();
@@ -990,7 +1025,8 @@ pub async fn download_model(
 
     // Create progress channel
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    DOWNLOAD_CANCEL_FLAG.store(false, Ordering::SeqCst);
+    let cancel_flag = DOWNLOAD_CANCEL_FLAG.clone();
 
     // Spawn download task
     let download_handle = {
@@ -1022,8 +1058,7 @@ pub async fn download_model(
 /// Cancel an ongoing download
 #[tauri::command]
 pub fn cancel_download() -> Result<(), String> {
-    // Note: In a full implementation, we'd track the cancel_flag
-    // and set it here. For now, this is a placeholder.
+    DOWNLOAD_CANCEL_FLAG.store(true, Ordering::SeqCst);
     Ok(())
 }
 

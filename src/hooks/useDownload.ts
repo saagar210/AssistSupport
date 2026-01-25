@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { DownloadProgress } from '../types';
@@ -9,13 +9,12 @@ export interface DownloadState {
   error: string | null;
 }
 
-interface DownloadEvent {
-  model_id: string;
-  downloaded_bytes: number;
-  total_bytes: number;
-  percent: number;
-  speed_bps: number;
-}
+type DownloadProgressEvent =
+  | { Started: { url: string; total_bytes: number | null } }
+  | { Progress: { downloaded: number; total: number | null; speed_bps: number } }
+  | { Completed: { path: string; sha256: string } }
+  | { Error: { message: string } }
+  | 'Cancelled';
 
 export function useDownload() {
   const [state, setState] = useState<DownloadState>({
@@ -23,22 +22,84 @@ export function useDownload() {
     downloadProgress: null,
     error: null,
   });
+  const currentModelIdRef = useRef<string | null>(null);
 
   // Listen for download progress events
   useEffect(() => {
-    const unlisten = listen<DownloadEvent>('download-progress', (event) => {
-      const progress = event.payload;
-      setState(prev => ({
-        ...prev,
-        downloadProgress: {
-          model_id: progress.model_id,
-          percent: progress.percent,
-          downloaded_bytes: progress.downloaded_bytes,
-          total_bytes: progress.total_bytes,
-          speed_bps: progress.speed_bps,
-        },
-        isDownloading: progress.percent < 100,
-      }));
+    const unlisten = listen<DownloadProgressEvent>('download-progress', (event) => {
+      const payload = event.payload;
+      const modelId = currentModelIdRef.current ?? 'unknown';
+
+      if (payload === 'Cancelled') {
+        setState(prev => ({
+          ...prev,
+          isDownloading: false,
+          error: 'Download cancelled',
+        }));
+        return;
+      }
+
+      if ('Error' in payload) {
+        setState(prev => ({
+          ...prev,
+          isDownloading: false,
+          error: payload.Error.message,
+        }));
+        return;
+      }
+
+      if ('Started' in payload) {
+        const totalBytes = payload.Started.total_bytes ?? 0;
+        setState(prev => ({
+          ...prev,
+          downloadProgress: {
+            model_id: modelId,
+            percent: 0,
+            downloaded_bytes: 0,
+            total_bytes: totalBytes,
+            speed_bps: 0,
+          },
+          isDownloading: true,
+        }));
+        return;
+      }
+
+      if ('Progress' in payload) {
+        const { downloaded, total, speed_bps } = payload.Progress;
+        const totalBytes = total ?? 0;
+        const percent = totalBytes > 0 ? (downloaded / totalBytes) * 100 : 0;
+        setState(prev => ({
+          ...prev,
+          downloadProgress: {
+            model_id: modelId,
+            percent,
+            downloaded_bytes: downloaded,
+            total_bytes: totalBytes,
+            speed_bps,
+          },
+          isDownloading: true,
+        }));
+        return;
+      }
+
+      if ('Completed' in payload) {
+        setState(prev => ({
+          ...prev,
+          downloadProgress: prev.downloadProgress ? {
+            ...prev.downloadProgress,
+            model_id: modelId,
+            percent: 100,
+            speed_bps: 0,
+          } : {
+            model_id: modelId,
+            percent: 100,
+            downloaded_bytes: 0,
+            total_bytes: 0,
+            speed_bps: 0,
+          },
+          isDownloading: false,
+        }));
+      }
     });
 
     return () => {
@@ -47,6 +108,7 @@ export function useDownload() {
   }, []);
 
   const downloadModel = useCallback(async (modelId: string): Promise<string> => {
+    currentModelIdRef.current = modelId;
     setState(prev => ({
       ...prev,
       isDownloading: true,

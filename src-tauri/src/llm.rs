@@ -42,6 +42,7 @@ pub enum LlmError {
 /// Model information
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelInfo {
+    pub id: String,
     pub path: PathBuf,
     pub name: String,
     pub size_bytes: u64,
@@ -131,7 +132,7 @@ impl LlmEngine {
     }
 
     /// Load a model from file
-    pub fn load_model(&self, path: &Path, n_gpu_layers: u32) -> Result<ModelInfo, LlmError> {
+    pub fn load_model(&self, path: &Path, n_gpu_layers: u32, model_id: String) -> Result<ModelInfo, LlmError> {
         if !path.exists() {
             return Err(LlmError::ModelNotFound(path.display().to_string()));
         }
@@ -168,6 +169,7 @@ impl LlmEngine {
 
         // Extract model info
         let info = ModelInfo {
+            id: if model_id.trim().is_empty() { file_name.to_string() } else { model_id },
             path: path.to_path_buf(),
             name: file_name.to_string(),
             size_bytes,
@@ -448,7 +450,12 @@ mod tests {
         assert!(!engine.is_model_loaded());
 
         // Load model with GPU offload
-        let info = engine.load_model(&model_path, 1000).expect("Failed to load model");
+        let model_id = model_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("custom-model")
+            .to_string();
+        let info = engine.load_model(&model_path, 1000, model_id).expect("Failed to load model");
         println!("Loaded model: {:?}", info);
         assert!(engine.is_model_loaded());
         assert!(info.n_vocab > 0);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { SettingsTab } from './SettingsTab';
 import { invoke } from '@tauri-apps/api/core';
 import { ThemeProvider } from '../../contexts/ThemeContext';
@@ -69,21 +69,30 @@ vi.mock('../../hooks/useEmbedding', () => ({
   }),
 }));
 
+const mockLoadVariables = vi.fn();
+const mockSaveVariable = vi.fn().mockResolvedValue(true);
+const mockDeleteVariable = vi.fn().mockResolvedValue(true);
+
 vi.mock('../../hooks/useCustomVariables', () => ({
   useCustomVariables: () => ({
     variables: [],
-    loadVariables: vi.fn(),
-    saveVariable: vi.fn().mockResolvedValue(true),
-    deleteVariable: vi.fn().mockResolvedValue(true),
+    loadVariables: mockLoadVariables,
+    saveVariable: mockSaveVariable,
+    deleteVariable: mockDeleteVariable,
   }),
 }));
 
-function renderWithProviders(ui: React.ReactElement) {
-  return render(
-    <ThemeProvider>
-      <ToastProvider>{ui}</ToastProvider>
-    </ThemeProvider>
-  );
+async function renderWithProviders(ui: React.ReactElement) {
+  let renderResult: ReturnType<typeof render>;
+  await act(async () => {
+    renderResult = render(
+      <ThemeProvider>
+        <ToastProvider>{ui}</ToastProvider>
+      </ThemeProvider>
+    );
+    await Promise.resolve();
+  });
+  return renderResult!;
 }
 
 describe('SettingsTab', () => {

@@ -131,8 +131,8 @@ export function useKb() {
   const getIndexStats = useCallback(async (): Promise<{ total_chunks: number; total_files: number }> => {
     const stats = await invoke<IndexStats>('get_kb_stats');
     return {
-      total_chunks: stats.total_chunks,
-      total_files: stats.total_files,
+      total_chunks: stats.chunk_count,
+      total_files: stats.document_count,
     };
   }, []);
 

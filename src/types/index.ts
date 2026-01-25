@@ -3,6 +3,7 @@ export interface InitResult {
   is_first_run: boolean;
   keychain_available: boolean;
   fts5_available: boolean;
+  vector_store_ready: boolean;
 }
 
 export interface VectorConsent {
@@ -21,6 +22,9 @@ export interface ModelInfo {
   size_bytes?: number;
   n_params?: number | null;
   n_ctx?: number;
+  n_ctx_train?: number;
+  n_embd?: number;
+  n_vocab?: number;
   n_gpu_layers?: number;
 }
 
@@ -129,16 +133,16 @@ export interface IndexedFile {
 }
 
 export interface IndexStats {
-  total_documents: number;
-  total_files: number;
-  total_chunks: number;
-  last_indexed: string | null;
+  document_count: number;
+  chunk_count: number;
+  total_words: number;
 }
 
 export interface IndexResult {
-  documents_indexed: number;
-  chunks_created: number;
-  errors: string[];
+  total_files: number;
+  indexed: number;
+  skipped: number;
+  errors: number;
 }
 
 export interface SearchResult {

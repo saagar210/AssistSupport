@@ -145,7 +145,7 @@ impl DownloadManager {
             .map_err(|e| DownloadError::Network(e.to_string()))?;
 
         // Check for existing partial download
-        let resume_from = if partial_path.exists() {
+        let mut resume_from = if partial_path.exists() {
             std::fs::metadata(&partial_path)?.len()
         } else {
             0
@@ -168,6 +168,11 @@ impl DownloadManager {
             )));
         }
 
+        if resume_from > 0 && response.status() == reqwest::StatusCode::OK {
+            // Server ignored Range header; restart from scratch to avoid corruption.
+            resume_from = 0;
+        }
+
         // Get total size
         let total_bytes = response.content_length()
             .map(|len| if resume_from > 0 { len + resume_from } else { len });
@@ -182,6 +187,7 @@ impl DownloadManager {
             .create(true)
             .write(true)
             .append(resume_from > 0)
+            .truncate(resume_from == 0)
             .open(&partial_path)?;
 
         // Download with progress

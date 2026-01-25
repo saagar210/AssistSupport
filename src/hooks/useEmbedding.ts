@@ -55,7 +55,7 @@ export function useEmbedding() {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       const info = await invoke<EmbeddingModelInfo>('load_embedding_model', {
-        modelPath,
+        path: modelPath,
         nGpuLayers: nGpuLayers ?? 1000,
       });
       setState(prev => ({

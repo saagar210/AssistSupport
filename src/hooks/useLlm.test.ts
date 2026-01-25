@@ -29,6 +29,7 @@ describe('useLlm', () => {
 
   it('checkModelStatus updates state when model is loaded', async () => {
     const mockModelInfo = {
+      id: 'test-model',
       path: '/models/test.gguf',
       name: 'test.gguf',
       size_bytes: 1000000,
@@ -73,6 +74,7 @@ describe('useLlm', () => {
 
   it('loadModel sets loading state and updates on success', async () => {
     const mockModelInfo = {
+      id: 'test-model',
       path: '/models/test.gguf',
       name: 'test.gguf',
       size_bytes: 1000000,

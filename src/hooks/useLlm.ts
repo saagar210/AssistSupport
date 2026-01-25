@@ -66,7 +66,7 @@ export function useLlm() {
       const isLoaded = await invoke<boolean>('is_model_loaded');
       if (isLoaded) {
         const info = await invoke<ModelInfo | null>('get_model_info');
-        return info?.id ?? null;
+        return info?.id ?? info?.name ?? null;
       }
       return null;
     } catch {

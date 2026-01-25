@@ -24,7 +24,7 @@ describe('useKb', () => {
   });
 
   it('loadKbInfo fetches folder, stats, and documents', async () => {
-    const mockStats = { total_chunks: 100, total_files: 5 };
+    const mockStats = { chunk_count: 100, document_count: 5, total_words: 5000 };
     const mockDocs = [
       { id: '1', file_path: '/kb/doc1.md', title: 'Doc 1', indexed_at: '2024-01-01', chunk_count: 10 },
       { id: '2', file_path: '/kb/doc2.md', title: 'Doc 2', indexed_at: '2024-01-02', chunk_count: 20 },
@@ -86,8 +86,8 @@ describe('useKb', () => {
   });
 
   it('indexKb sets indexing state and refreshes after completion', async () => {
-    const mockResult = { files_indexed: 5, chunks_created: 100, errors: [] };
-    const mockStats = { total_chunks: 100, total_files: 5 };
+    const mockResult = { total_files: 5, indexed: 5, skipped: 0, errors: 0 };
+    const mockStats = { chunk_count: 100, document_count: 5, total_words: 5000 };
     const mockDocs = [{ id: '1', file_path: '/kb/doc1.md', title: 'Doc 1', indexed_at: '2024-01-01', chunk_count: 20 }];
 
     mockInvoke.mockImplementation(async (cmd: string) => {
