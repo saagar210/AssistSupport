@@ -4,7 +4,7 @@ use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
 use crate::security::{KeychainManager, MasterKey, SecurityError};
-use crate::validation::{validate_text_size, validate_non_empty, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES};
+use crate::validation::{validate_text_size, validate_non_empty, validate_url, validate_ticket_id, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1557,10 +1557,22 @@ pub fn process_ocr(image_path: String) -> Result<OcrResult, String> {
     })
 }
 
+/// Maximum base64 payload size for OCR (10MB encoded = ~7.5MB decoded)
+const MAX_OCR_BASE64_BYTES: usize = 10 * 1024 * 1024;
+
 /// Process OCR from base64-encoded image data (for clipboard paste)
 #[tauri::command]
 pub fn process_ocr_bytes(image_base64: String) -> Result<OcrResult, String> {
     use base64::{Engine as _, engine::general_purpose};
+
+    // Validate payload size before processing to prevent memory spikes
+    if image_base64.len() > MAX_OCR_BASE64_BYTES {
+        return Err(format!(
+            "Image too large: {} bytes exceeds limit of {} bytes. Please use a smaller image.",
+            image_base64.len(),
+            MAX_OCR_BASE64_BYTES
+        ));
+    }
 
     // Decode base64
     let image_data = general_purpose::STANDARD
@@ -1679,6 +1691,9 @@ pub async fn configure_jira(
     email: String,
     api_token: String,
 ) -> Result<(), String> {
+    // Validate URL format
+    validate_url(&base_url).map_err(|e| e.to_string())?;
+
     // Test connection first
     let client = JiraClient::new(&base_url, &email, &api_token);
     if !client.test_connection().await.map_err(|e| e.to_string())? {
@@ -1729,6 +1744,9 @@ pub async fn get_jira_ticket(
     state: State<'_, AppState>,
     ticket_key: String,
 ) -> Result<JiraTicket, String> {
+    // Validate ticket key format
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+
     // Get config from DB
     let (base_url, email) = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -2040,22 +2058,30 @@ pub async fn export_draft(
 
 use crate::backup::{ExportSummary, ImportPreview, ImportSummary};
 
-/// Export all app data to a ZIP backup file
+/// Export all app data to a backup file (optionally encrypted with password)
 #[tauri::command]
 pub async fn export_backup(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    password: Option<String>,
 ) -> Result<ExportSummary, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
+    // Determine file extension based on encryption
+    let (filename, filter_name, extensions) = if password.is_some() {
+        ("assistsupport-backup.enc", "Encrypted Backup", &["enc"][..])
+    } else {
+        ("assistsupport-backup.zip", "ZIP Archive", &["zip"][..])
+    };
+
     // Show save file dialog
     let file_handle = app.dialog()
         .file()
-        .set_file_name("assistsupport-backup.zip")
-        .add_filter("ZIP Archive", &["zip"])
+        .set_file_name(filename)
+        .add_filter(filter_name, extensions)
         .blocking_save_file();
 
     match file_handle {
@@ -2063,24 +2089,27 @@ pub async fn export_backup(
             let file_path = path.as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::export_backup(db, file_path)
+            crate::backup::export_backup(db, file_path, password.as_deref())
                 .map_err(|e| e.to_string())
         }
         None => Err("Export cancelled".to_string()),
     }
 }
 
-/// Preview what will be imported from a backup file
+/// Preview what will be imported from a backup file (with optional password for encrypted backups)
 #[tauri::command]
 pub async fn preview_backup_import(
     app: tauri::AppHandle,
+    password: Option<String>,
 ) -> Result<ImportPreview, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    // Show open file dialog
+    // Show open file dialog (accept both ZIP and encrypted backups)
     let file_handle = app.dialog()
         .file()
+        .add_filter("Backup Files", &["zip", "enc"])
         .add_filter("ZIP Archive", &["zip"])
+        .add_filter("Encrypted Backup", &["enc"])
         .blocking_pick_file();
 
     match file_handle {
@@ -2088,28 +2117,31 @@ pub async fn preview_backup_import(
             let file_path = path.as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::preview_import(file_path)
+            crate::backup::preview_import(file_path, password.as_deref())
                 .map_err(|e| e.to_string())
         }
         None => Err("Import cancelled".to_string()),
     }
 }
 
-/// Import data from a backup ZIP file
+/// Import data from a backup file (with optional password for encrypted backups)
 #[tauri::command]
 pub async fn import_backup(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    password: Option<String>,
 ) -> Result<ImportSummary, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    // Show open file dialog
+    // Show open file dialog (accept both ZIP and encrypted backups)
     let file_handle = app.dialog()
         .file()
+        .add_filter("Backup Files", &["zip", "enc"])
         .add_filter("ZIP Archive", &["zip"])
+        .add_filter("Encrypted Backup", &["enc"])
         .blocking_pick_file();
 
     match file_handle {
@@ -2117,7 +2149,7 @@ pub async fn import_backup(
             let file_path = path.as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::import_backup(db, file_path)
+            crate::backup::import_backup(db, file_path, password.as_deref())
                 .map_err(|e| e.to_string())
         }
         None => Err("Import cancelled".to_string()),

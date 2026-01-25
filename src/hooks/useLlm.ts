@@ -11,6 +11,7 @@ import type {
   StreamToken,
   TreeDecisions,
   JiraTicketContext,
+  GgufFileInfo,
 } from '../types';
 
 export interface LlmState {
@@ -293,12 +294,53 @@ export function useLlm() {
     }
   }, []);
 
+  const validateGgufFile = useCallback(async (modelPath: string): Promise<GgufFileInfo> => {
+    try {
+      const info = await invoke<GgufFileInfo>('validate_gguf_file', { modelPath });
+      return info;
+    } catch (e) {
+      throw e;
+    }
+  }, []);
+
+  const loadCustomModel = useCallback(async (modelPath: string, nGpuLayers?: number): Promise<ModelInfo> => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      // First validate the file
+      const validation = await validateGgufFile(modelPath);
+      if (!validation.is_valid) {
+        throw new Error(`Invalid GGUF file: ${validation.file_name}`);
+      }
+
+      const info = await invoke<ModelInfo>('load_custom_model', {
+        modelPath,
+        nGpuLayers: nGpuLayers ?? 1000,
+      });
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        isLoaded: true,
+        modelInfo: info,
+      }));
+      return info;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, [validateGgufFile]);
+
   return {
     ...state,
     checkModelStatus,
     getLoadedModel,
     listModels,
     loadModel,
+    loadCustomModel,
+    validateGgufFile,
     unloadModel,
     generate,
     generateWithContext,

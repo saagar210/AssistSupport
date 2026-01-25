@@ -28,6 +28,12 @@ export interface ModelInfo {
   n_gpu_layers?: number;
 }
 
+export interface GgufFileInfo {
+  file_name: string;
+  file_size: number;
+  is_valid: boolean;
+}
+
 export interface GenerationParams {
   max_tokens?: number;
   temperature?: number;

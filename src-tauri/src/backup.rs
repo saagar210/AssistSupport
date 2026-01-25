@@ -2,11 +2,14 @@
 //!
 //! Exports app data (drafts, templates, variables, custom trees, settings, KB config)
 //! as a ZIP file. Imports restore data from a ZIP file.
+//!
+//! Supports optional password-based encryption using Argon2id + AES-256-GCM.
 
 use crate::db::{CustomVariable, Database, DecisionTree, ResponseTemplate, SavedDraft};
+use crate::security::ExportCrypto;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Cursor};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
@@ -48,6 +51,7 @@ pub struct ExportSummary {
     pub variables_count: usize,
     pub trees_count: usize,
     pub path: String,
+    pub encrypted: bool,
 }
 
 /// Summary of import operation
@@ -67,7 +71,22 @@ pub struct ImportPreview {
     pub templates_count: usize,
     pub variables_count: usize,
     pub trees_count: usize,
+    pub encrypted: bool,
+    /// Path to the backup file (for subsequent import with password)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
+
+/// Encrypted backup metadata (stored as first bytes of encrypted file)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EncryptedBackupHeader {
+    pub magic: String,  // "ASSISTSUPPORT_ENCRYPTED_BACKUP"
+    pub version: String,
+    pub salt: [u8; 32],
+    pub nonce: [u8; 12],
+}
+
+const ENCRYPTED_MAGIC: &str = "ASSISTSUPPORT_ENCRYPTED_BACKUP";
 
 /// Backup error type
 #[derive(Debug, thiserror::Error)]
@@ -82,83 +101,222 @@ pub enum BackupError {
     Database(String),
     #[error("Invalid backup: {0}")]
     InvalidBackup(String),
+    #[error("Backup is encrypted - password required")]
+    EncryptionRequired,
+    #[error("Decryption failed - incorrect password or corrupted backup")]
+    DecryptionFailed,
+    #[error("Encryption error: {0}")]
+    Encryption(String),
 }
 
-/// Export all app data to a ZIP file
-pub fn export_backup(db: &Database, output_path: &Path) -> Result<ExportSummary, BackupError> {
-    let file = File::create(output_path)?;
-    let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+/// Export all app data to a ZIP file (optionally encrypted with password)
+pub fn export_backup(
+    db: &Database,
+    output_path: &Path,
+    password: Option<&str>,
+) -> Result<ExportSummary, BackupError> {
+    // Create ZIP in memory first
+    let mut zip_buffer = Vec::new();
+    {
+        let cursor = Cursor::new(&mut zip_buffer);
+        let mut zip = ZipWriter::new(cursor);
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    // Export version info
-    let version = BackupVersion {
-        version: BACKUP_VERSION.to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-    };
-    zip.start_file("version.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&version)?.as_bytes())?;
+        // Export version info
+        let version = BackupVersion {
+            version: BACKUP_VERSION.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+        zip.start_file("version.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&version)?.as_bytes())?;
 
-    // Export drafts (excluding autosaves)
-    let drafts = db
-        .list_drafts(10000)
-        .map_err(|e| BackupError::Database(e.to_string()))?;
-    zip.start_file("drafts.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&drafts)?.as_bytes())?;
+        // Export drafts (excluding autosaves)
+        let drafts = db
+            .list_drafts(10000)
+            .map_err(|e| BackupError::Database(e.to_string()))?;
+        zip.start_file("drafts.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&drafts)?.as_bytes())?;
 
-    // Export templates
-    let templates = db
-        .list_templates()
-        .map_err(|e| BackupError::Database(e.to_string()))?;
-    zip.start_file("templates.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&templates)?.as_bytes())?;
+        // Export templates
+        let templates = db
+            .list_templates()
+            .map_err(|e| BackupError::Database(e.to_string()))?;
+        zip.start_file("templates.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&templates)?.as_bytes())?;
 
-    // Export custom variables
-    let variables = db
-        .list_custom_variables()
-        .map_err(|e| BackupError::Database(e.to_string()))?;
-    zip.start_file("variables.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&variables)?.as_bytes())?;
+        // Export custom variables
+        let variables = db
+            .list_custom_variables()
+            .map_err(|e| BackupError::Database(e.to_string()))?;
+        zip.start_file("variables.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&variables)?.as_bytes())?;
 
-    // Export custom decision trees only (source='custom')
-    let all_trees = db
-        .list_decision_trees()
-        .map_err(|e| BackupError::Database(e.to_string()))?;
-    let custom_trees: Vec<_> = all_trees
-        .into_iter()
-        .filter(|t| t.source == "custom")
-        .collect();
-    zip.start_file("trees.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&custom_trees)?.as_bytes())?;
+        // Export custom decision trees only (source='custom')
+        let all_trees = db
+            .list_decision_trees()
+            .map_err(|e| BackupError::Database(e.to_string()))?;
+        let custom_trees: Vec<_> = all_trees
+            .into_iter()
+            .filter(|t| t.source == "custom")
+            .collect();
+        zip.start_file("trees.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&custom_trees)?.as_bytes())?;
 
-    // Export settings
-    let settings = export_settings(db)?;
-    zip.start_file("settings.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&settings)?.as_bytes())?;
+        // Export settings
+        let settings = export_settings(db)?;
+        zip.start_file("settings.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&settings)?.as_bytes())?;
 
-    // Export KB config (folder path only)
-    let kb_config = export_kb_config(db)?;
-    zip.start_file("kb_config.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&kb_config)?.as_bytes())?;
+        // Export KB config (folder path only)
+        let kb_config = export_kb_config(db)?;
+        zip.start_file("kb_config.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&kb_config)?.as_bytes())?;
 
-    zip.finish()?;
+        zip.finish()?;
+    }
+
+    // Get counts for summary (re-query is simpler than tracking during export)
+    let drafts_count = db.list_drafts(10000).map(|d| d.len()).unwrap_or(0);
+    let templates_count = db.list_templates().map(|t| t.len()).unwrap_or(0);
+    let variables_count = db.list_custom_variables().map(|v| v.len()).unwrap_or(0);
+    let trees_count = db.list_decision_trees()
+        .map(|t| t.into_iter().filter(|tree| tree.source == "custom").count())
+        .unwrap_or(0);
+
+    // If password provided, encrypt the ZIP data
+    let encrypted = password.is_some();
+    if let Some(pwd) = password {
+        let (ciphertext, salt, nonce) = ExportCrypto::encrypt_for_export(&zip_buffer, pwd)
+            .map_err(|e| BackupError::Encryption(e.to_string()))?;
+
+        // Write encrypted backup file
+        let header = EncryptedBackupHeader {
+            magic: ENCRYPTED_MAGIC.to_string(),
+            version: BACKUP_VERSION.to_string(),
+            salt,
+            nonce,
+        };
+        let header_json = serde_json::to_vec(&header)?;
+        let header_len = (header_json.len() as u32).to_le_bytes();
+
+        let mut file = File::create(output_path)?;
+        file.write_all(&header_len)?;
+        file.write_all(&header_json)?;
+        file.write_all(&ciphertext)?;
+    } else {
+        // Write unencrypted ZIP
+        let mut file = File::create(output_path)?;
+        file.write_all(&zip_buffer)?;
+    }
 
     Ok(ExportSummary {
-        drafts_count: drafts.len(),
-        templates_count: templates.len(),
-        variables_count: variables.len(),
-        trees_count: custom_trees.len(),
+        drafts_count,
+        templates_count,
+        variables_count,
+        trees_count,
         path: output_path.display().to_string(),
+        encrypted,
     })
 }
 
-/// Preview what will be imported from a ZIP file
-pub fn preview_import(zip_path: &Path) -> Result<ImportPreview, BackupError> {
-    let file = File::open(zip_path)?;
+/// Check if a file is an encrypted backup
+fn is_encrypted_backup(path: &Path) -> Result<Option<EncryptedBackupHeader>, BackupError> {
+    let mut file = File::open(path)?;
+    let mut header_len_bytes = [0u8; 4];
+
+    if file.read_exact(&mut header_len_bytes).is_err() {
+        return Ok(None);
+    }
+
+    let header_len = u32::from_le_bytes(header_len_bytes) as usize;
+
+    // Sanity check: header shouldn't be huge
+    if header_len > 1024 {
+        return Ok(None);
+    }
+
+    let mut header_json = vec![0u8; header_len];
+    if file.read_exact(&mut header_json).is_err() {
+        return Ok(None);
+    }
+
+    match serde_json::from_slice::<EncryptedBackupHeader>(&header_json) {
+        Ok(header) if header.magic == ENCRYPTED_MAGIC => Ok(Some(header)),
+        _ => Ok(None),
+    }
+}
+
+/// Decrypt an encrypted backup file and return the ZIP data
+fn decrypt_backup(path: &Path, password: &str) -> Result<Vec<u8>, BackupError> {
+    let mut file = File::open(path)?;
+
+    // Read header length
+    let mut header_len_bytes = [0u8; 4];
+    file.read_exact(&mut header_len_bytes)?;
+    let header_len = u32::from_le_bytes(header_len_bytes) as usize;
+
+    // Read header
+    let mut header_json = vec![0u8; header_len];
+    file.read_exact(&mut header_json)?;
+    let header: EncryptedBackupHeader = serde_json::from_slice(&header_json)?;
+
+    if header.magic != ENCRYPTED_MAGIC {
+        return Err(BackupError::InvalidBackup("Not an encrypted backup".into()));
+    }
+
+    // Read ciphertext
+    let mut ciphertext = Vec::new();
+    file.read_to_end(&mut ciphertext)?;
+
+    // Decrypt
+    ExportCrypto::decrypt_export(&ciphertext, &header.salt, &header.nonce, password)
+        .map_err(|_| BackupError::DecryptionFailed)
+}
+
+/// Preview what will be imported from a backup file (with optional password for encrypted backups)
+pub fn preview_import(backup_path: &Path, password: Option<&str>) -> Result<ImportPreview, BackupError> {
+    let path_str = backup_path.display().to_string();
+
+    // Check if encrypted
+    if let Some(_header) = is_encrypted_backup(backup_path)? {
+        // Encrypted backup - need password to preview contents
+        let pwd = password.ok_or(BackupError::EncryptionRequired)?;
+        let zip_data = decrypt_backup(backup_path, pwd)?;
+
+        let cursor = Cursor::new(zip_data);
+        let mut archive = ZipArchive::new(cursor)?;
+
+        let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
+        if version.version != BACKUP_VERSION {
+            return Err(BackupError::InvalidBackup(format!(
+                "Unsupported backup version: {}",
+                version.version
+            )));
+        }
+
+        let drafts: Vec<SavedDraft> = read_json_from_zip(&mut archive, "drafts.json")?;
+        let templates: Vec<ResponseTemplate> = read_json_from_zip(&mut archive, "templates.json")?;
+        let variables: Vec<CustomVariable> = read_json_from_zip(&mut archive, "variables.json")?;
+        let trees: Vec<DecisionTree> = read_json_from_zip(&mut archive, "trees.json")?;
+
+        return Ok(ImportPreview {
+            version: version.version,
+            drafts_count: drafts.len(),
+            templates_count: templates.len(),
+            variables_count: variables.len(),
+            trees_count: trees.len(),
+            encrypted: true,
+            path: Some(path_str),
+        });
+    }
+
+    // Unencrypted backup
+    let file = File::open(backup_path)?;
     let mut archive = ZipArchive::new(file)?;
 
     // Read version
-    let version = read_json_from_zip::<BackupVersion>(&mut archive, "version.json")?;
+    let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
     if version.version != BACKUP_VERSION {
         return Err(BackupError::InvalidBackup(format!(
             "Unsupported backup version: {}",
@@ -178,17 +336,38 @@ pub fn preview_import(zip_path: &Path) -> Result<ImportPreview, BackupError> {
         templates_count: templates.len(),
         variables_count: variables.len(),
         trees_count: trees.len(),
+        encrypted: false,
+        path: Some(path_str),
     })
 }
 
-/// Import data from a ZIP file
+/// Import data from a backup file (with optional password for encrypted backups)
 /// Merge strategy: insert new, skip existing (by ID)
-pub fn import_backup(db: &Database, zip_path: &Path) -> Result<ImportSummary, BackupError> {
-    let file = File::open(zip_path)?;
-    let mut archive = ZipArchive::new(file)?;
+pub fn import_backup(
+    db: &Database,
+    backup_path: &Path,
+    password: Option<&str>,
+) -> Result<ImportSummary, BackupError> {
+    // Check if encrypted and get archive
+    let archive_result: Result<ZipArchive<Cursor<Vec<u8>>>, BackupError> =
+        if let Some(_header) = is_encrypted_backup(backup_path)? {
+            let pwd = password.ok_or(BackupError::EncryptionRequired)?;
+            let zip_data = decrypt_backup(backup_path, pwd)?;
+            let cursor = Cursor::new(zip_data);
+            Ok(ZipArchive::new(cursor)?)
+        } else {
+            // For unencrypted, read the file into memory to use same type
+            let mut file = File::open(backup_path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let cursor = Cursor::new(data);
+            Ok(ZipArchive::new(cursor)?)
+        };
+
+    let mut archive = archive_result?;
 
     // Verify version
-    let version = read_json_from_zip::<BackupVersion>(&mut archive, "version.json")?;
+    let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
     if version.version != BACKUP_VERSION {
         return Err(BackupError::InvalidBackup(format!(
             "Unsupported backup version: {}",
@@ -247,7 +426,7 @@ pub fn import_backup(db: &Database, zip_path: &Path) -> Result<ImportSummary, Ba
     }
 
     // Import settings (merge, skip schema_version)
-    if let Ok(settings) = read_json_from_zip::<SettingsExport>(&mut archive, "settings.json") {
+    if let Ok(settings) = read_json_from_zip::<SettingsExport, _>(&mut archive, "settings.json") {
         for entry in settings.entries {
             if entry.key != "schema_version" {
                 import_setting(db, &entry.key, &entry.value)?;
@@ -256,7 +435,7 @@ pub fn import_backup(db: &Database, zip_path: &Path) -> Result<ImportSummary, Ba
     }
 
     // Import KB config
-    if let Ok(kb_config) = read_json_from_zip::<KbConfig>(&mut archive, "kb_config.json") {
+    if let Ok(kb_config) = read_json_from_zip::<KbConfig, _>(&mut archive, "kb_config.json") {
         if let Some(folder_path) = kb_config.folder_path {
             import_setting(db, "kb_folder", &folder_path)?;
         }
@@ -270,9 +449,9 @@ pub fn import_backup(db: &Database, zip_path: &Path) -> Result<ImportSummary, Ba
     })
 }
 
-/// Helper: Read JSON from a ZIP file
-fn read_json_from_zip<T: serde::de::DeserializeOwned>(
-    archive: &mut ZipArchive<File>,
+/// Helper: Read JSON from a ZIP archive (generic over reader type)
+fn read_json_from_zip<T: serde::de::DeserializeOwned, R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
     filename: &str,
 ) -> Result<T, BackupError> {
     let mut file = archive.by_name(filename)?;

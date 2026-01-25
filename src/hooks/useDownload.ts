@@ -140,8 +140,23 @@ export function useDownload() {
     }
   }, []);
 
+  const cancelDownload = useCallback(async (): Promise<void> => {
+    try {
+      await invoke('cancel_download');
+      setState(prev => ({
+        ...prev,
+        isDownloading: false,
+        downloadProgress: null,
+        error: 'Download cancelled',
+      }));
+    } catch (e) {
+      console.error('Failed to cancel download:', e);
+    }
+  }, []);
+
   return {
     ...state,
     downloadModel,
+    cancelDownload,
   };
 }

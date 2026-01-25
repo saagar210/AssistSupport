@@ -42,10 +42,25 @@ const CONTEXT_WINDOW_OPTIONS = [
   { value: 32768, label: '32K (32,768 tokens)' },
 ];
 
+// Helper to format bytes for display
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+// Helper to format download speed
+function formatSpeed(bps: number): string {
+  if (bps === 0) return '';
+  return `${formatBytes(bps)}/s`;
+}
+
 export function SettingsTab() {
-  const { loadModel, unloadModel, getLoadedModel, listModels, getContextWindow, setContextWindow } = useLlm();
+  const { loadModel, unloadModel, getLoadedModel, listModels, getContextWindow, setContextWindow, loadCustomModel, validateGgufFile } = useLlm();
   const { setKbFolder, getKbFolder, rebuildIndex, getIndexStats, getVectorConsent, setVectorConsent, generateEmbeddings } = useKb();
-  const { downloadModel, downloadProgress, isDownloading } = useDownload();
+  const { downloadModel, downloadProgress, isDownloading, cancelDownload } = useDownload();
   const { checkConfiguration: checkJiraConfig, configure: configureJira, disconnect: disconnectJira, config: jiraConfig, loading: jiraLoading } = useJira();
   const {
     initEngine: initEmbeddingEngine,
@@ -187,6 +202,40 @@ export function SettingsTab() {
       setDownloadedModels(prev => [...prev, modelId]);
     } catch (err) {
       setError(`Failed to download model: ${err}`);
+    }
+  }
+
+  async function handleLoadCustomModel() {
+    setError(null);
+    setLoading('custom');
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'GGUF Model',
+          extensions: ['gguf'],
+        }],
+        title: 'Select GGUF Model File',
+      });
+
+      if (selected && typeof selected === 'string') {
+        // Validate the file first
+        const validation = await validateGgufFile(selected);
+        if (!validation.is_valid) {
+          setError(`Invalid GGUF file: ${validation.file_name}. Please select a valid GGUF model file.`);
+          return;
+        }
+
+        // Load the model
+        await loadCustomModel(selected);
+        setLoadedModel(validation.file_name);
+        showSuccess(`Loaded custom model: ${validation.file_name}`);
+      }
+    } catch (err) {
+      setError(`Failed to load custom model: ${err}`);
+    } finally {
+      setLoading(null);
     }
   }
 
@@ -470,12 +519,29 @@ export function SettingsTab() {
                 </div>
                 <div className="model-actions">
                   {isDownloadingThis ? (
-                    <div className="download-progress">
-                      <div
-                        className="download-bar"
-                        style={{ width: `${downloadProgress?.percent || 0}%` }}
-                      />
-                      <span>{Math.round(downloadProgress?.percent || 0)}%</span>
+                    <div className="download-progress-container">
+                      <div className="download-progress">
+                        <div
+                          className="download-bar"
+                          style={{ width: `${downloadProgress?.percent || 0}%` }}
+                        />
+                        <span className="download-percent">{Math.round(downloadProgress?.percent || 0)}%</span>
+                      </div>
+                      <div className="download-info">
+                        <span className="download-size">
+                          {formatBytes(downloadProgress?.downloaded_bytes || 0)}
+                          {downloadProgress?.total_bytes ? ` / ${formatBytes(downloadProgress.total_bytes)}` : ''}
+                        </span>
+                        <span className="download-speed">{formatSpeed(downloadProgress?.speed_bps || 0)}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        onClick={cancelDownload}
+                        className="download-cancel-btn"
+                      >
+                        Cancel
+                      </Button>
                     </div>
                   ) : isDownloaded ? (
                     <Button
@@ -500,6 +566,20 @@ export function SettingsTab() {
               </div>
             );
           })}
+        </div>
+
+        <div className="custom-model-section">
+          <h3>Custom Model</h3>
+          <p className="settings-description">
+            Load any GGUF-format model file from your computer.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={handleLoadCustomModel}
+            disabled={!!loading || isDownloading}
+          >
+            {loading === 'custom' ? 'Loading...' : 'Select GGUF File...'}
+          </Button>
         </div>
       </section>
 
@@ -544,9 +624,23 @@ export function SettingsTab() {
                   className="download-bar"
                   style={{ width: `${downloadProgress?.percent || 0}%` }}
                 />
-                <span>{Math.round(downloadProgress?.percent || 0)}%</span>
+                <span className="download-percent">{Math.round(downloadProgress?.percent || 0)}%</span>
               </div>
-              <p className="setting-note">Downloading embedding model...</p>
+              <div className="download-info">
+                <span className="download-size">
+                  {formatBytes(downloadProgress?.downloaded_bytes || 0)}
+                  {downloadProgress?.total_bytes ? ` / ${formatBytes(downloadProgress.total_bytes)}` : ''}
+                </span>
+                <span className="download-speed">{formatSpeed(downloadProgress?.speed_bps || 0)}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={cancelDownload}
+                className="download-cancel-btn"
+              >
+                Cancel
+              </Button>
             </div>
           ) : !embeddingDownloaded ? (
             <div className="embedding-status">

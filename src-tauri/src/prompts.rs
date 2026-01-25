@@ -66,6 +66,16 @@ pub struct TreeDecisions {
     pub path_summary: String,
 }
 
+/// Prompt budget error
+#[derive(Debug, thiserror::Error)]
+pub enum PromptBudgetError {
+    #[error("Prompt exceeds context window: {estimated_tokens} tokens > {context_window} token limit")]
+    ExceedsContextWindow {
+        estimated_tokens: usize,
+        context_window: usize,
+    },
+}
+
 /// Context from various sources for prompt building
 #[derive(Debug, Default)]
 pub struct PromptContext {
@@ -83,6 +93,8 @@ pub struct PromptContext {
     pub user_input: String,
     /// Desired response length
     pub response_length: ResponseLength,
+    /// Context window limit (in tokens) for budget enforcement
+    pub context_window: Option<usize>,
 }
 
 /// Prompt builder for constructing complete prompts
@@ -145,6 +157,12 @@ impl PromptBuilder {
     /// Set response length
     pub fn with_response_length(mut self, length: ResponseLength) -> Self {
         self.context.response_length = length;
+        self
+    }
+
+    /// Set context window limit (in tokens) for budget enforcement
+    pub fn with_context_window(mut self, tokens: usize) -> Self {
+        self.context.context_window = Some(tokens);
         self
     }
 
@@ -324,6 +342,57 @@ impl PromptBuilder {
     pub fn estimate_tokens(&self) -> usize {
         let prompt = self.build();
         prompt.len() / 4
+    }
+
+    /// Build the prompt with context window budget enforcement.
+    /// If the prompt exceeds the context window, KB results are progressively
+    /// removed (lowest score first) until it fits. Returns error if even the
+    /// minimum prompt (without KB context) exceeds the limit.
+    pub fn build_with_budget(&mut self) -> Result<String, PromptBudgetError> {
+        let context_window = match self.context.context_window {
+            Some(cw) => cw,
+            None => return Ok(self.build()), // No budget enforcement
+        };
+
+        // Reserve 25% of context for model response
+        let max_prompt_tokens = (context_window as f64 * 0.75) as usize;
+
+        // First try with all KB results
+        let mut prompt = self.build();
+        let mut estimated_tokens = prompt.len() / 4;
+
+        // If it fits, we're done
+        if estimated_tokens <= max_prompt_tokens {
+            return Ok(prompt);
+        }
+
+        // Try removing KB results one by one (from lowest score)
+        while !self.context.kb_results.is_empty() && estimated_tokens > max_prompt_tokens {
+            // Remove the lowest scoring result
+            let mut min_idx = 0;
+            let mut min_score = f64::MAX;
+            for (i, result) in self.context.kb_results.iter().enumerate() {
+                if result.score < min_score {
+                    min_score = result.score;
+                    min_idx = i;
+                }
+            }
+            self.context.kb_results.remove(min_idx);
+
+            // Rebuild and re-estimate
+            prompt = self.build();
+            estimated_tokens = prompt.len() / 4;
+        }
+
+        // Final check
+        if estimated_tokens > max_prompt_tokens {
+            return Err(PromptBudgetError::ExceedsContextWindow {
+                estimated_tokens,
+                context_window,
+            });
+        }
+
+        Ok(prompt)
     }
 }
 

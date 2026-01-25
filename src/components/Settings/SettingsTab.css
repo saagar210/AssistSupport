@@ -126,6 +126,56 @@
   color: var(--text-primary);
 }
 
+.download-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.download-progress-container .download-progress {
+  width: 100%;
+}
+
+.download-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.download-size {
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.download-speed {
+  font-family: 'SF Mono', Monaco, monospace;
+  color: var(--text-muted);
+}
+
+.download-cancel-btn {
+  align-self: flex-end;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+}
+
+.custom-model-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.custom-model-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.custom-model-section .settings-description {
+  margin-bottom: 12px;
+}
+
 .kb-config {
   display: flex;
   flex-direction: column;

@@ -127,6 +127,97 @@ Acceptance:
 - Users can load custom GGUF, validation errors are shown.
 - Prompt building respects configured context window.
 
+## Progress Notes
+
+### Phase 1 Complete (2026-01-25)
+**Security & Input Hardening (P0)** - All items implemented:
+
+1. **Jira validation in backend commands:**
+   - Added `validate_url(&base_url)` check to `configure_jira` command
+   - Added `validate_ticket_id(&ticket_key)` check to `get_jira_ticket` command
+   - Both return clear user-facing error messages on validation failure
+
+2. **OCR base64 size cap:**
+   - Added `MAX_OCR_BASE64_BYTES` constant (10MB)
+   - Added size check in `process_ocr_bytes` before decoding
+   - Returns friendly error: "Image too large: X bytes exceeds limit of Y bytes. Please use a smaller image."
+
+3. **CSP hardening:**
+   - Replaced `"csp": null` with minimal CSP:
+     `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ipc: tauri:`
+   - Allows: app assets, inline styles (for UI libs), data URIs for images/fonts, HTTPS connections (HuggingFace, Jira), and Tauri IPC
+
+### Phase 2 Complete (2026-01-25)
+**Backup Encryption (P1)** - All items implemented:
+
+1. **Optional password-based encryption for backup export:**
+   - Added `EncryptedBackupHeader` struct with magic marker, version, salt, and nonce
+   - Modified `export_backup()` to accept optional password parameter
+   - Encrypted backups use Argon2id + AES-256-GCM via `ExportCrypto`
+   - Encrypted files saved with `.enc` extension, unencrypted as `.zip`
+   - `ExportSummary` now includes `encrypted: bool` field
+
+2. **Decryption support for import:**
+   - Added `is_encrypted_backup()` and `decrypt_backup()` helper functions
+   - Modified `preview_import()` to detect encrypted backups and require password
+   - Modified `import_backup()` to decrypt with provided password
+   - `ImportPreview` now includes `encrypted: bool` and optional `path` field
+   - Returns `BackupError::EncryptionRequired` when password needed but not provided
+   - Returns `BackupError::DecryptionFailed` for wrong password
+
+3. **Backend command updates:**
+   - `export_backup`, `preview_backup_import`, `import_backup` now accept optional `password` parameter
+   - File dialogs updated to show both `.zip` and `.enc` file filters
+
+### Phase 3 Complete (2026-01-25)
+**Download UX + Cancel (P1)** - All items implemented:
+
+1. **Cancel button added to download UI:**
+   - Added `cancelDownload()` function to `useDownload` hook
+   - Wired to backend `cancel_download` command
+   - Cancel button appears during active downloads
+
+2. **Enhanced download progress display:**
+   - Added `formatBytes()` and `formatSpeed()` helper functions
+   - Progress UI now shows downloaded/total bytes and speed (e.g., "1.2 MB / 2.0 GB" and "5.6 MB/s")
+   - Applied to both LLM model downloads and embedding model downloads
+
+3. **CSS enhancements:**
+   - Added `.download-progress-container`, `.download-info`, `.download-size`, `.download-speed`, `.download-cancel-btn` styles
+
+### Phase 4 Complete (2026-01-25)
+**Custom Model UI + Prompt Budget (P2)** - All items implemented:
+
+1. **Custom GGUF model file picker:**
+   - Added `handleLoadCustomModel()` handler in SettingsTab
+   - Uses file dialog with `.gguf` filter
+   - Validates file with `validateGgufFile()` before loading
+   - Shows validation errors if file is invalid
+   - Added `validateGgufFile()` and `loadCustomModel()` to `useLlm` hook
+   - Added `GgufFileInfo` type to frontend types
+
+2. **UI for custom model loading:**
+   - Added "Custom Model" section in Settings with "Select GGUF File..." button
+   - Added CSS for `.custom-model-section`
+
+3. **Context window enforcement in prompt builder:**
+   - Added `PromptBudgetError` enum for context window violations
+   - Added `context_window: Option<usize>` field to `PromptContext`
+   - Added `with_context_window()` method to `PromptBuilder`
+   - Added `build_with_budget()` method that:
+     - Reserves 25% of context window for model response
+     - Progressively removes lowest-scoring KB results if prompt exceeds budget
+     - Returns `PromptBudgetError::ExceedsContextWindow` if minimum prompt exceeds limit
+
+**All Tests Pass:** 59 Rust tests, 72 frontend tests.
+
+## Summary
+All phases (P0, P1, P2) from the implementation plan have been completed:
+- ✅ Phase 1: Security & Input Hardening (P0)
+- ✅ Phase 2: Backup Encryption (P1)
+- ✅ Phase 3: Download UX + Cancel (P1)
+- ✅ Phase 4: Custom Model UI + Prompt Budget (P2)
+
 ## Additional Notes
 - DirectURN: no occurrences in this repo; if it lives elsewhere, provide reference.
 - Tests currently pass after the applied fixes.
