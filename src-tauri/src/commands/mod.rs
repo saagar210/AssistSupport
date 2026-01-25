@@ -1,10 +1,30 @@
 //! Tauri commands for AssistSupport
+//!
+//! Commands are organized into domain-specific submodules:
+//! - backup: Export, backup, and restore operations
+//! - diagnostics: Health checks and repair operations
+//!
+//! This file contains the remaining commands that are being gradually migrated.
 
+// Domain-specific command modules
+pub mod backup;
+pub mod diagnostics;
+
+// Re-export commands from submodules
+pub use backup::{export_backup, export_draft, import_backup, preview_backup_import, ExportFormat};
+pub use diagnostics::{
+    get_database_stats_cmd, get_failure_modes_cmd, get_llm_resource_limits,
+    get_resource_metrics_cmd, get_system_health, get_vector_maintenance_info_cmd,
+    rebuild_vector_store, repair_database_cmd, run_database_maintenance_cmd,
+    run_quick_health_check, set_llm_resource_limits, QuickHealthResult,
+};
+
+use crate::audit::{self, AuditLogger};
 use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
-use crate::security::{FileKeyStore, TOKEN_HUGGINGFACE, TOKEN_JIRA};
-use crate::validation::{validate_text_size, validate_non_empty, validate_url, validate_ticket_id, validate_within_home, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
+use crate::security::{FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA};
+use crate::validation::{validate_text_size, validate_non_empty, validate_url, is_http_url, validate_ticket_id, validate_within_home, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,10 +44,31 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
     let app_dir = get_app_data_dir();
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
-    // Check if this is first run (no master key in file storage)
-    // FileKeyStore::get_master_key() handles migration from Keychain automatically
+    // Initialize audit logger
+    let _ = AuditLogger::init();
+
+    // Check if this is first run (no master key in any storage)
+    // FileKeyStore::get_master_key() handles migration from legacy/Keychain automatically
     let is_first_run = !FileKeyStore::has_master_key();
-    let master_key = FileKeyStore::get_master_key().map_err(|e| e.to_string())?;
+
+    // Get or create master key (handles passphrase mode check internally)
+    let master_key = match FileKeyStore::get_master_key() {
+        Ok(key) => key,
+        Err(crate::security::SecurityError::PassphraseRequired) => {
+            // Passphrase mode - return special result indicating passphrase needed
+            return Ok(InitResult {
+                is_first_run,
+                vector_enabled: false,
+                vector_store_ready: false,
+                key_storage_mode: KeyStorageMode::Passphrase.to_string(),
+                passphrase_required: true,
+            });
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+
+    // Log app initialization
+    audit::audit_app_initialized(is_first_run);
 
     // Open database
     let db_path = get_db_path();
@@ -81,9 +122,10 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
 
     Ok(InitResult {
         is_first_run,
-        keychain_available: true,
-        fts5_available: true,
+        vector_enabled,
         vector_store_ready,
+        key_storage_mode: KeyStorageMode::Keychain.to_string(),
+        passphrase_required: false,
     })
 }
 
@@ -265,9 +307,10 @@ pub fn greet(name: &str) -> String {
 #[derive(serde::Serialize)]
 pub struct InitResult {
     pub is_first_run: bool,
-    pub keychain_available: bool,
-    pub fts5_available: bool,
+    pub vector_enabled: bool,
     pub vector_store_ready: bool,
+    pub key_storage_mode: String,
+    pub passphrase_required: bool,
 }
 
 // ============================================================================
@@ -324,19 +367,31 @@ pub fn load_custom_model(
         return Err(format!("Model file not found: {}", model_path));
     }
 
+    let validated_path = validate_within_home(path).map_err(|e| match e {
+        ValidationError::PathTraversal => "Model file must be within your home directory".to_string(),
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This path is blocked because it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid model path: {}", e),
+    })?;
+
+    if !validated_path.is_file() {
+        return Err("Model path is not a file".into());
+    }
+
     // Validate GGUF extension
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = validated_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext.to_lowercase() != "gguf" {
         return Err("Invalid file type. Only .gguf files are supported.".into());
     }
 
     // Validate file size (at least 1MB, sanity check)
-    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    let metadata = std::fs::metadata(&validated_path).map_err(|e| e.to_string())?;
     if metadata.len() < 1_000_000 {
         return Err("File too small to be a valid GGUF model.".into());
     }
 
-    let model_id = path
+    let model_id = validated_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("custom-model")
@@ -347,7 +402,7 @@ pub fn load_custom_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(path, layers, model_id).map_err(|e| e.to_string())
+    engine.load_model(&validated_path, layers, model_id).map_err(|e| e.to_string())
 }
 
 /// Validate a GGUF file without loading it (returns model metadata)
@@ -362,19 +417,31 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
         return Err(format!("File not found: {}", model_path));
     }
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let validated_path = validate_within_home(path).map_err(|e| match e {
+        ValidationError::PathTraversal => "Model file must be within your home directory".to_string(),
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This path is blocked because it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid model path: {}", e),
+    })?;
+
+    if !validated_path.is_file() {
+        return Err("Model path is not a file".into());
+    }
+
+    let ext = validated_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext.to_lowercase() != "gguf" {
         return Err("Invalid file type. Only .gguf files are supported.".into());
     }
 
-    let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
-    let filename = path.file_name()
+    let metadata = fs::metadata(&validated_path).map_err(|e| e.to_string())?;
+    let filename = validated_path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
 
     // Check GGUF magic bytes (optional, basic validation)
-    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut file = fs::File::open(&validated_path).map_err(|e| e.to_string())?;
     let mut magic = [0u8; 4];
     use std::io::Read;
     file.read_exact(&mut magic).map_err(|e| e.to_string())?;
@@ -385,7 +452,7 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
     }
 
     Ok(GgufFileInfo {
-        path: model_path,
+        path: validated_path.to_string_lossy().to_string(),
         filename,
         size_bytes: metadata.len(),
         is_valid: true,
@@ -396,7 +463,9 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GgufFileInfo {
     pub path: String,
+    #[serde(rename = "file_name")]
     pub filename: String,
+    #[serde(rename = "file_size")]
     pub size_bytes: u64,
     pub is_valid: bool,
 }
@@ -1552,13 +1621,31 @@ pub fn load_embedding_model(
     path: String,
     n_gpu_layers: Option<u32>,
 ) -> Result<EmbeddingModelInfo, String> {
+    use std::path::Path;
+
     let emb_guard = state.embeddings.read();
     let engine = emb_guard.as_ref().ok_or("Embedding engine not initialized")?;
 
-    let path = PathBuf::from(path);
+    let path = Path::new(&path);
+    if !path.exists() {
+        return Err(format!("Embedding model file not found: {}", path.display()));
+    }
+
+    let validated_path = validate_within_home(path).map_err(|e| match e {
+        ValidationError::PathTraversal => "Embedding model file must be within your home directory".to_string(),
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This path is blocked because it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid embedding model path: {}", e),
+    })?;
+
+    if !validated_path.is_file() {
+        return Err("Embedding model path is not a file".into());
+    }
+
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(&path, layers).map_err(|e| e.to_string())
+    engine.load_model(&validated_path, layers).map_err(|e| e.to_string())
 }
 
 /// Unload the current embedding model
@@ -1708,7 +1795,19 @@ pub fn process_ocr(image_path: String) -> Result<OcrResult, String> {
         return Err(format!("Image file not found: {}", image_path));
     }
 
-    let result = ocr.recognize(&path).map_err(|e| e.to_string())?;
+    let validated_path = validate_within_home(&path).map_err(|e| match e {
+        ValidationError::PathTraversal => "Image file must be within your home directory".to_string(),
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This path is blocked because it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid image path: {}", e),
+    })?;
+
+    if !validated_path.is_file() {
+        return Err("Image path is not a file".into());
+    }
+
+    let result = ocr.recognize(&validated_path).map_err(|e| e.to_string())?;
 
     Ok(OcrResult {
         text: result.text,
@@ -1843,15 +1942,32 @@ pub fn get_jira_config(state: State<'_, AppState>) -> Result<Option<JiraConfig>,
 }
 
 /// Configure Jira (tests connection before saving)
+/// HTTPS is required by default. HTTP can only be used with explicit opt-in
+/// (allow_http = true), which triggers a security audit log entry.
 #[tauri::command]
 pub async fn configure_jira(
     state: State<'_, AppState>,
     base_url: String,
     email: String,
     api_token: String,
+    allow_http: Option<bool>,
 ) -> Result<(), String> {
     // Validate URL format
     validate_url(&base_url).map_err(|e| e.to_string())?;
+
+    // Enforce HTTPS by default
+    let using_http = is_http_url(&base_url);
+    if using_http {
+        if allow_http != Some(true) {
+            return Err(
+                "HTTPS is required for Jira connections. HTTP connections expose credentials \
+                 in transit. If you must use HTTP (e.g., local testing), enable the \
+                 'allow_http' option explicitly.".to_string()
+            );
+        }
+        // Log security warning for HTTP opt-in
+        audit::audit_jira_http_opt_in(&base_url);
+    }
 
     // Test connection first
     let client = JiraClient::new(&base_url, &email, &api_token);
@@ -1875,6 +1991,23 @@ pub async fn configure_jira(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
         rusqlite::params![JIRA_EMAIL_SETTING, &email],
     ).map_err(|e| e.to_string())?;
+
+    // Store HTTP opt-in preference if used
+    if using_http {
+        db.conn().execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            rusqlite::params!["jira_http_opt_in", "true"],
+        ).map_err(|e| e.to_string())?;
+    } else {
+        // Clear HTTP opt-in if switching to HTTPS
+        db.conn().execute(
+            "DELETE FROM settings WHERE key = ?",
+            rusqlite::params!["jira_http_opt_in"],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // Audit log successful configuration
+    audit::audit_jira_configured(!using_http);
 
     Ok(())
 }
@@ -1934,6 +2067,215 @@ pub async fn get_jira_ticket(
     // Fetch ticket
     let client = JiraClient::new(&base_url, &email, &token);
     client.get_ticket(&ticket_key).await.map_err(|e| e.to_string())
+}
+
+/// Add a comment to a Jira ticket (Phase 18)
+#[tauri::command]
+pub async fn add_jira_comment(
+    state: State<'_, AppState>,
+    ticket_key: String,
+    comment_body: String,
+    visibility: Option<String>,
+) -> Result<String, String> {
+    use crate::jira::CommentVisibility;
+
+    // Validate ticket key format
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+
+    // Get config from DB
+    let (base_url, email) = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+        let base_url: String = db.conn().query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_BASE_URL_SETTING],
+            |row| row.get(0),
+        ).map_err(|_| "Jira not configured")?;
+
+        let email: String = db.conn().query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_EMAIL_SETTING],
+            |row| row.get(0),
+        ).map_err(|_| "Jira not configured")?;
+
+        (base_url, email)
+    };
+
+    // Get token from file storage
+    let token = FileKeyStore::get_token(TOKEN_JIRA)
+        .map_err(|e| e.to_string())?
+        .ok_or("Jira token not found")?;
+
+    // Parse visibility
+    let vis = visibility.map(|v| match v.as_str() {
+        "internal" => CommentVisibility::Internal,
+        "public" => CommentVisibility::Public,
+        _ if v.starts_with("role:") => CommentVisibility::Role(v[5..].to_string()),
+        _ if v.starts_with("group:") => CommentVisibility::Group(v[6..].to_string()),
+        _ => CommentVisibility::Public,
+    });
+
+    // Post comment
+    let client = JiraClient::new(&base_url, &email, &token);
+    client.add_comment(&ticket_key, &comment_body, vis)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Push draft to Jira as a comment with KB citations (Phase 18)
+#[tauri::command]
+pub async fn push_draft_to_jira(
+    state: State<'_, AppState>,
+    draft_id: String,
+    ticket_key: String,
+    visibility: Option<String>,
+) -> Result<String, String> {
+    use crate::jira::{CommentVisibility, KbCitation};
+
+    // Validate ticket key format
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+
+    // Get draft and parse KB sources
+    let (response_text, sources_json) = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let draft = db.get_draft(&draft_id).map_err(|e| e.to_string())?;
+
+        let response = draft.response_text.ok_or("Draft has no response text")?;
+        (response, draft.kb_sources_json)
+    };
+
+    // Parse citations from KB sources JSON
+    let citations: Vec<KbCitation> = sources_json
+        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
+        .map(|sources| {
+            sources.iter().map(|s| KbCitation {
+                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                url: s["url"].as_str().map(|u| u.to_string()),
+                chunk_id: s["chunk_id"].as_str().map(|c| c.to_string()),
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    // Get Jira config
+    let (base_url, email) = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+        let base_url: String = db.conn().query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_BASE_URL_SETTING],
+            |row| row.get(0),
+        ).map_err(|_| "Jira not configured")?;
+
+        let email: String = db.conn().query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_EMAIL_SETTING],
+            |row| row.get(0),
+        ).map_err(|_| "Jira not configured")?;
+
+        (base_url, email)
+    };
+
+    // Get token
+    let token = FileKeyStore::get_token(TOKEN_JIRA)
+        .map_err(|e| e.to_string())?
+        .ok_or("Jira token not found")?;
+
+    // Parse visibility
+    let vis = visibility.map(|v| match v.as_str() {
+        "internal" => CommentVisibility::Internal,
+        "public" => CommentVisibility::Public,
+        _ if v.starts_with("role:") => CommentVisibility::Role(v[5..].to_string()),
+        _ if v.starts_with("group:") => CommentVisibility::Group(v[6..].to_string()),
+        _ => CommentVisibility::Public,
+    });
+
+    // Post comment with citations
+    let client = JiraClient::new(&base_url, &email, &token);
+    client.add_comment_with_citations(&ticket_key, &response_text, &citations, vis)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Export Commands (Phase 18)
+// ============================================================================
+
+use crate::exports::{
+    ExportFormat as DraftExportFormat,
+    SafeExportOptions, ExportedSource, format_draft, format_for_clipboard
+};
+
+/// Export a draft in various formats
+#[tauri::command]
+pub fn export_draft_formatted(
+    state: State<'_, AppState>,
+    draft_id: String,
+    format: String,
+    safe_export: Option<SafeExportOptions>,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    let draft = db.get_draft(&draft_id).map_err(|e| e.to_string())?;
+
+    let response_text = draft.response_text.as_deref().unwrap_or("");
+
+    // Parse KB sources
+    let sources: Vec<ExportedSource> = draft.kb_sources_json
+        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
+        .map(|sources| {
+            sources.iter().map(|s| ExportedSource {
+                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                path: s["file_path"].as_str().map(|p| p.to_string()),
+                url: s["url"].as_str().map(|u| u.to_string()),
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let export_format = match format.as_str() {
+        "html" => DraftExportFormat::Html,
+        "ticket_html" => DraftExportFormat::TicketHtml,
+        "json" => DraftExportFormat::Json,
+        _ => DraftExportFormat::Plaintext,
+    };
+
+    Ok(format_draft(
+        response_text,
+        draft.summary_text.as_deref(),
+        &sources,
+        export_format,
+        safe_export.as_ref(),
+    ))
+}
+
+/// Format draft for clipboard (optimized for ticket systems)
+#[tauri::command]
+pub fn format_draft_for_clipboard(
+    state: State<'_, AppState>,
+    draft_id: String,
+    include_sources: bool,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    let draft = db.get_draft(&draft_id).map_err(|e| e.to_string())?;
+
+    let response_text = draft.response_text.as_deref().unwrap_or("");
+
+    // Parse KB sources
+    let sources: Vec<ExportedSource> = draft.kb_sources_json
+        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
+        .map(|sources| {
+            sources.iter().map(|s| ExportedSource {
+                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                path: s["file_path"].as_str().map(|p| p.to_string()),
+                url: s["url"].as_str().map(|u| u.to_string()),
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    Ok(format_for_clipboard(response_text, &sources, include_sources))
 }
 
 // ============================================================================
@@ -2032,6 +2374,178 @@ pub fn get_draft_versions(
     db.get_draft_versions(&input_hash).map_err(|e| e.to_string())
 }
 
+// ============================================================================
+// Draft Versioning Commands (Phase 17)
+// ============================================================================
+
+/// Create a draft version snapshot
+#[tauri::command]
+pub fn create_draft_version(
+    state: State<'_, AppState>,
+    draft_id: String,
+    change_reason: Option<String>,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.create_draft_version(&draft_id, change_reason.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// List draft versions for a specific draft
+#[tauri::command]
+pub fn list_draft_versions(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<Vec<crate::db::DraftVersion>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_draft_versions(&draft_id).map_err(|e| e.to_string())
+}
+
+/// Finalize a draft (lock and mark as read-only)
+#[tauri::command]
+pub fn finalize_draft(
+    state: State<'_, AppState>,
+    draft_id: String,
+    finalized_by: Option<String>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.finalize_draft(&draft_id, finalized_by.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Archive a draft
+#[tauri::command]
+pub fn archive_draft(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.archive_draft(&draft_id).map_err(|e| e.to_string())
+}
+
+/// Update draft handoff summary for escalations
+#[tauri::command]
+pub fn update_draft_handoff(
+    state: State<'_, AppState>,
+    draft_id: String,
+    handoff_summary: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.update_draft_handoff(&draft_id, &handoff_summary)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Playbook Commands (Phase 17)
+// ============================================================================
+
+/// List all active playbooks
+#[tauri::command]
+pub fn list_playbooks(
+    state: State<'_, AppState>,
+    category: Option<String>,
+) -> Result<Vec<crate::db::Playbook>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_playbooks(category.as_deref()).map_err(|e| e.to_string())
+}
+
+/// Get a playbook by ID
+#[tauri::command]
+pub fn get_playbook(
+    state: State<'_, AppState>,
+    playbook_id: String,
+) -> Result<crate::db::Playbook, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.get_playbook(&playbook_id).map_err(|e| e.to_string())
+}
+
+/// Save a playbook (insert or update)
+#[tauri::command]
+pub fn save_playbook(
+    state: State<'_, AppState>,
+    playbook: crate::db::Playbook,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.save_playbook(&playbook).map_err(|e| e.to_string())
+}
+
+/// Record playbook usage
+#[tauri::command]
+pub fn use_playbook(
+    state: State<'_, AppState>,
+    playbook_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.increment_playbook_usage(&playbook_id).map_err(|e| e.to_string())
+}
+
+/// Delete a playbook
+#[tauri::command]
+pub fn delete_playbook(
+    state: State<'_, AppState>,
+    playbook_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.delete_playbook(&playbook_id).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Action Shortcut Commands (Phase 17)
+// ============================================================================
+
+/// List all active action shortcuts
+#[tauri::command]
+pub fn list_action_shortcuts(
+    state: State<'_, AppState>,
+    category: Option<String>,
+) -> Result<Vec<crate::db::ActionShortcut>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_action_shortcuts(category.as_deref()).map_err(|e| e.to_string())
+}
+
+/// Get an action shortcut by ID
+#[tauri::command]
+pub fn get_action_shortcut(
+    state: State<'_, AppState>,
+    shortcut_id: String,
+) -> Result<crate::db::ActionShortcut, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.get_action_shortcut(&shortcut_id).map_err(|e| e.to_string())
+}
+
+/// Save an action shortcut (insert or update)
+#[tauri::command]
+pub fn save_action_shortcut(
+    state: State<'_, AppState>,
+    shortcut: crate::db::ActionShortcut,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.save_action_shortcut(&shortcut).map_err(|e| e.to_string())
+}
+
+/// Delete an action shortcut
+#[tauri::command]
+pub fn delete_action_shortcut(
+    state: State<'_, AppState>,
+    shortcut_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.delete_action_shortcut(&shortcut_id).map_err(|e| e.to_string())
+}
+
 /// List all response templates
 #[tauri::command]
 pub fn list_templates(state: State<'_, AppState>) -> Result<Vec<ResponseTemplate>, String> {
@@ -2122,198 +2636,7 @@ pub fn delete_custom_variable(
     db.delete_custom_variable(&variable_id).map_err(|e| e.to_string())
 }
 
-// ============================================================================
-// Export Commands
-// ============================================================================
-
-use tauri_plugin_dialog::DialogExt;
-
-/// Export format enum
-#[derive(serde::Deserialize, Clone, Copy)]
-pub enum ExportFormat {
-    Markdown,
-    PlainText,
-    Html,
-}
-
-impl ExportFormat {
-    fn extension(&self) -> &str {
-        match self {
-            Self::Markdown => "md",
-            Self::PlainText => "txt",
-            Self::Html => "html",
-        }
-    }
-
-    fn filter_name(&self) -> &str {
-        match self {
-            Self::Markdown => "Markdown",
-            Self::PlainText => "Plain Text",
-            Self::Html => "HTML",
-        }
-    }
-
-    fn format_content(&self, response_text: &str) -> String {
-        match self {
-            Self::Markdown => format!(
-                "# Response\n\n{}\n\n---\n*Generated by AssistSupport*",
-                response_text
-            ),
-            Self::PlainText => response_text.to_string(),
-            Self::Html => {
-                // Convert newlines to <br> and wrap in basic HTML
-                let escaped = response_text
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;")
-                    .replace('\n', "<br>\n");
-                format!(
-                    "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>Response</title>\n  <style>\n    body {{ font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }}\n  </style>\n</head>\n<body>\n  <h1>Response</h1>\n  <div>{}</div>\n  <hr>\n  <p><em>Generated by AssistSupport</em></p>\n</body>\n</html>",
-                    escaped
-                )
-            }
-        }
-    }
-}
-
-/// Export a draft response to a file
-#[tauri::command]
-pub async fn export_draft(
-    app: tauri::AppHandle,
-    response_text: String,
-    format: ExportFormat,
-) -> Result<bool, String> {
-    let content = format.format_content(&response_text);
-    let default_filename = format!("response.{}", format.extension());
-
-    // Build file dialog
-    let file_handle = app.dialog()
-        .file()
-        .set_file_name(&default_filename)
-        .add_filter(format.filter_name(), &[format.extension()])
-        .blocking_save_file();
-
-    match file_handle {
-        Some(path) => {
-            // Get the actual path
-            let file_path = path.as_path()
-                .ok_or_else(|| "Invalid file path".to_string())?;
-
-            std::fs::write(file_path, content)
-                .map_err(|e| format!("Failed to write file: {}", e))?;
-
-            Ok(true)
-        }
-        None => {
-            // User cancelled
-            Ok(false)
-        }
-    }
-}
-
-// ============================================================================
-// Backup/Restore Commands
-// ============================================================================
-
-use crate::backup::{ExportSummary, ImportPreview, ImportSummary};
-
-/// Export all app data to a backup file (optionally encrypted with password)
-#[tauri::command]
-pub async fn export_backup(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    password: Option<String>,
-) -> Result<ExportSummary, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Determine file extension based on encryption
-    let (filename, filter_name, extensions) = if password.is_some() {
-        ("assistsupport-backup.enc", "Encrypted Backup", &["enc"][..])
-    } else {
-        ("assistsupport-backup.zip", "ZIP Archive", &["zip"][..])
-    };
-
-    // Show save file dialog
-    let file_handle = app.dialog()
-        .file()
-        .set_file_name(filename)
-        .add_filter(filter_name, extensions)
-        .blocking_save_file();
-
-    match file_handle {
-        Some(path) => {
-            let file_path = path.as_path()
-                .ok_or_else(|| "Invalid file path".to_string())?;
-
-            crate::backup::export_backup(db, file_path, password.as_deref())
-                .map_err(|e| e.to_string())
-        }
-        None => Err("Export cancelled".to_string()),
-    }
-}
-
-/// Preview what will be imported from a backup file (with optional password for encrypted backups)
-#[tauri::command]
-pub async fn preview_backup_import(
-    app: tauri::AppHandle,
-    password: Option<String>,
-) -> Result<ImportPreview, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    // Show open file dialog (accept both ZIP and encrypted backups)
-    let file_handle = app.dialog()
-        .file()
-        .add_filter("Backup Files", &["zip", "enc"])
-        .add_filter("ZIP Archive", &["zip"])
-        .add_filter("Encrypted Backup", &["enc"])
-        .blocking_pick_file();
-
-    match file_handle {
-        Some(path) => {
-            let file_path = path.as_path()
-                .ok_or_else(|| "Invalid file path".to_string())?;
-
-            crate::backup::preview_import(file_path, password.as_deref())
-                .map_err(|e| e.to_string())
-        }
-        None => Err("Import cancelled".to_string()),
-    }
-}
-
-/// Import data from a backup file (with optional password for encrypted backups)
-#[tauri::command]
-pub async fn import_backup(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    password: Option<String>,
-) -> Result<ImportSummary, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Show open file dialog (accept both ZIP and encrypted backups)
-    let file_handle = app.dialog()
-        .file()
-        .add_filter("Backup Files", &["zip", "enc"])
-        .add_filter("ZIP Archive", &["zip"])
-        .add_filter("Encrypted Backup", &["enc"])
-        .blocking_pick_file();
-
-    match file_handle {
-        Some(path) => {
-            let file_path = path.as_path()
-                .ok_or_else(|| "Invalid file path".to_string())?;
-
-            crate::backup::import_backup(db, file_path, password.as_deref())
-                .map_err(|e| e.to_string())
-        }
-        None => Err("Import cancelled".to_string()),
-    }
-}
+// Export and Backup commands moved to commands/backup.rs
 
 // =============================================================================
 // CONTENT INGESTION COMMANDS
@@ -2491,11 +2814,28 @@ pub fn process_source_file(
     use crate::kb::ingest::CancellationToken;
     use std::path::Path;
 
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("Source file not found: {}", file_path));
+    }
+
+    let validated_path = validate_within_home(path).map_err(|e| match e {
+        ValidationError::PathTraversal => "Source file must be within your home directory".to_string(),
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This path is blocked because it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid source file path: {}", e),
+    })?;
+
+    if !validated_path.is_file() {
+        return Err("Source file path is not a file".into());
+    }
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Parse the source file
-    let source_file = SourceFile::from_path(Path::new(&file_path))
+    let source_file = SourceFile::from_path(&validated_path)
         .map_err(|e| e.to_string())?;
 
     // Ensure namespace exists
@@ -2885,159 +3225,273 @@ pub fn check_ytdlp_available() -> Result<bool, String> {
 }
 
 // ============================================================================
-// Diagnostics and Health Check Commands
+// Job Commands
 // ============================================================================
 
-use crate::diagnostics::{
-    SystemHealth, ComponentHealth, HealthStatus, RepairResult, FailureMode,
-    check_database_health, check_llm_health,
-    check_embedding_health, check_filesystem_health, repair_database,
-    get_failure_modes,
-};
+use crate::jobs::{Job, JobStatus, JobType};
 
-/// Get comprehensive system health status
-#[tauri::command]
-pub async fn get_system_health(state: State<'_, AppState>) -> Result<SystemHealth, String> {
-    // Check database
-    let database = {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        match db_lock.as_ref() {
-            Some(db) => check_database_health(db),
-            None => ComponentHealth::unavailable("Database", "Not initialized"),
-        }
-    };
-
-    // Check vector store
-    let vector_store = {
-        let vectors = state.vectors.read().await;
-        crate::diagnostics::check_vector_store_health(vectors.as_ref()).await
-    };
-
-    // Check LLM engine
-    let llm_engine = {
-        let llm = state.llm.read();
-        check_llm_health(llm.as_ref())
-    };
-
-    // Check embedding model
-    let embedding_model = {
-        let embeddings = state.embeddings.read();
-        check_embedding_health(embeddings.as_ref())
-    };
-
-    // Check file system
-    let file_system = check_filesystem_health();
-
-    // Calculate overall status
-    let overall_status = database.status
-        .worst(vector_store.status)
-        .worst(llm_engine.status)
-        .worst(embedding_model.status)
-        .worst(file_system.status);
-
-    Ok(SystemHealth {
-        database,
-        vector_store,
-        llm_engine,
-        embedding_model,
-        file_system,
-        overall_status,
-        checked_at: chrono::Utc::now().to_rfc3339(),
-    })
+/// Job summary for list responses (excludes logs and metadata)
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct JobSummary {
+    pub id: String,
+    pub job_type: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub progress: f32,
+    pub progress_message: Option<String>,
+    pub error: Option<String>,
 }
 
-/// Attempt to repair the database
+impl From<Job> for JobSummary {
+    fn from(job: Job) -> Self {
+        Self {
+            id: job.id,
+            job_type: job.job_type.to_string(),
+            status: job.status.to_string(),
+            created_at: job.created_at.to_rfc3339(),
+            updated_at: job.updated_at.to_rfc3339(),
+            progress: job.progress,
+            progress_message: job.progress_message,
+            error: job.error,
+        }
+    }
+}
+
+/// Create a new job
 #[tauri::command]
-pub fn repair_database_cmd(state: State<'_, AppState>) -> Result<RepairResult, String> {
+pub fn create_job(
+    state: State<'_, AppState>,
+    job_type: String,
+    metadata: Option<serde_json::Value>,
+) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    Ok(repair_database(db))
+
+    let job_type_enum = JobType::from_str(&job_type);
+    let mut job = Job::new(job_type_enum);
+    if let Some(meta) = metadata {
+        job = job.with_metadata(meta);
+    }
+
+    let job_id = job.id.clone();
+    db.create_job(&job).map_err(|e| e.to_string())?;
+
+    Ok(job_id)
 }
 
-/// Get guidance on rebuilding vector store
+/// List jobs, optionally filtered by status
 #[tauri::command]
-pub fn rebuild_vector_store() -> RepairResult {
-    crate::diagnostics::get_vector_rebuild_guidance()
+pub fn list_jobs(
+    state: State<'_, AppState>,
+    status: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<JobSummary>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let status_filter = status.as_deref().and_then(JobStatus::from_str);
+    let jobs = db
+        .list_jobs(status_filter, limit.unwrap_or(50))
+        .map_err(|e| e.to_string())?;
+
+    Ok(jobs.into_iter().map(JobSummary::from).collect())
 }
 
-/// Get list of known failure modes and their solutions
+/// Get a single job by ID
 #[tauri::command]
-pub fn get_failure_modes_cmd() -> Vec<FailureMode> {
-    get_failure_modes()
+pub fn get_job(state: State<'_, AppState>, job_id: String) -> Result<Option<Job>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.get_job(&job_id).map_err(|e| e.to_string())
 }
 
-/// Run a quick connectivity/health test
+/// Cancel a job (signals cancellation token and sets status to cancelled)
 #[tauri::command]
-pub async fn run_quick_health_check(state: State<'_, AppState>) -> Result<QuickHealthResult, String> {
-    let mut checks_passed = 0;
-    let mut checks_total = 0;
-    let mut issues: Vec<String> = Vec::new();
+pub fn cancel_job(state: State<'_, AppState>, job_id: String) -> Result<(), String> {
+    // Signal cancellation to any running task
+    state.jobs.cancel_job(&job_id);
 
-    // Check 1: Database accessible
-    checks_total += 1;
-    {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        if let Some(db) = db_lock.as_ref() {
-            if db.check_integrity().is_ok() {
-                checks_passed += 1;
-            } else {
-                issues.push("Database integrity check failed".to_string());
-            }
-        } else {
-            issues.push("Database not initialized".to_string());
-        }
-    }
+    // Update database status
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    // Check 2: Can query KB
-    checks_total += 1;
-    {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        if let Some(db) = db_lock.as_ref() {
-            if db.conn().query_row::<i64, _, _>("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0)).is_ok() {
-                checks_passed += 1;
-            } else {
-                issues.push("Cannot query knowledge base".to_string());
-            }
-        }
-    }
-
-    // Check 3: File system writable
-    checks_total += 1;
-    let fs_health = check_filesystem_health();
-    if fs_health.status == HealthStatus::Healthy {
-        checks_passed += 1;
-    } else {
-        issues.push(format!("File system: {}", fs_health.message));
-    }
-
-    // Check 4: Model loaded (optional, warning only)
-    checks_total += 1;
-    {
-        let llm = state.llm.read();
-        if let Some(engine) = llm.as_ref() {
-            if engine.is_model_loaded() {
-                checks_passed += 1;
-            } else {
-                issues.push("No LLM model loaded".to_string());
-            }
-        } else {
-            issues.push("LLM engine not initialized".to_string());
-        }
-    }
-
-    Ok(QuickHealthResult {
-        healthy: issues.is_empty() || (checks_passed >= 3), // Allow model to be unloaded
-        checks_passed,
-        checks_total,
-        issues,
-    })
+    db.update_job_status(&job_id, JobStatus::Cancelled, Some("Cancelled by user"))
+        .map_err(|e| e.to_string())
 }
 
-/// Result of a quick health check
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct QuickHealthResult {
-    pub healthy: bool,
-    pub checks_passed: u32,
-    pub checks_total: u32,
-    pub issues: Vec<String>,
+/// Get logs for a job
+#[tauri::command]
+pub fn get_job_logs(
+    state: State<'_, AppState>,
+    job_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::jobs::JobLog>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.get_job_logs(&job_id, limit.unwrap_or(100))
+        .map_err(|e| e.to_string())
 }
+
+/// Get job counts by status
+#[tauri::command]
+pub fn get_job_counts(state: State<'_, AppState>) -> Result<Vec<(String, i64)>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.get_job_counts().map_err(|e| e.to_string())
+}
+
+/// Clean up old completed jobs
+#[tauri::command]
+pub fn cleanup_old_jobs(
+    state: State<'_, AppState>,
+    keep_days: Option<i64>,
+) -> Result<usize, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.cleanup_old_jobs(keep_days.unwrap_or(30))
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Document Versioning Commands (Phase 14)
+// ============================================================================
+
+/// List versions of a document
+#[tauri::command]
+pub fn list_document_versions(
+    state: State<'_, AppState>,
+    document_id: String,
+) -> Result<Vec<crate::db::DocumentVersion>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.list_document_versions(&document_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Rollback a document to a previous version
+#[tauri::command]
+pub fn rollback_document(
+    state: State<'_, AppState>,
+    document_id: String,
+    version_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.rollback_document(&document_id, &version_id)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Source Trust Commands (Phase 14)
+// ============================================================================
+
+/// Update trust score for a source
+#[tauri::command]
+pub fn update_source_trust(
+    state: State<'_, AppState>,
+    source_id: String,
+    trust_score: f64,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.update_source_trust(&source_id, trust_score)
+        .map_err(|e| e.to_string())
+}
+
+/// Pin or unpin a source
+#[tauri::command]
+pub fn set_source_pinned(
+    state: State<'_, AppState>,
+    source_id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.set_source_pinned(&source_id, pinned)
+        .map_err(|e| e.to_string())
+}
+
+/// Set review status for a source
+#[tauri::command]
+pub fn set_source_review_status(
+    state: State<'_, AppState>,
+    source_id: String,
+    status: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.set_source_review_status(&source_id, &status)
+        .map_err(|e| e.to_string())
+}
+
+/// Get stale sources for review
+#[tauri::command]
+pub fn get_stale_sources(
+    state: State<'_, AppState>,
+    namespace_id: Option<String>,
+) -> Result<Vec<crate::db::IngestSource>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.get_stale_sources(namespace_id.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Namespace Rules Commands (Phase 14)
+// ============================================================================
+
+/// Add a namespace ingestion rule
+#[tauri::command]
+pub fn add_namespace_rule(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    rule_type: String,
+    pattern_type: String,
+    pattern: String,
+    reason: Option<String>,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.add_namespace_rule(&namespace_id, &rule_type, &pattern_type, &pattern, reason.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a namespace rule
+#[tauri::command]
+pub fn delete_namespace_rule(
+    state: State<'_, AppState>,
+    rule_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.delete_namespace_rule(&rule_id)
+        .map_err(|e| e.to_string())
+}
+
+/// List rules for a namespace
+#[tauri::command]
+pub fn list_namespace_rules(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<crate::db::NamespaceRule>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.list_namespace_rules(&namespace_id)
+        .map_err(|e| e.to_string())
+}
+
+// Diagnostics commands moved to commands/diagnostics.rs

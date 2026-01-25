@@ -425,6 +425,48 @@ impl YouTubeIngester {
         // Create ingest run
         let run_id = db.create_ingest_run(&source.id)?;
 
+        // Compute content hash for incremental ingestion
+        let content_hash = {
+            use sha2::{Sha256, Digest};
+            let mut hasher = Sha256::new();
+            hasher.update(full_transcript.as_bytes());
+            hex::encode(hasher.finalize())
+        };
+
+        // Check if content is unchanged (incremental ingestion)
+        let existing_doc: Option<(String, String, i32)> = db.conn()
+            .query_row(
+                "SELECT id, file_hash, chunk_count FROM kb_documents WHERE source_id = ?",
+                rusqlite::params![source.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
+
+        if let Some((doc_id, existing_hash, chunk_count)) = existing_doc {
+            if existing_hash == content_hash {
+                // Content unchanged, skip re-indexing
+                if let Some(progress) = progress {
+                    progress(IngestProgress {
+                        phase: IngestPhase::Complete,
+                        current: 0,
+                        total: Some(0),
+                        message: "Content unchanged, skipping re-index".to_string(),
+                    });
+                }
+
+                // Complete the run with no changes
+                db.complete_ingest_run(&run_id, "completed", 0, 0, 0, 0, None)?;
+
+                return Ok(IngestedDocument {
+                    id: doc_id,
+                    title: metadata.title.clone(),
+                    source_uri,
+                    chunk_count: chunk_count as usize,
+                    word_count: full_transcript.split_whitespace().count(),
+                });
+            }
+        }
+
         // Report progress
         if let Some(progress) = progress {
             progress(IngestProgress {
@@ -467,12 +509,7 @@ impl YouTubeIngester {
 
         // Insert document
         let doc_id = uuid::Uuid::new_v4().to_string();
-        let content_hash = {
-            use sha2::{Sha256, Digest};
-            let mut hasher = Sha256::new();
-            hasher.update(full_transcript.as_bytes());
-            hex::encode(hasher.finalize())
-        };
+        // content_hash already computed earlier for incremental check
 
         db.conn().execute(
             "INSERT INTO kb_documents (id, file_path, file_hash, title, indexed_at, chunk_count,

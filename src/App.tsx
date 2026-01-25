@@ -13,45 +13,24 @@ import { CommandPalette, useCommandPalette, type Command } from './components/sh
 import { KeyboardShortcuts, useKeyboardShortcutsHelp } from './components/shared/KeyboardShortcuts';
 import { OnboardingWizard } from './components/shared/OnboardingWizard';
 import { useInitialize } from './hooks/useInitialize';
-import { useLlm } from './hooks/useLlm';
 import { useToastContext } from './contexts/ToastContext';
+import { AppStatusProvider } from './contexts/AppStatusContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
 import './App.css';
 
 type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'settings';
 
-function App() {
+function AppContent() {
   const { initResult, loading, error } = useInitialize();
-  const { getLoadedModel } = useLlm();
   const { toasts, addToast, removeToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<TabId>('draft');
   const [pendingDraft, setPendingDraft] = useState<SavedDraft | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [modelLoaded, setModelLoaded] = useState(false);
-  const [modelName, setModelName] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const draftRef = useRef<DraftTabHandle>(null);
   const commandPalette = useCommandPalette();
   const shortcutsHelp = useKeyboardShortcutsHelp();
-
-  // Check model status periodically
-  useEffect(() => {
-    async function checkModel() {
-      try {
-        const loaded = await getLoadedModel();
-        setModelLoaded(!!loaded);
-        setModelName(loaded || null);
-      } catch {
-        setModelLoaded(false);
-        setModelName(null);
-      }
-    }
-
-    checkModel();
-    const interval = setInterval(checkModel, 5000);
-    return () => clearInterval(interval);
-  }, [getLoadedModel]);
 
   const handleGenerate = useCallback(() => {
     if (activeTab === 'draft') {
@@ -209,6 +188,33 @@ function App() {
       category: 'navigation',
       action: () => setActiveTab('settings'),
     },
+    // Quick actions
+    {
+      id: 'action-new-draft',
+      label: 'New Draft',
+      description: 'Clear current draft and start fresh',
+      icon: 'plus',
+      shortcut: 'Cmd+N',
+      category: 'action',
+      action: () => {
+        setActiveTab('draft');
+        // Clear draft via ref if available
+        if (draftRef.current) {
+          draftRef.current.clearDraft?.();
+        }
+      },
+    },
+    {
+      id: 'action-focus-search',
+      label: 'Focus Search',
+      description: 'Jump to knowledge base search',
+      icon: 'search',
+      shortcut: 'Cmd+/',
+      category: 'action',
+      action: () => {
+        setActiveTab('sources');
+      },
+    },
     // Draft actions
     {
       id: 'action-generate',
@@ -363,8 +369,6 @@ function App() {
       <div className="app-content">
         <Header
           activeTab={activeTab}
-          modelLoaded={modelLoaded}
-          modelName={modelName}
           onOpenCommandPalette={commandPalette.open}
         />
         <main className="app-main">
@@ -401,6 +405,15 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+// Main App wrapper with providers
+function App() {
+  return (
+    <AppStatusProvider pollInterval={10000}>
+      <AppContent />
+    </AppStatusProvider>
   );
 }
 

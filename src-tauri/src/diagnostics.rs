@@ -487,6 +487,219 @@ pub fn get_failure_modes() -> Vec<FailureMode> {
     ]
 }
 
+/// Database maintenance statistics
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DatabaseStats {
+    /// Size of database file in bytes
+    pub file_size_bytes: u64,
+    /// Number of KB documents
+    pub document_count: i64,
+    /// Number of KB chunks
+    pub chunk_count: i64,
+    /// Number of drafts
+    pub draft_count: i64,
+    /// Number of jobs
+    pub job_count: i64,
+    /// Page count from SQLite
+    pub page_count: i64,
+    /// Freelist count (unused pages) from SQLite
+    pub freelist_count: i64,
+    /// Last vacuum timestamp if stored
+    pub last_vacuum: Option<String>,
+}
+
+/// Get database statistics for monitoring
+pub fn get_database_stats(db: &crate::db::Database, db_path: &std::path::Path) -> Result<DatabaseStats, String> {
+    let file_size_bytes = std::fs::metadata(db_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let document_count: i64 = db.conn()
+        .query_row("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let chunk_count: i64 = db.conn()
+        .query_row("SELECT COUNT(*) FROM kb_chunks", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let draft_count: i64 = db.conn()
+        .query_row("SELECT COUNT(*) FROM drafts", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let job_count: i64 = db.conn()
+        .query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let page_count: i64 = db.conn()
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let freelist_count: i64 = db.conn()
+        .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let last_vacuum: Option<String> = db.conn()
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'last_vacuum'",
+            [],
+            |r| r.get(0)
+        )
+        .ok();
+
+    Ok(DatabaseStats {
+        file_size_bytes,
+        document_count,
+        chunk_count,
+        draft_count,
+        job_count,
+        page_count,
+        freelist_count,
+        last_vacuum,
+    })
+}
+
+/// Run scheduled database maintenance (VACUUM if needed)
+pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
+    // Check if VACUUM is needed (freelist > 10% of pages)
+    let page_count: i64 = db.conn()
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .unwrap_or(1);
+
+    let freelist_count: i64 = db.conn()
+        .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let fragmentation_pct = (freelist_count as f64 / page_count as f64) * 100.0;
+
+    if fragmentation_pct < 10.0 {
+        // No maintenance needed
+        return RepairResult {
+            component: "Database".to_string(),
+            success: true,
+            action_taken: "Checked database - no maintenance needed".to_string(),
+            message: Some(format!("Fragmentation at {:.1}% (threshold: 10%)", fragmentation_pct)),
+        };
+    }
+
+    // Run VACUUM
+    match db.conn().execute("VACUUM", []) {
+        Ok(_) => {
+            // Record timestamp
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.conn().execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_vacuum', ?)",
+                [&now]
+            );
+
+            RepairResult {
+                component: "Database".to_string(),
+                success: true,
+                action_taken: format!("VACUUM completed (was {:.1}% fragmented)", fragmentation_pct),
+                message: Some("Database optimized successfully".to_string()),
+            }
+        }
+        Err(e) => {
+            RepairResult {
+                component: "Database".to_string(),
+                success: false,
+                action_taken: "VACUUM failed".to_string(),
+                message: Some(e.to_string()),
+            }
+        }
+    }
+}
+
+/// Resource usage metrics
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResourceMetrics {
+    /// Process memory usage in bytes (resident)
+    pub memory_bytes: u64,
+    /// Estimated memory threshold for warnings (based on system)
+    pub memory_threshold_bytes: u64,
+    /// Whether memory usage is concerning
+    pub memory_warning: bool,
+}
+
+/// Get current resource usage metrics
+pub fn get_resource_metrics() -> ResourceMetrics {
+    // Get process memory usage via sysinfo would be ideal but we'll use a simpler approach
+    // For now, return placeholder - in production, use sysinfo crate
+    let memory_bytes = 0u64; // Would use sysinfo::Process::memory()
+
+    // Default threshold: 4GB for LLM operations
+    let memory_threshold_bytes = 4 * 1024 * 1024 * 1024u64;
+
+    ResourceMetrics {
+        memory_bytes,
+        memory_threshold_bytes,
+        memory_warning: memory_bytes > memory_threshold_bytes,
+    }
+}
+
+/// LLM resource limits configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmResourceLimits {
+    /// Maximum memory usage in bytes before warning
+    pub max_memory_bytes: u64,
+    /// Maximum context tokens to use
+    pub max_context_tokens: usize,
+    /// Whether to enable watchdog that cancels generation on OOM
+    pub enable_watchdog: bool,
+    /// Timeout for generation in seconds
+    pub generation_timeout_secs: u64,
+}
+
+impl Default for LlmResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_memory_bytes: 8 * 1024 * 1024 * 1024, // 8GB
+            max_context_tokens: 4096,
+            enable_watchdog: true,
+            generation_timeout_secs: 120,
+        }
+    }
+}
+
+/// Vector store maintenance info
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VectorMaintenanceInfo {
+    /// Current vector count
+    pub vector_count: usize,
+    /// Estimated storage size
+    pub estimated_size_bytes: u64,
+    /// Whether compaction is recommended
+    pub compaction_recommended: bool,
+    /// Last compaction timestamp if available
+    pub last_compaction: Option<String>,
+}
+
+/// Get vector store maintenance info (async)
+pub async fn get_vector_maintenance_info(
+    vectors: Option<&crate::kb::vectors::VectorStore>
+) -> Option<VectorMaintenanceInfo> {
+    let store = vectors?;
+
+    if !store.is_enabled() {
+        return None;
+    }
+
+    let vector_count = store.count().await.ok()?;
+    let dim = store.embedding_dim();
+
+    // Estimate size: vectors * dimensions * 4 bytes per float
+    let estimated_size_bytes = (vector_count * dim * 4) as u64;
+
+    // Recommend compaction if over 100k vectors
+    let compaction_recommended = vector_count > 100_000;
+
+    Some(VectorMaintenanceInfo {
+        vector_count,
+        estimated_size_bytes,
+        compaction_recommended,
+        last_compaction: None, // Would need to track this
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,6 +6,7 @@ import { ResponsePanel } from './ResponsePanel';
 import { useLlm } from '../../hooks/useLlm';
 import { useDrafts } from '../../hooks/useDrafts';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { JiraTicket } from '../../hooks/useJira';
 import type { ContextSource, ResponseLength, SavedDraft } from '../../types';
 import './DraftTab.css';
@@ -17,6 +18,7 @@ export interface DraftTabHandle {
   copyResponse: () => void;
   cancelGeneration: () => void;
   exportResponse: () => void;
+  clearDraft: () => void;
 }
 
 interface DraftTabProps {
@@ -25,8 +27,13 @@ interface DraftTabProps {
 
 export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft }, ref) {
   const { error: showError, success: showSuccess } = useToastContext();
-  const { generateStreaming, getLoadedModel, streamingText, isStreaming, clearStreamingText, cancelGeneration } = useLlm();
+  const { generateStreaming, streamingText, isStreaming, clearStreamingText, cancelGeneration } = useLlm();
   const { saveDraft, triggerAutosave, cancelAutosave } = useDrafts();
+  const appStatus = useAppStatus();
+
+  // Use centralized model status from AppStatusContext
+  const modelLoaded = appStatus.llmLoaded;
+  const loadedModelName = appStatus.llmModelName;
 
   const [input, setInput] = useState('');
   const [ocrText, setOcrText] = useState<string | null>(null);
@@ -37,43 +44,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [responseLength, setResponseLength] = useState<ResponseLength>('Medium');
   const [diagnosisCollapsed, setDiagnosisCollapsed] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [modelLoaded, setModelLoaded] = useState(false);
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null);
   const [currentTicket, setCurrentTicket] = useState<JiraTicket | null>(null);
   const [originalResponse, setOriginalResponse] = useState<string>('');
   const [isResponseEdited, setIsResponseEdited] = useState(false);
-  const [loadedModelName, setLoadedModelName] = useState<string | null>(null);
-
-  // Check model status on mount and when window gains focus
-  useEffect(() => {
-    checkModelStatus();
-
-    // Re-check when user returns to the window (e.g., after changing tabs)
-    const handleFocus = () => {
-      checkModelStatus();
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    // Also check periodically in case model is loaded in Settings tab
-    const interval = setInterval(checkModelStatus, 3000);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      clearInterval(interval);
-    };
-  }, []);
-
-  async function checkModelStatus() {
-    try {
-      const loaded = await getLoadedModel();
-      setModelLoaded(!!loaded);
-      setLoadedModelName(loaded || null);
-    } catch {
-      setModelLoaded(false);
-      setLoadedModelName(null);
-    }
-  }
 
   const handleGenerate = useCallback(async () => {
     if (!input.trim() || generating) return;
@@ -272,7 +246,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     copyResponse: handleCopyResponse,
     cancelGeneration: handleCancel,
     exportResponse: handleExportResponse,
-  }), [handleGenerate, handleLoadDraft, handleSaveDraft, handleCopyResponse, handleCancel, handleExportResponse]);
+    clearDraft: handleClear,
+  }), [handleGenerate, handleLoadDraft, handleSaveDraft, handleCopyResponse, handleCancel, handleExportResponse, handleClear]);
 
   return (
     <div className={`draft-tab ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>

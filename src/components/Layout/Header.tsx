@@ -3,14 +3,14 @@
  * Shows current context, breadcrumbs, and quick actions
  */
 
+import { useState } from 'react';
 import { Icon, IconName } from '../shared/Icon';
+import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { Tab } from '../../types';
 import './Header.css';
 
 interface HeaderProps {
   activeTab: Tab;
-  modelLoaded: boolean;
-  modelName: string | null;
   onOpenCommandPalette?: () => void;
 }
 
@@ -53,8 +53,19 @@ const tabInfo: Record<Tab, TabInfo> = {
   }
 };
 
-export function Header({ activeTab, modelLoaded, modelName, onOpenCommandPalette }: HeaderProps) {
+export function Header({ activeTab, onOpenCommandPalette }: HeaderProps) {
   const info = tabInfo[activeTab];
+  const appStatus = useAppStatus();
+  const [showStatusPanel, setShowStatusPanel] = useState(false);
+
+  // Compute overall health
+  const healthyCount = [
+    appStatus.llmLoaded,
+    appStatus.embeddingsLoaded,
+    appStatus.kbIndexed,
+  ].filter(Boolean).length;
+  const totalChecks = 3;
+  const overallHealth = healthyCount === totalChecks ? 'good' : healthyCount > 0 ? 'partial' : 'none';
 
   return (
     <header className="app-header">
@@ -84,13 +95,71 @@ export function Header({ activeTab, modelLoaded, modelName, onOpenCommandPalette
       </div>
 
       <div className="header-right">
-        <div className={`model-indicator ${modelLoaded ? 'loaded' : 'not-loaded'}`}>
+        <button
+          className={`status-indicator status-${overallHealth}`}
+          onClick={() => setShowStatusPanel(!showStatusPanel)}
+          title="View system status"
+        >
           <span className="status-dot" />
-          <span className="model-status-text">
-            {modelLoaded ? (modelName || 'Model loaded') : 'No model'}
+          <span className="status-text">
+            {appStatus.llmLoaded ? (appStatus.llmModelName || 'Ready') : 'Setup required'}
           </span>
-        </div>
+          <Icon name="chevron-down" size={14} className={`status-chevron ${showStatusPanel ? 'open' : ''}`} />
+        </button>
+
+        {showStatusPanel && (
+          <div className="status-panel">
+            <div className="status-panel-header">
+              <span className="status-panel-title">System Status</span>
+              <button className="status-refresh" onClick={() => appStatus.refresh()} title="Refresh">
+                <Icon name="refresh" size={14} />
+              </button>
+            </div>
+            <div className="status-panel-items">
+              <StatusItem
+                label="LLM Engine"
+                status={appStatus.llmLoaded}
+                detail={appStatus.llmModelName || 'Not loaded'}
+                loading={appStatus.llmLoading}
+              />
+              <StatusItem
+                label="Embeddings"
+                status={appStatus.embeddingsLoaded}
+                detail={appStatus.embeddingsLoaded ? 'Loaded' : 'Not loaded'}
+              />
+              <StatusItem
+                label="Vector Store"
+                status={appStatus.vectorEnabled}
+                detail={appStatus.vectorEnabled ? 'Enabled' : 'Disabled'}
+              />
+              <StatusItem
+                label="Knowledge Base"
+                status={appStatus.kbIndexed}
+                detail={`${appStatus.kbDocumentCount} docs, ${appStatus.kbChunkCount} chunks`}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </header>
+  );
+}
+
+interface StatusItemProps {
+  label: string;
+  status: boolean;
+  detail: string;
+  loading?: boolean;
+}
+
+function StatusItem({ label, status, detail, loading }: StatusItemProps) {
+  return (
+    <div className="status-item">
+      <div className="status-item-left">
+        <span className={`status-item-dot ${status ? 'active' : 'inactive'} ${loading ? 'loading' : ''}`} />
+        <span className="status-item-label">{label}</span>
+      </div>
+      <span className="status-item-detail">{loading ? 'Loading...' : detail}</span>
+    </div>
   );
 }

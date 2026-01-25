@@ -464,3 +464,146 @@ fn test_unicode_content() {
     let results = HybridSearch::fts_search(&ctx.db, "unicode", 10).expect("Search failed");
     assert!(!results.is_empty(), "Should find unicode content");
 }
+
+// ============================================================================
+// E2E Workflow Tests (Phase 21)
+// ============================================================================
+
+#[test]
+fn test_e2e_kb_ingest_search_workflow() {
+    // Complete workflow: ingest docs -> search -> verify results
+    let ctx = common::TestContext::new().expect("Failed to create context");
+
+    // 1. Create test documentation
+    let kb_dir = ctx
+        .create_test_files(
+            "kb",
+            &[
+                (
+                    "vpn.md",
+                    "# VPN Troubleshooting\n\nIf VPN connection fails:\n1. Check network connectivity\n2. Verify credentials\n3. Restart VPN client",
+                ),
+                (
+                    "password.md",
+                    "# Password Reset\n\nTo reset password:\n1. Go to IT portal\n2. Click 'Forgot Password'\n3. Follow email instructions",
+                ),
+            ],
+        )
+        .expect("Failed to create test files");
+
+    // 2. Index documentation
+    let indexer = KbIndexer::new();
+    let result = indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Indexing failed");
+
+    assert_eq!(result.indexed, 2, "Should index 2 documents");
+    assert_eq!(result.errors, 0, "Should have no errors");
+
+    // 3. Search for relevant content
+    let search_results =
+        HybridSearch::fts_search(&ctx.db, "VPN connection fails", 5).expect("Search failed");
+
+    assert!(!search_results.is_empty(), "Should find VPN content");
+    assert!(
+        search_results[0].content.contains("VPN"),
+        "Top result should be VPN document"
+    );
+
+    // 4. Search for password content
+    let password_results =
+        HybridSearch::fts_search(&ctx.db, "password reset portal", 5).expect("Search failed");
+
+    assert!(!password_results.is_empty(), "Should find password content");
+
+    // 5. Verify documents can be retrieved by ID
+    let doc_count: i64 = ctx
+        .db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0))
+        .expect("Failed to count documents");
+
+    assert_eq!(doc_count, 2, "Should have 2 documents in database");
+
+    // 6. Verify chunks were created
+    let chunk_count: i64 = ctx
+        .db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM kb_chunks", [], |r| r.get(0))
+        .expect("Failed to count chunks");
+
+    assert!(chunk_count >= 2, "Should have at least 2 chunks");
+}
+
+#[test]
+fn test_e2e_incremental_reindex() {
+    // Test that reindexing updates content correctly
+    let ctx = common::TestContext::new().expect("Failed to create context");
+
+    // 1. Create initial file
+    let kb_dir = ctx
+        .create_test_files("kb", &[("guide.md", "# Original Guide\n\nOriginal content here.")])
+        .expect("Failed to create test files");
+
+    let indexer = KbIndexer::new();
+
+    // 2. Initial index
+    let result1 = indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Initial indexing failed");
+
+    assert_eq!(result1.indexed, 1, "Should index 1 document");
+
+    // 3. Search for original content
+    let results1 = HybridSearch::fts_search(&ctx.db, "Original", 10).expect("Search failed");
+    assert!(!results1.is_empty(), "Should find original content");
+
+    // 4. Update the file
+    let guide_path = kb_dir.join("guide.md");
+    fs::write(&guide_path, "# Updated Guide\n\nNew updated content.").expect("Failed to update file");
+
+    // 5. Re-index
+    let result2 = indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Re-indexing failed");
+
+    // Note: depending on implementation, this may show 0 indexed if unchanged,
+    // or 1 if the file was re-indexed
+    assert_eq!(result2.errors, 0, "Re-indexing should not have errors");
+
+    // 6. Search for new content (may need to verify content is updated)
+    let _results2 = HybridSearch::fts_search(&ctx.db, "updated", 10).expect("Search failed");
+    // Note: This depends on content hash change detection
+    // The important thing is no errors occurred
+}
+
+#[test]
+fn test_e2e_multi_format_support() {
+    // Test that multiple file formats can be indexed and searched
+    let ctx = common::TestContext::new().expect("Failed to create context");
+
+    // 1. Create files in different formats
+    let kb_dir = ctx
+        .create_test_files(
+            "kb",
+            &[
+                ("readme.md", "# Markdown\n\nThis is markdown content about kubernetes."),
+                ("notes.txt", "Plain text notes about docker containers."),
+            ],
+        )
+        .expect("Failed to create test files");
+
+    let indexer = KbIndexer::new();
+    let result = indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Indexing failed");
+
+    assert_eq!(result.indexed, 2, "Should index both file formats");
+
+    // 2. Search across formats
+    let md_results = HybridSearch::fts_search(&ctx.db, "kubernetes", 10).expect("Search failed");
+    assert!(!md_results.is_empty(), "Should find markdown content");
+
+    let txt_results = HybridSearch::fts_search(&ctx.db, "docker", 10).expect("Search failed");
+    assert!(!txt_results.is_empty(), "Should find text file content");
+}

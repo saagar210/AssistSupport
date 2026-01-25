@@ -376,6 +376,43 @@ impl WebIngester {
         let text_content = html_to_text(&page.content);
         let title = page.title.clone().unwrap_or_else(|| page.url.clone());
 
+        // Compute content hash for incremental ingestion
+        let content_hash = sha256_hash(&text_content);
+
+        // Check if content is unchanged (incremental ingestion)
+        let existing_doc: Option<(String, String, i32)> = db.conn()
+            .query_row(
+                "SELECT id, file_hash, chunk_count FROM kb_documents WHERE source_id = ?",
+                rusqlite::params![source.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
+
+        if let Some((doc_id, existing_hash, chunk_count)) = existing_doc {
+            if existing_hash == content_hash {
+                // Content unchanged, skip re-indexing
+                if let Some(progress) = progress {
+                    progress(IngestProgress {
+                        phase: IngestPhase::Complete,
+                        current: 0,
+                        total: Some(0),
+                        message: "Content unchanged, skipping re-index".to_string(),
+                    });
+                }
+
+                // Complete the run with no changes
+                db.complete_ingest_run(&run_id, "completed", 0, 0, 0, 0, None)?;
+
+                return Ok(IngestedDocument {
+                    id: doc_id,
+                    title,
+                    source_uri,
+                    chunk_count: chunk_count as usize,
+                    word_count: text_content.split_whitespace().count(),
+                });
+            }
+        }
+
         // Extract headings and build sections
         let headings = extract_headings(&page.content);
         let sections = build_sections_from_headings(&text_content, &headings);
@@ -422,7 +459,7 @@ impl WebIngester {
 
         // Insert document
         let doc_id = uuid::Uuid::new_v4().to_string();
-        let content_hash = sha256_hash(&text_content);
+        // content_hash already computed earlier for incremental check
 
         db.conn().execute(
             "INSERT INTO kb_documents (id, file_path, file_hash, title, indexed_at, chunk_count,

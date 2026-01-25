@@ -197,6 +197,21 @@ pub fn validate_url(url: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Validate URL requires HTTPS
+pub fn validate_https_url(url: &str) -> Result<(), ValidationError> {
+    if !url.starts_with("https://") {
+        return Err(ValidationError::InvalidFormat(
+            "URL must use HTTPS for security. HTTP connections require explicit opt-in.".into()
+        ));
+    }
+    Ok(())
+}
+
+/// Check if URL is HTTP (not HTTPS)
+pub fn is_http_url(url: &str) -> bool {
+    url.starts_with("http://") && !url.starts_with("https://")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,99 +1,144 @@
-# AssistSupport Installation Guide
+# Installation Guide
 
-## macOS Installation (Unsigned DMG)
+## System Requirements
 
-AssistSupport is distributed as an unsigned DMG for internal use. macOS will show a security warning when you first open the app.
+### Hardware
+- **CPU**: Apple Silicon (M1/M2/M3/M4) or Intel x86_64
+- **RAM**: 8 GB minimum, 16 GB+ recommended for larger models
+- **Storage**: 2 GB for application, 5-20 GB per LLM model
 
-### Installation Steps
+### Software
+- **macOS**: 13.0 (Ventura) or later
+- **Node.js**: 20.x or later
+- **Rust**: 1.75 or later
+- **pnpm**: 8.x or later (or npm)
 
-1. **Download** `AssistSupport_x.x.x_aarch64.dmg`
+### Optional Dependencies
+- **yt-dlp**: Required for YouTube transcript ingestion
+  ```bash
+  brew install yt-dlp
+  ```
 
-2. **Mount** the DMG by double-clicking it
+## Installation from Source
 
-3. **Drag** AssistSupport.app to the Applications folder
+### 1. Clone Repository
+```bash
+git clone https://github.com/your-org/assistsupport.git
+cd assistsupport
+```
 
-4. **First Launch** - one of these methods:
+### 2. Install Dependencies
+```bash
+# Install Node.js dependencies
+pnpm install
 
-   **Option A: Right-click to open (easiest)**
-   - Right-click (or Control-click) on AssistSupport.app
-   - Select "Open" from the context menu
-   - Click "Open" in the dialog
+# Rust dependencies are handled by Cargo automatically
+```
 
-   **Option B: Remove quarantine via Terminal**
-   ```bash
-   xattr -d com.apple.quarantine /Applications/AssistSupport.app
-   ```
+### 3. Build and Run
 
-   **Option C: Allow in System Settings**
-   - Try to open the app normally (it will be blocked)
-   - Go to System Settings > Privacy & Security
-   - Scroll down to find the message about AssistSupport
-   - Click "Open Anyway"
+#### Development Mode
+```bash
+pnpm tauri dev
+```
 
-### System Requirements
+#### Production Build
+```bash
+pnpm tauri build
+```
 
-- macOS 10.15 (Catalina) or later
-- Apple Silicon (M1/M2/M3/M4) or Intel processor
-- 200MB free disk space
+The built application will be in `src-tauri/target/release/bundle/macos/`.
 
-### First Run
+## First Run Setup
 
-On first launch, AssistSupport will:
-1. Generate a new master encryption key
-2. Store it securely in your macOS Keychain
-3. Create an encrypted database
-4. Launch the **Onboarding Wizard**
+### 1. Key Storage Selection
+On first launch, the onboarding wizard guides you through:
+- **Keychain Mode** (recommended): Master key stored in macOS Keychain
+- **Passphrase Mode**: Master key protected by your passphrase
 
-You'll be prompted to allow Keychain access - click "Allow" to proceed.
+### 2. Model Selection
+Choose an LLM model:
+- **Qwen 2.5 7B** (recommended): Best balance of quality and speed
+- **Llama 3.2 3B**: Faster, lower RAM usage
+- **Custom GGUF**: Load your own model file
 
-### Onboarding Wizard
+### 3. Knowledge Base Setup
+Configure your knowledge base folder:
+- Must be within your home directory
+- Supports markdown, PDF, DOCX, XLSX
+- Subfolders are indexed recursively
 
-The onboarding wizard guides you through initial setup:
+## Configuration Files
 
-1. **Welcome**: Overview of features and privacy guarantees
-2. **Model Download**: Select and download an AI model (Llama 3.2 or Qwen 2.5)
-3. **Knowledge Base**: Point to a folder containing your documentation
-4. **Complete**: Verify setup and start using the app
+### Application Data Location
+```
+~/Library/Application Support/com.d.assistsupport/
+├── data/
+│   └── assistsupport.db     # Encrypted SQLite database
+├── vectors/
+│   └── lance/               # Vector store data
+├── audit.log                # Security audit log
+├── mode.txt                 # Key storage mode
+├── tokens.json              # Encrypted API tokens
+└── wrapped.key              # Passphrase-wrapped key (if using passphrase mode)
+```
 
-You can skip any step and configure settings later. The wizard only appears on first run.
+### Model Storage
+```
+~/Library/Application Support/com.d.assistsupport/models/
+├── qwen2.5-7b-instruct-q4_k_m.gguf
+├── llama-3.2-3b-instruct-q4_k_m.gguf
+└── nomic-embed-text-v1.5-q8_0.gguf
+```
 
-### Uninstallation
+## Upgrading
 
-1. Quit AssistSupport if running
-2. Delete `/Applications/AssistSupport.app`
-3. Optional: Delete app data:
+### From Previous Versions
+
+1. **Backup your data** (Settings > Export Backup)
+2. Replace the application
+3. Launch the new version
+4. Data migration runs automatically
+
+### Key Migration
+If upgrading from a version without Keychain support:
+- Legacy plaintext keys are automatically migrated to Keychain
+- No action required on your part
+- Migration logged in audit.log
+
+## Troubleshooting
+
+### "Cannot open database"
+- Delete and recreate: `rm -rf ~/Library/Application\ Support/com.d.assistsupport/data`
+- Re-index your knowledge base
+
+### "Model failed to load"
+- Verify GGUF file integrity
+- Check available RAM (Activity Monitor)
+- Try a smaller quantization (Q4 instead of Q8)
+
+### "Keychain access denied"
+- Grant keychain access when prompted
+- Or switch to passphrase mode in Settings
+
+### Build Errors
+```bash
+# Clean and rebuild
+cd src-tauri && cargo clean
+pnpm tauri build
+```
+
+## Uninstallation
+
+### Remove Application
+1. Quit AssistSupport
+2. Delete from Applications folder
+3. Remove application data:
    ```bash
    rm -rf ~/Library/Application\ Support/com.d.assistsupport
    ```
-4. Optional: Remove Keychain entry:
-   - Open Keychain Access
-   - Search for "com.d.assistsupport"
-   - Delete the entry
 
-### Troubleshooting
-
-**"App is damaged and can't be opened"**
+### Remove from Keychain
 ```bash
-xattr -cr /Applications/AssistSupport.app
+security delete-generic-password -s "com.d.assistsupport.master-key" 2>/dev/null
 ```
-
-**Keychain access denied**
-- Open Keychain Access
-- Right-click the AssistSupport entry
-- Select "Get Info" > "Access Control"
-- Add AssistSupport to allowed applications
-
-**Database errors**
-- Ensure ~/Library/Application Support/com.d.assistsupport exists and is writable
-- Check Console.app for detailed error messages
-- Use the built-in diagnostics panel (Settings > System Health) to run repair tools
-
-**Model not loading**
-- Check if you have enough RAM (model size + 2GB headroom)
-- Verify the GGUF file isn't corrupted (Settings > Models > Verify)
-- Try a smaller model (Llama 3.2 3B uses less memory)
-
-**Search returning poor results**
-- Ensure documents are indexed (Knowledge > check document count)
-- Try rebuilding the vector store (Settings > System Health > Rebuild)
-- Adjust search weights (Sources > Settings icon)

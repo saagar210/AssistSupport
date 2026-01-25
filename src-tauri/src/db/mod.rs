@@ -1,12 +1,18 @@
 //! Database module for AssistSupport
 //! SQLCipher encrypted database with FTS5 full-text search
 
+pub mod executor;
+
+pub use executor::{DbExecutor, DbExecutorError};
+
+use crate::jobs::{Job, JobLog, JobStatus, JobType, LogLevel};
 use crate::security::{MasterKey, SecurityError};
+use chrono::Utc;
 use rusqlite::{Connection, Result as SqliteResult, params};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-const CURRENT_SCHEMA_VERSION: i32 = 4;
+const CURRENT_SCHEMA_VERSION: i32 = 7;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -165,6 +171,18 @@ impl Database {
 
         if from_version < 4 {
             self.migrate_v4()?;
+        }
+
+        if from_version < 5 {
+            self.migrate_v5()?;
+        }
+
+        if from_version < 6 {
+            self.migrate_v6()?;
+        }
+
+        if from_version < 7 {
+            self.migrate_v7()?;
         }
 
         tx.commit()?;
@@ -514,6 +532,184 @@ impl Database {
         Ok(())
     }
 
+    /// Migration to v5: Add jobs and job_logs tables for background task management
+    fn migrate_v5(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Jobs table for background task management
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                progress REAL DEFAULT 0.0,
+                progress_message TEXT,
+                error TEXT,
+                metadata_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+            CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(job_type);
+
+            -- Job logs for detailed progress tracking
+            CREATE TABLE IF NOT EXISTS job_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                level TEXT NOT NULL DEFAULT 'info' CHECK(level IN ('debug', 'info', 'warning', 'error')),
+                message TEXT NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_job_logs_job ON job_logs(job_id);
+            CREATE INDEX IF NOT EXISTS idx_job_logs_timestamp ON job_logs(timestamp DESC);
+            "#,
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration to v6: Document versioning and source trust (Phase 14)
+    fn migrate_v6(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Document versions for rollback support
+            CREATE TABLE IF NOT EXISTS document_versions (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                file_hash TEXT NOT NULL,
+                content_snapshot TEXT,
+                chunks_json TEXT,
+                created_at TEXT NOT NULL,
+                change_reason TEXT,
+                FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(document_id);
+            CREATE INDEX IF NOT EXISTS idx_doc_versions_num ON document_versions(document_id, version_number DESC);
+
+            -- Source trust and curation metadata
+            ALTER TABLE ingest_sources ADD COLUMN trust_score REAL DEFAULT 0.5;
+            ALTER TABLE ingest_sources ADD COLUMN is_pinned INTEGER DEFAULT 0;
+            ALTER TABLE ingest_sources ADD COLUMN owner TEXT;
+            ALTER TABLE ingest_sources ADD COLUMN review_status TEXT DEFAULT 'pending'
+                CHECK(review_status IN ('pending', 'approved', 'rejected', 'needs_review'));
+            ALTER TABLE ingest_sources ADD COLUMN tags_json TEXT;
+            ALTER TABLE ingest_sources ADD COLUMN stale_at TEXT;
+
+            -- Document curation metadata
+            ALTER TABLE kb_documents ADD COLUMN review_status TEXT DEFAULT 'auto_approved'
+                CHECK(review_status IN ('pending', 'approved', 'rejected', 'auto_approved'));
+            ALTER TABLE kb_documents ADD COLUMN is_pinned INTEGER DEFAULT 0;
+            ALTER TABLE kb_documents ADD COLUMN tags_json TEXT;
+            ALTER TABLE kb_documents ADD COLUMN owner TEXT;
+
+            -- Namespace ingestion rules (allowlist/denylist)
+            CREATE TABLE IF NOT EXISTS namespace_rules (
+                id TEXT PRIMARY KEY,
+                namespace_id TEXT NOT NULL,
+                rule_type TEXT NOT NULL CHECK(rule_type IN ('allow', 'deny')),
+                pattern_type TEXT NOT NULL CHECK(pattern_type IN ('domain', 'file_pattern', 'url_pattern')),
+                pattern TEXT NOT NULL,
+                reason TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (namespace_id) REFERENCES namespaces(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ns_rules_ns ON namespace_rules(namespace_id);
+            CREATE INDEX IF NOT EXISTS idx_ns_rules_type ON namespace_rules(rule_type, pattern_type);
+
+            -- Trust score defaults based on source type
+            UPDATE ingest_sources SET trust_score = 0.8 WHERE source_type = 'file' AND trust_score = 0.5;
+            UPDATE ingest_sources SET trust_score = 0.6 WHERE source_type = 'web' AND trust_score = 0.5;
+            UPDATE ingest_sources SET trust_score = 0.5 WHERE source_type = 'youtube' AND trust_score = 0.5;
+            "#,
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration to v7: IT Support workflow enhancements (Phase 17)
+    /// - Case intake fields for drafts
+    /// - Draft versioning and finalization
+    /// - Playbooks for common workflows
+    fn migrate_v7(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Add case intake and workflow fields to drafts
+            ALTER TABLE drafts ADD COLUMN case_intake_json TEXT;
+            ALTER TABLE drafts ADD COLUMN status TEXT DEFAULT 'draft'
+                CHECK(status IN ('draft', 'finalized', 'archived'));
+            ALTER TABLE drafts ADD COLUMN handoff_summary TEXT;
+            ALTER TABLE drafts ADD COLUMN finalized_at TEXT;
+            ALTER TABLE drafts ADD COLUMN finalized_by TEXT;
+
+            -- Draft versions for history/diff view
+            CREATE TABLE IF NOT EXISTS draft_versions (
+                id TEXT PRIMARY KEY,
+                draft_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                input_text TEXT,
+                summary_text TEXT,
+                response_text TEXT,
+                case_intake_json TEXT,
+                kb_sources_json TEXT,
+                created_at TEXT NOT NULL,
+                change_reason TEXT,
+                FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_draft_versions_draft ON draft_versions(draft_id);
+            CREATE INDEX IF NOT EXISTS idx_draft_versions_num ON draft_versions(draft_id, version_number DESC);
+
+            -- Playbooks: curated workflows tied to decision trees
+            CREATE TABLE IF NOT EXISTS playbooks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                category TEXT,
+                decision_tree_id TEXT,
+                steps_json TEXT NOT NULL,
+                template_id TEXT,
+                shortcuts_json TEXT,
+                is_active INTEGER DEFAULT 1,
+                usage_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (template_id) REFERENCES response_templates(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_playbooks_category ON playbooks(category);
+            CREATE INDEX IF NOT EXISTS idx_playbooks_active ON playbooks(is_active);
+            CREATE INDEX IF NOT EXISTS idx_playbooks_tree ON playbooks(decision_tree_id);
+
+            -- Action shortcuts: one-click sequences
+            CREATE TABLE IF NOT EXISTS action_shortcuts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                shortcut_key TEXT,
+                action_type TEXT NOT NULL CHECK(action_type IN ('template', 'clarify', 'request_logs', 'summarize', 'custom')),
+                action_data_json TEXT NOT NULL,
+                category TEXT,
+                sort_order INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_shortcuts_type ON action_shortcuts(action_type);
+            CREATE INDEX IF NOT EXISTS idx_shortcuts_active ON action_shortcuts(is_active, sort_order);
+
+            -- Insert default action shortcuts
+            INSERT OR IGNORE INTO action_shortcuts (id, name, action_type, action_data_json, category, sort_order, created_at, updated_at)
+            VALUES
+                ('clarify_default', 'Request Clarification', 'clarify', '{"prompt": "To help resolve this issue, could you please provide:\n\n1. When did this issue first occur?\n2. Have you tried any troubleshooting steps?\n3. Are other users affected?"}', 'intake', 1, datetime('now'), datetime('now')),
+                ('request_logs', 'Request Logs', 'request_logs', '{"prompt": "To investigate further, please share:\n\n- Screenshots of any error messages\n- Relevant log files\n- Steps to reproduce the issue"}', 'intake', 2, datetime('now'), datetime('now')),
+                ('summarize_steps', 'Summarize Resolution', 'summarize', '{"prompt": "Resolution Summary\n\nIssue: [Brief description]\n\nRoot Cause: [What caused it]\n\nResolution: [Steps taken]\n\nPrevention: [How to avoid in future]"}', 'resolution', 3, datetime('now'), datetime('now'));
+            "#,
+        )?;
+
+        Ok(())
+    }
+
     /// Create backup of database
     /// Note: For SQLCipher encrypted databases, we use file copy instead of SQLite backup API
     pub fn backup(&self) -> Result<PathBuf, DbError> {
@@ -683,7 +879,8 @@ impl Database {
     pub fn list_drafts(&self, limit: usize) -> Result<Vec<SavedDraft>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
+                    case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts
              ORDER BY updated_at DESC
              LIMIT ?"
@@ -702,6 +899,13 @@ impl Database {
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
                 model_name: row.get(10)?,
+                case_intake_json: row.get(11)?,
+                status: row.get::<_, Option<String>>(12)?
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_default(),
+                handoff_summary: row.get(13)?,
+                finalized_at: row.get(14)?,
+                finalized_by: row.get(15)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -713,7 +917,8 @@ impl Database {
         let pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
+                    case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts
              WHERE is_autosave = 0
                AND (input_text LIKE ?1 OR response_text LIKE ?1 OR ticket_id LIKE ?1)
@@ -734,6 +939,13 @@ impl Database {
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
                 model_name: row.get(10)?,
+                case_intake_json: row.get(11)?,
+                status: row.get::<_, Option<String>>(12)?
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_default(),
+                handoff_summary: row.get(13)?,
+                finalized_at: row.get(14)?,
+                finalized_by: row.get(15)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -744,7 +956,8 @@ impl Database {
     pub fn get_draft(&self, draft_id: &str) -> Result<SavedDraft, DbError> {
         let draft = self.conn.query_row(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
+                    case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts WHERE id = ?",
             [draft_id],
             |row| Ok(SavedDraft {
@@ -759,6 +972,13 @@ impl Database {
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
                 model_name: row.get(10)?,
+                case_intake_json: row.get(11)?,
+                status: row.get::<_, Option<String>>(12)?
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_default(),
+                handoff_summary: row.get(13)?,
+                finalized_at: row.get(14)?,
+                finalized_by: row.get(15)?,
             })
         )?;
         Ok(draft)
@@ -769,8 +989,9 @@ impl Database {
         self.conn.execute(
             "INSERT OR REPLACE INTO drafts
              (id, input_text, summary_text, diagnosis_json, response_text,
-              ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
+              case_intake_json, status, handoff_summary, finalized_at, finalized_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &draft.id,
                 &draft.input_text,
@@ -783,6 +1004,11 @@ impl Database {
                 &draft.updated_at,
                 draft.is_autosave as i32,
                 &draft.model_name,
+                &draft.case_intake_json,
+                draft.status.to_string(),
+                &draft.handoff_summary,
+                &draft.finalized_at,
+                &draft.finalized_by,
             ],
         )?;
         Ok(draft.id.clone())
@@ -811,7 +1037,8 @@ impl Database {
     pub fn list_autosaves(&self, limit: usize) -> Result<Vec<SavedDraft>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
-                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name
+                    ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
+                    case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts
              WHERE is_autosave = 1
              ORDER BY created_at DESC
@@ -831,6 +1058,13 @@ impl Database {
                 updated_at: row.get(8)?,
                 is_autosave: row.get::<_, i32>(9)? != 0,
                 model_name: row.get(10)?,
+                case_intake_json: row.get(11)?,
+                status: row.get::<_, Option<String>>(12)?
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_default(),
+                handoff_summary: row.get(13)?,
+                finalized_at: row.get(14)?,
+                finalized_by: row.get(15)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -856,6 +1090,284 @@ impl Database {
             .collect();
 
         Ok(matching)
+    }
+
+    // ============================================================================
+    // Draft Versioning Methods (Phase 17)
+    // ============================================================================
+
+    /// Create a draft version snapshot
+    pub fn create_draft_version(&self, draft_id: &str, change_reason: Option<&str>) -> Result<String, DbError> {
+        // Get current draft state
+        let draft = self.get_draft(draft_id)?;
+
+        // Get next version number
+        let version_number: i32 = self.conn.query_row(
+            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM draft_versions WHERE draft_id = ?",
+            [draft_id],
+            |row| row.get(0),
+        )?;
+
+        let version_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.conn.execute(
+            "INSERT INTO draft_versions
+             (id, draft_id, version_number, input_text, summary_text, response_text,
+              case_intake_json, kb_sources_json, created_at, change_reason)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &version_id,
+                draft_id,
+                version_number,
+                &draft.input_text,
+                &draft.summary_text,
+                &draft.response_text,
+                &draft.case_intake_json,
+                &draft.kb_sources_json,
+                &now,
+                change_reason,
+            ],
+        )?;
+
+        Ok(version_id)
+    }
+
+    /// List draft versions
+    pub fn list_draft_versions(&self, draft_id: &str) -> Result<Vec<DraftVersion>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, draft_id, version_number, input_text, summary_text, response_text,
+                    case_intake_json, kb_sources_json, created_at, change_reason
+             FROM draft_versions
+             WHERE draft_id = ?
+             ORDER BY version_number DESC"
+        )?;
+
+        let versions = stmt.query_map([draft_id], |row| {
+            Ok(DraftVersion {
+                id: row.get(0)?,
+                draft_id: row.get(1)?,
+                version_number: row.get(2)?,
+                input_text: row.get(3)?,
+                summary_text: row.get(4)?,
+                response_text: row.get(5)?,
+                case_intake_json: row.get(6)?,
+                kb_sources_json: row.get(7)?,
+                created_at: row.get(8)?,
+                change_reason: row.get(9)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(versions)
+    }
+
+    /// Finalize a draft (lock it and mark as read-only)
+    pub fn finalize_draft(&self, draft_id: &str, finalized_by: Option<&str>) -> Result<(), DbError> {
+        // Create a version snapshot before finalizing
+        self.create_draft_version(draft_id, Some("Pre-finalization snapshot"))?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE drafts SET status = 'finalized', finalized_at = ?, finalized_by = ?, updated_at = ?
+             WHERE id = ?",
+            params![&now, finalized_by, &now, draft_id],
+        )?;
+        Ok(())
+    }
+
+    /// Archive a draft
+    pub fn archive_draft(&self, draft_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE drafts SET status = 'archived', updated_at = ? WHERE id = ?",
+            params![&now, draft_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update draft handoff summary
+    pub fn update_draft_handoff(&self, draft_id: &str, handoff_summary: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE drafts SET handoff_summary = ?, updated_at = ? WHERE id = ?",
+            params![handoff_summary, &now, draft_id],
+        )?;
+        Ok(())
+    }
+
+    // ============================================================================
+    // Playbook Methods (Phase 17)
+    // ============================================================================
+
+    /// List all active playbooks
+    pub fn list_playbooks(&self, category: Option<&str>) -> Result<Vec<Playbook>, DbError> {
+        let query = match category {
+            Some(_) => "SELECT id, name, description, category, decision_tree_id, steps_json,
+                               template_id, shortcuts_json, is_active, usage_count, created_at, updated_at
+                        FROM playbooks WHERE is_active = 1 AND category = ? ORDER BY usage_count DESC",
+            None => "SELECT id, name, description, category, decision_tree_id, steps_json,
+                            template_id, shortcuts_json, is_active, usage_count, created_at, updated_at
+                     FROM playbooks WHERE is_active = 1 ORDER BY usage_count DESC",
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let playbooks = if let Some(cat) = category {
+            stmt.query_map([cat], Self::row_to_playbook)?
+        } else {
+            stmt.query_map([], Self::row_to_playbook)?
+        }.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(playbooks)
+    }
+
+    fn row_to_playbook(row: &rusqlite::Row) -> Result<Playbook, rusqlite::Error> {
+        Ok(Playbook {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            category: row.get(3)?,
+            decision_tree_id: row.get(4)?,
+            steps_json: row.get(5)?,
+            template_id: row.get(6)?,
+            shortcuts_json: row.get(7)?,
+            is_active: row.get::<_, i32>(8)? != 0,
+            usage_count: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        })
+    }
+
+    /// Get a playbook by ID
+    pub fn get_playbook(&self, playbook_id: &str) -> Result<Playbook, DbError> {
+        let playbook = self.conn.query_row(
+            "SELECT id, name, description, category, decision_tree_id, steps_json,
+                    template_id, shortcuts_json, is_active, usage_count, created_at, updated_at
+             FROM playbooks WHERE id = ?",
+            [playbook_id],
+            Self::row_to_playbook,
+        )?;
+        Ok(playbook)
+    }
+
+    /// Save a playbook (insert or update)
+    pub fn save_playbook(&self, playbook: &Playbook) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO playbooks
+             (id, name, description, category, decision_tree_id, steps_json,
+              template_id, shortcuts_json, is_active, usage_count, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &playbook.id,
+                &playbook.name,
+                &playbook.description,
+                &playbook.category,
+                &playbook.decision_tree_id,
+                &playbook.steps_json,
+                &playbook.template_id,
+                &playbook.shortcuts_json,
+                playbook.is_active as i32,
+                playbook.usage_count,
+                &playbook.created_at,
+                &playbook.updated_at,
+            ],
+        )?;
+        Ok(playbook.id.clone())
+    }
+
+    /// Increment playbook usage count
+    pub fn increment_playbook_usage(&self, playbook_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE playbooks SET usage_count = usage_count + 1 WHERE id = ?",
+            [playbook_id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a playbook
+    pub fn delete_playbook(&self, playbook_id: &str) -> Result<(), DbError> {
+        self.conn.execute("DELETE FROM playbooks WHERE id = ?", [playbook_id])?;
+        Ok(())
+    }
+
+    // ============================================================================
+    // Action Shortcut Methods (Phase 17)
+    // ============================================================================
+
+    /// List all active action shortcuts
+    pub fn list_action_shortcuts(&self, category: Option<&str>) -> Result<Vec<ActionShortcut>, DbError> {
+        let query = match category {
+            Some(_) => "SELECT id, name, shortcut_key, action_type, action_data_json,
+                               category, sort_order, is_active, created_at, updated_at
+                        FROM action_shortcuts WHERE is_active = 1 AND category = ? ORDER BY sort_order",
+            None => "SELECT id, name, shortcut_key, action_type, action_data_json,
+                            category, sort_order, is_active, created_at, updated_at
+                     FROM action_shortcuts WHERE is_active = 1 ORDER BY sort_order",
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let shortcuts = if let Some(cat) = category {
+            stmt.query_map([cat], Self::row_to_action_shortcut)?
+        } else {
+            stmt.query_map([], Self::row_to_action_shortcut)?
+        }.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(shortcuts)
+    }
+
+    fn row_to_action_shortcut(row: &rusqlite::Row) -> Result<ActionShortcut, rusqlite::Error> {
+        Ok(ActionShortcut {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            shortcut_key: row.get(2)?,
+            action_type: row.get(3)?,
+            action_data_json: row.get(4)?,
+            category: row.get(5)?,
+            sort_order: row.get(6)?,
+            is_active: row.get::<_, i32>(7)? != 0,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+        })
+    }
+
+    /// Get an action shortcut by ID
+    pub fn get_action_shortcut(&self, shortcut_id: &str) -> Result<ActionShortcut, DbError> {
+        let shortcut = self.conn.query_row(
+            "SELECT id, name, shortcut_key, action_type, action_data_json,
+                    category, sort_order, is_active, created_at, updated_at
+             FROM action_shortcuts WHERE id = ?",
+            [shortcut_id],
+            Self::row_to_action_shortcut,
+        )?;
+        Ok(shortcut)
+    }
+
+    /// Save an action shortcut (insert or update)
+    pub fn save_action_shortcut(&self, shortcut: &ActionShortcut) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO action_shortcuts
+             (id, name, shortcut_key, action_type, action_data_json,
+              category, sort_order, is_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &shortcut.id,
+                &shortcut.name,
+                &shortcut.shortcut_key,
+                &shortcut.action_type,
+                &shortcut.action_data_json,
+                &shortcut.category,
+                shortcut.sort_order,
+                shortcut.is_active as i32,
+                &shortcut.created_at,
+                &shortcut.updated_at,
+            ],
+        )?;
+        Ok(shortcut.id.clone())
+    }
+
+    /// Delete an action shortcut
+    pub fn delete_action_shortcut(&self, shortcut_id: &str) -> Result<(), DbError> {
+        self.conn.execute("DELETE FROM action_shortcuts WHERE id = ?", [shortcut_id])?;
+        Ok(())
     }
 
     // ============================================================================
@@ -1586,6 +2098,544 @@ impl Database {
     }
 
     // ============================================================================
+    // Job Methods
+    // ============================================================================
+
+    /// Create a new job
+    pub fn create_job(&self, job: &Job) -> Result<(), DbError> {
+        let metadata_json = job.metadata.as_ref().map(|m| m.to_string());
+        self.conn.execute(
+            "INSERT INTO jobs (id, job_type, status, created_at, updated_at, started_at, completed_at,
+                    progress, progress_message, error, metadata_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                job.id,
+                job.job_type.to_string(),
+                job.status.to_string(),
+                job.created_at.to_rfc3339(),
+                job.updated_at.to_rfc3339(),
+                job.started_at.map(|t| t.to_rfc3339()),
+                job.completed_at.map(|t| t.to_rfc3339()),
+                job.progress,
+                job.progress_message,
+                job.error,
+                metadata_json,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get a job by ID
+    pub fn get_job(&self, job_id: &str) -> Result<Option<Job>, DbError> {
+        match self.conn.query_row(
+            "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
+                    progress, progress_message, error, metadata_json
+             FROM jobs WHERE id = ?",
+            [job_id],
+            |row| {
+                let status_str: String = row.get(2)?;
+                let metadata_json: Option<String> = row.get(10)?;
+                Ok(Job {
+                    id: row.get(0)?,
+                    job_type: JobType::from_str(&row.get::<_, String>(1)?),
+                    status: JobStatus::from_str(&status_str).unwrap_or(JobStatus::Queued),
+                    created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                        .map(|t| t.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .map(|t| t.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    started_at: row.get::<_, Option<String>>(5)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|t| t.with_timezone(&Utc)),
+                    completed_at: row.get::<_, Option<String>>(6)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|t| t.with_timezone(&Utc)),
+                    progress: row.get(7)?,
+                    progress_message: row.get(8)?,
+                    error: row.get(9)?,
+                    metadata: metadata_json.and_then(|s| serde_json::from_str(&s).ok()),
+                })
+            },
+        ) {
+            Ok(job) => Ok(Some(job)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    /// List jobs, optionally filtered by status
+    pub fn list_jobs(&self, status: Option<JobStatus>, limit: usize) -> Result<Vec<Job>, DbError> {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<Job> {
+            let status_str: String = row.get(2)?;
+            let metadata_json: Option<String> = row.get(10)?;
+            Ok(Job {
+                id: row.get(0)?,
+                job_type: JobType::from_str(&row.get::<_, String>(1)?),
+                status: JobStatus::from_str(&status_str).unwrap_or(JobStatus::Queued),
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                    .map(|t| t.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                    .map(|t| t.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                started_at: row.get::<_, Option<String>>(5)?
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                    .map(|t| t.with_timezone(&Utc)),
+                completed_at: row.get::<_, Option<String>>(6)?
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                    .map(|t| t.with_timezone(&Utc)),
+                progress: row.get(7)?,
+                progress_message: row.get(8)?,
+                error: row.get(9)?,
+                metadata: metadata_json.and_then(|s| serde_json::from_str(&s).ok()),
+            })
+        };
+
+        let jobs: Vec<Job> = match status {
+            Some(s) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
+                            progress, progress_message, error, metadata_json
+                     FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?"
+                )?;
+                let result: Vec<Job> = stmt.query_map(params![s.to_string(), limit as i64], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            None => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
+                            progress, progress_message, error, metadata_json
+                     FROM jobs ORDER BY created_at DESC LIMIT ?"
+                )?;
+                let result: Vec<Job> = stmt.query_map(params![limit as i64], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+        };
+
+        Ok(jobs)
+    }
+
+    /// Update job status
+    pub fn update_job_status(
+        &self,
+        job_id: &str,
+        status: JobStatus,
+        error: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let started_at = if status == JobStatus::Running {
+            Some(now.clone())
+        } else {
+            None
+        };
+        let completed_at = if status.is_terminal() {
+            Some(now.clone())
+        } else {
+            None
+        };
+
+        self.conn.execute(
+            "UPDATE jobs SET status = ?, updated_at = ?, started_at = COALESCE(?, started_at),
+                    completed_at = COALESCE(?, completed_at), error = COALESCE(?, error)
+             WHERE id = ?",
+            params![status.to_string(), now, started_at, completed_at, error, job_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update job progress
+    pub fn update_job_progress(
+        &self,
+        job_id: &str,
+        progress: f32,
+        message: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE jobs SET progress = ?, progress_message = ?, updated_at = ? WHERE id = ?",
+            params![progress, message, now, job_id],
+        )?;
+        Ok(())
+    }
+
+    /// Add a log entry for a job
+    pub fn add_job_log(&self, job_id: &str, level: LogLevel, message: &str) -> Result<i64, DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO job_logs (job_id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+            params![job_id, now, level.to_string(), message],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get logs for a job
+    pub fn get_job_logs(&self, job_id: &str, limit: usize) -> Result<Vec<JobLog>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, job_id, timestamp, level, message
+             FROM job_logs WHERE job_id = ? ORDER BY timestamp DESC LIMIT ?"
+        )?;
+
+        let logs = stmt.query_map(params![job_id, limit as i64], |row| {
+            let level_str: String = row.get(3)?;
+            let level = match level_str.as_str() {
+                "debug" => LogLevel::Debug,
+                "info" => LogLevel::Info,
+                "warning" => LogLevel::Warning,
+                "error" => LogLevel::Error,
+                _ => LogLevel::Info,
+            };
+            Ok(JobLog {
+                id: row.get(0)?,
+                job_id: row.get(1)?,
+                timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                    .map(|t| t.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                level,
+                message: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(logs)
+    }
+
+    /// Delete old completed jobs
+    pub fn cleanup_old_jobs(&self, keep_days: i64) -> Result<usize, DbError> {
+        let cutoff = (Utc::now() - chrono::Duration::days(keep_days)).to_rfc3339();
+        let deleted = self.conn.execute(
+            "DELETE FROM jobs WHERE status IN ('succeeded', 'failed', 'cancelled')
+             AND completed_at < ?",
+            params![cutoff],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Get count of jobs by status
+    pub fn get_job_counts(&self) -> Result<Vec<(String, i64)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT status, COUNT(*) FROM jobs GROUP BY status"
+        )?;
+
+        let counts = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(counts)
+    }
+
+    // ============================================================================
+    // Document Versioning Methods (Phase 14)
+    // ============================================================================
+
+    /// Create a version snapshot of a document before updating it
+    pub fn create_document_version(
+        &self,
+        document_id: &str,
+        change_reason: Option<&str>,
+    ) -> Result<String, DbError> {
+        // Get current document state
+        let (file_hash, ): (String,) = self.conn.query_row(
+            "SELECT file_hash FROM kb_documents WHERE id = ?",
+            [document_id],
+            |row| Ok((row.get(0)?,)),
+        )?;
+
+        // Get current chunks as JSON
+        let mut stmt = self.conn.prepare(
+            "SELECT id, chunk_index, heading_path, content, word_count
+             FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index"
+        )?;
+
+        let chunks: Vec<serde_json::Value> = stmt
+            .query_map([document_id], |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, String>(0)?,
+                    "chunk_index": row.get::<_, i32>(1)?,
+                    "heading_path": row.get::<_, Option<String>>(2)?,
+                    "content": row.get::<_, String>(3)?,
+                    "word_count": row.get::<_, Option<i32>>(4)?,
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let chunks_json = serde_json::to_string(&chunks)
+            .map_err(|e| DbError::Sqlite(rusqlite::Error::InvalidParameterName(e.to_string())))?;
+
+        // Get next version number
+        let version_number: i32 = self.conn
+            .query_row(
+                "SELECT COALESCE(MAX(version_number), 0) + 1 FROM document_versions WHERE document_id = ?",
+                [document_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
+
+        // Insert version
+        let version_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        self.conn.execute(
+            "INSERT INTO document_versions (id, document_id, version_number, file_hash, chunks_json, created_at, change_reason)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![version_id, document_id, version_number, file_hash, chunks_json, now, change_reason],
+        )?;
+
+        Ok(version_id)
+    }
+
+    /// List versions of a document
+    pub fn list_document_versions(&self, document_id: &str) -> Result<Vec<DocumentVersion>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, document_id, version_number, file_hash, created_at, change_reason
+             FROM document_versions WHERE document_id = ? ORDER BY version_number DESC"
+        )?;
+
+        let versions = stmt.query_map([document_id], |row| {
+            Ok(DocumentVersion {
+                id: row.get(0)?,
+                document_id: row.get(1)?,
+                version_number: row.get(2)?,
+                file_hash: row.get(3)?,
+                created_at: row.get(4)?,
+                change_reason: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(versions)
+    }
+
+    /// Rollback a document to a previous version
+    pub fn rollback_document(&self, document_id: &str, version_id: &str) -> Result<(), DbError> {
+        // Get the version
+        let (chunks_json, file_hash, _version_number): (String, String, i32) = self.conn.query_row(
+            "SELECT chunks_json, file_hash, version_number FROM document_versions WHERE id = ? AND document_id = ?",
+            params![version_id, document_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+
+        // Create a new version of current state before rollback
+        let _ = self.create_document_version(document_id, Some("Pre-rollback snapshot"));
+
+        // Delete current chunks
+        self.conn.execute("DELETE FROM kb_chunks WHERE document_id = ?", [document_id])?;
+
+        // Parse and restore chunks
+        let chunks: Vec<serde_json::Value> = serde_json::from_str(&chunks_json)
+            .map_err(|e| DbError::Sqlite(rusqlite::Error::InvalidParameterName(e.to_string())))?;
+
+        let namespace_id: String = self.conn.query_row(
+            "SELECT namespace_id FROM kb_documents WHERE id = ?",
+            [document_id],
+            |row| row.get(0),
+        )?;
+
+        for chunk in chunks {
+            let chunk_id = uuid::Uuid::new_v4().to_string();
+            self.conn.execute(
+                "INSERT INTO kb_chunks (id, document_id, chunk_index, heading_path, content, word_count, namespace_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    chunk_id,
+                    document_id,
+                    chunk["chunk_index"].as_i64().unwrap_or(0) as i32,
+                    chunk["heading_path"].as_str(),
+                    chunk["content"].as_str().unwrap_or(""),
+                    chunk["word_count"].as_i64().map(|v| v as i32),
+                    namespace_id,
+                ],
+            )?;
+        }
+
+        // Update document hash
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE kb_documents SET file_hash = ?, indexed_at = ? WHERE id = ?",
+            params![file_hash, now, document_id],
+        )?;
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // Source Trust and Curation Methods (Phase 14)
+    // ============================================================================
+
+    /// Update trust score for a source
+    pub fn update_source_trust(&self, source_id: &str, trust_score: f64) -> Result<(), DbError> {
+        let score = trust_score.clamp(0.0, 1.0);
+        self.conn.execute(
+            "UPDATE ingest_sources SET trust_score = ? WHERE id = ?",
+            params![score, source_id],
+        )?;
+        Ok(())
+    }
+
+    /// Pin/unpin a source (boosts search results)
+    pub fn set_source_pinned(&self, source_id: &str, pinned: bool) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE ingest_sources SET is_pinned = ? WHERE id = ?",
+            params![pinned as i32, source_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update review status for a source
+    pub fn set_source_review_status(&self, source_id: &str, status: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE ingest_sources SET review_status = ? WHERE id = ?",
+            params![status, source_id],
+        )?;
+        Ok(())
+    }
+
+    /// Mark sources as stale based on threshold
+    pub fn mark_stale_sources(&self, days_threshold: i64) -> Result<usize, DbError> {
+        let now = Utc::now();
+        let cutoff = (now - chrono::Duration::days(days_threshold)).to_rfc3339();
+        let stale_at = now.to_rfc3339();
+
+        let count = self.conn.execute(
+            "UPDATE ingest_sources SET status = 'stale', stale_at = ?
+             WHERE status = 'active'
+             AND last_ingested_at IS NOT NULL
+             AND last_ingested_at < ?",
+            params![stale_at, cutoff],
+        )?;
+
+        Ok(count)
+    }
+
+    /// Get stale sources for review
+    pub fn get_stale_sources(&self, namespace_id: Option<&str>) -> Result<Vec<IngestSource>, DbError> {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<IngestSource> {
+            Ok(IngestSource {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                source_uri: row.get(2)?,
+                namespace_id: row.get(3)?,
+                title: row.get(4)?,
+                etag: row.get(5)?,
+                last_modified: row.get(6)?,
+                content_hash: row.get(7)?,
+                last_ingested_at: row.get(8)?,
+                status: row.get(9)?,
+                error_message: row.get(10)?,
+                metadata_json: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        };
+
+        let sources: Vec<IngestSource> = match namespace_id {
+            Some(ns) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                            content_hash, last_ingested_at, status, error_message, metadata_json, created_at, updated_at
+                     FROM ingest_sources WHERE status = 'stale' AND namespace_id = ? ORDER BY stale_at"
+                )?;
+                let result: Vec<IngestSource> = stmt.query_map([ns], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            None => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                            content_hash, last_ingested_at, status, error_message, metadata_json, created_at, updated_at
+                     FROM ingest_sources WHERE status = 'stale' ORDER BY stale_at"
+                )?;
+                let result: Vec<IngestSource> = stmt.query_map([], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+        };
+
+        Ok(sources)
+    }
+
+    // ============================================================================
+    // Namespace Rules Methods (Phase 14)
+    // ============================================================================
+
+    /// Add a namespace ingestion rule
+    pub fn add_namespace_rule(
+        &self,
+        namespace_id: &str,
+        rule_type: &str,
+        pattern_type: &str,
+        pattern: &str,
+        reason: Option<&str>,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        self.conn.execute(
+            "INSERT INTO namespace_rules (id, namespace_id, rule_type, pattern_type, pattern, reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![id, namespace_id, rule_type, pattern_type, pattern, reason, now],
+        )?;
+
+        Ok(id)
+    }
+
+    /// Delete a namespace rule
+    pub fn delete_namespace_rule(&self, rule_id: &str) -> Result<(), DbError> {
+        self.conn.execute("DELETE FROM namespace_rules WHERE id = ?", [rule_id])?;
+        Ok(())
+    }
+
+    /// List rules for a namespace
+    pub fn list_namespace_rules(&self, namespace_id: &str) -> Result<Vec<NamespaceRule>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, namespace_id, rule_type, pattern_type, pattern, reason, created_at
+             FROM namespace_rules WHERE namespace_id = ? ORDER BY created_at"
+        )?;
+
+        let rules = stmt.query_map([namespace_id], |row| {
+            Ok(NamespaceRule {
+                id: row.get(0)?,
+                namespace_id: row.get(1)?,
+                rule_type: row.get(2)?,
+                pattern_type: row.get(3)?,
+                pattern: row.get(4)?,
+                reason: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rules)
+    }
+
+    /// Check if a URL/path is allowed by namespace rules
+    pub fn check_namespace_rules(&self, namespace_id: &str, url_or_path: &str) -> Result<bool, DbError> {
+        let rules = self.list_namespace_rules(namespace_id)?;
+
+        for rule in rules {
+            let matches = match rule.pattern_type.as_str() {
+                "domain" => {
+                    if let Ok(parsed) = url::Url::parse(url_or_path) {
+                        parsed.host_str().map(|h| h.contains(&rule.pattern)).unwrap_or(false)
+                    } else {
+                        false
+                    }
+                }
+                "file_pattern" | "url_pattern" => {
+                    // Simple glob-like pattern matching
+                    let pattern = rule.pattern.replace("*", "");
+                    url_or_path.contains(&pattern)
+                }
+                _ => false,
+            };
+
+            if matches {
+                return Ok(rule.rule_type == "allow");
+            }
+        }
+
+        // No matching rule = allowed by default
+        Ok(true)
+    }
+
+    // ============================================================================
     // KB Document Methods with Namespace Support
     // ============================================================================
 
@@ -1711,6 +2761,60 @@ pub struct DecisionTree {
 }
 
 /// Saved draft from database
+/// Draft status for workflow lifecycle
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DraftStatus {
+    #[default]
+    Draft,
+    Finalized,
+    Archived,
+}
+
+impl std::fmt::Display for DraftStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DraftStatus::Draft => write!(f, "draft"),
+            DraftStatus::Finalized => write!(f, "finalized"),
+            DraftStatus::Archived => write!(f, "archived"),
+        }
+    }
+}
+
+impl std::str::FromStr for DraftStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "draft" => Ok(DraftStatus::Draft),
+            "finalized" => Ok(DraftStatus::Finalized),
+            "archived" => Ok(DraftStatus::Archived),
+            _ => Err(format!("Unknown draft status: {}", s)),
+        }
+    }
+}
+
+/// Case intake data for structured IT support workflow
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CaseIntake {
+    /// Affected user name or ID
+    pub user: Option<String>,
+    /// Device type/model
+    pub device: Option<String>,
+    /// Operating system and version
+    pub os: Option<String>,
+    /// Urgency level: low, medium, high, critical
+    pub urgency: Option<String>,
+    /// Symptom description
+    pub symptoms: Option<String>,
+    /// Steps to reproduce
+    pub reproduction: Option<String>,
+    /// Relevant log snippets
+    pub logs: Option<String>,
+    /// Additional context fields (custom)
+    #[serde(default)]
+    pub custom_fields: std::collections::HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SavedDraft {
     pub id: String,
@@ -1726,6 +2830,68 @@ pub struct SavedDraft {
     /// Name of the model that generated this response (e.g., "Llama 3.2 3B Instruct")
     #[serde(default)]
     pub model_name: Option<String>,
+    /// Structured case intake data (Phase 17)
+    #[serde(default)]
+    pub case_intake_json: Option<String>,
+    /// Draft lifecycle status
+    #[serde(default)]
+    pub status: DraftStatus,
+    /// Handoff summary for escalations
+    #[serde(default)]
+    pub handoff_summary: Option<String>,
+    /// When the draft was finalized
+    #[serde(default)]
+    pub finalized_at: Option<String>,
+    /// Who finalized the draft
+    #[serde(default)]
+    pub finalized_by: Option<String>,
+}
+
+/// Draft version for history/diff view
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DraftVersion {
+    pub id: String,
+    pub draft_id: String,
+    pub version_number: i32,
+    pub input_text: Option<String>,
+    pub summary_text: Option<String>,
+    pub response_text: Option<String>,
+    pub case_intake_json: Option<String>,
+    pub kb_sources_json: Option<String>,
+    pub created_at: String,
+    pub change_reason: Option<String>,
+}
+
+/// Playbook: curated workflow tied to decision trees
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Playbook {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub decision_tree_id: Option<String>,
+    pub steps_json: String,
+    pub template_id: Option<String>,
+    pub shortcuts_json: Option<String>,
+    pub is_active: bool,
+    pub usage_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Action shortcut for one-click sequences
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ActionShortcut {
+    pub id: String,
+    pub name: String,
+    pub shortcut_key: Option<String>,
+    pub action_type: String,
+    pub action_data_json: String,
+    pub category: Option<String>,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// Response template from database
@@ -1791,6 +2957,29 @@ pub struct IngestSource {
     pub updated_at: String,
 }
 
+/// Document version for rollback support (Phase 14)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DocumentVersion {
+    pub id: String,
+    pub document_id: String,
+    pub version_number: i32,
+    pub file_hash: String,
+    pub created_at: String,
+    pub change_reason: Option<String>,
+}
+
+/// Namespace ingestion rule (Phase 14)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NamespaceRule {
+    pub id: String,
+    pub namespace_id: String,
+    pub rule_type: String,
+    pub pattern_type: String,
+    pub pattern: String,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
 /// Ingest run (tracks a single ingest operation)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IngestRun {
@@ -1833,10 +3022,10 @@ pub struct KbDocument {
 
 /// Built-in decision trees: (id, name, category, tree_json)
 const BUILTIN_TREES: &[(&str, &str, &str, &str)] = &[
-    ("auth-issues", "Authentication Issues", "Security", include_str!("trees/auth.json")),
-    ("vpn-connectivity", "VPN Connectivity", "Network", include_str!("trees/vpn.json")),
-    ("email-calendar", "Email & Calendar", "Productivity", include_str!("trees/email.json")),
-    ("password-reset", "Password Reset", "Security", include_str!("trees/password.json")),
+    ("auth-issues", "Authentication Issues", "Security", include_str!("../trees/auth.json")),
+    ("vpn-connectivity", "VPN Connectivity", "Network", include_str!("../trees/vpn.json")),
+    ("email-calendar", "Email & Calendar", "Productivity", include_str!("../trees/email.json")),
+    ("password-reset", "Password Reset", "Security", include_str!("../trees/password.json")),
 ];
 
 /// Get the application data directory
@@ -2060,5 +3249,123 @@ mod tests {
         let consent = db.get_vector_consent().unwrap();
         assert!(consent.enabled);
         assert_eq!(consent.encryption_supported, Some(true));
+    }
+
+    #[test]
+    fn test_job_crud() {
+        let (db, _dir) = create_test_db();
+
+        // Create a job
+        let job = Job::new(JobType::IngestWeb);
+        let job_id = job.id.clone();
+        db.create_job(&job).unwrap();
+
+        // Get the job
+        let retrieved = db.get_job(&job_id).unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.id, job_id);
+        assert_eq!(retrieved.status, JobStatus::Queued);
+
+        // Update status to running
+        db.update_job_status(&job_id, JobStatus::Running, None).unwrap();
+        let retrieved = db.get_job(&job_id).unwrap().unwrap();
+        assert_eq!(retrieved.status, JobStatus::Running);
+        assert!(retrieved.started_at.is_some());
+
+        // Update progress
+        db.update_job_progress(&job_id, 0.5, Some("Halfway done")).unwrap();
+        let retrieved = db.get_job(&job_id).unwrap().unwrap();
+        assert_eq!(retrieved.progress, 0.5);
+        assert_eq!(retrieved.progress_message, Some("Halfway done".to_string()));
+
+        // Complete the job
+        db.update_job_status(&job_id, JobStatus::Succeeded, None).unwrap();
+        let retrieved = db.get_job(&job_id).unwrap().unwrap();
+        assert_eq!(retrieved.status, JobStatus::Succeeded);
+        assert!(retrieved.completed_at.is_some());
+    }
+
+    #[test]
+    fn test_job_logs() {
+        let (db, _dir) = create_test_db();
+
+        // Create a job
+        let job = Job::new(JobType::IngestYoutube);
+        let job_id = job.id.clone();
+        db.create_job(&job).unwrap();
+
+        // Add logs
+        db.add_job_log(&job_id, LogLevel::Info, "Starting ingestion").unwrap();
+        db.add_job_log(&job_id, LogLevel::Debug, "Fetching content").unwrap();
+        db.add_job_log(&job_id, LogLevel::Warning, "Content is large").unwrap();
+        db.add_job_log(&job_id, LogLevel::Info, "Completed").unwrap();
+
+        // Get logs
+        let logs = db.get_job_logs(&job_id, 10).unwrap();
+        assert_eq!(logs.len(), 4);
+
+        // Logs should be in reverse order (most recent first)
+        assert_eq!(logs[0].message, "Completed");
+        assert_eq!(logs[3].message, "Starting ingestion");
+    }
+
+    #[test]
+    fn test_list_jobs_by_status() {
+        let (db, _dir) = create_test_db();
+
+        // Create jobs with different statuses
+        let job1 = Job::new(JobType::IngestWeb);
+        let job2 = Job::new(JobType::IngestYoutube);
+        let job3 = Job::new(JobType::IndexKb);
+
+        db.create_job(&job1).unwrap();
+        db.create_job(&job2).unwrap();
+        db.create_job(&job3).unwrap();
+
+        // Update statuses
+        db.update_job_status(&job1.id, JobStatus::Running, None).unwrap();
+        db.update_job_status(&job2.id, JobStatus::Succeeded, None).unwrap();
+
+        // List all jobs
+        let all_jobs = db.list_jobs(None, 10).unwrap();
+        assert_eq!(all_jobs.len(), 3);
+
+        // List only queued jobs
+        let queued = db.list_jobs(Some(JobStatus::Queued), 10).unwrap();
+        assert_eq!(queued.len(), 1);
+
+        // List only running jobs
+        let running = db.list_jobs(Some(JobStatus::Running), 10).unwrap();
+        assert_eq!(running.len(), 1);
+
+        // List only succeeded jobs
+        let succeeded = db.list_jobs(Some(JobStatus::Succeeded), 10).unwrap();
+        assert_eq!(succeeded.len(), 1);
+    }
+
+    #[test]
+    fn test_job_counts() {
+        let (db, _dir) = create_test_db();
+
+        // Create jobs
+        let job1 = Job::new(JobType::IngestWeb);
+        let job2 = Job::new(JobType::IngestYoutube);
+        let job3 = Job::new(JobType::IndexKb);
+
+        db.create_job(&job1).unwrap();
+        db.create_job(&job2).unwrap();
+        db.create_job(&job3).unwrap();
+
+        db.update_job_status(&job1.id, JobStatus::Succeeded, None).unwrap();
+        db.update_job_status(&job2.id, JobStatus::Failed, Some("Test error")).unwrap();
+
+        // Get counts
+        let counts = db.get_job_counts().unwrap();
+        assert!(!counts.is_empty());
+
+        // Check failed job has error
+        let failed_job = db.get_job(&job2.id).unwrap().unwrap();
+        assert_eq!(failed_job.error, Some("Test error".to_string()));
     }
 }

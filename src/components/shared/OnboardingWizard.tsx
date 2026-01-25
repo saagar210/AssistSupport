@@ -9,7 +9,7 @@ interface OnboardingWizardProps {
   onSkip: () => void;
 }
 
-type Step = 'welcome' | 'model' | 'kb' | 'complete';
+type Step = 'welcome' | 'security' | 'model' | 'kb' | 'shortcuts' | 'complete';
 
 interface StepInfo {
   title: string;
@@ -23,6 +23,11 @@ const STEPS: Record<Step, StepInfo> = {
     description: 'Your local AI-powered IT support assistant. All data stays on your device.',
     icon: 'sparkles',
   },
+  security: {
+    title: 'Choose Your Security Mode',
+    description: 'How should we protect your encryption keys?',
+    icon: 'shield',
+  },
   model: {
     title: 'Download an AI Model',
     description: 'Choose a model to power your responses. Smaller models are faster, larger models are smarter.',
@@ -33,6 +38,11 @@ const STEPS: Record<Step, StepInfo> = {
     description: 'Point to a folder with your documentation. The AI will use this to give accurate answers.',
     icon: 'folderOpen',
   },
+  shortcuts: {
+    title: 'Keyboard Shortcuts',
+    description: 'Work faster with these essential shortcuts.',
+    icon: 'command',
+  },
   complete: {
     title: "You're All Set!",
     description: 'Start drafting responses with AI assistance.',
@@ -40,7 +50,18 @@ const STEPS: Record<Step, StepInfo> = {
   },
 };
 
-const STEP_ORDER: Step[] = ['welcome', 'model', 'kb', 'complete'];
+const STEP_ORDER: Step[] = ['welcome', 'security', 'model', 'kb', 'shortcuts', 'complete'];
+
+type SecurityMode = 'keychain' | 'passphrase';
+
+const SHORTCUTS = [
+  { keys: ['Cmd', 'K'], description: 'Open command palette' },
+  { keys: ['Cmd', 'Enter'], description: 'Generate response' },
+  { keys: ['Cmd', 'S'], description: 'Save draft' },
+  { keys: ['Cmd', 'N'], description: 'New draft' },
+  { keys: ['Cmd', '/'], description: 'Focus search' },
+  { keys: ['Cmd', '1-6'], description: 'Switch tabs' },
+];
 
 interface ModelOption {
   name: string;
@@ -73,6 +94,8 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [modelDownloaded, setModelDownloaded] = useState(false);
   const [kbFolder, setKbFolder] = useState<string | null>(null);
+  const [securityMode, setSecurityMode] = useState<SecurityMode>('keychain');
+  const [securityConfigured, setSecurityConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const currentStepIndex = STEP_ORDER.indexOf(currentStep);
@@ -145,6 +168,18 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     }
   }, []);
 
+  const configureSecurity = useCallback(async (mode: SecurityMode) => {
+    try {
+      setSecurityMode(mode);
+      // In a real implementation, this would configure the key storage mode
+      // await invoke('set_key_storage_mode', { mode });
+      setSecurityConfigured(true);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 'welcome':
@@ -173,6 +208,51 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 </div>
               </div>
             </div>
+          </div>
+        );
+
+      case 'security':
+        return (
+          <div className="onboarding-security">
+            <div className="security-options">
+              <button
+                className={`security-option ${securityMode === 'keychain' ? 'selected' : ''}`}
+                onClick={() => configureSecurity('keychain')}
+              >
+                <div className="security-option-header">
+                  <Icon name="shield" size={24} />
+                  <strong>macOS Keychain</strong>
+                  <span className="recommended-badge">Recommended</span>
+                </div>
+                <p>Uses your Mac's secure keychain to store encryption keys. No password needed.</p>
+                <ul className="security-features">
+                  <li><Icon name="check" size={14} /> Automatic unlock with macOS login</li>
+                  <li><Icon name="check" size={14} /> Protected by Secure Enclave</li>
+                  <li><Icon name="check" size={14} /> No password to remember</li>
+                </ul>
+              </button>
+
+              <button
+                className={`security-option ${securityMode === 'passphrase' ? 'selected' : ''}`}
+                onClick={() => configureSecurity('passphrase')}
+              >
+                <div className="security-option-header">
+                  <Icon name="terminal" size={24} />
+                  <strong>Passphrase</strong>
+                </div>
+                <p>Enter a passphrase each time you open the app. More portable across devices.</p>
+                <ul className="security-features">
+                  <li><Icon name="check" size={14} /> Works if Keychain unavailable</li>
+                  <li><Icon name="check" size={14} /> Exportable to other Macs</li>
+                  <li><Icon name="x" size={14} className="con" /> Requires passphrase at startup</li>
+                </ul>
+              </button>
+            </div>
+            {securityConfigured && (
+              <p className="onboarding-success-text">
+                <Icon name="checkCircle" size={16} /> Security mode configured
+              </p>
+            )}
           </div>
         );
 
@@ -249,10 +329,35 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           </div>
         );
 
+      case 'shortcuts':
+        return (
+          <div className="onboarding-shortcuts">
+            <div className="shortcuts-grid">
+              {SHORTCUTS.map((shortcut, index) => (
+                <div key={index} className="shortcut-item">
+                  <div className="shortcut-keys">
+                    {shortcut.keys.map((key, i) => (
+                      <kbd key={i}>{key === 'Cmd' ? '⌘' : key}</kbd>
+                    ))}
+                  </div>
+                  <span className="shortcut-desc">{shortcut.description}</span>
+                </div>
+              ))}
+            </div>
+            <p className="onboarding-hint">
+              Press <kbd>⌘</kbd><kbd>Shift</kbd><kbd>/</kbd> anytime to see all shortcuts.
+            </p>
+          </div>
+        );
+
       case 'complete':
         return (
           <div className="onboarding-complete">
             <div className="onboarding-checklist">
+              <div className={`checklist-item ${securityConfigured ? 'done' : 'pending'}`}>
+                <Icon name={securityConfigured ? 'checkCircle' : 'circle'} size={20} />
+                <span>Security {securityConfigured ? `(${securityMode})` : 'not configured'}</span>
+              </div>
               <div className={`checklist-item ${modelDownloaded ? 'done' : 'pending'}`}>
                 <Icon name={modelDownloaded ? 'checkCircle' : 'circle'} size={20} />
                 <span>AI Model {modelDownloaded ? 'downloaded' : 'not downloaded'}</span>

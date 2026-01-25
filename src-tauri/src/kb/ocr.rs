@@ -237,13 +237,16 @@ impl VisionOcr {
     fn recognize_with_osascript(&self, image_path: &Path) -> Result<OcrResult, OcrError> {
         // Use Swift inline via osascript for basic Vision OCR
         // This is a fallback when the helper binary isn't available
-        let script = format!(
-            r#"
+        let script = r#"
+            on run argv
+            if (count of argv) < 1 then
+                return ""
+            end if
+            set imagePath to item 1 of argv
             use framework "Vision"
             use framework "Foundation"
             use framework "AppKit"
 
-            set imagePath to "{}"
             set imageURL to current application's NSURL's fileURLWithPath:imagePath
 
             set requestHandler to current application's VNImageRequestHandler's alloc()'s initWithURL:imageURL options:(current application's NSDictionary's dictionary())
@@ -265,12 +268,12 @@ impl VisionOcr {
             end repeat
 
             return outputText
-            "#,
-            image_path.display()
-        );
+            end run
+            "#;
 
+        let path_arg = image_path.to_string_lossy();
         let output = Command::new("osascript")
-            .args(["-l", "AppleScript", "-e", &script])
+            .args(["-l", "AppleScript", "-e", script, "--", path_arg.as_ref()])
             .output()
             .map_err(|e| OcrError::ProcessingFailed(e.to_string()))?;
 

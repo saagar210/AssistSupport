@@ -62,6 +62,12 @@ pub struct GenerationParams {
     pub repeat_penalty: f32,
     pub stop_sequences: Vec<String>,
     pub context_window: Option<u32>,
+    /// Minimum milliseconds between token emissions for streaming stability
+    /// Set to 0 to disable throttling, default is 16ms (~60fps)
+    pub stream_throttle_ms: u32,
+    /// Minimum characters to buffer before emitting a token event
+    /// Helps reduce event frequency for UI responsiveness
+    pub stream_min_chars: usize,
 }
 
 impl Default for GenerationParams {
@@ -74,6 +80,8 @@ impl Default for GenerationParams {
             repeat_penalty: 1.1,
             stop_sequences: vec![],
             context_window: None, // Will use model default or 4096
+            stream_throttle_ms: 16, // ~60fps default throttle
+            stream_min_chars: 4, // Buffer at least 4 chars before emitting
         }
     }
 }
@@ -286,6 +294,11 @@ impl LlmEngine {
             .max()
             .unwrap_or(0);
 
+        // Throttling state for streaming stability
+        let throttle_duration = std::time::Duration::from_millis(params.stream_throttle_ms as u64);
+        let min_chars = params.stream_min_chars;
+        let mut last_emit_time = std::time::Instant::now();
+
         // Generation loop
         while n_cur < (tokens.len() + params.max_tokens as usize) {
             // Check cancellation
@@ -335,10 +348,25 @@ impl LlmEngine {
                 }
             }
 
-            // Send when we have whitespace (word boundary) or buffer is large
-            if (piece.contains(char::is_whitespace) || word_buffer.len() > 20) && !word_buffer.is_empty() {
+            // Emit buffered text with throttling for UI stability
+            // Conditions to emit:
+            // 1. Word boundary (whitespace) with minimum chars accumulated
+            // 2. Buffer exceeds 20 chars (force emit)
+            // 3. Enough time has passed since last emit (throttle)
+            let time_since_emit = last_emit_time.elapsed();
+            let should_emit = !word_buffer.is_empty() && (
+                // Large buffer: force emit
+                word_buffer.len() > 20 ||
+                // Word boundary with minimum chars and throttle passed
+                (piece.contains(char::is_whitespace) &&
+                 word_buffer.len() >= min_chars &&
+                 time_since_emit >= throttle_duration)
+            );
+
+            if should_emit {
                 let _ = tx.blocking_send(GenerationEvent::Token(word_buffer.clone()));
                 word_buffer.clear();
+                last_emit_time = std::time::Instant::now();
             }
 
             // Exit if we hit a stop sequence
@@ -359,7 +387,7 @@ impl LlmEngine {
             n_cur += 1;
         }
 
-        // Send any remaining buffered text
+        // Send any remaining buffered text (no throttle on final emit)
         if !word_buffer.is_empty() {
             let _ = tx.blocking_send(GenerationEvent::Token(word_buffer));
         }

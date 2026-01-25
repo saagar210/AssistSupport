@@ -335,3 +335,280 @@ fn test_file_key_store_has_master_key_false_initially() {
     let _has_key = FileKeyStore::has_master_key();
     // We just verify it doesn't panic
 }
+
+// ============================================================================
+// Key Storage Mode Tests
+// ============================================================================
+
+#[test]
+fn test_key_storage_mode_serialization() {
+    use assistsupport_lib::security::KeyStorageMode;
+
+    // Test Display/ToString
+    assert_eq!(KeyStorageMode::Keychain.to_string(), "keychain");
+    assert_eq!(KeyStorageMode::Passphrase.to_string(), "passphrase");
+
+    // Test serde serialization
+    let json_keychain = serde_json::to_string(&KeyStorageMode::Keychain).unwrap();
+    let json_passphrase = serde_json::to_string(&KeyStorageMode::Passphrase).unwrap();
+    assert_eq!(json_keychain, "\"keychain\"");
+    assert_eq!(json_passphrase, "\"passphrase\"");
+
+    // Test serde deserialization
+    let mode: KeyStorageMode = serde_json::from_str("\"keychain\"").unwrap();
+    assert_eq!(mode, KeyStorageMode::Keychain);
+    let mode: KeyStorageMode = serde_json::from_str("\"passphrase\"").unwrap();
+    assert_eq!(mode, KeyStorageMode::Passphrase);
+}
+
+// ============================================================================
+// Audit Logging Tests
+// ============================================================================
+
+#[test]
+fn test_audit_entry_serialization() {
+    use assistsupport_lib::audit::{AuditEntry, AuditEventType, AuditSeverity};
+
+    let entry = AuditEntry::new(
+        AuditEventType::TokenSet,
+        AuditSeverity::Info,
+        "Token set: huggingface",
+    );
+
+    let json = serde_json::to_string(&entry).unwrap();
+    assert!(json.contains("\"event\":\"token_set\""));
+    assert!(json.contains("\"severity\":\"info\""));
+    assert!(json.contains("Token set: huggingface"));
+    // Most importantly: should not contain actual token value
+    assert!(!json.contains("hf_"));
+}
+
+#[test]
+fn test_audit_entry_with_context() {
+    use assistsupport_lib::audit::{AuditEntry, AuditEventType, AuditSeverity};
+
+    let entry = AuditEntry::new(
+        AuditEventType::JiraConfigured,
+        AuditSeverity::Info,
+        "Jira configured",
+    )
+    .with_context(serde_json::json!({"secure": true}));
+
+    let json = serde_json::to_string(&entry).unwrap();
+    assert!(json.contains("\"context\":{\"secure\":true}"));
+}
+
+#[test]
+fn test_audit_severity_levels() {
+    use assistsupport_lib::audit::AuditSeverity;
+
+    // Test display
+    assert_eq!(AuditSeverity::Info.to_string(), "info");
+    assert_eq!(AuditSeverity::Warning.to_string(), "warning");
+    assert_eq!(AuditSeverity::Error.to_string(), "error");
+    assert_eq!(AuditSeverity::Critical.to_string(), "critical");
+}
+
+#[test]
+fn test_audit_event_types() {
+    use assistsupport_lib::audit::AuditEventType;
+
+    // Test key events
+    assert_eq!(AuditEventType::KeyGenerated.to_string(), "key_generated");
+    assert_eq!(AuditEventType::KeyMigrated.to_string(), "key_migrated");
+    assert_eq!(AuditEventType::KeyRotated.to_string(), "key_rotated");
+
+    // Test token events
+    assert_eq!(AuditEventType::TokenSet.to_string(), "token_set");
+    assert_eq!(AuditEventType::TokenCleared.to_string(), "token_cleared");
+
+    // Test Jira events
+    assert_eq!(AuditEventType::JiraConfigured.to_string(), "jira_configured");
+    assert_eq!(AuditEventType::JiraHttpOptIn.to_string(), "jira_http_opt_in");
+
+    // Test custom events
+    assert_eq!(
+        AuditEventType::Custom("test".to_string()).to_string(),
+        "custom:test"
+    );
+}
+
+// ============================================================================
+// HTTPS Validation Tests
+// ============================================================================
+
+#[test]
+fn test_validate_https_url() {
+    use assistsupport_lib::validation::{validate_https_url, is_http_url};
+
+    // HTTPS should pass
+    assert!(validate_https_url("https://example.com").is_ok());
+    assert!(validate_https_url("https://jira.company.com/rest/api").is_ok());
+
+    // HTTP should fail
+    assert!(validate_https_url("http://example.com").is_err());
+    assert!(validate_https_url("http://localhost:8080").is_err());
+
+    // is_http_url helper
+    assert!(is_http_url("http://localhost:8080"));
+    assert!(!is_http_url("https://example.com"));
+    assert!(!is_http_url("ftp://example.com")); // Not HTTP or HTTPS
+}
+
+// ============================================================================
+// Key Rotation Tests
+// ============================================================================
+
+#[test]
+fn test_key_wrapping_passphrase_change_simulation() {
+    // Simulate changing passphrase by rewrapping with different passphrase
+    let master_key = MasterKey::generate();
+    let old_passphrase = "old-secure-passphrase";
+    let new_passphrase = "new-different-passphrase";
+
+    // Wrap with old passphrase
+    let wrapped_old = Crypto::wrap_key(&master_key, old_passphrase).expect("Wrapping failed");
+
+    // Unwrap with old passphrase
+    let unwrapped = Crypto::unwrap_key(&wrapped_old, old_passphrase).expect("Unwrapping failed");
+
+    // Wrap with new passphrase (simulates passphrase change)
+    let wrapped_new = Crypto::wrap_key(&unwrapped, new_passphrase).expect("Re-wrapping failed");
+
+    // Verify new passphrase works
+    let final_key = Crypto::unwrap_key(&wrapped_new, new_passphrase).expect("Final unwrap failed");
+    assert_eq!(
+        master_key.as_bytes(),
+        final_key.as_bytes(),
+        "Key should be preserved after passphrase change"
+    );
+
+    // Old passphrase should no longer work for new wrap
+    let result = Crypto::unwrap_key(&wrapped_new, old_passphrase);
+    assert!(result.is_err(), "Old passphrase should not work for new wrapped key");
+}
+
+#[test]
+fn test_token_encryption_with_different_keys() {
+    // Simulate token re-encryption during key rotation
+    let old_key = MasterKey::generate();
+    let new_key = MasterKey::generate();
+    let token = b"hf_secrettoken123456789";
+
+    // Encrypt with old key
+    let encrypted = Crypto::encrypt(old_key.as_bytes(), token).expect("Encryption failed");
+
+    // Decrypt with old key
+    let decrypted = Crypto::decrypt(old_key.as_bytes(), &encrypted).expect("Decryption failed");
+    assert_eq!(token.as_slice(), decrypted.as_slice());
+
+    // Re-encrypt with new key (simulates rotation)
+    let re_encrypted = Crypto::encrypt(new_key.as_bytes(), &decrypted).expect("Re-encryption failed");
+
+    // Verify new key works
+    let final_decrypted = Crypto::decrypt(new_key.as_bytes(), &re_encrypted).expect("Final decryption failed");
+    assert_eq!(token.as_slice(), final_decrypted.as_slice());
+
+    // Old key should not decrypt new ciphertext
+    let result = Crypto::decrypt(old_key.as_bytes(), &re_encrypted);
+    assert!(result.is_err(), "Old key should not decrypt re-encrypted data");
+}
+
+#[test]
+fn test_wrapped_key_components() {
+    let master_key = MasterKey::generate();
+    let passphrase = "test-passphrase";
+
+    let wrapped = Crypto::wrap_key(&master_key, passphrase).expect("Wrapping failed");
+
+    // Verify components have expected sizes
+    assert_eq!(wrapped.salt.len(), 32, "Salt should be 32 bytes");
+    assert_eq!(wrapped.encrypted_key.nonce.len(), 12, "Nonce should be 12 bytes");
+    assert!(!wrapped.encrypted_key.ciphertext.is_empty(), "Ciphertext should not be empty");
+
+    // Verify Argon2 parameters are set
+    assert_eq!(wrapped.argon2_memory, 65536, "Argon2 memory should be 64 MiB");
+    assert_eq!(wrapped.argon2_time, 3, "Argon2 time should be 3 iterations");
+    assert_eq!(wrapped.argon2_parallelism, 4, "Argon2 parallelism should be 4");
+}
+
+// ============================================================================
+// SSRF Protection Tests (Network Module)
+// ============================================================================
+
+#[test]
+fn test_ssrf_blocks_localhost_variants() {
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+
+    let config = SsrfConfig::default();
+
+    // Standard localhost
+    assert!(validate_url_for_ssrf("http://localhost/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://localhost:8080/", &config).is_err());
+    assert!(validate_url_for_ssrf("https://localhost/", &config).is_err());
+
+    // IPv4 loopback
+    assert!(validate_url_for_ssrf("http://127.0.0.1/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://127.0.0.1:3000/", &config).is_err());
+
+    // IPv6 loopback
+    assert!(validate_url_for_ssrf("http://[::1]/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://[::1]:8080/", &config).is_err());
+}
+
+#[test]
+fn test_ssrf_blocks_private_ranges() {
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+
+    let config = SsrfConfig::default();
+
+    // 10.0.0.0/8
+    assert!(validate_url_for_ssrf("http://10.0.0.1/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://10.255.255.255/", &config).is_err());
+
+    // 172.16.0.0/12
+    assert!(validate_url_for_ssrf("http://172.16.0.1/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://172.31.255.255/", &config).is_err());
+
+    // 192.168.0.0/16
+    assert!(validate_url_for_ssrf("http://192.168.0.1/", &config).is_err());
+    assert!(validate_url_for_ssrf("http://192.168.255.255/", &config).is_err());
+}
+
+#[test]
+fn test_ssrf_blocks_invalid_schemes() {
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+
+    let config = SsrfConfig::default();
+
+    // File protocol (dangerous!)
+    assert!(validate_url_for_ssrf("file:///etc/passwd", &config).is_err());
+    assert!(validate_url_for_ssrf("file:///Users/secret", &config).is_err());
+
+    // FTP
+    assert!(validate_url_for_ssrf("ftp://example.com/file.txt", &config).is_err());
+
+    // Gopher (used in SSRF attacks)
+    assert!(validate_url_for_ssrf("gopher://localhost:9000/_test", &config).is_err());
+}
+
+#[test]
+fn test_ssrf_allowlist_bypass() {
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+
+    let mut config = SsrfConfig::default();
+    config.allowlist.push("localhost".into());
+
+    // Allowlisted hosts should be allowed
+    assert!(validate_url_for_ssrf("http://localhost/", &config).is_ok());
+}
+
+#[test]
+fn test_ssrf_metadata_endpoints() {
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+
+    let config = SsrfConfig::default();
+
+    // AWS metadata endpoint (link-local)
+    assert!(validate_url_for_ssrf("http://169.254.169.254/latest/meta-data/", &config).is_err());
+}

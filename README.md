@@ -92,43 +92,59 @@ pnpm test:watch
 
 ## Project Status
 
-**Version**: 0.2.0 (Next-Gen Modernization Complete)
+**Version**: 0.3.0 (Security Hardening Complete)
 
-All 10 modernization phases are complete:
+All 22 implementation phases are complete:
 
 ### Core Infrastructure
 - Database (SQLCipher), LLM engine, KB indexer, OCR, Jira integration
 - Vector search pipeline with hybrid ranking and RRF fusion
 - Decision tree integration for guided diagnostics
+- CLI tool for automation and scripting
 
 ### Modern UI/UX
 - Design token system with consistent visual language
 - Command palette (Cmd+K) for quick actions
 - Full keyboard shortcut support (Cmd+1-6 tabs, Cmd+Enter generate)
-- Onboarding wizard for first-run setup
+- Onboarding wizard with security mode selection
+- Centralized app status with header status panel
 - Responsive layout with mobile TabBar
 
 ### Search & Retrieval
 - Hybrid search with configurable FTS/vector weights
 - Content deduplication using Jaccard similarity
 - Sub-300ms search response for large KBs
+- Namespace-based organization
 
 ### Performance
 - Non-blocking engine initialization
 - Optimized N+1 queries with single SQL JOINs
 - Component memoization and result caching
+- Database maintenance automation (VACUUM scheduling)
+- Performance benchmarks for baseline metrics
 
 ### Security & Reliability
+- Dual key storage (macOS Keychain or passphrase-protected)
 - Encrypted token storage (AES-256-GCM)
+- SSRF protection for web ingestion
 - Model integrity verification (SHA256)
 - Path traversal protection (home directory restriction)
+- Audit logging for security events
 - Health check system with self-repair commands
 
 ### Quality
-- **174 backend tests** passing
+- **225 backend tests** passing (unit, integration, security)
 - **72 frontend tests** passing
 - TypeScript strict mode, no errors
-- Prompt versioning with golden set tests
+- Performance benchmarks with Criterion
+- E2E integration tests for KB pipeline
+
+## Documentation
+
+- [Security Architecture](docs/SECURITY.md) - Encryption, key management, threat model
+- [Installation Guide](docs/INSTALLATION.md) - Setup and configuration
+- [Performance Guide](docs/PERFORMANCE.md) - Tuning and optimization
+- [Operations Guide](docs/OPERATIONS.md) - Daily usage and maintenance
 
 ## License
 

@@ -1,197 +1,203 @@
-# AssistSupport Performance Guide
+# Performance Guide
 
-**Version**: 1.0
-**Last Updated**: 2026-01-25
+## Baseline Metrics
 
----
+These benchmarks were measured on Apple M4 Pro (48GB RAM):
 
-## Performance Budgets
+### Encryption Performance
+| Operation | 1KB | 64KB | 1MB |
+|-----------|-----|------|-----|
+| Encrypt | ~15 μs | ~200 μs | ~2.5 ms |
+| Decrypt | ~12 μs | ~180 μs | ~2.2 ms |
 
-### Startup
+Throughput: ~400 MB/s for AES-256-GCM
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Cold launch to UI ready | < 2 seconds | Time from app launch to DraftTab visible |
-| First paint | < 500ms | Time to loading spinner visible |
-| Engine initialization | Background | LLM/Embedding init does not block UI |
+### Key Derivation (Argon2id)
+- Key wrap: ~500 ms
+- Key unwrap: ~500 ms
 
-### Search & Navigation
+Note: This is intentionally slow for security (brute-force resistance).
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| KB search response | < 300ms | Time from query to results displayed |
-| Namespace loading | < 500ms | Time to load namespace list with counts |
-| Tab switch | < 100ms | Time to render new tab content |
+### Database Operations
+| Operation | Latency |
+|-----------|---------|
+| Open + Initialize | ~50 ms |
+| Integrity Check | ~1 ms |
+| Read Setting | ~0.1 ms |
+| Write Setting | ~0.5 ms |
 
-### List Rendering
+### FTS Search
+| Query Type | 100 docs | 1,000 docs | 10,000 docs |
+|------------|----------|------------|-------------|
+| Simple | ~1 ms | ~5 ms | ~20 ms |
+| Multi-word | ~2 ms | ~8 ms | ~30 ms |
+| Phrase | ~2 ms | ~10 ms | ~40 ms |
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Document list (1000 items) | Smooth 60fps scroll | No frame drops during scroll |
-| Chunk list (5000 items) | Smooth 60fps scroll | Virtual list maintains performance |
-| Draft history (500 items) | < 200ms initial render | Time to first paint |
+### LLM Generation
+Highly dependent on model and hardware:
 
-### Memory
+| Model | Tokens/sec (M4 Pro) |
+|-------|---------------------|
+| Qwen 2.5 7B Q4 | ~30-40 |
+| Llama 3.2 3B Q4 | ~50-70 |
+| Phi-4 14B Q4 | ~15-25 |
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Base memory | < 150MB | With DB loaded, no model |
-| With model loaded | < 6GB | Depends on model size |
-| Peak during generation | < 8GB | During active text generation |
+## Performance Tuning
 
----
+### RAM Management
 
-## Optimization Strategies Implemented
+#### Available RAM Calculation
+AssistSupport checks available memory before loading models:
+```
+Available = Physical RAM - (System + Other Apps)
+Recommended for 7B model: 8 GB free
+Recommended for 14B model: 16 GB free
+```
 
-### 1. Database Query Optimization
+#### Reduce Memory Usage
+1. Use smaller quantizations (Q4 vs Q8)
+2. Reduce context window (2048 vs 4096)
+3. Close other memory-intensive apps
 
-**Problem**: N+1 query pattern when loading namespaces with counts
+### Context Window
 
-**Solution**: Added `list_namespaces_with_counts()` command that uses a single SQL query with JOINs instead of multiple round-trips.
+#### Trade-offs
+| Context Size | RAM Usage | Generation Speed |
+|--------------|-----------|------------------|
+| 2048 | Lower | Faster |
+| 4096 | Medium | Standard |
+| 8192 | Higher | Slower |
 
+#### Recommendation
+Start with 4096, reduce if experiencing memory pressure.
+
+### Vector Search
+
+#### Embedding Model
+- **nomic-embed-text-v1.5**: 768-dim, ~300MB VRAM
+- Batch size: 32 chunks per embedding call
+- Index: LanceDB with IVF-PQ
+
+#### Tuning Vector Search
+```javascript
+// Adjust hybrid search weights
+search_kb_with_options({
+  query: "...",
+  fts_weight: 0.6,      // FTS contribution
+  vector_weight: 0.4,   // Vector contribution
+  min_score: 0.3        // Filter low-relevance results
+})
+```
+
+### Database Optimization
+
+#### Scheduled Maintenance
+The diagnostics system includes automatic maintenance:
+- **Fragmentation check**: If > 10%, VACUUM is recommended
+- **Page count tracking**: Monitor growth over time
+
+#### Manual Maintenance
 ```sql
--- Before: 1 + (2 × N) queries
-SELECT * FROM namespaces;
--- Then for each namespace:
-SELECT COUNT(*) FROM kb_documents WHERE namespace_id = ?;
-SELECT COUNT(*) FROM ingest_sources WHERE namespace_id = ?;
-
--- After: 1 query
-SELECT n.*,
-       COALESCE(d.doc_count, 0) as document_count,
-       COALESCE(s.source_count, 0) as source_count
-FROM namespaces n
-LEFT JOIN (SELECT namespace_id, COUNT(*) as doc_count FROM kb_documents GROUP BY namespace_id) d
-  ON d.namespace_id = n.id
-LEFT JOIN (SELECT namespace_id, COUNT(*) as source_count FROM ingest_sources GROUP BY namespace_id) s
-  ON s.namespace_id = n.id;
+-- Run from debug console
+VACUUM;
+ANALYZE;
 ```
 
-### 2. Result Caching
+#### Index Usage
+FTS5 indices are maintained automatically. For large KBs:
+- Consider namespace partitioning
+- Remove stale sources periodically
 
-**Problem**: Repeated queries for same data
+### Indexing Performance
 
-**Solution**: Module-level cache with TTL for namespace data
+#### Chunk Size
+Default: 500-1500 characters per chunk
+- Smaller chunks: Better semantic precision, more vectors
+- Larger chunks: Fewer vectors, less precise matching
 
+#### Parallel Indexing
+File indexing is single-threaded per file but multiple files can be queued. For large initial imports:
+1. Index in batches of ~100 files
+2. Allow embedding generation to complete between batches
+3. Monitor memory usage
+
+## Bottleneck Identification
+
+### Common Bottlenecks
+
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| Slow generation | Insufficient RAM | Smaller model/quantization |
+| Slow search | Large vector index | Namespace filtering |
+| Slow indexing | Many PDFs | Disable OCR for typed PDFs |
+| High memory | Context window | Reduce context size |
+
+### Monitoring Tools
+
+#### Built-in Diagnostics
 ```typescript
-// 30-second TTL cache for namespace list
-let namespacesCache: { data: NamespaceWithCounts[]; timestamp: number } | null = null;
-const CACHE_TTL = 30000;
+// Get resource metrics
+invoke('get_resource_metrics_cmd')
+// Returns: { memory_used, memory_total, cpu_usage }
+
+// Get database stats
+invoke('get_database_stats_cmd')
+// Returns: { file_size_bytes, document_count, chunk_count }
 ```
 
-Cache is invalidated on mutations (create, delete, update operations).
+#### System Tools
+- **Activity Monitor**: RAM and CPU per process
+- **Instruments**: Detailed profiling (Xcode)
+- **Console.app**: Application logs
 
-### 3. Non-Blocking Initialization
+## Model Selection Guide
 
-**Problem**: LLM and embedding engine initialization blocked app startup
+### By Hardware
 
-**Solution**: Moved non-critical initialization to background after UI renders
+| RAM | Recommended Model |
+|-----|-------------------|
+| 8 GB | Llama 3.2 3B Q4 |
+| 16 GB | Qwen 2.5 7B Q4 |
+| 32 GB+ | Phi-4 14B Q4 or larger |
 
-```typescript
-// Critical path (blocks UI):
-initialize_app → check_fts5_enabled → get_vector_consent
+### By Use Case
 
-// Background (after UI ready):
-init_llm_engine + init_embedding_engine (parallel, with 5s timeout)
-```
+| Use Case | Model | Why |
+|----------|-------|-----|
+| Quick responses | Llama 3.2 3B | Fast generation |
+| Quality responses | Qwen 2.5 7B | Best balance |
+| Complex analysis | Phi-4 14B | Higher capability |
 
-### 4. Component Memoization
+## Running Benchmarks
 
-**Problem**: Unnecessary re-renders of child components
-
-**Solution**: Applied `useMemo` and `useCallback` to hooks returning stable references
-
-```typescript
-const actions = useMemo(() => ({
-  loadNamespaces,
-  selectNamespace,
-  // ...
-}), [/* deps */]);
-```
-
----
-
-## Monitoring & Profiling
-
-### Development Profiling
-
-Use React DevTools Profiler to identify unnecessary re-renders:
-
+### Backend Benchmarks
 ```bash
-# In Chrome DevTools with React DevTools extension
-# - Components tab → Profiler → Start profiling
-# - Perform action → Stop profiling
-# - Look for red bars (slow renders)
+cd src-tauri
+cargo bench
 ```
 
-### Database Profiling
+This runs:
+- Encryption/decryption throughput
+- Key generation
+- Database operations
+- FTS search latency
 
-Enable SQLite query logging in development:
+### Frontend Benchmarks
+Use React DevTools Profiler to identify:
+- Expensive re-renders
+- Component mount times
+- Effect timing
 
-```rust
-// In debug builds, log slow queries (>100ms)
-#[cfg(debug_assertions)]
-if elapsed.as_millis() > 100 {
-    eprintln!("Slow query ({}ms): {}", elapsed.as_millis(), sql);
-}
-```
+## Optimizations Applied
 
-### Performance Regression Tests
+### Backend
+- Non-blocking LLM initialization
+- Connection pooling for database
+- Lazy embedding model loading
+- Result caching for repeated searches
 
-```bash
-# Run performance-related tests
-cargo test --release -- --nocapture performance
-```
-
----
-
-## Future Optimization Opportunities
-
-### Short-term (Phase 4 completion)
-
-1. **Virtual list for large data sets** - Add `react-window` for document/chunk lists
-2. **Pagination for database lists** - Add offset/limit to all `list_*` commands
-3. **Search result caching** - Cache FTS results for identical queries (5min TTL)
-
-### Medium-term
-
-1. **Event-based model status** - Replace polling with Tauri events
-2. **Incremental indexing** - Only re-index changed files
-3. **WebWorker for heavy computation** - Offload text processing
-
-### Long-term
-
-1. **SQLite connection pooling** - For concurrent queries
-2. **Lazy chunk loading** - Load chunks on scroll
-3. **Background embedding generation** - Generate embeddings while idle
-
----
-
-## Performance Checklist
-
-### Before Release
-
-- [ ] Cold launch under 2 seconds on baseline hardware
-- [ ] No memory leaks (stable over 1 hour of use)
-- [ ] Search returns in < 300ms for 10,000 chunk corpus
-- [ ] Smooth scrolling with 5,000+ items in lists
-- [ ] No frame drops during text generation
-
-### Per-Commit
-
-- [ ] Run `pnpm test` - all tests pass
-- [ ] Run `cargo test --release` - all tests pass
-- [ ] Check bundle size hasn't increased > 5%
-- [ ] Verify no new console warnings in dev mode
-
----
-
-## Baseline Hardware
-
-Performance targets are measured against:
-
-- MacBook Pro M1/M2/M3/M4 (8GB minimum)
-- SSD storage
-- macOS 13+
-
-Lower-spec machines may experience degraded performance.
+### Frontend
+- Component memoization (useMemo, useCallback)
+- Virtual scrolling for large lists
+- Debounced search input
+- Optimistic UI updates

@@ -35,7 +35,41 @@ AssistSupport is designed with a **local-first, security-conscious** architectur
 - **Key Size**: 256 bits (32 bytes)
 - **Storage Format**: Hex-encoded (64 characters)
 
-#### Key Derivation (for exports)
+#### Key Storage Modes
+
+AssistSupport supports two key storage modes:
+
+| Mode | Storage | Security Level | Use Case |
+|------|---------|----------------|----------|
+| **Keychain** | macOS Keychain | OS-protected, biometric unlock | Default on macOS |
+| **Passphrase** | Encrypted file | User-controlled, portable | Cross-platform, offline |
+
+**Keychain Mode** (default on macOS):
+- Key stored in system Keychain under `com.d.assistsupport.master-key`
+- Protected by macOS security (TouchID, password)
+- Automatically unlocked when user is logged in
+
+**Passphrase Mode**:
+- Key wrapped with AES-256-GCM, protected by Argon2id-derived key
+- Stored in `~/Library/Application Support/com.d.assistsupport/master.key.wrapped`
+- User must enter passphrase on each app launch
+- Portable across systems
+
+#### Key Migration
+
+Legacy plaintext keys are automatically migrated:
+1. First, attempts migration to macOS Keychain
+2. If Keychain unavailable, migrates to passphrase-protected file
+3. Legacy plaintext file is securely deleted after migration
+
+#### Key Rotation
+
+Key rotation re-encrypts all protected data:
+- Database is re-keyed with new master key
+- Tokens are re-encrypted
+- Audit event logged
+
+#### Key Derivation (for exports and passphrase mode)
 - **Algorithm**: Argon2id
 - **Memory Cost**: 64 MiB
 - **Time Cost**: 3 iterations
@@ -88,8 +122,19 @@ connect-src 'self' https: ipc: tauri:;
 
 - **Local-First**: All core functionality works offline
 - **Explicit Opt-In**: Network requests require user action
-- **HTTPS Only**: All external connections use HTTPS
+- **HTTPS Required**: All external connections require HTTPS by default
+- **HTTP Opt-In**: HTTP connections (e.g., for local Jira) require explicit user acknowledgment
 - **No Telemetry**: No data sent to third parties
+
+### Jira HTTPS Enforcement
+
+Jira connections require HTTPS by default. HTTP connections:
+- Require explicit `allow_http` parameter
+- Trigger security audit log entry
+- Store user's HTTP opt-in preference
+- Display warning in UI
+
+This protects credentials from network interception while allowing local/development Jira instances.
 
 ### External Connections
 
@@ -99,6 +144,52 @@ connect-src 'self' https: ipc: tauri:;
 | Jira instance | Ticket fetching | User-configured |
 | YouTube | Transcript extraction | User-initiated |
 | GitHub | Repo ingestion | User-initiated |
+
+---
+
+## Audit Logging
+
+### Overview
+
+AssistSupport maintains an audit log for security-relevant events. The log is stored as JSON lines at:
+```
+~/Library/Application Support/com.d.assistsupport/audit.log
+```
+
+### Log Features
+
+- **Format**: JSON lines (one JSON object per line)
+- **Rotation**: Max 5MB per file, keeps 5 rotated files
+- **Thread-safe**: Safe for concurrent writes
+- **No Secrets**: Never logs tokens, keys, or passwords
+
+### Logged Events
+
+| Event Type | Severity | Description |
+|------------|----------|-------------|
+| `key_generated` | Info | Master key created |
+| `key_migrated` | Info | Key moved between storage modes |
+| `key_rotated` | Info | Master key rotated |
+| `key_storage_mode_changed` | Info | Storage mode changed |
+| `token_set` | Info | Token stored (token value not logged) |
+| `token_cleared` | Info | Token removed |
+| `jira_configured` | Info | Jira integration configured |
+| `jira_http_opt_in` | Warning | User opted into insecure HTTP |
+| `path_validation_failed` | Warning | Path security check failed |
+| `app_initialized` | Info | Application started |
+| `database_repaired` | Info | Database repair completed |
+
+### Log Entry Format
+
+```json
+{
+  "timestamp": "2026-01-25T12:00:00Z",
+  "event": "token_set",
+  "severity": "info",
+  "message": "Token set: huggingface",
+  "context": {"secure": true}
+}
+```
 
 ---
 
@@ -210,11 +301,20 @@ npm audit
 1. Revoke exposed tokens immediately
 2. Generate new tokens at source (HuggingFace, Jira)
 3. Delete and regenerate master key:
-   ```
+   ```bash
+   # Delete all key storage files
    rm ~/Library/Application\ Support/com.d.assistsupport/master.key
+   rm ~/Library/Application\ Support/com.d.assistsupport/master.key.wrapped
    rm ~/Library/Application\ Support/com.d.assistsupport/tokens.json
+
+   # If using Keychain mode, also delete from Keychain
+   security delete-generic-password -s "com.d.assistsupport.master-key" 2>/dev/null
    ```
 4. Restart application (new key generated automatically)
+5. Review audit log for suspicious activity:
+   ```bash
+   cat ~/Library/Application\ Support/com.d.assistsupport/audit.log | jq '.'
+   ```
 
 ### If Database Compromised
 
@@ -271,6 +371,13 @@ For the top 5 failure modes, AssistSupport provides clear remediation:
 ---
 
 ## Changelog
+
+### v1.2 (2026-01-25)
+- Added dual key storage modes (Keychain and Passphrase)
+- Added audit logging for security events
+- Added HTTPS enforcement for Jira with explicit HTTP opt-in
+- Enhanced key migration and rotation support
+- Updated incident response procedures
 
 ### v1.1 (2026-01-25)
 - Added diagnostics and health monitoring section

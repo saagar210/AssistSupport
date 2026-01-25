@@ -1,7 +1,11 @@
 //! Security module for AssistSupport
 //! Handles encryption, key management, and credential storage
 //!
-//! Credentials are stored in app files under ~/Library/Application Support/com.d.assistsupport/
+//! Key storage modes:
+//! - Keychain: Master key stored in macOS Keychain (default, most secure)
+//! - Passphrase: Master key wrapped with user passphrase (portable, offline backup)
+//!
+//! Credentials are stored under ~/Library/Application Support/com.d.assistsupport/
 //! with restrictive permissions. Tokens are encrypted at rest with the master key.
 
 use aes_gcm::{
@@ -33,6 +37,43 @@ const SALT_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 
+/// Key storage mode for master key
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyStorageMode {
+    /// Store master key in macOS Keychain (default, most secure)
+    Keychain,
+    /// Store master key wrapped with user passphrase
+    Passphrase,
+}
+
+impl Default for KeyStorageMode {
+    fn default() -> Self {
+        Self::Keychain
+    }
+}
+
+impl std::fmt::Display for KeyStorageMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Keychain => write!(f, "keychain"),
+            Self::Passphrase => write!(f, "passphrase"),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyStorageMode {
+    type Err = SecurityError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "keychain" => Ok(Self::Keychain),
+            "passphrase" => Ok(Self::Passphrase),
+            _ => Err(SecurityError::InvalidKeyFormat),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum SecurityError {
     #[error("Keychain error: {0}")]
@@ -53,6 +94,10 @@ pub enum SecurityError {
     FileIO(String),
     #[error("Token not found: {0}")]
     TokenNotFound(String),
+    #[error("Passphrase required")]
+    PassphraseRequired,
+    #[error("Key rotation failed: {0}")]
+    KeyRotationFailed(String),
 }
 
 /// Securely zeroed master key wrapper
@@ -273,11 +318,39 @@ impl KeychainManager {
 pub const TOKEN_HUGGINGFACE: &str = "huggingface_token";
 pub const TOKEN_JIRA: &str = "jira_api_token";
 
-/// File-based credential storage (replaces Keychain to avoid password prompts)
+/// Wrapped key file format (JSON)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct WrappedKeyFile {
+    version: u32,
+    wrapped_key: WrappedKey,
+}
+
+impl WrappedKeyFile {
+    const CURRENT_VERSION: u32 = 1;
+
+    fn new(wrapped_key: WrappedKey) -> Self {
+        Self {
+            version: Self::CURRENT_VERSION,
+            wrapped_key,
+        }
+    }
+}
+
+/// Key storage configuration file (JSON)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct KeyStorageConfig {
+    mode: KeyStorageMode,
+}
+
+/// Secure key storage with support for Keychain and passphrase modes
 ///
 /// Storage location: ~/Library/Application Support/com.d.assistsupport/
-/// - master.key: 64-char hex-encoded DB encryption key
+/// - key_storage.json: Storage mode configuration
+/// - master.key.wrap: Wrapped key file (passphrase mode only)
 /// - tokens.json: API tokens encrypted with the master key
+///
+/// Keychain mode: Master key stored in macOS Keychain (most secure)
+/// Passphrase mode: Master key wrapped with user passphrase (portable)
 pub struct FileKeyStore;
 
 impl FileKeyStore {
@@ -326,17 +399,27 @@ impl FileKeyStore {
             .ok_or(SecurityError::ConfigDirNotFound)
     }
 
-    /// Get path to master key file
-    fn master_key_path() -> Result<PathBuf, SecurityError> {
+    /// Get path to legacy master key file (plaintext, deprecated)
+    fn legacy_master_key_path() -> Result<PathBuf, SecurityError> {
         Ok(Self::get_app_data_dir()?.join("master.key"))
     }
 
+    /// Get path to wrapped key file (passphrase mode)
+    fn wrapped_key_path() -> Result<PathBuf, SecurityError> {
+        Ok(Self::get_app_data_dir()?.join("master.key.wrap"))
+    }
+
+    /// Get path to storage config file
+    fn storage_config_path() -> Result<PathBuf, SecurityError> {
+        Ok(Self::get_app_data_dir()?.join("key_storage.json"))
+    }
+
     /// Get path to tokens file
-    fn tokens_path() -> Result<PathBuf, SecurityError> {
+    pub(crate) fn tokens_path() -> Result<PathBuf, SecurityError> {
         Ok(Self::get_app_data_dir()?.join("tokens.json"))
     }
 
-    /// Ensure app data directory exists
+    /// Ensure app data directory exists with secure permissions
     fn ensure_dir() -> Result<PathBuf, SecurityError> {
         let dir = Self::get_app_data_dir()?;
         fs::create_dir_all(&dir).map_err(|e| SecurityError::FileIO(e.to_string()))?;
@@ -344,7 +427,48 @@ impl FileKeyStore {
         Ok(dir)
     }
 
-    fn read_tokens_map_with_key(
+    /// Get current storage mode (defaults to Keychain)
+    pub fn get_storage_mode() -> Result<KeyStorageMode, SecurityError> {
+        let config_path = Self::storage_config_path()?;
+        if !config_path.exists() {
+            return Ok(KeyStorageMode::default());
+        }
+
+        let content = fs::read_to_string(&config_path)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let config: KeyStorageConfig = serde_json::from_str(&content)
+            .map_err(|e| SecurityError::FileIO(format!("Invalid key_storage.json: {}", e)))?;
+        Ok(config.mode)
+    }
+
+    /// Set storage mode (does not migrate existing key)
+    fn set_storage_mode(mode: KeyStorageMode) -> Result<(), SecurityError> {
+        Self::ensure_dir()?;
+        let config_path = Self::storage_config_path()?;
+        let config = KeyStorageConfig { mode };
+        let content = serde_json::to_string_pretty(&config)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        Self::write_private_file(&config_path, content.as_bytes())
+    }
+
+    /// Check if any key storage exists
+    pub fn has_any_key_storage() -> bool {
+        // Check Keychain
+        if KeychainManager::get_master_key().is_ok() {
+            return true;
+        }
+        // Check wrapped key file
+        if Self::wrapped_key_path().map(|p| p.exists()).unwrap_or(false) {
+            return true;
+        }
+        // Check legacy plaintext file
+        if Self::legacy_master_key_path().map(|p| p.exists()).unwrap_or(false) {
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn read_tokens_map_with_key(
         master_key: &MasterKey,
     ) -> Result<HashMap<String, String>, SecurityError> {
         let tokens_path = Self::tokens_path()?;
@@ -402,7 +526,7 @@ impl FileKeyStore {
         Ok((tokens, true))
     }
 
-    fn store_tokens_map_with_key(
+    pub(crate) fn store_tokens_map_with_key(
         master_key: &MasterKey,
         tokens: &HashMap<String, String>,
     ) -> Result<(), SecurityError> {
@@ -433,60 +557,192 @@ impl FileKeyStore {
         Self::store_tokens_map_with_key(master_key, &tokens)
     }
 
-    /// Get master key (migrates from Keychain on first call if needed)
+    /// Get master key using Keychain mode (default)
+    ///
+    /// Migration flow (idempotent):
+    /// 1. If Keychain entry exists → use it, delete legacy files
+    /// 2. If legacy master.key exists → migrate to Keychain, secure-delete legacy
+    /// 3. If wrapped key exists → error (passphrase required)
+    /// 4. Generate new key and store in Keychain
     pub fn get_master_key() -> Result<MasterKey, SecurityError> {
-        let key_path = Self::master_key_path()?;
+        let mode = Self::get_storage_mode()?;
 
-        // 1. Try reading from file
-        if key_path.exists() {
-            let hex = fs::read_to_string(&key_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-            let bytes = hex::decode(hex.trim())
-                .map_err(|_| SecurityError::InvalidKeyFormat)?;
-
-            if bytes.len() != KEY_LEN {
-                return Err(SecurityError::InvalidKeyFormat);
-            }
-
-            let mut key_bytes = [0u8; KEY_LEN];
-            key_bytes.copy_from_slice(&bytes);
-            return Ok(MasterKey::from_bytes(key_bytes));
+        // If passphrase mode is configured, require passphrase
+        if mode == KeyStorageMode::Passphrase {
+            return Err(SecurityError::PassphraseRequired);
         }
 
-        // 2. Try migrating from Keychain
+        // 1. Try Keychain first
         if let Ok(key) = KeychainManager::get_master_key() {
-            // Migrate to file
-            Self::store_master_key(&key)?;
+            // Clean up any legacy files
+            Self::cleanup_legacy_key_file(&key)?;
+            return Ok(key);
+        }
 
-            // Delete from Keychain (best-effort, ignore errors)
-            let _ = KeychainManager::delete_master_key();
+        // 2. Try migrating from legacy plaintext file
+        let legacy_path = Self::legacy_master_key_path()?;
+        if legacy_path.exists() {
+            let key = Self::read_legacy_key_file(&legacy_path)?;
 
-            // Also migrate any tokens
+            // Migrate to Keychain
+            KeychainManager::store_master_key(&key)?;
+            Self::set_storage_mode(KeyStorageMode::Keychain)?;
+
+            // Secure-delete legacy file
+            secure_delete_file(&legacy_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+
+            // Migrate tokens from old Keychain storage
             Self::migrate_tokens_from_keychain(&key)?;
 
             return Ok(key);
         }
 
-        // 3. Generate new key (first run)
+        // 3. Check if wrapped key exists (wrong mode)
+        let wrapped_path = Self::wrapped_key_path()?;
+        if wrapped_path.exists() {
+            return Err(SecurityError::PassphraseRequired);
+        }
+
+        // 4. Generate new key (first run)
         let key = MasterKey::generate();
-        Self::store_master_key(&key)?;
+        KeychainManager::store_master_key(&key)?;
+        Self::set_storage_mode(KeyStorageMode::Keychain)?;
         Self::migrate_tokens_from_keychain(&key)?;
         Ok(key)
     }
 
-    /// Store master key to file
-    pub fn store_master_key(key: &MasterKey) -> Result<(), SecurityError> {
-        Self::ensure_dir()?;
-        let key_path = Self::master_key_path()?;
-        let hex = hex::encode(key.as_bytes());
-        Self::write_private_file(&key_path, hex.as_bytes())
+    /// Get master key with passphrase (passphrase mode)
+    pub fn get_master_key_with_passphrase(passphrase: &str) -> Result<MasterKey, SecurityError> {
+        let wrapped_path = Self::wrapped_key_path()?;
+
+        if wrapped_path.exists() {
+            let content = fs::read_to_string(&wrapped_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            let file: WrappedKeyFile = serde_json::from_str(&content)
+                .map_err(|e| SecurityError::FileIO(format!("Invalid wrapped key file: {}", e)))?;
+
+            return Crypto::unwrap_key(&file.wrapped_key, passphrase);
+        }
+
+        // Try migrating from legacy file with new passphrase
+        let legacy_path = Self::legacy_master_key_path()?;
+        if legacy_path.exists() {
+            let key = Self::read_legacy_key_file(&legacy_path)?;
+
+            // Store with passphrase
+            Self::store_master_key_with_passphrase(&key, passphrase)?;
+
+            // Secure-delete legacy file
+            secure_delete_file(&legacy_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+
+            // Migrate tokens
+            Self::migrate_tokens_from_keychain(&key)?;
+
+            return Ok(key);
+        }
+
+        // Try migrating from Keychain with new passphrase
+        if let Ok(key) = KeychainManager::get_master_key() {
+            Self::store_master_key_with_passphrase(&key, passphrase)?;
+            let _ = KeychainManager::delete_master_key();
+            Self::migrate_tokens_from_keychain(&key)?;
+            return Ok(key);
+        }
+
+        Err(SecurityError::MasterKeyNotFound)
     }
 
-    /// Delete master key file
-    pub fn delete_master_key() -> Result<(), SecurityError> {
-        let key_path = Self::master_key_path()?;
-        if key_path.exists() {
-            secure_delete_file(&key_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+    /// Initialize new master key with passphrase (first run with passphrase mode)
+    pub fn initialize_with_passphrase(passphrase: &str) -> Result<MasterKey, SecurityError> {
+        // Don't overwrite existing key
+        if Self::has_any_key_storage() {
+            return Err(SecurityError::FileIO("Key storage already exists".into()));
+        }
+
+        let key = MasterKey::generate();
+        Self::store_master_key_with_passphrase(&key, passphrase)?;
+        Ok(key)
+    }
+
+    /// Store master key with passphrase protection
+    pub fn store_master_key_with_passphrase(
+        key: &MasterKey,
+        passphrase: &str,
+    ) -> Result<(), SecurityError> {
+        Self::ensure_dir()?;
+
+        let wrapped = Crypto::wrap_key(key, passphrase)?;
+        let file = WrappedKeyFile::new(wrapped);
+        let content = serde_json::to_string_pretty(&file)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+
+        let wrapped_path = Self::wrapped_key_path()?;
+        Self::write_private_file(&wrapped_path, content.as_bytes())?;
+        Self::set_storage_mode(KeyStorageMode::Passphrase)?;
+
+        Ok(())
+    }
+
+    /// Store master key in Keychain
+    pub fn store_master_key_in_keychain(key: &MasterKey) -> Result<(), SecurityError> {
+        KeychainManager::store_master_key(key)?;
+        Self::set_storage_mode(KeyStorageMode::Keychain)?;
+        Ok(())
+    }
+
+    /// Delete all key storage
+    pub fn delete_all_key_storage() -> Result<(), SecurityError> {
+        // Delete from Keychain
+        let _ = KeychainManager::delete_master_key();
+
+        // Delete wrapped key file
+        let wrapped_path = Self::wrapped_key_path()?;
+        if wrapped_path.exists() {
+            secure_delete_file(&wrapped_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+
+        // Delete legacy file
+        let legacy_path = Self::legacy_master_key_path()?;
+        if legacy_path.exists() {
+            secure_delete_file(&legacy_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+
+        // Delete config
+        let config_path = Self::storage_config_path()?;
+        if config_path.exists() {
+            fs::remove_file(&config_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Read legacy plaintext key file
+    fn read_legacy_key_file(path: &Path) -> Result<MasterKey, SecurityError> {
+        let hex = fs::read_to_string(path)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let bytes = hex::decode(hex.trim())
+            .map_err(|_| SecurityError::InvalidKeyFormat)?;
+
+        if bytes.len() != KEY_LEN {
+            return Err(SecurityError::InvalidKeyFormat);
+        }
+
+        let mut key_bytes = [0u8; KEY_LEN];
+        key_bytes.copy_from_slice(&bytes);
+        Ok(MasterKey::from_bytes(key_bytes))
+    }
+
+    /// Clean up legacy key file after successful Keychain migration
+    fn cleanup_legacy_key_file(_key: &MasterKey) -> Result<(), SecurityError> {
+        let legacy_path = Self::legacy_master_key_path()?;
+        if legacy_path.exists() {
+            secure_delete_file(&legacy_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
         Ok(())
     }
@@ -540,11 +796,130 @@ impl FileKeyStore {
         Ok(())
     }
 
-    /// Check if master key exists in file storage
+    /// Check if master key exists in any storage
     pub fn has_master_key() -> bool {
-        Self::master_key_path()
-            .map(|p| p.exists())
+        Self::has_any_key_storage()
+    }
+
+    /// Check if passphrase mode is active
+    pub fn is_passphrase_mode() -> bool {
+        Self::get_storage_mode()
+            .map(|m| m == KeyStorageMode::Passphrase)
             .unwrap_or(false)
+    }
+}
+
+/// Key rotation utilities
+pub struct KeyRotation;
+
+impl KeyRotation {
+    /// Rotate master key (generates new key, re-encrypts database and tokens)
+    ///
+    /// For Keychain mode:
+    /// - Get current key from Keychain
+    /// - Generate new key
+    /// - Re-encrypt tokens with new key
+    /// - Store new key in Keychain
+    ///
+    /// Returns the old and new keys for database re-keying
+    pub fn rotate_keychain_key() -> Result<(MasterKey, MasterKey), SecurityError> {
+        // Get current key
+        let old_key = KeychainManager::get_master_key()?;
+
+        // Generate new key
+        let new_key = MasterKey::generate();
+
+        // Re-encrypt tokens with new key
+        Self::reencrypt_tokens(&old_key, &new_key)?;
+
+        // Store new key in Keychain
+        KeychainManager::store_master_key(&new_key)?;
+
+        Ok((old_key, new_key))
+    }
+
+    /// Rotate key with passphrase (generates new key, re-encrypts)
+    pub fn rotate_passphrase_key(
+        old_passphrase: &str,
+        new_passphrase: &str,
+    ) -> Result<(MasterKey, MasterKey), SecurityError> {
+        // Get current key
+        let old_key = FileKeyStore::get_master_key_with_passphrase(old_passphrase)?;
+
+        // Generate new key
+        let new_key = MasterKey::generate();
+
+        // Re-encrypt tokens with new key
+        Self::reencrypt_tokens(&old_key, &new_key)?;
+
+        // Store new key with new passphrase
+        FileKeyStore::store_master_key_with_passphrase(&new_key, new_passphrase)?;
+
+        Ok((old_key, new_key))
+    }
+
+    /// Change passphrase without rotating the key
+    pub fn change_passphrase(
+        old_passphrase: &str,
+        new_passphrase: &str,
+    ) -> Result<(), SecurityError> {
+        // Get current key
+        let key = FileKeyStore::get_master_key_with_passphrase(old_passphrase)?;
+
+        // Re-wrap with new passphrase
+        FileKeyStore::store_master_key_with_passphrase(&key, new_passphrase)?;
+
+        Ok(())
+    }
+
+    /// Re-encrypt tokens.json with a new key
+    fn reencrypt_tokens(old_key: &MasterKey, new_key: &MasterKey) -> Result<(), SecurityError> {
+        let tokens_path = FileKeyStore::tokens_path()?;
+
+        if !tokens_path.exists() {
+            return Ok(());
+        }
+
+        // Read with old key
+        let tokens = FileKeyStore::read_tokens_map_with_key(old_key)?;
+
+        // Write with new key
+        FileKeyStore::store_tokens_map_with_key(new_key, &tokens)?;
+
+        Ok(())
+    }
+
+    /// Migrate from Keychain to passphrase mode
+    pub fn migrate_to_passphrase(passphrase: &str) -> Result<(), SecurityError> {
+        // Get key from Keychain
+        let key = KeychainManager::get_master_key()?;
+
+        // Store with passphrase
+        FileKeyStore::store_master_key_with_passphrase(&key, passphrase)?;
+
+        // Delete from Keychain
+        let _ = KeychainManager::delete_master_key();
+
+        Ok(())
+    }
+
+    /// Migrate from passphrase to Keychain mode
+    pub fn migrate_to_keychain(passphrase: &str) -> Result<(), SecurityError> {
+        // Get key with passphrase
+        let key = FileKeyStore::get_master_key_with_passphrase(passphrase)?;
+
+        // Store in Keychain
+        KeychainManager::store_master_key(&key)?;
+        FileKeyStore::set_storage_mode(KeyStorageMode::Keychain)?;
+
+        // Delete wrapped key file
+        let wrapped_path = FileKeyStore::wrapped_key_path()?;
+        if wrapped_path.exists() {
+            secure_delete_file(&wrapped_path)
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+
+        Ok(())
     }
 }
 

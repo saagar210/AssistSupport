@@ -9,6 +9,10 @@ edition = "2021"
 name = "assistsupport_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[[bin]]
+name = "assistsupport-cli"
+path = "src/bin/assistsupport-cli.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -82,3 +86,10 @@ zip = "2"
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 tesseract = [] # Optional Tesseract OCR backend (not used, Vision is default)
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+
+[[bench]]
+name = "performance"
+harness = false

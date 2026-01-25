@@ -376,3 +376,169 @@
   text-align: center;
   margin: 0;
 }
+
+.onboarding-hint kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--surface-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* Security Step */
+.onboarding-security {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.security-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.security-option {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-md);
+  background: var(--surface-secondary);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.security-option:hover {
+  border-color: var(--accent-blue);
+  background: var(--surface-tertiary);
+}
+
+.security-option.selected {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 10%, var(--surface-secondary));
+}
+
+.security-option-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.security-option-header svg {
+  color: var(--accent-blue);
+}
+
+.security-option-header strong {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.recommended-badge {
+  font-size: var(--font-size-xs);
+  color: var(--status-success);
+  background: color-mix(in srgb, var(--status-success) 15%, transparent);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-left: auto;
+}
+
+.security-option > p {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.security-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.security-features li {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.security-features li svg {
+  flex-shrink: 0;
+  color: var(--status-success);
+}
+
+.security-features li svg.con {
+  color: var(--text-muted);
+}
+
+.onboarding-success-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--status-success);
+  margin: 0;
+}
+
+/* Shortcuts Step */
+.onboarding-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-sm);
+}
+
+.shortcut-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  background: var(--surface-secondary);
+  border-radius: var(--radius-md);
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 4px;
+}
+
+.shortcut-keys kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--spacing-xs);
+  background: var(--surface-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.shortcut-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 480px) {
+  .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,178 @@
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import type { ModelInfo } from '../types';
+
+export interface AppStatusState {
+  // LLM status
+  llmLoaded: boolean;
+  llmModelName: string | null;
+  llmModelInfo: ModelInfo | null;
+  llmLoading: boolean;
+
+  // Embeddings status
+  embeddingsLoaded: boolean;
+  embeddingsModelName: string | null;
+
+  // Vector store status
+  vectorEnabled: boolean;
+  vectorConsent: boolean;
+
+  // KB status
+  kbIndexed: boolean;
+  kbDocumentCount: number;
+  kbChunkCount: number;
+
+  // Overall
+  initialized: boolean;
+  lastUpdated: Date | null;
+}
+
+interface AppStatusContextValue extends AppStatusState {
+  refresh: () => Promise<void>;
+  refreshLlm: () => Promise<void>;
+  refreshKb: () => Promise<void>;
+}
+
+const defaultState: AppStatusState = {
+  llmLoaded: false,
+  llmModelName: null,
+  llmModelInfo: null,
+  llmLoading: false,
+  embeddingsLoaded: false,
+  embeddingsModelName: null,
+  vectorEnabled: false,
+  vectorConsent: false,
+  kbIndexed: false,
+  kbDocumentCount: 0,
+  kbChunkCount: 0,
+  initialized: false,
+  lastUpdated: null,
+};
+
+const AppStatusContext = createContext<AppStatusContextValue | null>(null);
+
+interface Props {
+  children: React.ReactNode;
+  pollInterval?: number; // ms, default 10000 (10 seconds)
+}
+
+export function AppStatusProvider({ children, pollInterval = 10000 }: Props) {
+  const [state, setState] = useState<AppStatusState>(defaultState);
+  const pollRef = useRef<number | null>(null);
+
+  const refreshLlm = useCallback(async () => {
+    try {
+      const isLoaded = await invoke<boolean>('is_model_loaded');
+      if (isLoaded) {
+        const info = await invoke<ModelInfo | null>('get_model_info');
+        setState(prev => ({
+          ...prev,
+          llmLoaded: true,
+          llmModelName: info?.name ?? info?.id ?? 'Unknown',
+          llmModelInfo: info,
+          llmLoading: false,
+        }));
+      } else {
+        setState(prev => ({
+          ...prev,
+          llmLoaded: false,
+          llmModelName: null,
+          llmModelInfo: null,
+          llmLoading: false,
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to check LLM status:', e);
+    }
+  }, []);
+
+  const refreshEmbeddings = useCallback(async () => {
+    try {
+      const isLoaded = await invoke<boolean>('is_embedding_model_loaded');
+      setState(prev => ({
+        ...prev,
+        embeddingsLoaded: isLoaded,
+        embeddingsModelName: isLoaded ? 'default' : null,
+      }));
+    } catch {
+      // Embedding check may not exist
+    }
+  }, []);
+
+  const refreshVector = useCallback(async () => {
+    try {
+      const consent = await invoke<{ enabled: boolean; consented_at: string | null }>('get_vector_consent');
+      setState(prev => ({
+        ...prev,
+        vectorEnabled: consent.enabled,
+        vectorConsent: consent.enabled,
+      }));
+    } catch {
+      // Vector consent may not be available
+    }
+  }, []);
+
+  const refreshKb = useCallback(async () => {
+    try {
+      const stats = await invoke<{ document_count: number; chunk_count: number; namespace_count: number }>('get_kb_stats');
+      setState(prev => ({
+        ...prev,
+        kbIndexed: stats.chunk_count > 0,
+        kbDocumentCount: stats.document_count,
+        kbChunkCount: stats.chunk_count,
+      }));
+    } catch {
+      // KB stats may fail if not initialized
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      refreshLlm(),
+      refreshEmbeddings(),
+      refreshVector(),
+      refreshKb(),
+    ]);
+    setState(prev => ({
+      ...prev,
+      initialized: true,
+      lastUpdated: new Date(),
+    }));
+  }, [refreshLlm, refreshEmbeddings, refreshVector, refreshKb]);
+
+  // Initial load and polling
+  useEffect(() => {
+    refresh();
+
+    if (pollInterval > 0) {
+      pollRef.current = window.setInterval(refresh, pollInterval);
+    }
+
+    return () => {
+      if (pollRef.current !== null) {
+        clearInterval(pollRef.current);
+      }
+    };
+  }, [refresh, pollInterval]);
+
+  const value: AppStatusContextValue = {
+    ...state,
+    refresh,
+    refreshLlm,
+    refreshKb,
+  };
+
+  return (
+    <AppStatusContext.Provider value={value}>
+      {children}
+    </AppStatusContext.Provider>
+  );
+}
+
+export function useAppStatus(): AppStatusContextValue {
+  const ctx = useContext(AppStatusContext);
+  if (!ctx) {
+    throw new Error('useAppStatus must be used within AppStatusProvider');
+  }
+  return ctx;
+}

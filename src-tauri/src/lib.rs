@@ -1,11 +1,15 @@
 //! AssistSupport - Self-contained local KB + LLM app for IT support
 
+pub mod audit;
 pub mod backup;
 pub mod commands;
 pub mod db;
 pub mod diagnostics;
 pub mod downloads;
+pub mod error;
+pub mod exports;
 pub mod jira;
+pub mod jobs;
 pub mod kb;
 pub mod llm;
 pub mod model_integrity;
@@ -15,6 +19,7 @@ pub mod sources;
 pub mod validation;
 
 use crate::db::Database;
+use crate::jobs::JobManager;
 use crate::kb::embeddings::EmbeddingEngine;
 use crate::kb::vectors::VectorStore;
 use crate::llm::LlmEngine;
@@ -28,6 +33,7 @@ pub struct AppState {
     pub llm: Arc<RwLock<Option<LlmEngine>>>,
     pub embeddings: Arc<RwLock<Option<EmbeddingEngine>>>,
     pub vectors: Arc<TokioRwLock<Option<VectorStore>>>,
+    pub jobs: Arc<JobManager>,
 }
 
 impl Default for AppState {
@@ -37,6 +43,7 @@ impl Default for AppState {
             llm: Arc::new(RwLock::new(None)),
             embeddings: Arc::new(RwLock::new(None)),
             vectors: Arc::new(TokioRwLock::new(None)),
+            jobs: Arc::new(JobManager::new()),
         }
     }
 }
@@ -121,6 +128,11 @@ pub fn run() {
             commands::configure_jira,
             commands::clear_jira_config,
             commands::get_jira_ticket,
+            commands::add_jira_comment,
+            commands::push_draft_to_jira,
+            // Export commands (Phase 18)
+            commands::export_draft_formatted,
+            commands::format_draft_for_clipboard,
             // Draft & Template commands
             commands::list_drafts,
             commands::search_drafts,
@@ -130,6 +142,23 @@ pub fn run() {
             commands::list_autosaves,
             commands::cleanup_autosaves,
             commands::get_draft_versions,
+            // Draft versioning commands (Phase 17)
+            commands::create_draft_version,
+            commands::list_draft_versions,
+            commands::finalize_draft,
+            commands::archive_draft,
+            commands::update_draft_handoff,
+            // Playbook commands (Phase 17)
+            commands::list_playbooks,
+            commands::get_playbook,
+            commands::save_playbook,
+            commands::use_playbook,
+            commands::delete_playbook,
+            // Action shortcut commands (Phase 17)
+            commands::list_action_shortcuts,
+            commands::get_action_shortcut,
+            commands::save_action_shortcut,
+            commands::delete_action_shortcut,
             commands::list_templates,
             commands::get_template,
             commands::save_template,
@@ -140,11 +169,11 @@ pub fn run() {
             commands::save_custom_variable,
             commands::delete_custom_variable,
             // Export commands
-            commands::export_draft,
+            commands::backup::export_draft,
             // Backup/Restore commands
-            commands::export_backup,
-            commands::preview_backup_import,
-            commands::import_backup,
+            commands::backup::export_backup,
+            commands::backup::preview_backup_import,
+            commands::backup::import_backup,
             // Ingestion commands
             commands::ingest_url,
             commands::ingest_youtube,
@@ -166,12 +195,38 @@ pub fn run() {
             commands::delete_kb_document,
             commands::clear_knowledge_data,
             commands::check_ytdlp_available,
+            // Job commands
+            commands::create_job,
+            commands::list_jobs,
+            commands::get_job,
+            commands::cancel_job,
+            commands::get_job_logs,
+            commands::get_job_counts,
+            commands::cleanup_old_jobs,
+            // Document versioning commands (Phase 14)
+            commands::list_document_versions,
+            commands::rollback_document,
+            // Source trust commands (Phase 14)
+            commands::update_source_trust,
+            commands::set_source_pinned,
+            commands::set_source_review_status,
+            commands::get_stale_sources,
+            // Namespace rules commands (Phase 14)
+            commands::add_namespace_rule,
+            commands::delete_namespace_rule,
+            commands::list_namespace_rules,
             // Diagnostics commands
-            commands::get_system_health,
-            commands::repair_database_cmd,
-            commands::rebuild_vector_store,
-            commands::get_failure_modes_cmd,
-            commands::run_quick_health_check,
+            commands::diagnostics::get_system_health,
+            commands::diagnostics::repair_database_cmd,
+            commands::diagnostics::rebuild_vector_store,
+            commands::diagnostics::get_failure_modes_cmd,
+            commands::diagnostics::run_quick_health_check,
+            commands::diagnostics::get_database_stats_cmd,
+            commands::diagnostics::run_database_maintenance_cmd,
+            commands::diagnostics::get_resource_metrics_cmd,
+            commands::diagnostics::get_llm_resource_limits,
+            commands::diagnostics::set_llm_resource_limits,
+            commands::diagnostics::get_vector_maintenance_info_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
