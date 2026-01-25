@@ -9,6 +9,7 @@ pub mod kb;
 pub mod llm;
 pub mod prompts;
 pub mod security;
+pub mod sources;
 pub mod validation;
 
 use crate::db::Database;

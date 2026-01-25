@@ -4,6 +4,8 @@
 pub mod docx;
 pub mod embeddings;
 pub mod indexer;
+pub mod ingest;
+pub mod network;
 pub mod ocr;
 pub mod pdf;
 pub mod search;

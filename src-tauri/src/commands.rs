@@ -144,12 +144,15 @@ pub async fn search_kb(
     state: State<'_, AppState>,
     query: String,
     limit: Option<usize>,
+    namespace_id: Option<String>,
 ) -> Result<Vec<crate::kb::search::SearchResult>, String> {
     // Validate query input
     validate_non_empty(&query).map_err(|e| e.to_string())?;
     validate_text_size(&query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
 
     let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
+    let ns_id = namespace_id.clone();
+    let ns_id_for_vector = namespace_id.clone();
 
     // Get query embedding if vector search is available (sync operation)
     let query_embedding = {
@@ -175,7 +178,10 @@ pub async fn search_kb(
         if let Some(embedding) = query_embedding {
             let vectors_lock = vectors_state.read().await;
             if let Some(vectors) = vectors_lock.as_ref() {
-                return vectors.search_similar(&embedding, limit * 2).await.ok();
+                return vectors
+                    .search_similar_in_namespace(&embedding, ns_id_for_vector.as_deref(), limit * 2)
+                    .await
+                    .ok();
             }
         }
         None
@@ -185,7 +191,7 @@ pub async fn search_kb(
     let fts_results = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        crate::kb::search::HybridSearch::fts_search(db, &query, limit * 2)
+        crate::kb::search::HybridSearch::fts_search_with_namespace(db, &query, ns_id.as_deref(), limit * 2)
             .map_err(|e| e.to_string())?
     }; // DB lock released here
 
@@ -207,8 +213,9 @@ pub async fn get_search_context(
     state: State<'_, AppState>,
     query: String,
     limit: Option<usize>,
+    namespace_id: Option<String>,
 ) -> Result<String, String> {
-    let results = search_kb(state, query, limit).await?;
+    let results = search_kb(state, query, limit, namespace_id).await?;
     Ok(crate::kb::search::HybridSearch::format_context(&results))
 }
 
@@ -1156,43 +1163,42 @@ pub fn get_kb_stats(state: State<'_, AppState>) -> Result<IndexStats, String> {
     indexer.get_stats(db).map_err(|e| e.to_string())
 }
 
-/// List indexed KB documents
+/// List indexed KB documents, optionally filtered by namespace and/or source
 #[tauri::command]
-pub fn list_kb_documents(state: State<'_, AppState>) -> Result<Vec<KbDocument>, String> {
+pub fn list_kb_documents(
+    state: State<'_, AppState>,
+    namespace_id: Option<String>,
+    source_id: Option<String>,
+) -> Result<Vec<KbDocumentInfo>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    let mut stmt = db.conn()
-        .prepare(
-            "SELECT id, file_path, title, indexed_at, chunk_count FROM kb_documents ORDER BY indexed_at DESC"
-        )
+    let docs = db.list_kb_documents(namespace_id.as_deref(), source_id.as_deref())
         .map_err(|e| e.to_string())?;
 
-    let docs = stmt
-        .query_map([], |row| {
-            Ok(KbDocument {
-                id: row.get(0)?,
-                file_path: row.get(1)?,
-                title: row.get(2)?,
-                indexed_at: row.get(3)?,
-                chunk_count: row.get(4)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(docs)
+    Ok(docs.into_iter().map(|d| KbDocumentInfo {
+        id: d.id,
+        file_path: d.file_path,
+        title: d.title,
+        indexed_at: d.indexed_at,
+        chunk_count: d.chunk_count.map(|c| c as i64),
+        namespace_id: d.namespace_id,
+        source_type: d.source_type,
+        source_id: d.source_id,
+    }).collect())
 }
 
-/// KB document info
+/// KB document info for API responses
 #[derive(serde::Serialize)]
-pub struct KbDocument {
+pub struct KbDocumentInfo {
     pub id: String,
     pub file_path: String,
     pub title: Option<String>,
     pub indexed_at: Option<String>,
     pub chunk_count: Option<i64>,
+    pub namespace_id: String,
+    pub source_type: String,
+    pub source_id: Option<String>,
 }
 
 /// Remove a document from the KB index
@@ -2154,4 +2160,370 @@ pub async fn import_backup(
         }
         None => Err("Import cancelled".to_string()),
     }
+}
+
+// =============================================================================
+// CONTENT INGESTION COMMANDS
+// =============================================================================
+
+/// Result of an ingestion operation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IngestResult {
+    pub document_id: String,
+    pub title: String,
+    pub source_uri: String,
+    pub chunk_count: usize,
+    pub word_count: usize,
+}
+
+/// Result of a batch ingestion operation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BatchIngestResult {
+    pub successful: Vec<IngestResult>,
+    pub failed: Vec<FailedSource>,
+    pub cancelled: bool,
+}
+
+/// A failed source in a batch operation
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FailedSource {
+    pub source: String,
+    pub error: String,
+}
+
+/// Ingest a web page URL
+#[tauri::command]
+pub async fn ingest_url(
+    state: State<'_, AppState>,
+    url: String,
+    namespace_id: String,
+) -> Result<IngestResult, String> {
+    use crate::kb::ingest::web::{WebIngester, WebIngestConfig};
+    use crate::kb::ingest::CancellationToken;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Ensure namespace exists
+    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+
+    let config = WebIngestConfig::default();
+    let ingester = WebIngester::new(config).map_err(|e| e.to_string())?;
+    let cancel_token = CancellationToken::new();
+
+    let result = ingester
+        .ingest_page(db, &url, &namespace_id, &cancel_token, None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(IngestResult {
+        document_id: result.id,
+        title: result.title,
+        source_uri: result.source_uri,
+        chunk_count: result.chunk_count,
+        word_count: result.word_count,
+    })
+}
+
+/// Ingest a YouTube video transcript
+#[tauri::command]
+pub async fn ingest_youtube(
+    state: State<'_, AppState>,
+    url: String,
+    namespace_id: String,
+) -> Result<IngestResult, String> {
+    use crate::kb::ingest::youtube::{YouTubeIngester, YouTubeIngestConfig};
+    use crate::kb::ingest::CancellationToken;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Ensure namespace exists
+    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+
+    let config = YouTubeIngestConfig::default();
+    let ingester = YouTubeIngester::new(config);
+
+    // Check yt-dlp availability
+    if !ingester.check_ytdlp_available() {
+        return Err("yt-dlp not found. Install with: brew install yt-dlp".to_string());
+    }
+
+    let cancel_token = CancellationToken::new();
+
+    let result = ingester
+        .ingest_video(db, &url, &namespace_id, &cancel_token, None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(IngestResult {
+        document_id: result.id,
+        title: result.title,
+        source_uri: result.source_uri,
+        chunk_count: result.chunk_count,
+        word_count: result.word_count,
+    })
+}
+
+/// Ingest a GitHub repository (local path)
+#[tauri::command]
+pub fn ingest_github(
+    state: State<'_, AppState>,
+    repo_path: String,
+    namespace_id: String,
+) -> Result<Vec<IngestResult>, String> {
+    use crate::kb::ingest::github::{GitHubIngester, GitHubIngestConfig};
+    use crate::kb::ingest::CancellationToken;
+    use std::path::Path;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Ensure namespace exists
+    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+
+    let config = GitHubIngestConfig::default();
+    let ingester = GitHubIngester::new(config);
+    let cancel_token = CancellationToken::new();
+
+    let results = ingester
+        .ingest_local_repo(db, Path::new(&repo_path), &namespace_id, &cancel_token, None)
+        .map_err(|e| e.to_string())?;
+
+    Ok(results
+        .into_iter()
+        .map(|r| IngestResult {
+            document_id: r.id,
+            title: r.title,
+            source_uri: r.source_uri,
+            chunk_count: r.chunk_count,
+            word_count: r.word_count,
+        })
+        .collect())
+}
+
+/// Process a YAML source file for batch ingestion
+#[tauri::command]
+pub async fn process_source_file(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<BatchIngestResult, String> {
+    use crate::sources::SourceFile;
+    use crate::kb::ingest::batch::{BatchIngester, BatchIngestConfig};
+    use crate::kb::ingest::CancellationToken;
+    use std::path::Path;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Parse the source file
+    let source_file = SourceFile::from_path(Path::new(&file_path))
+        .map_err(|e| e.to_string())?;
+
+    // Ensure namespace exists
+    db.ensure_namespace_exists(&source_file.namespace).map_err(|e| e.to_string())?;
+
+    // Convert to batch sources
+    let sources: Vec<String> = source_file
+        .enabled_sources()
+        .map(|s| s.uri.clone())
+        .collect();
+
+    let config = BatchIngestConfig::default();
+    let ingester = BatchIngester::new(config).map_err(|e| e.to_string())?;
+    let cancel_token = CancellationToken::new();
+
+    let result = ingester
+        .ingest_from_strings(db, &sources, &source_file.namespace, &cancel_token, None)
+        .await;
+
+    Ok(BatchIngestResult {
+        successful: result
+            .successful
+            .into_iter()
+            .map(|r| IngestResult {
+                document_id: r.id,
+                title: r.title,
+                source_uri: r.source_uri,
+                chunk_count: r.chunk_count,
+                word_count: r.word_count,
+            })
+            .collect(),
+        failed: result
+            .failed
+            .into_iter()
+            .map(|f| FailedSource {
+                source: f.source,
+                error: f.error,
+            })
+            .collect(),
+        cancelled: result.cancelled,
+    })
+}
+
+/// List all namespaces
+#[tauri::command]
+pub fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<crate::db::Namespace>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_namespaces().map_err(|e| e.to_string())
+}
+
+/// Create a new namespace
+#[tauri::command]
+pub fn create_namespace(
+    state: State<'_, AppState>,
+    name: String,
+    description: Option<String>,
+    color: Option<String>,
+) -> Result<crate::db::Namespace, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.create_namespace(&name, description.as_deref(), color.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Rename a namespace
+#[tauri::command]
+pub fn rename_namespace(
+    state: State<'_, AppState>,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.rename_namespace(&old_name, &new_name).map_err(|e| e.to_string())
+}
+
+/// Delete a namespace and all its content
+#[tauri::command]
+pub fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.delete_namespace(&name).map_err(|e| e.to_string())
+}
+
+/// List ingestion sources, optionally filtered by namespace
+#[tauri::command]
+pub fn list_ingest_sources(
+    state: State<'_, AppState>,
+    namespace_id: Option<String>,
+) -> Result<Vec<crate::db::IngestSource>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_ingest_sources(namespace_id.as_deref()).map_err(|e| e.to_string())
+}
+
+/// Delete an ingestion source and its documents
+#[tauri::command]
+pub fn delete_ingest_source(state: State<'_, AppState>, source_id: String) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.delete_ingest_source(&source_id).map_err(|e| e.to_string())
+}
+
+/// Get document chunks
+#[tauri::command]
+pub fn get_document_chunks(
+    state: State<'_, AppState>,
+    document_id: String,
+) -> Result<Vec<DocumentChunk>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let chunks: Vec<DocumentChunk> = db
+        .conn()
+        .prepare(
+            "SELECT id, chunk_index, heading_path, content, word_count
+             FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index",
+        )
+        .map_err(|e| e.to_string())?
+        .query_map([&document_id], |row| {
+            Ok(DocumentChunk {
+                id: row.get(0)?,
+                chunk_index: row.get(1)?,
+                heading_path: row.get(2)?,
+                content: row.get(3)?,
+                word_count: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(chunks)
+}
+
+/// A document chunk for API responses
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DocumentChunk {
+    pub id: String,
+    pub chunk_index: i32,
+    pub heading_path: Option<String>,
+    pub content: String,
+    pub word_count: Option<i32>,
+}
+
+/// Delete a specific document
+#[tauri::command]
+pub fn delete_kb_document(state: State<'_, AppState>, document_id: String) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    db.conn()
+        .execute("DELETE FROM kb_documents WHERE id = ?", [&document_id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Clear all knowledge data, optionally for a specific namespace
+#[tauri::command]
+pub fn clear_knowledge_data(
+    state: State<'_, AppState>,
+    namespace_id: Option<String>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    match namespace_id {
+        Some(ns) => {
+            // Clear only the specified namespace
+            db.conn()
+                .execute("DELETE FROM kb_documents WHERE namespace_id = ?", [&ns])
+                .map_err(|e| e.to_string())?;
+            db.conn()
+                .execute("DELETE FROM ingest_sources WHERE namespace_id = ?", [&ns])
+                .map_err(|e| e.to_string())?;
+        }
+        None => {
+            // Clear all knowledge data
+            db.conn()
+                .execute("DELETE FROM kb_chunks", [])
+                .map_err(|e| e.to_string())?;
+            db.conn()
+                .execute("DELETE FROM kb_documents", [])
+                .map_err(|e| e.to_string())?;
+            db.conn()
+                .execute("DELETE FROM ingest_runs", [])
+                .map_err(|e| e.to_string())?;
+            db.conn()
+                .execute("DELETE FROM ingest_sources", [])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if yt-dlp is available
+#[tauri::command]
+pub fn check_ytdlp_available() -> Result<bool, String> {
+    use std::process::Command;
+
+    Ok(Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false))
 }

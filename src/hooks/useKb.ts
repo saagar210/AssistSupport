@@ -215,13 +215,15 @@ export function useKb() {
 
   const search = useCallback(async (
     query: string,
-    limit?: number
+    limit?: number,
+    namespaceId?: string | null
   ): Promise<SearchResult[]> => {
     setState(prev => ({ ...prev, searching: true, error: null }));
     try {
       const results = await invoke<SearchResult[]>('search_kb', {
         query,
         limit: limit ?? 10,
+        namespaceId: namespaceId ?? null,
       });
       setState(prev => ({ ...prev, searching: false }));
       return results;
@@ -237,12 +239,14 @@ export function useKb() {
 
   const getSearchContext = useCallback(async (
     query: string,
-    limit?: number
+    limit?: number,
+    namespaceId?: string | null
   ): Promise<string> => {
     try {
       return await invoke<string>('get_search_context', {
         query,
         limit: limit ?? 5,
+        namespaceId: namespaceId ?? null,
       });
     } catch (e) {
       setState(prev => ({

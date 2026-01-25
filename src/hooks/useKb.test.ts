@@ -154,7 +154,7 @@ describe('useKb', () => {
 
     expect(result.current.searching).toBe(false);
     expect(searchResults).toEqual(mockResults);
-    expect(mockInvoke).toHaveBeenCalledWith('search_kb', { query: 'test query', limit: 10 });
+    expect(mockInvoke).toHaveBeenCalledWith('search_kb', { query: 'test query', limit: 10, namespaceId: null });
   });
 
   it('search with custom limit', async () => {
@@ -166,7 +166,7 @@ describe('useKb', () => {
       await result.current.search('test', 5);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('search_kb', { query: 'test', limit: 5 });
+    expect(mockInvoke).toHaveBeenCalledWith('search_kb', { query: 'test', limit: 5, namespaceId: null });
   });
 
   it('getSearchContext returns formatted context', async () => {
@@ -180,7 +180,7 @@ describe('useKb', () => {
     });
 
     expect(context).toBe('Formatted KB context');
-    expect(mockInvoke).toHaveBeenCalledWith('get_search_context', { query: 'query', limit: 5 });
+    expect(mockInvoke).toHaveBeenCalledWith('get_search_context', { query: 'query', limit: 5, namespaceId: null });
   });
 
   it('getVectorConsent returns consent status', async () => {

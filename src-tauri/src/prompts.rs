@@ -442,6 +442,8 @@ mod tests {
             snippet: "".to_string(),
             score: 1.0,
             source: crate::kb::search::SearchSource::Fts5,
+            namespace_id: Some("default".to_string()),
+            source_type: Some("file".to_string()),
         }];
 
         let prompt = PromptBuilder::new()
@@ -496,6 +498,8 @@ mod tests {
                 snippet: "".to_string(),
                 score: 1.0,
                 source: crate::kb::search::SearchSource::Fts5,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
             SearchResult {
                 chunk_id: "def456".to_string(),
@@ -507,6 +511,8 @@ mod tests {
                 snippet: "".to_string(),
                 score: 0.9,
                 source: crate::kb::search::SearchSource::Fts5,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
         ];
 

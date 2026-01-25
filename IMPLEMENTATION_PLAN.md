@@ -1,809 +1,247 @@
-# AssistSupport: Self-Contained Local KB + LLM Implementation Plan
+# AssistSupport Knowledge Integration - Implementation Plan
 
-## Summary
-
-Transform AssistSupport into a fully self-contained local app with embedded knowledge base and LLM inference. **No external services required for core workflows** (LLM + KB) - no Ollama service, no KAS, no separate databases. **Outbound network is allowed** for model downloads and on-demand web status checks.
-
-**Bootstrap note**: Workspace is empty; initialize a new Tauri + React (Vite + TS) app before following the phases below.
-
-### Development Context
-- **Dev machine**: MacBook Pro 16" M4 Pro, 48GB RAM (personal)
-- **Target machine**: Same spec (work MacBook)
-- **Workflow**: Build framework here → GitHub → deploy on work machine
-- **Content**: IT runbooks, past ticket solutions, PDFs (on work machine)
-- **Platform scope (v1)**: macOS only
-
-### Work Machine Constraints (All Satisfied)
-- No Docker
-- Outbound network allowed (model downloads + web status checks)
-- Internal distribution via Box/GitHub is acceptable
-- **Solution**: Single DMG app + local model files, no external services required for core workflows
-
-### Network Access & Privacy
-- **Core offline**: LLM + KB features work without network
-- **Online optional**: Model downloads and web status checks only when explicitly triggered
-- **Web search default**: Disabled until user enables in Settings
-- **PII minimization**: Redact names, email addresses, ticket IDs before outbound web queries
-- **Policy controls**: Allowlist domains, proxy support, per-source toggles
+**Document Version**: 1.2 <!-- CODEX REVISION -->
+**Created**: 2026-01-25
+**Last Updated**: 2026-01-25 <!-- CODEX REVISION -->
+**Status**: Revised - Pending Approval <!-- CODEX REVISION -->
+**Classification**: Internal - Engineering
 
 ---
 
-## Key Decisions
+## Table of Contents
 
-| Component | Choice | Rationale |
-|-----------|--------|-----------|
-| **LLM** | `llama-cpp-2` crate (embedded) | No external service required, Metal acceleration |
-| **KB Metadata** | SQLCipher database | Docs, chunks text, FTS5 index |
-| **Text Search** | FTS5 (SQLCipher build with FTS5 enabled) | Fast, proven |
-| **Vector Search** | LanceDB (Rust-native) | Better performance, scales to 100K+ vectors |
-| **Hybrid Search** | RRF fusion | Combines FTS5 + LanceDB results |
-| **Embeddings** | Separate model (nomic-embed-text) | Fast, 768 dimensions, parallel with gen model |
-| **Threading** | Parallel (both models loaded) | ~14GB RAM, faster operations |
-| **App Sandbox (v1)** | Disabled | Simplifies local file access; revisit if signing/notarization is added |
-
-### Storage Architecture
-```
-~/Library/Application Support/AssistSupport/
-├── assistsupport.db          # SQLCipher: drafts, follow-ups, KB metadata, FTS5
-├── attachments/              # Encrypted screenshots
-├── models/                   # GGUF models (generation + embeddings)
-├── downloads/                # Temporary download/resume state
-└── vectors/                  # LanceDB: chunk embeddings (encrypted if supported)
-    └── chunks.lance/
-~/Library/Caches/AssistSupport/   # Temporary caches
-```
-
-### Encryption Strategy
-- **SQLCipher**: Random 32-byte master key generated on first run
-- **Key storage**: Store master key in macOS Keychain by default; fallback to user passphrase if Keychain unavailable
-- **Passphrase**: Derive KEK with Argon2id (store salt + params) to wrap master key
-- **LanceDB**: Use master key if crate supports AES-256-GCM; if unsupported, require explicit user consent before enabling unencrypted vector search
-- **Default**: Vector search disabled until encryption support confirmed or explicit opt-in recorded
-- **Attachments**: Encrypt at rest with master key (AES-256-GCM), store metadata in DB
-
-### Security/DB Dependencies
-- **SQLCipher integration**: Use `rusqlite` + `libsqlite3-sys` built against SQLCipher (vendored source) with compile flags `SQLITE_HAS_CODEC` and `SQLITE_ENABLE_FTS5`
-- **Crypto**: `aes-gcm`, `argon2`, `rand`, `zeroize`
-- **Keychain**: `keyring` crate (macOS Keychain backend)
-
-**Why NOT fork KAS:**
-- KAS requires PostgreSQL + pgvector (external service)
-- LanceDB + FTS5 achieves same hybrid search locally
-- Simpler architecture, fully embedded, no external processes
+1. [Executive Summary](#1-executive-summary)
+2. [Problem Statement](#2-problem-statement)
+3. [Solution Overview](#3-solution-overview)
+4. [Current System Analysis](#4-current-system-analysis)
+5. [Technical Design](#5-technical-design)
+6. [Implementation Phases](#6-implementation-phases)
+7. [Database Schema Changes](#7-database-schema-changes)
+8. [API Specifications](#8-api-specifications)
+9. [UI/UX Specifications](#9-uiux-specifications)
+10. [Testing Strategy](#10-testing-strategy)
+11. [Risk Assessment](#11-risk-assessment)
+12. [Security & Compliance Requirements](#12-security--compliance-requirements) <!-- CODEX REVISION -->
+13. [Rollback Plan](#13-rollback-plan) <!-- CODEX REVISION -->
+14. [Dependencies](#14-dependencies) <!-- CODEX REVISION -->
+15. [Success Metrics & Confidence Gates](#15-success-metrics--confidence-gates) <!-- CODEX REVISION -->
+16. [Appendix](#16-appendix) <!-- CODEX REVISION -->
 
 ---
 
-## Detailed Specifications
-
-### LLM Integration
-- **Loading**: On app launch, auto-load last used model
-- **Persistence**: Remember model path across restarts
-- **Error handling**: Auto-retry with backoff (3 attempts, exponential)
-- **Threading**: Generation model always loaded in memory
-- **Scheduling**: Prioritize generation over embedding; throttle background indexing to avoid GPU contention
-- **GPU Memory**: Metal layers set to max (1000+), auto-adjust if OOM
-- **Preflight**: Estimate VRAM use from model metadata; clamp `n_gpu_layers` before load
-- **Model validation**: SHA256 checksum verification on first load
-- **Model switching**:
-  - Unload current model completely (free GPU/RAM)
-  - Show progress: "Unloading model... Loading new model..."
-  - Estimated time based on model size
-  - Cancel button during load
-  - Rollback to previous model if load fails
-
-### Model Management & Downloads
-- **Storage**: All models stored under `~/Library/Application Support/AssistSupport/models/`
-- **Download manager**: Resume support, checksum verification, progress + ETA
-- **Sources**: HuggingFace direct URLs; allow custom URL entry
-- **Auth**: Optional HuggingFace token for gated models (store in Keychain)
-- **Manual import**: Drag/drop or file picker for offline installs
-
-### Database & Migration
-- **Schema version**: Stored in `settings` table (`schema_version` key)
-- **Migrations**: Run sequentially on app start if version < current
-- **Backup**: Auto-backup before migration (`assistsupport.db.bak`)
-- **Corruption detection**: PRAGMA integrity_check on launch
-- **LanceDB versioning**: Separate version tracking for vector schema
-
-### Knowledge Base Indexing
-- **File watching**: Auto-watch KB folder, reindex on changes
-- **Debounce/ignore rules**: Coalesce bursts and ignore app-generated temp files
-- **Chunking**: Heading-based (H1/H2), target 200-500 words, hard cap 500
-- **Folder depth**: Full recursive (all subfolders)
-- **File types**: Markdown (.md), PDF (.pdf), Plain text (.txt)
-- **Large folders**: Paginated indexing (batches of 50-100 files)
-- **Model change**: Re-embed all chunks when switching embedding model
-- **Dim changes**: If embedding size changes, recreate vector table
-
-**PDF Handling** (Text + OCR Fallback):
-- First pass: Extract embedded text using PDFium (`pdfium-render`)
-- Per-page text threshold: If page has <50 characters of text
-  - Run OCR provider on that page
-  - Combine OCR text with extracted text
-- Annotated screenshots in PDFs → captured via OCR
-- Progress indicator: "Processing page X of Y..."
-- **Bundling**: Ship PDFium with the app (no system library dependency)
-- **Mixed PDFs**: Track OCR quality (char count/confidence); if low and Tesseract is available, run a fallback pass
-- **PDFium load**: Bundle `libpdfium.dylib` in Tauri resources and bind via `Pdfium::bind_to_library` at runtime
-
-**OCR Strategy (Pluggable)**
-- **macOS default**: Vision OCR provider
-- **Cross-platform fallback**: Tesseract provider (optional, if bundled/available)
-- **v1 scope**: macOS only; ship Vision OCR (no Tesseract by default)
-- **Tesseract language data**: English only (if bundled later)
-- **No OCR available**: Index only extracted text and flag file as partial
-- **Decision gate**: After OCR benchmark on mixed PDFs, decide whether to ship an optional Tesseract variant
-- **Vision helper**: Build a small Swift helper binary (bundled in Tauri resources) that accepts image paths and returns text via stdout
-- **Feature flag**: Guard Tesseract provider behind a Cargo feature (e.g., `tesseract`) for a separate DMG build
-
-### Search Behavior
-- **Snippet count**: Top 5 snippets per query
-- **Injection**: Auto-inject into prompt, show in Sources tab after
-- **No results**: Automatically lower threshold / broaden search
-- **Source tracking**: Persist which KB chunks were used per draft
-- **Prompt safety**: Treat KB as untrusted; add system guardrail to ignore instructions inside sources
-- **Vector disabled**: If vector search is disabled, run FTS-only search
-- **Embedding missing**: If no embedding model configured, run FTS-only search
-
-### UI/UX
-
-**Layout:**
-- **Tabs**: Draft | Follow-ups | Sources | Settings (4 tabs)
-- **Responsive layouts**: User toggle between three-panel, two-panel, stacked
-- **Default size**: Medium (half screen), resizable, remembers position
-- **Color scheme**: User choice (light/dark toggle in Settings)
-
-**Draft Tab Layout (Three-Panel Default):**
-```
-┌──────────┬──────────────┬──────────────┐
-│  INPUT   │  DIAGNOSIS   │   RESPONSE   │
-└──────────┴──────────────┴──────────────┘
-```
-
-**Panel Controls:**
-- **Draggable dividers**: Drag borders between panels to resize
-  - Minimum width: 200px per panel
-  - Positions remembered across sessions
-- **Collapsible panels**: Each panel has collapse button (▶/◀)
-  - Collapsed panel shows as thin strip with title
-  - Click strip or button to expand
-  - Useful for simple tickets: collapse Diagnosis, expand Input+Response
-- **Responsive (narrow window)**:
-  - Below 900px width → auto-stack vertically
-  - Order: Input → Diagnosis → Response (scrollable)
-  - Each section collapsible in stacked mode too
-
-**Interactions:**
-- **Copy**: One-click + "Copied!" toast notification
-- **Screenshot paste**: Auto-OCR immediately
-- **Related tickets**: Auto-detect and group similar issues
-- **Ticket switch**: Auto-save current progress
-
-**Long Input Handling** (Summarization):
-- **Context budget**: Reserve ~20K chars for input after system/KB context
-- **Token-aware**: Use model tokenizer to estimate token budget; char count is a fallback heuristic
-- **When input exceeds budget**:
-  1. Show warning: "Input is long, summarizing for context..."
-  2. Run quick summarization pass on entire input
-  3. LLM prompt: "Extract the key IT issue, symptoms, error messages, and user actions from this support ticket"
-  4. Use summarized version (~2-3K chars) for generation
-  5. Store original + summary in draft record
-- **Reviewability**: Show summary preview with editable text and a toggle to use original input
-- **Why summarize** (not truncate first/last):
-  - First/last paragraphs often greetings, apologies, pleasantries
-  - Important issue details buried in middle
-  - Summarization preserves critical information
-
-**Ticket Number Auto-Detection:**
-- **Patterns recognized**:
-  - Jira: `PROJ-1234`, `IT-567`, `HELP-89`
-  - ServiceNow: `INC0012345`, `REQ0012345`
-  - Zendesk: `#12345`
-  - Generic: `Ticket #1234`, `Case 1234`
-- **When detected**:
-  - Show badge with ticket ID in Input panel header
-  - Click badge → copy ticket ID
-  - Auto-link to Jira/ServiceNow (configurable base URL in Settings)
-  - Store ticket ID with draft for searching later
-
-**Keyboard Shortcuts:**
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+G` | Generate response |
-| `Cmd+Shift+C` | Copy output to clipboard |
-| `Cmd+V` | Paste into input (with auto-OCR for images) |
-| `Cmd+1/2/3/4` | Switch to tab 1/2/3/4 |
-| `Cmd+N` | New draft (clear input) |
-| `Cmd+F` | Focus search |
-| `Cmd+,` | Open Settings |
-| `Cmd+D` | Toggle diagnosis panel |
-| `Esc` | Close modal/clear selection |
-
-**Sources Tab (KB Dashboard):**
-- **Summary stats bar**:
-  - Total docs | Total chunks | Last indexed | Index health (✓ or ⚠)
-- **Per-file breakdown table**:
-  - File path | Chunks | Last modified | Index status
-  - Sortable by any column
-  - Filter by: indexed/pending/failed
-- **Search analytics**:
-  - Recent searches with hit counts
-  - Most-referenced docs (top 10)
-  - Unused docs (indexed but never matched)
-- **Coverage analysis**:
-  - Docs without embeddings (FTS5-only)
-  - Failed files with error messages
-  - Suggested: "These 5 docs may need re-indexing"
-- **Used sources per draft**:
-  - Expandable section showing which KB chunks were injected
-  - Links to view original doc
-
-**Toast Notifications:**
-- **Auto-dismiss**: Success toasts disappear after 3 seconds
-- **Persistent errors**: Error toasts stay until dismissed (X button)
-- **Position**: Top-right corner, stack vertically if multiple
-- **Types**: Success (green), Error (red), Info (blue), Warning (yellow)
-
-**Loading States** (Skeleton + Spinner):
-- **Panel skeletons**: Gray pulsing rectangles matching content layout
-- **Action spinners**: Small spinner with action text
-  - "Generating response..." (with word count as it streams)
-  - "Searching KB..." (with chunk count as found)
-  - "Processing PDF..." (with page number)
-- **Estimated time**: Show for operations >3s expected
-  - "Indexing 47 files (~2 min remaining)"
-- **Cancelable**: Long operations show Cancel button
-
-**Settings Tab Organization** (Accordion Sections):
-1. **Models** - Generation model path, Embedding model path, download manager, HuggingFace token, benchmark button
-2. **Knowledge Base** - KB folder path, reindex button, import files button
-3. **Appearance** - Theme (light/dark/system), panel layout default
-4. **Integrations** - Jira base URL, ServiceNow URL, web search enable toggle (default off), sources, allowlist + proxy
-5. **Advanced** - Safe mode, diagnostics mode, export/import, wipe data, unencrypted vector search opt-in
-
-**Draft Management** (Single + History):
-- **One active draft** at a time
-- **Quick switch dropdown**: Top of Draft tab shows recent 10 drafts
-  - Format: "Timestamp - First 30 chars of input..."
-  - Click to switch (auto-saves current)
-- **New draft button**: Clears current, starts fresh
-- **History search**: Full-text search of all past drafts (modal)
-
-**Other:**
-- **Indexing progress**: Progress bar with percentage + cancel button
-- **Draft output**: Copy button + editable text area
-- **Follow-ups**: Integrated KB search
-
-### Word Limits (Configurable)
-- **Toggle**: Short / Medium (sets default)
-- **Fine-tune**: Dropdown with presets + "Custom..." option
-- **Defaults**: Slack Short=80, Medium=160 | Jira Short=120, Medium=220
-- **Custom range**: 50-500 words
-
-### Diagnostic Assistant (NEW - Core Feature)
-
-**Workflow**: Hybrid parallel mode
-- Diagnosis panel + Response draft shown side-by-side
-- Expand diagnosis for complex issues, collapse for simple ones
-- Auto-update diagnosis as context is added (screenshots, OCR)
-
-**Diagnostic Features:**
-1. **What to Check First** (LLM-Generated)
-   - LLM analyzes ticket text + KB context + OCR evidence
-   - Generates 3-7 prioritized troubleshooting steps
-   - Each step: checkbox + description + optional KB link
-   - Interactive: check off items as verified
-   - Add notes about findings per item
-   - Notes saved and searchable
-   - Regenerate button if initial suggestions unhelpful
-
-2. **Root Cause Suggestions**
-   - Likely causes based on symptoms
-   - Confidence scores for each suggestion
-   - Links to KB articles explaining each cause
-
-3. **Similar Past Tickets** (Hybrid Matching)
-   - **Matching algorithm**: Embedding similarity + keyword/entity matching
-     - Extract error codes, app names, symptoms from ticket
-     - Vector similarity on full ticket text
-     - RRF fusion of both scores
-   - Shows: Summary + resolution + similarity score
-   - Link to original source (Jira/Slack thread)
-   - Searchable diagnostic history
-   - Top 3-5 most similar shown by default
-
-4. **Decision Trees**
-   - **8 Built-in Trees** (ship with app):
-     1. Authentication Failure
-     2. VPN / Network Connectivity
-     3. Email / Calendar Issues
-     4. Password Reset
-     5. SSO / Single Sign-On
-     6. Hardware (laptop, peripherals)
-     7. Software Installation
-     8. Account Provisioning / Access Requests
-   - Auto-generated trees from indexed KB/runbooks (future)
-   - Custom trees you can create (JSON editor in Settings)
-
-   **Auto-Detection Algorithm:**
-   ```rust
-   fn detect_relevant_tree(ticket_text: &str) -> Option<DecisionTree> {
-       // Each tree has keyword sets
-       let tree_keywords = [
-           ("auth", vec!["login", "password", "403", "unauthorized", "can't sign in"]),
-           ("vpn", vec!["vpn", "network", "connection", "timeout", "unreachable"]),
-           ("email", vec!["email", "outlook", "calendar", "meeting", "inbox"]),
-           // ... etc
-       ];
-
-       // Score each tree by keyword matches
-       let scores: Vec<(f32, &str)> = tree_keywords.iter()
-           .map(|(id, keywords)| {
-               let matches = keywords.iter()
-                   .filter(|kw| ticket_text.to_lowercase().contains(*kw))
-                   .count();
-               (matches as f32 / keywords.len() as f32, *id)
-           })
-           .collect();
-
-       // Return highest scoring tree if score > 0.3
-       scores.into_iter()
-           .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-           .filter(|(score, _)| *score > 0.3)
-           .map(|(_, id)| load_tree(id))
-   }
-   ```
-   - Threshold: Tree suggested only if 30%+ keywords match
-   - User can dismiss suggestion and pick manually
-
-5. **Escalation Support**
-   - Button: "Generate Escalation Note" in Diagnosis panel
-   - **Structured template output**:
-     ```
-     ## Issue Summary
-     [Brief description of the problem]
-
-     ## Environment
-     - User: [name/ID]
-     - System: [OS, browser, affected app]
-     - First reported: [date/time]
-
-     ## Troubleshooting Performed
-     - [Checklist item 1] → [Finding/result]
-     - [Checklist item 2] → [Finding/result]
-     - Decision tree path: [nodes taken]
-
-     ## Findings
-     - [Key observation 1]
-     - [Key observation 2]
-
-     ## Suggested Next Steps
-     - [Recommended action for Tier 2/3]
-     ```
-   - Auto-populated from diagnostic session data
-   - Editable before copying
-
-6. **Web Search (On-Demand)**
-   - Button: "Check Web for Outages"
-   - No confirmation needed (user clicked intentionally)
-   - Results shown in diagnosis panel
-   - Local by default, web only when button clicked
-   - Button disabled until enabled in Settings
-   - PII redaction for outbound queries (names/emails/ticket IDs removed)
-   - Optional query preview/edit before send (Settings toggle)
-   - Domain allowlist + proxy support
-   - Prefer official status pages; scrape only where allowed and fail gracefully
-   - Disabled by default until enabled in Settings
-
-   **Default Sources** (queried in parallel):
-   - Down Detector (`downdetector.com/status/{service}`) - HTML scrape
-   - Vendor status pages (auto-detected from service name):
-     - `status.microsoft.com`, `status.okta.com`, `status.zoom.us`, etc.
-   - **Note**: Twitter/X removed (requires $100/mo API access)
-
-   **Alternative Social Sources** (no API needed):
-   - Reddit r/sysadmin search via RSS/JSON API (free)
-   - Hacker News search API (free)
-   - Google News RSS for `{service} outage`
-
-   **Configurable Sources** (Settings → Advanced):
-   - Add custom status page URLs
-   - Add custom RSS feed URLs
-   - Enable/disable default sources
-   - Set timeout per source (default 5s)
-
-**Progress Tracking:**
-- Save troubleshooting progress
-- Resume if switching tickets
-- Link to follow-up for ongoing issues
-
-**Learning (Opt-In):**
-- Toggle in Settings → Advanced: "Enable learning from my interactions"
-- **Data tracked** (with consent):
-  - Checklist items: which were checked, skipped, added
-  - Decision tree paths: which branches taken, dead ends
-  - Response edits: what user changed before copying
-  - Time spent: per panel, per checklist item
-  - Resolution outcome: did user mark ticket as resolved?
-- **Local storage only**: All learning data stays in SQLCipher
-- **Benefits**:
-  - Prioritize checklist items that were checked most often
-  - Highlight decision tree branches that led to resolutions
-  - Pre-fill common response patterns for similar tickets
-  - Show "users typically check this first" hints
-
-**Learning Algorithm** (Simple Frequency-Based):
-```sql
--- Track checklist effectiveness
-CREATE TABLE learning_checklist_stats (
-    item_text_hash TEXT,       -- Normalized hash of checklist item
-    times_shown INTEGER,
-    times_checked INTEGER,
-    times_led_to_resolution INTEGER,
-    avg_time_to_check_ms INTEGER
-);
-
--- Track decision tree effectiveness
-CREATE TABLE learning_tree_stats (
-    tree_id TEXT,
-    node_id TEXT,
-    times_visited INTEGER,
-    times_led_to_resolution INTEGER
-);
-```
-
-**Ranking formula**: `score = (times_checked / times_shown) * (1 + resolution_bonus)`
-- No ML model needed - pure SQL aggregation
-- Items with higher scores shown first
-- Decays over time (multiply by 0.9 per week)
-
-**Diagnosis → Response Integration:**
-- Diagnostic findings auto-incorporated into response
-- Response reflects what you checked and what you found
-- Searchable history of all diagnostic sessions
-
-### Output Features
-- **Clarifying questions**: Include suggested follow-up questions in output
-- **Variants**: Single output for now (multi-variant is future feature)
-- **Quick Capture**: Future feature (minimal UI via hotkey)
-
-### Data Management
-- **Wipe Data**:
-  - **Tickets Only**: Wipes drafts, follow-ups, diagnostic sessions, attachments linked to drafts, and learning data (preserves KB index)
-  - **Full Wipe**: Wipes KB index, vectors, attachments, models, settings, logs, downloads, caches, DB backups, and Keychain entries (master key + HuggingFace token)
-- **Source links**: Each draft records which KB chunks were used
-
-**Export/Import** (Full Data Portability):
-- **Export** (Settings → Advanced → Export Data):
-  - Creates encrypted `.assbackup` archive containing:
-    - All drafts and diagnostic sessions
-    - All follow-ups
-    - All decision trees (including custom)
-    - Attachments (encrypted)
-    - Settings and preferences
-    - Learning data (if enabled)
-  - Does NOT include: KB folder contents, model files, embeddings
-  - Password-protected (user sets export password)
-  - Re-encrypt all encrypted content with export password (Argon2id + AES-256-GCM)
-  - Format: `manifest.json` + data payload (zip or tar), then encrypted with versioned header (salt, nonce, kdf params)
-  - Filename: `assistsupport-backup-{date}.assbackup`
-
-- **Import** (Settings → Advanced → Import Data):
-  - Prompts for export password
-  - Shows preview: "X drafts, Y follow-ups, Z trees"
-  - Options: Merge with existing OR Replace all
-  - Re-embeds imported drafts if embedding model available
-  - Re-wraps imported data with local master key after import
-
-**Theme/Appearance:**
-- **System default**: Follow macOS system appearance
-- **Manual override**: Toggle in Settings → Appearance
-  - Light mode (always)
-  - Dark mode (always)
-  - System (follow OS)
-- **Accent color**: Uses macOS system accent color
-
-### Error Handling
-
-| Error | Recovery Strategy |
-|-------|-------------------|
-| Model load fails | Show error, suggest re-download, offer alternatives |
-| KB folder missing | Disable KB features, show warning, keep existing index |
-| Index fails | Abort file, log error, continue with remaining files |
-| Context overflow | Smart summarize older context, warn user |
-| DB corruption | Detect on launch, offer restore from backup |
-| Disk space low | Pre-check before operations, graceful failure with message |
-| PDF extraction fails | Try OCR provider, skip if still fails |
-| OCR provider unavailable | Index extracted text only, mark as partial |
-| LanceDB error | Fall back to FTS5-only search |
-| LanceDB encryption unsupported | Warn user, require explicit opt-in for unencrypted vectors, otherwise disable vector search |
-| Keychain unavailable | Prompt for passphrase, store encrypted key in DB |
-| Network timeout (web search) | Show "unable to check" message |
-| Model download fails | Offer retry or manual import |
-
-### Crash Recovery
-
-**Auto-save Strategy:**
-- Draft input auto-saved every 5 seconds to `drafts` table
-- Diagnostic session state saved on every checklist change
-- On crash: Next launch detects unsaved draft, offers to restore
-
-**Implementation:**
-```rust
-// Periodic auto-save in background
-tokio::spawn(async move {
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
-    loop {
-        interval.tick().await;
-        if let Some(draft) = current_draft.lock().as_ref() {
-            if draft.is_dirty {
-                db.save_draft_autosave(draft).ok();
-            }
-        }
-    }
-});
-```
-
-**Corruption Detection:**
-- On launch: `PRAGMA integrity_check` on SQLCipher DB
-- On launch: Verify LanceDB directory exists and is readable
-- If corrupted: Show dialog with options:
-  1. "Restore from backup" (if .bak exists)
-  2. "Start fresh" (wipes data)
-  3. "Export what's readable" (salvage partial data)
-
-**Logging for Debugging:**
-- Rotating log files: `~/Library/Logs/AssistSupport/`
-- Keep last 7 days by default, configurable in Settings
-- Log levels: ERROR (always), WARN, INFO, DEBUG (dev only)
-- Include: Timestamps, operation names, durations, error messages
-- Redact PII and avoid logging full ticket/KB content
-- Never log secrets (tokens, keys, passphrases)
-
-### Distribution
-- **Lean DMG**: ~50-100MB, models downloaded separately
-- **Full DMG (optional)**: ~10GB, includes recommended models; optional variant can bundle Tesseract if needed
-- **Tesseract size impact (estimate)**: +30-80MB for lean DMG (arm64, English only); confirm in Phase 0B
-- **Model download**: From HuggingFace (work machine has internet)
-- **Unsigned internal distribution**: Provide IT deployment steps to allow app execution (remove quarantine flag if needed)
-- **Install note**: If blocked by Gatekeeper, remove quarantine attribute after copy
-- **Sandbox (v1)**: Disabled; no entitlements required
-
-### Diagnostics & Logging
-- **Diagnostics mode**: Explicit toggle; developer view (generation time, tokens/sec, memory, cache hits, raw logs, query traces, error history)
-- **Logging**: Rotating logs (keep last 7 days, auto-delete old)
-- **Updates**: Manual (check GitHub releases)
-
-### Performance Targets
-
-| Metric | Target | Failure Threshold |
-|--------|--------|-------------------|
-| Generation latency | 2-10s | >15s |
-| Hybrid search | <100ms | >500ms |
-| KB indexing | 100 docs/min | <50 docs/min |
-| Embedding batch | 50 chunks/sec | <20 chunks/sec |
-| Memory (app only, models unloaded) | <500MB | >1GB |
-| Memory (models loaded, idle) | <14GB | >20GB |
-| Memory (generating) | <16GB | >22GB |
-
-### Quality Gates (Go/No-Go)
-- **All tests must pass**: Unit, integration, E2E, and security tests
-- **All benchmarks must meet targets**: Performance table above is a release gate
-- **Stress tests must pass**: No crashes, no unbounded memory growth, no data loss
-- **Security checks must pass**: Encryption behaviors, key storage, PII redaction, log redaction
-- **Vector safety**: Vector search enabled only if encryption supported or explicit opt-in recorded
-- **OCR gate**: Tiered WER thresholds (text-based pages <= 5%, image-only pages <= 12%, mixed overall <= 10%); if not, ship optional Tesseract DMG
-- **Release criteria**: Zero open P0/P1 defects; all P2 fixes scheduled
-
-### Testing Strategy
-
-**Unit Tests** (Rust `cargo test` + TypeScript Vitest):
-- Chunking algorithms
-- RRF fusion math
-- Keyword extraction
-- Decision tree traversal
-- Export/import format
-- Web query PII redaction
-- Prompt injection guardrail (source text cannot alter system rules)
-
-**Integration Tests** (Tauri command tests):
-- DB migrations run correctly
-- Settings persist across restarts
-- File watcher triggers reindex
-- LanceDB queries return correct types
-- SQLCipher build has FTS5 enabled
-- FTS5 index updates on insert/update/delete
-- Keychain read/write and passphrase fallback
-- Vector encryption verified if supported; warning + explicit opt-in flow tested
-- OCR provider selection logic and fallback behavior
-
-**LLM Testing Strategy**:
-```rust
-// Use a mock LLM for CI tests
-#[cfg(test)]
-mod tests {
-    use crate::llm::MockLlmEngine;
-
-    fn mock_engine() -> MockLlmEngine {
-        MockLlmEngine::with_responses(vec![
-            "Here's a helpful response...",
-            "Step 1: Check X\nStep 2: Verify Y",
-        ])
-    }
-}
-```
-- Mock responses stored in `test_fixtures/llm_responses/`
-- Real LLM tests run manually (too slow for CI)
-- Output quality validated by: word count, contains expected sections
-
-**E2E Tests** (Playwright):
-1. First-run wizard completes successfully
-2. Model download resumes and checksum validates
-3. Model loading shows progress, handles errors
-4. KB indexing shows progress bar
-5. Generation streams word-by-word
-6. Copy button copies to clipboard
-7. Theme toggle persists
-8. Export creates file, import restores
-9. Web search remains disabled until enabled; allowlist enforced
-
-**Web Search Mocking**:
-```typescript
-// Mock fetch for web search tests
-vi.mock('fetch', () => ({
-  default: vi.fn((url) => {
-    if (url.includes('downdetector')) {
-      return Promise.resolve({ text: () => mockDownDetectorHtml });
-    }
-  })
-}));
-```
-
-**Performance Benchmarks** (run manually):
-- Generation: Time to first token, total time, tokens/sec
-- Search: Query latency at 1K, 10K, 100K chunks
-- Indexing: Docs/minute for Markdown, PDF
-- Memory: Baseline, during generation, peak
-- OCR: Mixed PDF accuracy and throughput on a representative sample (tiered WER thresholds)
-
-**Stress Tests** (run manually):
-- Large KB: 10K docs / 100K chunks indexing, repeated reindex
-- Mixed PDFs: 100+ PDFs with image-only pages
-- Long session: 2+ hours of generation/search without restart
-- Model churn: Load/unload 10x, verify no leaks or crashes
-- Low disk simulation: Trigger graceful failure paths
-
-**Security Tests** (run manually):
-- Keychain storage and fallback passphrase flow
-- SQLCipher encryption verified (no plaintext DB)
-- Vector encryption warning + explicit opt-in flow
-- Export/import crypto: data re-encrypted with export password, no plaintext artifacts
-- PII redaction before outbound web queries
-- Log redaction (no ticket/KB plaintext)
-- Prompt injection guardrail test using malicious KB snippets
-- Dependency audit (cargo audit, pnpm audit) has zero critical/high findings
-
-**Reliability/Recovery Tests** (run manually):
-- Crash recovery: autosave restore works
-- Corruption handling: integrity_check and recovery paths
-- Network drop: model download resume + web search timeout handling
-- Full wipe: removes logs, downloads, caches, backups, and Keychain entries
-
-### E2E Test Scenarios
-1. First-run: Load models, set KB folder, index, generate response
-2. Diagnostic flow: Paste ticket → checklist → check items → generate response
-3. Decision tree: Start tree → navigate → reach resolution
-4. Similar tickets: Create session → search → find similar
-5. Offline: Core features work without network, web search/downloads disabled gracefully
-6. Error recovery: Model load fails → shows error → user retries
-7. Long input: Paste 50K chars → summarization triggers → generation works
-
-### Go/No-Go Procedure
-- Run full test matrix and benchmarks
-- Capture evidence (logs, metrics, screenshots where applicable)
-- Any gate failure blocks release until fixed and retested
-- Formal signoff required before packaging the DMG (store QA report under `docs/qa/`)
-- OCR benchmark datasets:
-  - Public/synthetic subset stored in-repo under `docs/qa/ocr-bench/`
-  - Internal mixed set stored in secure share; record version/hash in QA report
+## 1. Executive Summary
+
+### 1.1 Purpose
+
+This document specifies the integration of advanced knowledge management capabilities into the AssistSupport desktop application. The integration consolidates features from two companion projects—Knowledge Activation System (KAS) and Knowledge Seeder—into a single, self-contained desktop application.
+
+### 1.2 Business Justification
+
+**Problem**: IT support professionals need access to diverse knowledge sources (vendor documentation, internal runbooks, resolved ticket history) during support interactions. Currently, this requires manual searching across multiple systems.
+
+**Solution**: Integrate multi-source content ingestion, namespace-based organization, and enhanced search capabilities directly into AssistSupport, enabling:
+- One-click ingestion from web pages, YouTube, and GitHub
+- Logical separation of knowledge domains (IT support, coding, finance)
+- Batch import from curated source definitions
+- Unified hybrid search across all indexed content
+
+**Constraints**:
+- Core app must run fully offline; network access is only permitted for explicit, user-initiated ingestion and must fail gracefully when offline. <!-- CODEX REVISION -->
+- No Docker on target work machines
+- No external services or HTTP calls between applications (single-process architecture) <!-- CODEX REVISION -->
+- No Docker usage in build/test/deploy or runtime; all dependencies must be local and installable without containers. <!-- CODEX REVISION -->
+- Must deploy as vanilla application with no pre-existing data
+- All processing must occur locally
+
+### 1.3 Scope
+
+**In Scope**:
+- Namespace support for content organization
+- Web page content ingestion
+- YouTube transcript ingestion
+- GitHub repository documentation ingestion
+- Batch import from YAML source definitions
+- Knowledge browser UI for content management
+- Enhanced search with namespace filtering
+
+**Out of Scope**:
+- Cloud synchronization
+- Multi-user/multi-tenant features
+- Real-time collaboration
+- External API integrations (beyond content fetching)
 
 ---
 
-## Phase 0A: Project Bootstrap (Day 0)
+## 2. Problem Statement
 
-### Goals
-- Install prerequisites: Rust stable, Node LTS, pnpm, Tauri CLI, Xcode CLT
-- Initialize a new Tauri + React (Vite + TS) app in `/Users/d/AssistSupport`
-- Verify `pnpm tauri dev` launches a blank window
+### 2.1 Current State
+
+AssistSupport is a feature-complete desktop application for generating IT support responses using local LLM inference. It includes:
+
+**Recently Completed (P0-P2)**:
+- Security hardening (Jira URL/ticket validation, 10MB OCR size cap, CSP)
+- Encrypted backups (Argon2id + AES-256-GCM)
+- Download UX (cancel button, progress display)
+- Custom GGUF model support with context window budget enforcement
+
+**Current Knowledge Base System**:
+- Indexes local files (Markdown, PDF, DOCX, XLSX, code)
+- Provides hybrid search (FTS5 + vector similarity)
+- Stores all content in a single namespace
+
+### 2.2 Limitations
+
+1. **Single Source Type**: Only local files can be indexed. Web-based documentation (Microsoft Learn, Apple Support, vendor portals) requires manual downloading and conversion.
+
+2. **No Namespace Support**: All content exists in a single flat namespace. A user working on IT support issues sees coding documentation mixed with troubleshooting guides.
+
+3. **Manual Curation**: Each document must be manually placed in the KB folder. There's no batch import or automated source management.
+
+4. **No Source Tracking**: Once indexed, content has no metadata about its origin. Re-indexing or updating sources requires manual tracking.
+
+### 2.3 Target State
+
+A single desktop application that:
+1. Ingests content from multiple source types (files, URLs, YouTube, GitHub)
+2. Organizes content into logical namespaces
+3. Supports batch import from declarative source definitions
+4. Provides a UI for browsing and managing indexed content
+5. Filters search results by namespace
 
 ---
 
-## Phase 0B: Platform + Security Spike (Days 0-2)
+## 3. Solution Overview
 
-### Goals
-- Validate SQLCipher build with FTS5 enabled
-- Verify LanceDB encryption support (or confirm fallback strategy)
-- Confirm OCR provider integration on macOS (Vision) and optional Tesseract fallback
-- Validate Keychain storage + retrieval for master key
-- Validate unsigned DMG install path (Gatekeeper/quarantine handling)
-- Validate PDFium bundling for text extraction (no system dependency)
-- Run OCR benchmark on a mixed PDF sample set (text-only + image-only)
-- Create curated OCR benchmark set (>=50 pages, >=30% image-only) with ground truth for WER
-- Define OCR evaluation method: WER via `jiwer`, normalize case, punctuation, whitespace, and line-break hyphenation
-- If bundling Tesseract, validate libtesseract + leptonica packaging on macOS
- - Verify Vision helper binary executes from bundled resources
+### 3.1 Architecture
 
-### Verification
-```bash
-# Confirm FTS5 in SQLCipher build
-sqlite3 assistsupport.db "CREATE VIRTUAL TABLE t USING fts5(content);"
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              ASSISTSUPPORT                                   │
+│                         (Unified Desktop Application)                        │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                          REACT FRONTEND                                 │ │
+│  │                                                                         │ │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│  │  │   Response   │ │   Sources    │ │   Content    │ │  Knowledge   │  │ │
+│  │  │  Generator   │ │   Panel      │ │   Ingestion  │ │   Browser    │  │ │
+│  │  │  (existing)  │ │  (existing)  │ │    (NEW)     │ │    (NEW)     │  │ │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  │                                                                         │ │
+│  └─────────────────────────────────┬───────────────────────────────────────┘ │
+│                                    │ Tauri IPC                               │
+│  ┌─────────────────────────────────▼───────────────────────────────────────┐ │
+│  │                           RUST BACKEND                                   │ │
+│  │                                                                          │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐│ │
+│  │  │                      INGESTION LAYER (NEW)                          ││ │
+│  │  │                                                                      ││ │
+│  │  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐           ││ │
+│  │  │  │   Web     │ │  YouTube  │ │  GitHub   │ │   Batch   │           ││ │
+│  │  │  │ Ingester  │ │ Ingester  │ │ Ingester  │ │ Processor │           ││ │
+│  │  │  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘           ││ │
+│  │  │        │             │             │             │                  ││ │
+│  │  │        └─────────────┴──────┬──────┴─────────────┘                  ││ │
+│  │  │                             ▼                                       ││ │
+│  │  │                    ┌─────────────────┐                              ││ │
+│  │  │                    │ Content Pipeline│                              ││ │
+│  │  │                    │ (chunk + embed) │                              ││ │
+│  │  │                    └────────┬────────┘                              ││ │
+│  │  └─────────────────────────────┼───────────────────────────────────────┘│ │
+│  │                                ▼                                         │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐│ │
+│  │  │                   KNOWLEDGE LAYER (ENHANCED)                        ││ │
+│  │  │                                                                      ││ │
+│  │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐       ││ │
+│  │  │  │  Namespace    │    │    Search     │    │    Index      │       ││ │
+│  │  │  │   Manager     │    │   (enhanced)  │    │   Manager     │       ││ │
+│  │  │  └───────────────┘    └───────────────┘    └───────────────┘       ││ │
+│  │  │                                                                      ││ │
+│  │  └─────────────────────────────────────────────────────────────────────┘│ │
+│  │                                                                          │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐│ │
+│  │  │                   EXISTING MODULES (UNCHANGED)                      ││ │
+│  │  │  LLM Engine │ Prompt Builder │ Security │ Backup │ Downloads       ││ │
+│  │  └─────────────────────────────────────────────────────────────────────┘│ │
+│  └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                               │
+│  ┌──────────────────────────────────────────────────────────────────────────┐│
+│  │                           LOCAL STORAGE                                  ││
+│  │  ~/Library/Application Support/AssistSupport/                            ││
+│  │  ├── assistsupport.db      ← SQLCipher encrypted database               ││
+│  │  ├── vectors/              ← LanceDB vector embeddings                  ││
+│  │  └── models/               ← GGUF model files                           ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+All ingestion and indexing runs inside the same Tauri process and never spawns a local server. Network access occurs only when the user initiates ingest actions, preserving offline-first behavior. <!-- CODEX REVISION -->
 
-## Phase 1: Real LLM Integration (Days 1-3)
+### 3.2 Key Design Decisions
 
-### Files to Modify
-
-**1. `/Users/d/AssistSupport/src-tauri/Cargo.toml`**
-- Add `llama-cpp-2 = "0.1.130"` (verified on crates.io)
-- Add feature flags for Metal acceleration
-
-**2. `/Users/d/AssistSupport/src-tauri/src/llm.rs`**
-- Replace mock `generate()` with real llama-cpp-2 inference
-- Implement proper model loading with `LlamaModelParams`
-- Add Metal GPU offloading (`n_gpu_layers = 1000`)
-- Implement streaming via existing `mpsc` channel
-
-### Verification
-```bash
-cd /Users/d/AssistSupport
-pnpm tauri dev
-# Load a GGUF model, generate response, verify <10s latency
-```
+| Decision | Rationale |
+|----------|-----------|
+| **SQLite over PostgreSQL** | No Docker requirement; existing encrypted database; adequate for single-user desktop application |
+| **yt-dlp for YouTube** | Battle-tested transcript extraction; widely available via Homebrew; subprocess isolation |
+| **Namespace as column (not schema)** | Simpler migration path; single database file; sufficient isolation for single user |
+| **YAML for batch sources** | Human-readable; version-controllable; precedent from Knowledge Seeder |
+| **Explicit network policy** | Network calls only occur during user-initiated ingestion; no background sync; offline-first operation stays intact. <!-- CODEX REVISION --> |
+| **Source provenance metadata** | Persist `source_uri`, hashes, and ingest run metadata for auditability and re-ingestion without duplication. <!-- CODEX REVISION --> |
+| **Namespace-aware filtering in search** | Apply namespace filters across FTS + vector paths, with oversampling where vector metadata filtering is limited. <!-- CODEX REVISION --> |
+| **Sanitized rendering** | Render ingested content with HTML disabled/sanitized to prevent XSS in the UI. <!-- CODEX REVISION --> |
+| **Local repo option for GitHub** | Allow local repo ingestion to satisfy offline requirement and avoid API rate limits. <!-- CODEX REVISION --> |
+| **Progressive enhancement** | All new features are additive; existing functionality unchanged |
 
 ---
 
-## Phase 2: KB Database Schema (Days 3-4)
+## 4. Current System Analysis
 
-**Prerequisite**: Ensure SQLCipher is built with FTS5 enabled (compile flags or bundled build).
+### 4.1 Existing Modules
 
-### Files to Modify
+| Module | Location | Responsibility | Changes Required |
+|--------|----------|----------------|------------------|
+| `db.rs` | `src-tauri/src/db.rs` | Database initialization, migrations, queries | Add namespace schema, source tracking |
+| `commands.rs` | `src-tauri/src/commands.rs` | Tauri command handlers | Add ingestion commands |
+| `kb/indexer.rs` | `src-tauri/src/kb/indexer.rs` | File indexing pipeline | Minor: accept namespace parameter |
+| `kb/search.rs` | `src-tauri/src/kb/search.rs` | Hybrid search (FTS5 + vector) | Add namespace filtering |
+| `kb/embeddings.rs` | `src-tauri/src/kb/embeddings.rs` | Vector embedding generation | No changes |
+| `kb/vectors.rs` | `src-tauri/src/kb/vectors.rs` | LanceDB operations | Add namespace metadata or oversampling filter path <!-- CODEX REVISION --> |
 
-**1. `/Users/d/AssistSupport/src-tauri/src/db.rs`**
-Add new tables in migration:
+### 4.2 Current Database Schema (v3) <!-- CODEX REVISION -->
 
 ```sql
--- Documents indexed from KB folder
+-- Knowledge Base Documents
 CREATE TABLE kb_documents (
     id TEXT PRIMARY KEY,
     file_path TEXT NOT NULL UNIQUE,
     file_hash TEXT NOT NULL,
     title TEXT,
     indexed_at TEXT,
-    chunk_count INTEGER
+    chunk_count INTEGER,
+    ocr_quality TEXT,
+    partial_index INTEGER DEFAULT 0
 );
+CREATE INDEX idx_kb_docs_path ON kb_documents(file_path);
 
--- Document chunks for retrieval
+-- Document Chunks (keep rowid for FTS5 joins)
 CREATE TABLE kb_chunks (
     id TEXT PRIMARY KEY,
-    document_id TEXT NOT NULL,
+    document_id TEXT NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
     chunk_index INTEGER NOT NULL,
     heading_path TEXT,
     content TEXT NOT NULL,
-    word_count INTEGER,
-    FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE
+    word_count INTEGER
 );
--- Note: keep rowid enabled; FTS5 uses kb_chunks.rowid for joins
+CREATE INDEX idx_kb_chunks_doc ON kb_chunks(document_id);
 
--- FTS5 full-text search
+-- FTS5 Full-Text Search Index
 CREATE VIRTUAL TABLE kb_fts USING fts5(
     content, heading_path,
     content='kb_chunks',
     tokenize='porter unicode61'
 );
 
--- FTS5 triggers (keep index in sync; join on rowid)
+-- FTS5 Triggers (sync with kb_chunks via rowid)
 CREATE TRIGGER kb_chunks_ai AFTER INSERT ON kb_chunks BEGIN
     INSERT INTO kb_fts(rowid, content, heading_path)
     VALUES (new.rowid, new.content, new.heading_path);
@@ -818,583 +256,717 @@ CREATE TRIGGER kb_chunks_au AFTER UPDATE ON kb_chunks BEGIN
     INSERT INTO kb_fts(rowid, content, heading_path)
     VALUES (new.rowid, new.content, new.heading_path);
 END;
+```
 
--- Diagnostic sessions
-CREATE TABLE diagnostic_sessions (
-    id TEXT PRIMARY KEY,
-    draft_id TEXT,
-    checklist_json TEXT,      -- JSON array of checklist items + notes
-    findings_json TEXT,       -- JSON array of findings
-    decision_tree_id TEXT,    -- Which tree was used (if any)
-    created_at TEXT,
-    updated_at TEXT,
-    FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE SET NULL
+---
+
+## 5. Technical Design
+
+### 5.1 New Rust Modules
+
+#### Module Structure
+
+```
+src-tauri/src/
+├── ingest/              # NEW: Content ingestion
+│   ├── mod.rs           # Module exports, shared types
+│   ├── types.rs         # IngestResult/IngestError/Context <!-- CODEX REVISION -->
+│   ├── http.rs          # Shared HTTP client + limits <!-- CODEX REVISION -->
+│   ├── web.rs           # URL → HTML → Markdown → Chunks
+│   ├── youtube.rs       # YouTube → Transcript → Chunks
+│   ├── github.rs        # GitHub repo → Docs → Chunks
+│   ├── batch.rs         # YAML source file processor
+│   └── pipeline.rs      # Content normalization, chunking
+├── sources/             # NEW: Source definitions
+│   ├── mod.rs           # Module exports
+│   └── parser.rs        # YAML source file parser
+```
+
+### 5.2 Web Ingestion Design
+
+**Dependencies** (Cargo.toml):
+```toml
+reqwest = { version = "0.12", features = ["stream"] } <!-- CODEX REVISION -->
+scraper = "0.18"          # HTML parsing
+html2md = "0.2"           # HTML → Markdown
+url = "2"                 # URL parsing
+```
+
+**Algorithm**:
+1. Validate URL with existing `validate_url`, enforce `http/https`, and block non-user-initiated fetches (default `allow_private=false`). <!-- CODEX REVISION -->
+2. Normalize URL (lowercase host, strip fragments, remove default ports) for dedupe and visited tracking. <!-- CODEX REVISION -->
+3. Resolve host to IP for each request/redirect; block private/loopback/link-local by default, allow only with explicit `allow_private` or `allowed_hosts`. <!-- CODEX REVISION -->
+4. Fetch with shared `reqwest::Client` (30s timeout, max redirects=5, 10MB max body, streaming read). <!-- CODEX REVISION -->
+5. Enforce `Content-Type: text/html` (otherwise return a clear error recommending local file ingestion). <!-- CODEX REVISION -->
+6. If response is 401/403 or a login/SSO page is detected, return a clear error directing users to file-based ingestion. <!-- CODEX REVISION -->
+7. Parse HTML, strip script/style/nav/footer, prefer `<article>`/`<main>` or highest text-density node. <!-- CODEX REVISION -->
+8. Convert to Markdown; sanitize/escape any residual HTML before rendering in UI. <!-- CODEX REVISION -->
+9. Extract canonical URL, title, and compute content hash for dedupe/refresh. <!-- CODEX REVISION -->
+10. Chunk via existing pipeline, store with namespace + source metadata. <!-- CODEX REVISION -->
+11. If `depth > 0`, crawl same-origin links only, default `max_pages=50` and `max_depth=2`, with visited-set to prevent loops. <!-- CODEX REVISION -->
+12. Use ETag/Last-Modified to skip unchanged pages on refresh. <!-- CODEX REVISION -->
+
+### 5.3 YouTube Ingestion Design
+
+**Dependency**: `yt-dlp` (Homebrew)
+
+**Algorithm**:
+1. Extract video ID from URL, normalize to canonical `https://www.youtube.com/watch?v=...`. <!-- CODEX REVISION -->
+2. Verify `yt-dlp` is available (configurable path); fail fast with install instructions. <!-- CODEX REVISION -->
+3. Run `yt-dlp` via `Command` (no shell), with timeout + kill on hang; use `--skip-download --write-sub --write-auto-sub --sub-format vtt --no-playlist`. <!-- CODEX REVISION -->
+4. Prefer human captions, fall back to auto-captions; allow optional `language` parameter (default `en`). <!-- CODEX REVISION -->
+5. Parse VTT, normalize whitespace, remove timestamps and cues. <!-- CODEX REVISION -->
+6. Enforce transcript size cap (e.g., 2MB) and fail gracefully if exceeded. <!-- CODEX REVISION -->
+7. Fetch metadata (title, channel, duration) from `yt-dlp --print` output. <!-- CODEX REVISION -->
+8. Chunk and store with namespace + source metadata. <!-- CODEX REVISION -->
+
+### 5.4 GitHub Ingestion Design
+
+**Algorithm**:
+1. Accept GitHub URL **or** local repo path (offline-friendly). <!-- CODEX REVISION -->
+2. For local repos, validate path is inside allowed roots and is a git repo; skip `.git/` contents. <!-- CODEX REVISION -->
+3. For remote repos, prefer raw content fetches (or token stored via existing secure storage) and respect rate limits with backoff. <!-- CODEX REVISION -->
+4. Walk README*, `docs/`, and text docs (`.md`, `.mdx`, `.rst`, `.txt`, `.adoc`) only; skip binaries and vendor dirs. <!-- CODEX REVISION -->
+5. Enforce per-file size cap (e.g., 2MB), `max_files`, and `max_total_bytes` limits to prevent huge repos. <!-- CODEX REVISION -->
+6. Use stable `github://owner/repo/path` identifiers for `file_path`. <!-- CODEX REVISION -->
+7. Support private repos via a Settings GitHub token (stored via existing secure storage); return clear errors when token is missing/invalid. <!-- CODEX REVISION -->
+
+### 5.5 Batch Processing Design
+
+**YAML Format**:
+```yaml
+namespace: it-support
+sources:
+  - name: microsoft-365
+    type: url
+    uri: https://learn.microsoft.com/...
+    depth: 2
+    max_pages: 50 <!-- CODEX REVISION -->
+    max_total_bytes: 20000000 <!-- CODEX REVISION -->
+    allow_private: false <!-- CODEX REVISION -->
+    allowed_hosts: [] <!-- CODEX REVISION -->
+    enabled: true
+```
+
+**Algorithm**:
+1. Parse YAML, validate schema, and reject paths outside allowed roots. <!-- CODEX REVISION -->
+2. For each enabled source, dispatch to appropriate ingester with `max_concurrent` cap. <!-- CODEX REVISION -->
+3. Emit structured progress events (started, page/file count, completed, failed). <!-- CODEX REVISION -->
+4. Track status and per-run metadata in database. <!-- CODEX REVISION -->
+5. Return per-source results; continue on partial failures. <!-- CODEX REVISION -->
+6. Enforce network policy settings (private IP block unless explicitly allowed). <!-- CODEX REVISION -->
+
+### 5.6 Ingestion Pipeline & Error Model <!-- CODEX REVISION -->
+
+- Reuse existing chunking/embedding pipeline to maintain consistent chunk sizes and hashing. <!-- CODEX REVISION -->
+- Standardize `IngestResult` and `BatchResult` with counts, warnings, and typed error codes (timeout, not_found, invalid_input, dependency_missing). <!-- CODEX REVISION -->
+- Deduplicate by `file_hash` + `namespace` before inserting; re-index only when content hash changes. <!-- CODEX REVISION -->
+- Update KB queries to include namespace in `file_path` lookups to avoid collisions. <!-- CODEX REVISION -->
+- Persist `source_type` + `source_uri` for every document to enable UI filtering and refresh. <!-- CODEX REVISION -->
+- Record `ingest_run_id` for every ingestion to support audits and rollback. <!-- CODEX REVISION -->
+- Ensure error messages/logs avoid content payloads or full transcripts. <!-- CODEX REVISION -->
+- Use scheme-based identifiers (`url://`, `youtube://`, `github://`) for non-file `file_path` values to prevent collisions. <!-- CODEX REVISION -->
+- Wrap per-document ingestion in a transaction; on failure, roll back chunks/vectors and mark partial_index if needed. <!-- CODEX REVISION -->
+- If vector store is disabled/unavailable, continue with FTS-only indexing and return a warning. <!-- CODEX REVISION -->
+
+### 5.7 Namespace & Source Management <!-- CODEX REVISION -->
+
+- Create `default` namespace at migration; auto-create namespaces on first use. <!-- CODEX REVISION -->
+- Namespaces can be created/renamed/deleted; rename updates documents, chunks, vector metadata, and ingest_sources. <!-- CODEX REVISION -->
+- Each document records `source_id` (nullable for local files) to allow refresh/delete by source. <!-- CODEX REVISION -->
+- Deleting a namespace or source cascades to chunks and deletes corresponding vectors. <!-- CODEX REVISION -->
+
+### 5.8 Offline/Network Policy & Dependency Checks <!-- CODEX REVISION -->
+
+- All network access is user-initiated (ingest actions only); no background sync jobs. <!-- CODEX REVISION -->
+- Offline or blocked network returns a clear, actionable error without retries. <!-- CODEX REVISION -->
+- `yt-dlp` presence/version is validated at runtime; UI surfaces dependency status. <!-- CODEX REVISION -->
+- Private/loopback/link-local IPs blocked by default; allowlist requires explicit user action. <!-- CODEX REVISION -->
+- `allowed_hosts` matches exact domains or subdomains; `allow_private` must be explicit and per-source. <!-- CODEX REVISION -->
+- Respect system proxy settings for outbound requests. <!-- CODEX REVISION -->
+
+### 5.9 Security & Privacy Considerations <!-- CODEX REVISION -->
+
+- Enforce `http/https` URLs and block private IP ranges by default; allow only via explicit allowlist/toggle. <!-- CODEX REVISION -->
+- Sanitize ingested content and render Markdown with HTML disabled to prevent XSS. <!-- CODEX REVISION -->
+- Cap memory usage with strict size limits; never store raw HTML beyond the ingest pipeline. <!-- CODEX REVISION -->
+- Avoid logging full URLs or transcript content in error logs. <!-- CODEX REVISION -->
+- Do not persist cookies or auth headers for web ingestion. <!-- CODEX REVISION -->
+
+### 5.10 Performance & Resource Controls <!-- CODEX REVISION -->
+
+- Ingestion runs on background tasks; UI remains responsive with cancellable jobs. <!-- CODEX REVISION -->
+- Default concurrency limits: `max_concurrent=2` for network sources; embeddings processed in a bounded queue. <!-- CODEX REVISION -->
+- Stream downloads and parse incrementally to avoid large in-memory buffers. <!-- CODEX REVISION -->
+- Enforce per-document and per-source size caps (`max_pages`, `max_files`, `max_total_bytes`). <!-- CODEX REVISION -->
+- Log only summary metrics (counts/timings), not content. <!-- CODEX REVISION -->
+
+---
+
+## 6. Implementation Phases
+
+### Phase 1: Data Model & Migration (1.5 days) <!-- CODEX REVISION -->
+
+**Objectives**:
+- Add namespace + source metadata columns to existing tables
+- Create namespace metadata + ingestion tracking tables
+- Rebuild `kb_documents` to replace single-column UNIQUE with `(namespace, file_path)` <!-- CODEX REVISION -->
+- Migrate existing data to `default` namespace and rebuild FTS triggers if needed <!-- CODEX REVISION -->
+- Define vector-store migration strategy (add metadata columns or oversampling filter) <!-- CODEX REVISION -->
+
+**Deliverables**:
+- Schema migration v4 in `db.rs`
+- Vector store migration notes + fallback reindex path <!-- CODEX REVISION -->
+- Migration tests
+
+**Acceptance**:
+- [x] Existing databases upgrade successfully
+- [x] All existing content in 'default' namespace
+- [x] Namespace-aware uniqueness enforced without data loss <!-- CODEX REVISION -->
+- [x] Vector search still works after migration (or reindex path documented) <!-- CODEX REVISION -->
+- [x] All existing tests pass
+
+---
+
+### Phase 2: Web Page Ingestion (2 days) <!-- CODEX REVISION -->
+
+**Objectives**:
+- URL content fetching with timeout and size limits
+- HTML → Markdown conversion
+- Main content extraction
+- Crawl limits (`max_pages`, same-origin), canonical URL handling, and ETag/Last-Modified refresh logic <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src-tauri/src/ingest/web.rs`
+- `ingest_url` Tauri command
+- Unit tests
+
+**Acceptance**:
+- [x] Can ingest Microsoft Learn, Apple Support
+- [x] Correctly extracts main content
+- [x] Respects depth parameter
+- [x] Enforces same-origin and page-count limits <!-- CODEX REVISION -->
+- [x] Blocks private IP URLs by default; allowlist/override works when enabled <!-- CODEX REVISION -->
+- [x] Handles network errors gracefully
+
+---
+
+### Phase 3: YouTube Ingestion (1 day) <!-- CODEX REVISION -->
+
+**Objectives**:
+- yt-dlp integration
+- VTT transcript parsing
+- Metadata extraction
+- Dependency checks, timeouts, and language selection <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src-tauri/src/ingest/youtube.rs`
+- `ingest_youtube` Tauri command
+- Unit tests
+
+**Acceptance**:
+- [x] Extracts transcript from captioned videos
+- [x] Clear error when yt-dlp not installed
+- [x] Stores video metadata
+- [x] Times out gracefully for stalled yt-dlp runs <!-- CODEX REVISION -->
+- [x] Clear error when transcripts are unavailable (no auto-captions) <!-- CODEX REVISION -->
+
+---
+
+### Phase 4: GitHub Ingestion (1.5 days) <!-- CODEX REVISION -->
+
+**Objectives**:
+- GitHub content retrieval (raw endpoints or API) <!-- CODEX REVISION -->
+- README and docs processing
+- Rate limit handling
+- Local repo ingestion option and file-type allowlist/size limits <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src-tauri/src/ingest/github.rs`
+- `ingest_github` Tauri command
+- Unit tests
+
+**Acceptance**:
+- [x] Fetches README from public repos
+- [x] Handles rate limiting gracefully
+- [x] Skips binary/oversized files and large repos safely <!-- CODEX REVISION -->
+- [x] Local repo ingestion works offline <!-- CODEX REVISION -->
+- [x] Private repos ingest with token; missing token returns clear error <!-- CODEX REVISION -->
+- [x] Local repo paths outside allowed roots are rejected <!-- CODEX REVISION -->
+
+---
+
+### Phase 5: Batch Processing (1 day) <!-- CODEX REVISION -->
+
+**Objectives**:
+- YAML source file parsing
+- Multi-source orchestration
+- Progress events
+- Concurrency limits and per-source run tracking <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src-tauri/src/sources/parser.rs`
+- `src-tauri/src/ingest/batch.rs`
+- `process_source_file` Tauri command
+- Example YAML files (documentation only; not auto-loaded) <!-- CODEX REVISION -->
+
+**Acceptance**:
+- [x] Parses valid YAML
+- [x] Emits progress events
+- [x] Partial failures don't abort batch
+- [x] Concurrency limit enforced <!-- CODEX REVISION -->
+
+---
+
+### Phase 6: UI - Content Ingestion Panel (2 days) <!-- CODEX REVISION -->
+
+**Objectives**:
+- New "Ingest" tab
+- Single-source ingestion UI
+- Batch import UI
+- Progress display
+- Dependency status (yt-dlp) and network/offline messaging <!-- CODEX REVISION -->
+- Private URL allowlist/toggle with explicit warning text <!-- CODEX REVISION -->
+- Privacy notice about local storage and sensitive data <!-- CODEX REVISION -->
+- GitHub token field in Settings for private repo access (secure storage, no logging) <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src/components/Ingest/IngestPanel.tsx`
+- `src/components/Ingest/UrlIngest.tsx`
+- `src/components/Ingest/YouTubeIngest.tsx`
+- `src/components/Ingest/GitHubIngest.tsx`
+- `src/components/Ingest/BatchIngest.tsx`
+- `src/hooks/useIngest.ts`
+
+**Acceptance**:
+- [x] All ingestion types work from UI
+- [x] Progress displays correctly
+- [x] Errors shown clearly
+- [x] Dependency/offline status visible for ingest actions <!-- CODEX REVISION -->
+- [x] Private URL allowlist is explicit and off by default <!-- CODEX REVISION -->
+- [x] Privacy notice is visible in ingest UI <!-- CODEX REVISION -->
+- [x] GitHub token field stores securely and is never logged <!-- CODEX REVISION -->
+
+---
+
+### Phase 7: UI - Knowledge Browser (1 day) <!-- CODEX REVISION -->
+
+**Objectives**:
+- Browse by namespace
+- View documents and chunks
+- Delete functionality
+- Namespace create/rename/delete and source refresh/disable controls <!-- CODEX REVISION -->
+- Provide a clear "Delete all knowledge data" action or verify existing equivalent in Settings. <!-- CODEX REVISION -->
+
+**Deliverables**:
+- `src/components/Knowledge/KnowledgeBrowser.tsx`
+- `src/hooks/useKnowledge.ts`
+- Backend `clear_knowledge_data` command and UI wiring <!-- CODEX REVISION -->
+
+**Acceptance**:
+- [x] Lists namespaces with counts
+- [x] Document/chunk browsing works
+- [x] Delete with confirmation
+- [x] Namespace create/rename/delete works with cascade behavior <!-- CODEX REVISION -->
+- [x] Clear-all knowledge data flow is available and confirmed <!-- CODEX REVISION -->
+
+---
+
+### Phase 8: Search Enhancement (1 day) <!-- CODEX REVISION -->
+
+**Objectives**:
+- Namespace filter in search
+- Source type in results
+- UI namespace selector
+- Apply namespace filter to both FTS and vector search paths (with oversampling fallback) <!-- CODEX REVISION -->
+- Provide FTS-only fallback when vector store disabled, with UI indicator <!-- CODEX REVISION -->
+
+**Deliverables**:
+- Updated `kb/search.rs`
+- Updated types
+- UI changes
+
+**Acceptance**:
+- [x] Search filters by namespace
+- [x] Results show source type
+- [x] Performance unchanged
+- [x] Vector results respect namespace filter (no cross-namespace leakage) <!-- CODEX REVISION -->
+- [x] FTS-only search works when vectors are disabled <!-- CODEX REVISION -->
+
+---
+
+### Phase 9: Testing & Polish (2 days) <!-- CODEX REVISION -->
+
+**Objectives**:
+- Integration tests
+- Performance testing
+- Documentation
+
+**Acceptance**:
+- [x] All tests pass (84 Rust + 72 frontend)
+- [x] Search < 200ms
+- [x] Offline mode has no background network calls and clear ingest errors <!-- CODEX REVISION -->
+- [x] Security/compliance tests pass (SSRF, XSS, logging hygiene, delete cascade) <!-- CODEX REVISION -->
+- [x] Ingest cancel stops work promptly and UI remains responsive <!-- CODEX REVISION -->
+- [x] README updated
+
+---
+
+### Phase 10: Portability (1 day) <!-- CODEX REVISION -->
+
+**Objectives**:
+- Verify vanilla deployment
+- .gitignore audit
+- Deployment documentation
+- Document optional dependencies (yt-dlp) and offline behavior <!-- CODEX REVISION -->
+
+**Acceptance**:
+- [x] Clean clone builds
+- [x] Fresh install works
+- [x] No secrets in repo
+- [x] No Docker references or dependencies introduced <!-- CODEX REVISION -->
+
+---
+
+## 7. Database Schema Changes
+
+### Schema Version 4 Migration <!-- CODEX REVISION -->
+
+```sql
+-- Namespace metadata
+CREATE TABLE namespaces (
+    name TEXT PRIMARY KEY,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+INSERT OR IGNORE INTO namespaces (name, description) VALUES ('default', 'Default namespace');
 
--- Decision trees (pre-built + custom)
-CREATE TABLE decision_trees (
+-- Ingestion sources + run tracking
+CREATE TABLE ingest_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    category TEXT,            -- 'auth', 'vpn', 'email', etc.
-    tree_json TEXT NOT NULL,  -- JSON structure of nodes/branches
-    source TEXT,              -- 'builtin', 'learned', 'custom'
-    created_at TEXT,
-    updated_at TEXT
+    source_type TEXT NOT NULL,
+    source_uri TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT 'default',
+    config_json TEXT,
+    enabled INTEGER DEFAULT 1,
+    last_indexed TEXT,
+    etag TEXT,
+    last_modified TEXT,
+    status TEXT,
+    error_message TEXT,
+    docs_created INTEGER DEFAULT 0,
+    chunks_created INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(namespace, source_type, source_uri)
 );
+CREATE INDEX idx_ingest_sources_namespace ON ingest_sources(namespace); <!-- CODEX REVISION -->
 
--- Learning stats (if enabled)
-CREATE TABLE learning_checklist_stats (
-    item_text_hash TEXT,       -- Normalized hash of checklist item
-    times_shown INTEGER,
-    times_checked INTEGER,
-    times_led_to_resolution INTEGER,
-    avg_time_to_check_ms INTEGER
+CREATE TABLE ingest_runs (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES ingest_sources(id) ON DELETE CASCADE,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    status TEXT NOT NULL,
+    docs_created INTEGER DEFAULT 0,
+    chunks_created INTEGER DEFAULT 0,
+    error_message TEXT
 );
-CREATE TABLE learning_tree_stats (
-    tree_id TEXT,
-    node_id TEXT,
-    times_visited INTEGER,
-    times_led_to_resolution INTEGER
+CREATE INDEX idx_ingest_runs_source_id ON ingest_runs(source_id); <!-- CODEX REVISION -->
+
+-- Rebuild kb_documents to support namespace-aware uniqueness
+CREATE TABLE kb_documents_new (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    title TEXT,
+    indexed_at TEXT,
+    chunk_count INTEGER,
+    ocr_quality TEXT,
+    partial_index INTEGER DEFAULT 0,
+    namespace TEXT NOT NULL DEFAULT 'default',
+    source_type TEXT NOT NULL DEFAULT 'file',
+    source_uri TEXT,
+    source_id TEXT REFERENCES ingest_sources(id) ON DELETE SET NULL,
+    mime_type TEXT,
+    byte_size INTEGER,
+    content_etag TEXT,
+    last_modified TEXT
 );
+CREATE UNIQUE INDEX idx_kb_docs_unique ON kb_documents_new(namespace, file_path);
+CREATE INDEX idx_kb_docs_namespace ON kb_documents_new(namespace);
+CREATE INDEX idx_kb_docs_source_id ON kb_documents_new(source_id); <!-- CODEX REVISION -->
 
--- NOTE: Vector embeddings stored in LanceDB (separate encrypted file)
--- ~/Library/Application Support/AssistSupport/vectors/chunks.lance/
+INSERT INTO kb_documents_new (id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality, partial_index, namespace, source_type)
+SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality, partial_index, 'default', 'file'
+FROM kb_documents;
+
+DROP TABLE kb_documents;
+ALTER TABLE kb_documents_new RENAME TO kb_documents;
+CREATE INDEX idx_kb_docs_path ON kb_documents(file_path);
+
+-- Add namespace to kb_chunks
+ALTER TABLE kb_chunks ADD COLUMN namespace TEXT DEFAULT 'default';
+CREATE INDEX idx_kb_chunks_namespace ON kb_chunks(namespace);
+UPDATE kb_chunks SET namespace = 'default' WHERE namespace IS NULL;
 ```
 
-**2. `/Users/d/AssistSupport/src-tauri/Cargo.toml`**
-- Add LanceDB dependency: `lancedb = "0.23"` (verified on crates.io)
-- Add SQLCipher-backed DB deps: `rusqlite` + `libsqlite3-sys` (build SQLCipher with FTS5)
-
-**Security dependencies (Cargo.toml)**
-- `aes-gcm` (verify version)
-- `argon2` (verify version)
-- `rand` (verify version)
-- `zeroize` (verify version)
-- `keyring` (verify version)
-
-### Verification
-```bash
-# Dev sanity (system sqlite3; not a release gate)
-sqlite3 ~/Library/Application\ Support/AssistSupport/assistsupport.db ".tables"
-sqlite3 ~/Library/Application\ Support/AssistSupport/assistsupport.db "SELECT sqlite_compileoption_used('SQLITE_ENABLE_FTS5');"
-```
-```
-# Release gate: in-app check via SQLCipher connection (Tauri command)
-check_fts5_enabled() -> true
-```
+**Vector store migration (LanceDB)**: add `namespace` (and `document_id`) fields to the vector table schema; rebuild the table and re-insert embeddings (fallback: re-embed all documents). <!-- CODEX REVISION -->
 
 ---
 
-## Phase 3: KB Indexer Module (Days 4-6)
+## 8. API Specifications
 
-### New Files to Create
+### New Tauri Commands
 
-**1. `/Users/d/AssistSupport/src-tauri/src/kb/mod.rs`**
-```rust
-pub mod indexer;
-pub mod embeddings;
-pub mod search;
-pub mod ocr;
-```
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `ingest_url` | url, namespace, depth?, allow_private?, allowed_hosts? | IngestResult <!-- CODEX REVISION --> |
+| `ingest_youtube` | url, namespace | IngestResult |
+| `ingest_github` | repo_or_path, namespace | IngestResult <!-- CODEX REVISION --> |
+| `process_source_file` | path | BatchResult |
+| `cancel_ingest` | ingest_run_id | () <!-- CODEX REVISION --> |
+| `list_namespaces` | - | Vec<NamespaceInfo> |
+| `create_namespace` | name, description? | () <!-- CODEX REVISION --> |
+| `rename_namespace` | old_name, new_name | () <!-- CODEX REVISION --> |
+| `delete_namespace` | name | () (cascades docs/chunks/vectors) <!-- CODEX REVISION --> |
+| `list_sources` | namespace? | Vec<IngestSource> <!-- CODEX REVISION --> |
+| `refresh_source` | source_id | IngestResult <!-- CODEX REVISION --> |
+| `delete_source` | source_id | () <!-- CODEX REVISION --> |
+| `list_documents` | namespace, source_id? | Vec<KbDocument> <!-- CODEX REVISION --> |
+| `list_document_chunks` | document_id | Vec<KbChunk> <!-- CODEX REVISION --> |
+| `delete_document` | document_id | () <!-- CODEX REVISION --> |
+| `clear_knowledge_data` | namespace? | () <!-- CODEX REVISION --> |
 
-**2. `/Users/d/AssistSupport/src-tauri/src/kb/indexer.rs`**
-- Scan folder for `.md` files
-- Parse Markdown with `pulldown-cmark` crate
-- Chunk by heading (H1/H2 boundaries)
-- Target 200-500 words per chunk
-- Track file hashes for incremental updates
+### Updated Commands
 
-**3. `/Users/d/AssistSupport/src-tauri/src/kb/ocr.rs`**
-- Define `OcrEngine` trait and provider selection
-- Providers:
-  - `VisionOcr` (macOS) via small Swift helper binary
-  - `TesseractOcr` (optional, if bundled/available)
-
-**4. Add to Cargo.toml**
-```toml
-pulldown-cmark = "0.9"    # Markdown parsing
-pdfium-render = "0.8"     # PDF text extraction (verify version)
-tesseract = "0.13"        # Optional OCR provider (feature-gated; enabled only in Tesseract DMG build)
-image = "0.25"            # Image decode for OCR pipeline
-```
-
-**Natively Indexed file types:**
-- `.md` - Markdown (primary)
-- `.pdf` - PDF documents (text + OCR for images)
-- `.txt` - Plain text
-- Images (.png, .jpg, .jpeg, .gif, .tif, .tiff) - OCR provider (Vision on macOS, Tesseract optional)
-
-**Convert & Import feature** (converts to Markdown, then indexes):
-- Confluence HTML exports → `scraper` crate, extract article content
-- Excel/Google Sheets (.xlsx, .csv) → `calamine` crate
-- Box notes → JSON parse + content extraction
-- HTML pages → `scraper` crate
-- Word documents (.docx) → `docx-rs` crate or zip + xml parsing
-
-**Implementation:**
-- Settings UI: "Import Files" button → native file picker (multi-select)
-- Progress bar for batch conversion
-- Converted files saved to KB folder as `.md`
-- Then indexed normally with file watcher
-
-### Cargo.toml additions
-```toml
-pulldown-cmark = "0.9"    # Markdown parsing
-pdfium-render = "0.8"     # PDF text extraction (verify version)
-tesseract = "0.13"        # Optional OCR provider (feature-gated; enabled only in Tesseract DMG build)
-image = "0.25"            # Image decode for OCR pipeline
-calamine = "0.24"         # Excel/CSV reading
-scraper = "0.18"          # HTML parsing
-zip = "0.6"               # For .docx (zip archive)
-quick-xml = "0.31"        # For .docx XML content
-```
-
-### Verification
-```bash
-# Index a test folder, verify chunks in database
-# Import a Confluence HTML export, verify conversion
-# Import an Excel file, verify rows become Markdown tables
-```
+| Command | Changes |
+|---------|---------|
+| `search_kb` | Add optional `namespace` parameter |
 
 ---
 
-## Phase 4: Embedding Engine (Days 6-7)
+## 9. UI/UX Specifications
 
-### New File
-
-**1. `/Users/d/AssistSupport/src-tauri/src/kb/embeddings.rs`**
-- Load separate embedding model (smaller than generation model)
-- Use llama-cpp-2 for embedding inference
-- Batch process chunks for efficiency (50 per batch)
-- Store embeddings in LanceDB `chunks` table
-
-### Recommended Models
-
-**Embedding Model** (separate, stays loaded for indexing):
-- Primary: `nomic-embed-text-v1.5.Q5_K_M.gguf` (~550MB, 768 dims)
-- Fallback: `bge-small-en-v1.5.Q8_0.gguf` (~130MB, 384 dims)
-
-**Generation Models** (test both, benchmark on your hardware):
-- Fast: `Llama-3.2-3B-Instruct.Q5_K_M.gguf` (~2.5GB) - fastest, good for simple responses
-- Balanced: `Qwen2.5-7B-Instruct.Q5_K_M.gguf` (~5.5GB) - best quality/speed tradeoff
-- Quality: `Qwen2.5-14B-Instruct.Q4_K_M.gguf` (~9GB) - higher quality, slower
-
-**RAM Budget** (48GB available):
-- Embedding model: ~1-2GB loaded
-- Generation model: ~6-12GB loaded
-- App + OS: ~4GB
-- **Headroom**: 20-30GB for other apps
-
----
-
-## Phase 5: Hybrid Search (Days 7-8)
-
-### New Files
-
-**1. `/Users/d/AssistSupport/src-tauri/src/kb/vectors.rs`**
-- Initialize LanceDB at `~/Library/Application Support/AssistSupport/vectors/`
-- Create `chunks` table with schema: `id: String, embedding: FixedSizeList[768]`
-- Enable encryption if supported; otherwise require explicit opt-in before enabling vector search
-- Implement `insert_embedding()`, `search_similar()`, `delete_by_id()`
-
-**2. `/Users/d/AssistSupport/src-tauri/src/kb/search.rs`**
-
-```rust
-pub async fn hybrid_search(query: &str, limit: usize) -> Vec<SearchResult> {
-    // 1. FTS5 keyword search (SQLite)
-    let keyword_results = fts5_search(query, limit * 2);
-
-    // 2. Vector similarity search (LanceDB)
-    let query_embedding = embed(query).await;
-    let semantic_results = lancedb_search(&query_embedding, limit * 2).await;
-
-    // 3. RRF fusion (k=60)
-    let fused = rrf_merge(keyword_results, semantic_results, 60);
-
-    // 4. Return top N with sources
-    fused.into_iter().take(limit).collect()
-}
-```
-- **FTS5 join**: Use `kb_fts.rowid = kb_chunks.rowid` to fetch chunk metadata
-
-### Performance Targets
-- FTS5 search: <50ms for 10K chunks
-- LanceDB search: <50ms for 100K vectors
-- Combined hybrid: <100ms total
-
-### Verification
-```bash
-# Search for "authentication error", verify:
-# - Both keyword and semantic matches returned
-# - Results properly de-duplicated by RRF
-# - Response time <100ms
-```
-
----
-
-## Phase 6: Generation Integration (Days 8-9)
-
-### Files to Modify
-
-**1. `/Users/d/AssistSupport/src-tauri/src/prompts.rs`**
-- Add KB context injection between OCR and user input
-- Format: `[Source: filename.md > Heading]\nContent...`
-
-**2. `/Users/d/AssistSupport/src-tauri/src/commands.rs`**
-- Add `search_kb` command
-- Add `index_kb` command
-- Add `set_kb_folder` command
-- Modify `generate` to optionally include KB context
-
-**3. `/Users/d/AssistSupport/src/App.tsx`**
-- Add KB folder selector in Settings tab
-- Add "Index KB" button with progress
-- Add Sources panel (in-app only, never in output)
-
----
-
-## Phase 7: Diagnostic Assistant (Days 8-10)
-
-### New Files
-
-**1. `/Users/d/AssistSupport/src-tauri/src/kb/diagnosis.rs`**
-- `generate_checklist()`: LLM generates troubleshooting steps from context
-- `find_similar_sessions()`: Search past diagnostic sessions by embedding similarity
-- `suggest_root_causes()`: LLM analyzes symptoms, returns causes + confidence
-- `generate_escalation_note()`: Format findings for Tier 2/3 handoff
-
-**2. `/Users/d/AssistSupport/src-tauri/src/kb/trees.rs`**
-- `DecisionTree` struct: nodes, branches, conditions
-- `load_builtin_trees()`: Auth, VPN, Email, SSO built-in trees
-- `detect_relevant_tree()`: Keyword/embedding match to suggest tree
-- `traverse_tree()`: Navigate based on user selections
-
-**3. `/Users/d/AssistSupport/src/components/DiagnosisPanel.tsx`**
-- Three sections: Checklist | Suggestions | Similar Tickets
-- Interactive checklist with notes field per item
-- Collapsible decision tree navigator
-- "Check Web for Outages" button
-
-**4. `/Users/d/AssistSupport/src/components/DecisionTree.tsx`**
-- Visual tree with current position highlighted
-- Click to navigate branches
-- Shows resolution when reaching leaf node
-
-### Built-in Decision Trees (JSON format)
-```json
-{
-  "id": "auth-failure",
-  "name": "Authentication Failure",
-  "category": "auth",
-  "nodes": [
-    {"id": "start", "text": "Can user reach login page?", "yes": "page-loads", "no": "network-issue"},
-    {"id": "page-loads", "text": "Does password field accept input?", "yes": "creds-check", "no": "browser-issue"},
-    ...
-  ]
-}
-```
-
-### Decision Tree Content Outlines
-
-**1. Authentication Failure** (~15 nodes)
-- Start: Can reach login page? → Network vs Auth issue
-- Check: Correct username format?
-- Check: Password expired?
-- Check: Account locked?
-- Check: MFA device available?
-- Resolution paths: Reset password, unlock account, re-enroll MFA
-
-**2. VPN / Network Connectivity** (~12 nodes)
-- Start: On corporate network or remote?
-- Check: VPN client installed and updated?
-- Check: Internet working without VPN?
-- Check: Can ping internal resources?
-- Resolution paths: Reinstall VPN, check firewall, contact network team
-
-**3. Email / Calendar Issues** (~15 nodes)
-- Start: Outlook desktop or web?
-- Check: Can send? Can receive? Both?
-- Check: Specific recipient or all?
-- Check: Calendar invites working?
-- Resolution paths: Repair Outlook, clear cache, check rules
-
-**4. Password Reset** (~8 nodes)
-- Start: Which system? (AD, Okta, app-specific)
-- Check: Self-service available?
-- Check: Security questions set up?
-- Resolution paths: Self-service reset, IT-assisted reset, manager approval
-
-**5. SSO / Single Sign-On** (~12 nodes)
-- Start: Which app failing?
-- Check: Other SSO apps working?
-- Check: Session expired?
-- Check: Browser cookies enabled?
-- Resolution paths: Clear SSO session, re-authenticate, check app assignment
-
-**6. Hardware** (~18 nodes)
-- Start: Laptop, monitor, keyboard, mouse, other?
-- Check: Power? Connections? Drivers?
-- Check: Under warranty?
-- Resolution paths: Troubleshooting steps, replacement request, repair
-
-**7. Software Installation** (~10 nodes)
-- Start: Self-Service Portal or IT request?
-- Check: Admin rights needed?
-- Check: Software approved?
-- Resolution paths: Portal install, request approval, IT ticket
-
-**8. Account Provisioning** (~10 nodes)
-- Start: New hire, role change, or access request?
-- Check: Manager approval obtained?
-- Check: Which systems needed?
-- Resolution paths: Submit request form, escalate to IAM team
-
-### Web Search Integration
-
-**Service Detection:**
-- Extract service names from ticket (Okta, Zoom, Slack, Microsoft 365, etc.)
-- Map to known status page URLs (configurable mapping table)
-- Default mappings for 20+ common enterprise services
-- Sanitize outbound queries (service names only, remove PII/ticket IDs)
-- Respect allowlist + proxy settings
-
-**Query Execution:**
-```rust
-async fn check_outages(services: Vec<&str>) -> Vec<OutageResult> {
-    // Run all queries in parallel with 5s timeout each
-    let futures = services.iter().map(|s| async {
-        let dd = scrape_downdetector(s);      // HTML parse
-        let status = fetch_status_page(s);    // JSON/RSS
-        let reddit = search_reddit_sysadmin(s); // JSON API (free)
-        let news = fetch_google_news_rss(s);  // RSS feed
-        join!(dd, status, reddit, news)
-    });
-    join_all(futures).await
-}
-```
-
-**Why no Twitter/X:**
-- X API requires paid Basic tier ($100/month)
-- OAuth complexity for a desktop app
-- Reddit + HN + Google News provide similar signal for free
-
-**Rate Limiting:**
-- Down Detector: Max 1 request per service per 5 minutes
-- Status pages: Max 1 request per page per 1 minute
-- Reddit/HN: Max 1 request per 10 seconds (respect API limits)
-- Cache results in memory for duration above
-- Show "cached X minutes ago" indicator
-
-**Result Display:**
-- Green: "No issues reported"
-- Yellow: "Some reports in last hour"
-- Red: "Widespread outage detected"
-- Show: Source, timestamp, report count, link to details
-
----
-
-## Phase 8: Polish (Days 10-12)
-
-- Add native file picker for KB folder (Tauri dialog API)
-- Add file watcher for auto-reindexing (`notify` crate)
-- Add indexing progress UI with cancel button
-- Keyboard shortcuts (Cmd+G generate, Cmd+C copy, Cmd+1/2/3/4 tabs)
-- Toast notifications for copy, index complete, errors
-- Benchmark and optimize (target <10s generation, <100ms search)
-- First-run experience with model download guidance
-
----
-
-## Architecture Overview
+### Navigation
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      AssistSupport                          │
-├─────────────────────────────────────────────────────────────┤
-│  React Frontend                                             │
-│  └─ Draft │ Follow-ups │ Sources │ Settings                │
-│     ├─ Input Panel                                          │
-│     ├─ Diagnosis Panel (checklists, trees, suggestions)    │
-│     └─ Response Panel                                       │
-├─────────────────────────────────────────────────────────────┤
-│  Tauri Backend (Rust)                                       │
-│  ├─ llm.rs ──────────► llama-cpp-2 (embedded, Metal GPU)   │
-│  ├─ kb/indexer.rs ───► Markdown/PDF parsing + chunking     │
-│  ├─ kb/embeddings.rs ► Embedding model (separate)          │
-│  ├─ kb/search.rs ────► FTS5 + LanceDB + RRF fusion         │
-│  ├─ kb/diagnosis.rs ─► Diagnostic assistant logic          │
-│  └─ prompts.rs ──────► Context injection                   │
-├─────────────────────────────────────────────────────────────┤
-│  Storage Layer                                              │
-│  ├─ SQLCipher (assistsupport.db) - encrypted               │
-│  │   ├─ drafts, followups, attachments                     │
-│  │   ├─ kb_documents, kb_chunks, kb_fts                    │
-│  │   └─ diagnostic_sessions, decision_trees                │
-│  └─ LanceDB (vectors/) - encrypted if supported             │
-│      └─ chunks.lance (768-dim embeddings)                   │
+│  Draft  │  Sources  │  Follow-ups  │  Ingest  │  Settings  │
 └─────────────────────────────────────────────────────────────┘
+                                        ▲
+                                        │ NEW TAB
 ```
 
----
+### Source Type Icons
 
-## Critical Files Summary
+| Type | Icon |
+|------|------|
+| File | 📄 |
+| URL | 🌐 |
+| YouTube | 🎬 |
+| GitHub | 🐙 |
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `src-tauri/Cargo.toml` | Modify | Add llama-cpp-2, lancedb, pulldown-cmark, pdfium-render |
-| `src-tauri/src/llm.rs` | Rewrite | Replace mock with real llama-cpp-2 |
-| `src-tauri/src/db.rs` | Modify | Add KB + diagnostic table migrations |
-| `src-tauri/src/kb/mod.rs` | Create | KB module root |
-| `src-tauri/src/kb/indexer.rs` | Create | Document parsing + chunking |
-| `src-tauri/src/kb/embeddings.rs` | Create | Embedding generation |
-| `src-tauri/src/kb/ocr.rs` | Create | OCR provider abstraction (Vision/Tesseract) |
-| `src-tauri/src/kb/search.rs` | Create | Hybrid search (FTS5 + LanceDB + RRF) |
-| `src-tauri/src/kb/vectors.rs` | Create | LanceDB operations |
-| `src-tauri/src/kb/diagnosis.rs` | Create | Diagnostic assistant logic |
-| `src-tauri/src/kb/trees.rs` | Create | Decision tree storage + traversal |
-| `src-tauri/src/commands.rs` | Modify | Add KB + diagnostic commands |
-| `src-tauri/src/prompts.rs` | Modify | Add KB context + diagnostic injection |
-| `src-tauri/src/lib.rs` | Modify | Register kb module |
-| `src/components/DiagnosisPanel.tsx` | Create | Diagnostic UI component |
-| `src/components/DecisionTree.tsx` | Create | Interactive tree visualization |
+### Namespace & Source Management UX <!-- CODEX REVISION -->
+
+- Namespace selector with create/rename/delete and safe-guard confirmations. <!-- CODEX REVISION -->
+- Ingest panel shows dependency status (yt-dlp) and offline/network errors. <!-- CODEX REVISION -->
+- Knowledge Browser surfaces source metadata (origin, last indexed, status) and refresh/disable actions. <!-- CODEX REVISION -->
+- Private URL allowlist toggle includes explicit warning about internal network access. <!-- CODEX REVISION -->
+- Clear-all knowledge data action is surfaced with strong confirmation. <!-- CODEX REVISION -->
+- Ingest UI includes a short privacy notice about local storage and sensitive content. <!-- CODEX REVISION -->
+- Search UI indicates when vector (semantic) search is disabled and FTS-only mode is used. <!-- CODEX REVISION -->
 
 ---
 
-## Verification Plan
+## 10. Testing Strategy
 
-**All verification items are release gates (go/no-go).**
+### Unit Tests
 
-1. **LLM works**: Load model, generate response in <10s
-2. **KB indexes**: Scan folder, parse Markdown, create chunks
-3. **FTS5 works**: Keyword search returns relevant chunks (<100ms)
-4. **Embeddings work**: Generate 768-dim vectors, store in LanceDB
-5. **Hybrid search works**: RRF combines FTS5 + LanceDB results (<100ms)
-6. **Integration works**: Generation uses KB context, sources hidden in output
-7. **Diagnostic works**: Checklist + suggestions populate from context
-8. **Decision trees work**: Navigate tree, auto-detect relevant tree
-9. **Similar tickets work**: Past sessions searchable, similarity matching
-10. **Encryption works**: SQLCipher + vectors encrypted if supported, otherwise warning + explicit opt-in
+| Module | Priority |
+|--------|----------|
+| `ingest/web.rs` | High |
+| `ingest/youtube.rs` | High |
+| `ingest/github.rs` | Medium |
+| `sources/parser.rs` | Medium |
+| `db.rs` (migration) | High |
+| `kb/search.rs` | High |
+| `ingest/pipeline.rs` | High <!-- CODEX REVISION --> |
+| `ingest/http.rs` | Medium <!-- CODEX REVISION --> |
+| `kb/indexer.rs` (namespace + txn paths) | Medium <!-- CODEX REVISION --> |
 
----
+### Integration Tests
 
-## Fallback Strategies
+| Test | Verification |
+|------|--------------|
+| Web → Search | Query returns ingested chunks |
+| YouTube → Search | Query returns transcript |
+| Namespace isolation | Filtered search works |
+| Migration | Existing data preserved |
+| Offline ingest | Clear error with no background network calls <!-- CODEX REVISION --> |
+| Delete cascade | Deleting namespace/source removes chunks + vectors <!-- CODEX REVISION --> |
+| Private GitHub | Private repo ingests succeed with token; clear error without token <!-- CODEX REVISION --> |
+| Vector disabled | FTS-only indexing works when vector store is disabled <!-- CODEX REVISION --> |
 
-| Issue | Fallback |
-|-------|----------|
-| llama-cpp-2 build fails | Keep LLM disabled with setup guidance and diagnostics |
-| LanceDB issues | FTS5-only search (no semantic, still useful) |
-| LanceDB encryption unsupported | Warn user, require explicit opt-in for unencrypted vectors, otherwise disable vector search |
-| Embedding too slow | Use smaller model (bge-small-en, 384 dims) |
-| Metal not available | CPU inference (slower but functional) |
-| PDF extraction fails | Try OCR provider, skip if still fails |
-| Keychain unavailable | Prompt for passphrase, store wrapped key in DB |
-| Web search fails | Show "unable to check" message, continue locally |
+### Security & Compliance Tests <!-- CODEX REVISION -->
 
----
-
-## Estimated Timeline
-
-Building in **4 phases** with clear milestones (plus Phase 0A/0B pre-work):
-
-### Phase A: Foundation (Week 1-2)
-| Task | Days | Deliverable | Risk |
-|------|------|-------------|------|
-| 1. LLM Integration | 3-4 | Real llama-cpp-2 inference working | High - crate build issues |
-| 2. DB Schema Migration | 1-2 | All new tables created | Low |
-| 3. Model Loading UI | 2-3 | File picker + download manager + wizard step 1-3 | Low |
-| 4. Settings Tab Refactor | 2-3 | Accordion sections working | Low |
-
-**Milestone A**: Can load model, generate response, see streaming output
-
-### Phase B: Knowledge Base (Week 2-3)
-| Task | Days | Deliverable | Risk |
-|------|------|-------------|------|
-| 5. KB Indexer | 3-4 | Markdown + PDF parsing, chunking | Medium |
-| 6. FTS5 Search | 2-3 | Keyword search working | Low |
-| 7. Embedding Engine | 3-4 | Nomic model, batch embedding | Medium |
-| 8. LanceDB Integration | 3-4 | Vector store + queries | High - new crate |
-| 9. Hybrid Search + RRF | 2-3 | Combined results | Low |
-
-**Milestone B**: KB indexed, hybrid search returns results, sources shown
-
-### Phase C: Diagnostic Assistant (Week 3-4)
-| Task | Days | Deliverable | Risk |
-|------|------|-------------|------|
-| 10. Three-Panel UI | 3-4 | Draggable, collapsible panels | Medium |
-| 11. Checklist Component | 2-3 | LLM-generated, interactive | Low |
-| 12. Decision Trees (4 of 8) | 4-5 | Auth, VPN, Email, Password | Content work |
-| 13. Similar Tickets | 3-4 | Embedding similarity matching | Medium |
-| 14. Web Search | 3-4 | Down Detector, status pages | Medium - scraping |
-
-**Milestone C**: Full diagnostic workflow works end-to-end
-
-### Phase D: Polish (Week 4-5)
-| Task | Days | Deliverable | Risk |
-|------|------|-------------|------|
-| 15. Decision Trees (4 more) | 3-4 | SSO, Hardware, Software, Provisioning | Content work |
-| 16. Escalation Notes | 2-3 | Template generation | Low |
-| 17. Learning System | 2-3 | Stats tracking + ranking | Low |
-| 18. Export/Import | 2-3 | Backup/restore working | Low |
-| 19. Keyboard Shortcuts | 1-2 | All shortcuts wired | Low |
-| 20. First-Run Wizard | 2-3 | Complete setup flow | Low |
-| 21. Testing + Fixes | 3-5 | All tests/benchmarks pass | Variable |
-
-**Milestone D**: Formal go/no-go review, production-ready if all gates pass
+| Test | Verification |
+|------|--------------|
+| SSRF block | Private/loopback/link-local URLs rejected by default <!-- CODEX REVISION --> |
+| Allowlist override | Private URL succeeds only when allowlist/toggle set <!-- CODEX REVISION --> |
+| XSS rendering | Ingested HTML is not executed in UI <!-- CODEX REVISION --> |
+| Logging hygiene | Logs contain no URL bodies or transcript content <!-- CODEX REVISION --> |
+| Data deletion | Namespace/source/document delete removes DB rows and vectors <!-- CODEX REVISION --> |
 
 ---
 
-**Total: ~5 weeks** (25 working days, assumes some parallel work)
+## 11. Risk Assessment
 
-**Buffer**: Add 1 week for unexpected issues = **6 weeks total**
-**Note**: Formal QA gates can extend timeline if any failures occur
-
-**Critical Path**: Project Bootstrap → Platform + Security Spike → LLM Integration → Embedding Engine → LanceDB → Hybrid Search
-- If any of these block, everything after is delayed
-- Recommend: Spike LLM + LanceDB crates in first 2 days
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| yt-dlp breaking changes | Medium | Medium | Version pin |
+| GitHub rate limiting | High | High | Rate limiter, backoff |
+| Large content OOM | High | Low | Size limits |
+| Migration failure | High | Low | Auto backup |
+| yt-dlp not installed | Medium | High | Dependency check + clear install guidance <!-- CODEX REVISION --> |
+| XSS from ingested HTML | High | Medium | Sanitize/disable HTML rendering in UI <!-- CODEX REVISION --> |
+| Huge repos/crawls | High | Medium | `max_files`/`max_pages`/`max_total_bytes` caps <!-- CODEX REVISION --> |
+| Vector store unencrypted | High | Medium | Keep disabled by default, require explicit consent <!-- CODEX REVISION --> |
+| Network restrictions/proxy | Medium | Medium | Respect system proxy, offline errors are explicit <!-- CODEX REVISION --> |
+| SSRF / private network access | High | Medium | Block private IPs by default; allowlist only with explicit user opt-in <!-- CODEX REVISION --> |
+| GDPR/US privacy non-compliance | High | Low | Local-only processing, explicit deletion/export, no telemetry <!-- CODEX REVISION --> |
+| JS-rendered pages not captured | Medium | Medium | Document limitation; recommend file-based ingestion for dynamic sites <!-- CODEX REVISION --> |
+| GitHub token leakage | High | Low | Secure storage only; never log tokens; redact in error paths <!-- CODEX REVISION --> |
+| Partial ingest leaving orphan chunks | Medium | Medium | Wrap ingest per document in transaction; delete on failure <!-- CODEX REVISION --> |
+| Embeddings unavailable | Medium | Low | Fall back to FTS-only indexing with warnings <!-- CODEX REVISION --> |
 
 ---
 
-## First-Run Experience
+## 12. Security & Compliance Requirements <!-- CODEX REVISION -->
 
-**Guided Setup Wizard** (modal on first launch):
+- **Data locality**: All processing remains local; no telemetry or remote storage. Network use is ingestion-only and user-initiated. <!-- CODEX REVISION -->
+- **No telemetry**: Do not collect or transmit analytics; logs are local only. <!-- CODEX REVISION -->
+- **GDPR alignment**: Purpose limitation (support workflows only), data minimization (ingest only what is needed), storage limitation (deletion controls), integrity/confidentiality (encryption, access control), and transparency via UI labels. <!-- CODEX REVISION -->
+- **US privacy alignment**: Provide clear local storage notice and user controls to delete/export data (aligns with CPRA/CCPA, CPA, VCDPA, CTDPA, UCPA principles). <!-- CODEX REVISION -->
+- **PII handling**: Treat ingested content as potentially sensitive; avoid logging content or URLs; store only required metadata. <!-- CODEX REVISION -->
+- **Credential handling**: Any optional tokens (GitHub) use existing secure storage and are never logged. <!-- CODEX REVISION -->
+- **User notice**: Ingest UI displays a brief notice that content is stored locally and may contain sensitive data. <!-- CODEX REVISION -->
+- **Encryption**: SQLCipher for DB; encrypted backups; vector store remains opt-in with explicit consent due to lack of encryption support. <!-- CODEX REVISION -->
+- **Network safety**: Block private/loopback/link-local IPs by default; allowlist/override requires explicit user action and warning. <!-- CODEX REVISION -->
+- **Private IP ranges**: IPv4 RFC1918, loopback, link-local; IPv6 loopback, link-local, and ULA ranges. <!-- CODEX REVISION -->
+- **Content safety**: Render Markdown with HTML disabled/sanitized to prevent XSS. <!-- CODEX REVISION -->
+- **Data deletion**: Namespace/source/document deletion cascades to chunks and vectors; provide “clear all data” path if not already present. <!-- CODEX REVISION -->
+- **Data portability**: Existing backup/export functions provide user-controlled data export for GDPR access/portability. <!-- CODEX REVISION -->
+- **Retention**: Default is manual deletion; no automatic retention policy in this phase (documented). <!-- CODEX REVISION -->
+- **Transport security**: TLS verification required; no insecure TLS overrides. <!-- CODEX REVISION -->
 
-### Step 1: Welcome
-- Brief explanation: "AssistSupport needs a local AI model to generate responses"
-- In-app download option (recommended models) or manual import
-- Optional HuggingFace token field for gated models
+---
 
-### Step 2: Select Generation Model
-- Native file picker for `.gguf` file or pick from downloaded models
-- Show file size, verify it's a valid GGUF
-- SHA256 checksum verification (optional, show progress)
-- Recommended: `Qwen2.5-7B-Instruct.Q5_K_M.gguf`
+## 13. Rollback Plan <!-- CODEX REVISION -->
 
-### Step 3: Test Generation
-- Auto-run a test prompt: "Say hello in one sentence"
-- Show: tokens/sec, total time, success/fail
-- If fails: offer troubleshooting (wrong model type, insufficient RAM)
-- "Model loaded successfully! ✓"
+1. **Database**: Restore from automatic pre-migration backup
+2. **Vector store**: Restore `vectors/` backup or disable vector search and reindex <!-- CODEX REVISION -->
+3. **Code**: `git checkout <previous-tag>`
+4. **Full rebuild**: `pnpm install && pnpm tauri build`
 
-### Step 4: Select Embedding Model (Optional)
-- Explain: "For KB search, you need a separate embedding model"
-- Skip option: "I'll set this up later"
-- Recommended: `nomic-embed-text-v1.5.Q5_K_M.gguf`
+---
 
-### Step 5: Select KB Folder (Optional)
-- Explain: "Point to your runbooks/docs folder for context-aware responses"
-- Skip option: "I'll set this up later"
-- Native folder picker
+## 14. Dependencies <!-- CODEX REVISION -->
 
-### Step 6: Ready!
-- Summary of what's configured
-- "Get Started" → goes to Draft tab
+### Rust (Cargo.toml)
 
-**Graceful degradation**:
-- No generation model → show wizard again
-- No embedding model → KB indexing disabled, FTS5-only search
-- No KB folder → Generation works without KB context
+```toml
+reqwest = { version = "0.12", features = ["stream"] } <!-- CODEX REVISION -->
+scraper = "0.18"
+html2md = "0.2"
+url = "2"
+serde_yaml = "0.9" <!-- CODEX REVISION -->
+```
 
-**Streaming Display**: Word-by-word
-- Buffer tokens until whitespace, display complete words
-- Better UX than character-by-character (less jittery)
-- Faster perceived response than sentence chunks
+### External
+
+| Dependency | Purpose | Installation |
+|------------|---------|--------------|
+| yt-dlp | YouTube transcripts | `brew install yt-dlp` |
+| git (optional) | Local repo ingestion | Preinstalled on macOS or via Xcode CLT <!-- CODEX REVISION --> |
+
+**Explicitly not used**: Docker (no container runtime required or permitted). <!-- CODEX REVISION -->
+
+---
+
+## 15. Success Metrics & Confidence Gates <!-- CODEX REVISION -->
+
+| Metric | Target |
+|--------|--------|
+| Web ingestion success | >95% |
+| YouTube ingestion success | >90% |
+| Search latency (p95) | <200ms |
+| Test coverage | >80% |
+| Offline behavior | No background network calls; ingest returns clear offline error <!-- CODEX REVISION --> |
+
+### Confidence Gates <!-- CODEX REVISION -->
+
+- **Migration proof**: Run v4 migration on a seeded DB; verify `(namespace, file_path)` uniqueness, FTS triggers, and default namespace population. <!-- CODEX REVISION -->
+- **Vector isolation proof**: Rebuild LanceDB table with `namespace` metadata; add test to ensure zero cross-namespace hits. <!-- CODEX REVISION -->
+- **Offline/SSRF proof**: Confirm no background network calls; private IP URLs blocked by default; allowlist works when enabled. <!-- CODEX REVISION -->
+- **Ingestion reliability**: Web/YouTube/GitHub integration tests cover size limits, rate limits, and missing transcripts. <!-- CODEX REVISION -->
+- **Private GitHub proof**: Private repo ingest works with token and fails cleanly without one. <!-- CODEX REVISION -->
+- **Security proof**: Markdown rendering is HTML-sanitized; logs contain no content/PII; vector store opt-in is enforced. <!-- CODEX REVISION -->
+- **Compliance signoff**: Security/compliance checklist reviewed and approved by engineering lead. <!-- CODEX REVISION -->
+
+---
+
+## 16. Appendix <!-- CODEX REVISION -->
+
+### Migration Runbook (DB + Vectors) <!-- CODEX REVISION -->
+
+1. Create automatic backups: `assistsupport.db` and `vectors/` directory. <!-- CODEX REVISION -->
+2. Run schema migration v4; verify `namespaces` contains `default`. <!-- CODEX REVISION -->
+3. Validate counts: `kb_documents`/`kb_chunks` before and after; ensure no data loss. <!-- CODEX REVISION -->
+4. Rebuild LanceDB table with `namespace` + `document_id` fields; reinsert embeddings. <!-- CODEX REVISION -->
+5. Run smoke tests: namespace-filtered search, delete cascade, and offline ingest error. <!-- CODEX REVISION -->
+6. If any validation fails, restore backups and abort release. <!-- CODEX REVISION -->
+
+### File Structure After Implementation
+
+```
+src-tauri/src/
+├── ingest/              # NEW
+│   ├── mod.rs
+│   ├── types.rs         # Ingest result/error types <!-- CODEX REVISION -->
+│   ├── http.rs          # Shared HTTP client + limits <!-- CODEX REVISION -->
+│   ├── web.rs
+│   ├── youtube.rs
+│   ├── github.rs
+│   └── batch.rs
+├── sources/             # NEW
+│   ├── mod.rs
+│   └── parser.rs
+├── kb/                  # ENHANCED
+│   └── search.rs        # + namespace filtering
+└── db.rs                # Schema v4
+
+src/components/
+├── Ingest/              # NEW
+│   ├── IngestPanel.tsx
+│   ├── UrlIngest.tsx
+│   ├── YouTubeIngest.tsx
+│   ├── GitHubIngest.tsx
+│   └── BatchIngest.tsx
+└── Knowledge/           # NEW
+    ├── KnowledgeBrowser.tsx
+    └── ...
+
+sources/                 # NEW
+├── it-support.yaml
+├── coding.yaml
+└── finance.yaml
+                         # Sample definitions only; not auto-loaded <!-- CODEX REVISION -->
+```
+
+### Total Estimated Effort: ~14 days <!-- CODEX REVISION -->
+
+---
+
+**END OF DOCUMENT**

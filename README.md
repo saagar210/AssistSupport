@@ -11,6 +11,13 @@ A local-first AI-powered customer support response generator built with Tauri, R
 - **OCR Support**: Extract text from screenshots and scanned PDFs using macOS Vision framework
 - **Decision Trees**: Guided diagnostic workflows for common support scenarios
 
+### Content Ingestion
+- **Web Pages**: Fetch and index public web content with SSRF protection
+- **YouTube Transcripts**: Extract and index video transcripts (requires yt-dlp)
+- **GitHub Repositories**: Index documentation from local or remote repos
+- **Batch Import**: YAML-based batch ingestion with configurable crawl depth
+- **Namespace Organization**: Organize knowledge into separate namespaces
+
 ### Productivity
 - **Draft Management**: Save, search, and organize response drafts with autosave
 - **Template Variables**: Define custom variables (`{{company_name}}`) for consistent responses
@@ -49,6 +56,9 @@ A local-first AI-powered customer support response generator built with Tauri, R
 - pnpm (or npm)
 - macOS (for Vision OCR and Metal acceleration)
 
+### Optional Dependencies
+- **yt-dlp**: Required for YouTube transcript ingestion (`brew install yt-dlp`)
+
 ### Setup
 ```bash
 # Install dependencies
@@ -82,11 +92,13 @@ All development phases are complete:
 - Vector search pipeline with hybrid search
 - Decision tree integration
 - Jira deep integration
+- Content ingestion (web, YouTube, GitHub, batch import)
+- Knowledge browser with namespace management
 - UI/UX polish (error boundaries, accessibility, export/import)
 - Performance optimizations (parallel search, background indexing)
-- Security hardening (token protection, input validation)
+- Security hardening (SSRF protection, token protection, input validation)
 - Advanced features (code indexing, file watching, PDF OCR)
-- Test coverage (72 frontend, 59 backend tests passing)
+- Test coverage (72 frontend, 84 backend tests passing)
 
 The development roadmap and implementation history are tracked in the project planning files.
 

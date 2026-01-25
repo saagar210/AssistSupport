@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result as SqliteResult, params};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-const CURRENT_SCHEMA_VERSION: i32 = 3;
+const CURRENT_SCHEMA_VERSION: i32 = 4;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -161,6 +161,10 @@ impl Database {
 
         if from_version < 3 {
             self.migrate_v3()?;
+        }
+
+        if from_version < 4 {
+            self.migrate_v4()?;
         }
 
         tx.commit()?;
@@ -361,6 +365,148 @@ impl Database {
                 r#"
                 -- Add model_name column to track which model generated each response
                 ALTER TABLE drafts ADD COLUMN model_name TEXT;
+                "#,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Migration to v4: Add namespaces, ingest sources, and update kb tables
+    fn migrate_v4(&self) -> Result<(), DbError> {
+        // Create namespaces table
+        self.conn.execute_batch(
+            r#"
+            -- Namespaces for organizing content
+            CREATE TABLE IF NOT EXISTS namespaces (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                color TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            -- Insert default namespace
+            INSERT OR IGNORE INTO namespaces (id, name, description, color, created_at, updated_at)
+            VALUES ('default', 'Default', 'Default namespace for all content', '#6366f1', datetime('now'), datetime('now'));
+
+            -- Ingest sources (web URLs, YouTube videos, GitHub repos)
+            CREATE TABLE IF NOT EXISTS ingest_sources (
+                id TEXT PRIMARY KEY,
+                source_type TEXT NOT NULL CHECK(source_type IN ('web', 'youtube', 'github', 'file')),
+                source_uri TEXT NOT NULL,
+                namespace_id TEXT NOT NULL DEFAULT 'default',
+                title TEXT,
+                etag TEXT,
+                last_modified TEXT,
+                content_hash TEXT,
+                last_ingested_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'stale', 'error', 'removed')),
+                error_message TEXT,
+                metadata_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (namespace_id) REFERENCES namespaces(id) ON DELETE CASCADE,
+                UNIQUE(source_type, source_uri, namespace_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ingest_sources_namespace ON ingest_sources(namespace_id);
+            CREATE INDEX IF NOT EXISTS idx_ingest_sources_type ON ingest_sources(source_type);
+            CREATE INDEX IF NOT EXISTS idx_ingest_sources_status ON ingest_sources(status);
+
+            -- Ingest runs (track ingest operations)
+            CREATE TABLE IF NOT EXISTS ingest_runs (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+                documents_added INTEGER DEFAULT 0,
+                documents_updated INTEGER DEFAULT 0,
+                documents_removed INTEGER DEFAULT 0,
+                chunks_added INTEGER DEFAULT 0,
+                error_message TEXT,
+                FOREIGN KEY (source_id) REFERENCES ingest_sources(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ingest_runs_source ON ingest_runs(source_id);
+            CREATE INDEX IF NOT EXISTS idx_ingest_runs_started ON ingest_runs(started_at DESC);
+
+            -- GitHub tokens (encrypted, stored separately for security)
+            CREATE TABLE IF NOT EXISTS github_tokens (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                encrypted_token BLOB,
+                token_name TEXT,
+                created_at TEXT,
+                last_used_at TEXT
+            );
+            INSERT OR IGNORE INTO github_tokens (id) VALUES (1);
+
+            -- Network allowlist for SSRF protection override
+            CREATE TABLE IF NOT EXISTS network_allowlist (
+                id TEXT PRIMARY KEY,
+                host_pattern TEXT NOT NULL UNIQUE,
+                reason TEXT,
+                created_at TEXT NOT NULL
+            );
+            "#,
+        )?;
+
+        // Check if namespace column already exists in kb_documents
+        let has_namespace_col: bool = self
+            .conn
+            .prepare("PRAGMA table_info(kb_documents)")?
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                Ok(name)
+            })?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "namespace_id");
+
+        if !has_namespace_col {
+            // Add new columns to kb_documents
+            self.conn.execute_batch(
+                r#"
+                -- Add namespace and source columns to kb_documents
+                ALTER TABLE kb_documents ADD COLUMN namespace_id TEXT NOT NULL DEFAULT 'default';
+                ALTER TABLE kb_documents ADD COLUMN source_type TEXT NOT NULL DEFAULT 'file';
+                ALTER TABLE kb_documents ADD COLUMN source_id TEXT;
+
+                -- Update existing documents to have default namespace
+                UPDATE kb_documents SET namespace_id = 'default' WHERE namespace_id = 'default';
+
+                -- Create unique index on (namespace_id, file_path) replacing file_path UNIQUE
+                DROP INDEX IF EXISTS idx_kb_docs_path;
+                CREATE UNIQUE INDEX idx_kb_docs_namespace_path ON kb_documents(namespace_id, file_path);
+                CREATE INDEX idx_kb_docs_source ON kb_documents(source_id);
+                "#,
+            )?;
+        }
+
+        // Check if namespace column already exists in kb_chunks
+        let has_chunk_namespace: bool = self
+            .conn
+            .prepare("PRAGMA table_info(kb_chunks)")?
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                Ok(name)
+            })?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "namespace_id");
+
+        if !has_chunk_namespace {
+            // Add namespace column to kb_chunks
+            self.conn.execute_batch(
+                r#"
+                -- Add namespace column to kb_chunks for faster filtering
+                ALTER TABLE kb_chunks ADD COLUMN namespace_id TEXT NOT NULL DEFAULT 'default';
+
+                -- Update chunks with namespace from their parent documents
+                UPDATE kb_chunks SET namespace_id = (
+                    SELECT namespace_id FROM kb_documents WHERE kb_documents.id = kb_chunks.document_id
+                );
+
+                -- Create index for namespace filtering
+                CREATE INDEX IF NOT EXISTS idx_kb_chunks_namespace ON kb_chunks(namespace_id);
                 "#,
             )?;
         }
@@ -912,6 +1058,589 @@ impl Database {
             |row| row.get(0),
         ).map_err(DbError::Sqlite)
     }
+
+    // ============================================================================
+    // Namespace Methods
+    // ============================================================================
+
+    /// List all namespaces
+    pub fn list_namespaces(&self) -> Result<Vec<Namespace>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, color, created_at, updated_at
+             FROM namespaces ORDER BY name"
+        )?;
+
+        let namespaces = stmt.query_map([], |row| {
+            Ok(Namespace {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(namespaces)
+    }
+
+    /// Get a namespace by ID
+    pub fn get_namespace(&self, namespace_id: &str) -> Result<Namespace, DbError> {
+        self.conn.query_row(
+            "SELECT id, name, description, color, created_at, updated_at
+             FROM namespaces WHERE id = ?",
+            [namespace_id],
+            |row| Ok(Namespace {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        ).map_err(DbError::Sqlite)
+    }
+
+    /// Create or update a namespace
+    pub fn save_namespace(&self, namespace: &Namespace) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO namespaces (id, name, description, color, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                color = excluded.color,
+                updated_at = excluded.updated_at",
+            params![
+                namespace.id,
+                namespace.name,
+                namespace.description,
+                namespace.color,
+                namespace.created_at,
+                namespace.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a namespace (and all its content)
+    pub fn delete_namespace(&self, namespace_id: &str) -> Result<(), DbError> {
+        if namespace_id == "default" {
+            return Err(DbError::Migration("Cannot delete default namespace".into()));
+        }
+        // Cascade delete: documents -> chunks are handled by ON DELETE CASCADE
+        // Delete documents first
+        self.conn.execute("DELETE FROM kb_documents WHERE namespace_id = ?", [namespace_id])?;
+        // Delete ingest sources
+        self.conn.execute("DELETE FROM ingest_sources WHERE namespace_id = ?", [namespace_id])?;
+        // Delete namespace
+        self.conn.execute("DELETE FROM namespaces WHERE id = ?", [namespace_id])?;
+        Ok(())
+    }
+
+    /// Create a new namespace with name, description, and color
+    pub fn create_namespace(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        color: Option<&str>,
+    ) -> Result<Namespace, DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let id = name.to_lowercase().replace(' ', "-");
+
+        let namespace = Namespace {
+            id: id.clone(),
+            name: name.to_string(),
+            description: description.map(|s| s.to_string()),
+            color: color.map(|s| s.to_string()),
+            created_at: now.clone(),
+            updated_at: now,
+        };
+
+        self.save_namespace(&namespace)?;
+        Ok(namespace)
+    }
+
+    /// Ensure a namespace exists, creating it if necessary
+    pub fn ensure_namespace_exists(&self, namespace_id: &str) -> Result<(), DbError> {
+        // Check if exists
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM namespaces WHERE id = ?)",
+            [namespace_id],
+            |row| row.get(0),
+        )?;
+
+        if !exists {
+            let now = chrono::Utc::now().to_rfc3339();
+            self.conn.execute(
+                "INSERT INTO namespaces (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                params![namespace_id, namespace_id, now, now],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Rename a namespace (updates all references)
+    pub fn rename_namespace(&self, old_id: &str, new_id: &str) -> Result<(), DbError> {
+        if old_id == "default" {
+            return Err(DbError::Migration("Cannot rename default namespace".into()));
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let new_id_normalized = new_id.to_lowercase().replace(' ', "-");
+
+        // Update namespace
+        self.conn.execute(
+            "UPDATE namespaces SET id = ?, name = ?, updated_at = ? WHERE id = ?",
+            params![new_id_normalized, new_id, now, old_id],
+        )?;
+
+        // Update references in documents
+        self.conn.execute(
+            "UPDATE kb_documents SET namespace_id = ? WHERE namespace_id = ?",
+            params![new_id_normalized, old_id],
+        )?;
+
+        // Update references in chunks
+        self.conn.execute(
+            "UPDATE kb_chunks SET namespace_id = ? WHERE namespace_id = ?",
+            params![new_id_normalized, old_id],
+        )?;
+
+        // Update references in ingest sources
+        self.conn.execute(
+            "UPDATE ingest_sources SET namespace_id = ? WHERE namespace_id = ?",
+            params![new_id_normalized, old_id],
+        )?;
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // Ingest Source Methods
+    // ============================================================================
+
+    /// List ingest sources, optionally filtered by namespace
+    pub fn list_ingest_sources(&self, namespace_id: Option<&str>) -> Result<Vec<IngestSource>, DbError> {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<IngestSource> {
+            Ok(IngestSource {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                source_uri: row.get(2)?,
+                namespace_id: row.get(3)?,
+                title: row.get(4)?,
+                etag: row.get(5)?,
+                last_modified: row.get(6)?,
+                content_hash: row.get(7)?,
+                last_ingested_at: row.get(8)?,
+                status: row.get(9)?,
+                error_message: row.get(10)?,
+                metadata_json: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        };
+
+        let sources: Vec<IngestSource> = match namespace_id {
+            Some(ns) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                            content_hash, last_ingested_at, status, error_message, metadata_json,
+                            created_at, updated_at
+                     FROM ingest_sources WHERE namespace_id = ? ORDER BY created_at DESC"
+                )?;
+                let result: Vec<IngestSource> = stmt.query_map([ns], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            None => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                            content_hash, last_ingested_at, status, error_message, metadata_json,
+                            created_at, updated_at
+                     FROM ingest_sources ORDER BY created_at DESC"
+                )?;
+                let result: Vec<IngestSource> = stmt.query_map([], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+        };
+
+        Ok(sources)
+    }
+
+    /// Get an ingest source by ID
+    pub fn get_ingest_source(&self, source_id: &str) -> Result<IngestSource, DbError> {
+        self.conn.query_row(
+            "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                    content_hash, last_ingested_at, status, error_message, metadata_json,
+                    created_at, updated_at
+             FROM ingest_sources WHERE id = ?",
+            [source_id],
+            |row| Ok(IngestSource {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                source_uri: row.get(2)?,
+                namespace_id: row.get(3)?,
+                title: row.get(4)?,
+                etag: row.get(5)?,
+                last_modified: row.get(6)?,
+                content_hash: row.get(7)?,
+                last_ingested_at: row.get(8)?,
+                status: row.get(9)?,
+                error_message: row.get(10)?,
+                metadata_json: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        ).map_err(DbError::Sqlite)
+    }
+
+    /// Find an ingest source by URI and namespace
+    pub fn find_ingest_source(&self, source_type: &str, source_uri: &str, namespace_id: &str) -> Result<Option<IngestSource>, DbError> {
+        match self.conn.query_row(
+            "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+                    content_hash, last_ingested_at, status, error_message, metadata_json,
+                    created_at, updated_at
+             FROM ingest_sources WHERE source_type = ? AND source_uri = ? AND namespace_id = ?",
+            params![source_type, source_uri, namespace_id],
+            |row| Ok(IngestSource {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                source_uri: row.get(2)?,
+                namespace_id: row.get(3)?,
+                title: row.get(4)?,
+                etag: row.get(5)?,
+                last_modified: row.get(6)?,
+                content_hash: row.get(7)?,
+                last_ingested_at: row.get(8)?,
+                status: row.get(9)?,
+                error_message: row.get(10)?,
+                metadata_json: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        ) {
+            Ok(source) => Ok(Some(source)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    /// Save an ingest source
+    pub fn save_ingest_source(&self, source: &IngestSource) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO ingest_sources (id, source_type, source_uri, namespace_id, title, etag,
+                    last_modified, content_hash, last_ingested_at, status, error_message,
+                    metadata_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                etag = excluded.etag,
+                last_modified = excluded.last_modified,
+                content_hash = excluded.content_hash,
+                last_ingested_at = excluded.last_ingested_at,
+                status = excluded.status,
+                error_message = excluded.error_message,
+                metadata_json = excluded.metadata_json,
+                updated_at = excluded.updated_at",
+            params![
+                source.id,
+                source.source_type,
+                source.source_uri,
+                source.namespace_id,
+                source.title,
+                source.etag,
+                source.last_modified,
+                source.content_hash,
+                source.last_ingested_at,
+                source.status,
+                source.error_message,
+                source.metadata_json,
+                source.created_at,
+                source.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete an ingest source
+    pub fn delete_ingest_source(&self, source_id: &str) -> Result<(), DbError> {
+        self.conn.execute("DELETE FROM ingest_sources WHERE id = ?", [source_id])?;
+        Ok(())
+    }
+
+    /// Update ingest source status
+    pub fn update_ingest_source_status(&self, source_id: &str, status: &str, error_message: Option<&str>) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE ingest_sources SET status = ?, error_message = ?, updated_at = ? WHERE id = ?",
+            params![status, error_message, now, source_id],
+        )?;
+        Ok(())
+    }
+
+    // ============================================================================
+    // Ingest Run Methods
+    // ============================================================================
+
+    /// Create an ingest run
+    pub fn create_ingest_run(&self, source_id: &str) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO ingest_runs (id, source_id, started_at, status)
+             VALUES (?, ?, ?, 'running')",
+            params![id, source_id, now],
+        )?;
+        Ok(id)
+    }
+
+    /// Complete an ingest run
+    pub fn complete_ingest_run(&self, run_id: &str, status: &str, docs_added: i32, docs_updated: i32, docs_removed: i32, chunks_added: i32, error_message: Option<&str>) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE ingest_runs SET completed_at = ?, status = ?, documents_added = ?,
+                    documents_updated = ?, documents_removed = ?, chunks_added = ?, error_message = ?
+             WHERE id = ?",
+            params![now, status, docs_added, docs_updated, docs_removed, chunks_added, error_message, run_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get recent ingest runs for a source
+    pub fn get_ingest_runs(&self, source_id: &str, limit: usize) -> Result<Vec<IngestRun>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_id, started_at, completed_at, status, documents_added,
+                    documents_updated, documents_removed, chunks_added, error_message
+             FROM ingest_runs WHERE source_id = ? ORDER BY started_at DESC LIMIT ?"
+        )?;
+
+        let runs = stmt.query_map(params![source_id, limit as i64], |row| {
+            Ok(IngestRun {
+                id: row.get(0)?,
+                source_id: row.get(1)?,
+                started_at: row.get(2)?,
+                completed_at: row.get(3)?,
+                status: row.get(4)?,
+                documents_added: row.get(5)?,
+                documents_updated: row.get(6)?,
+                documents_removed: row.get(7)?,
+                chunks_added: row.get(8)?,
+                error_message: row.get(9)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(runs)
+    }
+
+    // ============================================================================
+    // FTS Search with Namespace Support
+    // ============================================================================
+
+    /// FTS5 search for KB chunks with namespace filtering
+    pub fn fts_search_in_namespace(&self, query: &str, namespace_id: Option<&str>, limit: usize) -> Result<Vec<FtsSearchResult>, DbError> {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<FtsSearchResult> {
+            Ok(FtsSearchResult {
+                chunk_id: row.get(0)?,
+                document_id: row.get(1)?,
+                heading_path: row.get(2)?,
+                snippet: row.get(3)?,
+                rank: row.get(4)?,
+            })
+        };
+
+        let results: Vec<FtsSearchResult> = match namespace_id {
+            Some(ns) => {
+                let mut stmt = self.conn.prepare(
+                    r#"
+                    SELECT
+                        kb_chunks.id,
+                        kb_chunks.document_id,
+                        kb_chunks.heading_path,
+                        snippet(kb_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+                        bm25(kb_fts) as rank
+                    FROM kb_fts
+                    JOIN kb_chunks ON kb_fts.rowid = kb_chunks.rowid
+                    WHERE kb_fts MATCH ?1 AND kb_chunks.namespace_id = ?2
+                    ORDER BY rank
+                    LIMIT ?3
+                    "#
+                )?;
+                let result: Vec<FtsSearchResult> = stmt.query_map(params![query, ns, limit as i64], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            None => {
+                let mut stmt = self.conn.prepare(
+                    r#"
+                    SELECT
+                        kb_chunks.id,
+                        kb_chunks.document_id,
+                        kb_chunks.heading_path,
+                        snippet(kb_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+                        bm25(kb_fts) as rank
+                    FROM kb_fts
+                    JOIN kb_chunks ON kb_fts.rowid = kb_chunks.rowid
+                    WHERE kb_fts MATCH ?1
+                    ORDER BY rank
+                    LIMIT ?2
+                    "#
+                )?;
+                let result: Vec<FtsSearchResult> = stmt.query_map(params![query, limit as i64], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+        };
+
+        Ok(results)
+    }
+
+    // ============================================================================
+    // Network Allowlist Methods (SSRF Protection Override)
+    // ============================================================================
+
+    /// Check if a host is in the allowlist
+    pub fn is_host_allowed(&self, host: &str) -> Result<bool, DbError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM network_allowlist WHERE ? GLOB host_pattern OR ? = host_pattern",
+            params![host, host],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Add a host to the allowlist
+    pub fn add_to_allowlist(&self, host_pattern: &str, reason: &str) -> Result<(), DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO network_allowlist (id, host_pattern, reason, created_at)
+             VALUES (?, ?, ?, ?)",
+            params![id, host_pattern, reason, now],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a host from the allowlist
+    pub fn remove_from_allowlist(&self, host_pattern: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM network_allowlist WHERE host_pattern = ?",
+            [host_pattern],
+        )?;
+        Ok(())
+    }
+
+    /// List all allowlist entries
+    pub fn list_allowlist(&self) -> Result<Vec<AllowlistEntry>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, host_pattern, reason, created_at FROM network_allowlist ORDER BY created_at"
+        )?;
+
+        let entries = stmt.query_map([], |row| {
+            Ok(AllowlistEntry {
+                id: row.get(0)?,
+                host_pattern: row.get(1)?,
+                reason: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(entries)
+    }
+
+    // ============================================================================
+    // KB Document Methods with Namespace Support
+    // ============================================================================
+
+    /// Get documents, optionally filtered by namespace and/or source
+    pub fn list_kb_documents(
+        &self,
+        namespace_id: Option<&str>,
+        source_id: Option<&str>,
+    ) -> Result<Vec<KbDocument>, DbError> {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<KbDocument> {
+            Ok(KbDocument {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                file_hash: row.get(2)?,
+                title: row.get(3)?,
+                indexed_at: row.get(4)?,
+                chunk_count: row.get(5)?,
+                ocr_quality: row.get(6)?,
+                partial_index: row.get::<_, Option<i32>>(7)?.map(|v| v != 0),
+                namespace_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+            })
+        };
+
+        let docs: Vec<KbDocument> = match (namespace_id, source_id) {
+            (Some(ns), Some(src)) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
+                            partial_index, namespace_id, source_type, source_id
+                     FROM kb_documents WHERE namespace_id = ? AND source_id = ? ORDER BY indexed_at DESC"
+                )?;
+                let result: Vec<KbDocument> = stmt.query_map(params![ns, src], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            (Some(ns), None) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
+                            partial_index, namespace_id, source_type, source_id
+                     FROM kb_documents WHERE namespace_id = ? ORDER BY indexed_at DESC"
+                )?;
+                let result: Vec<KbDocument> = stmt.query_map(params![ns], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            (None, Some(src)) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
+                            partial_index, namespace_id, source_type, source_id
+                     FROM kb_documents WHERE source_id = ? ORDER BY indexed_at DESC"
+                )?;
+                let result: Vec<KbDocument> = stmt.query_map(params![src], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+            (None, None) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
+                            partial_index, namespace_id, source_type, source_id
+                     FROM kb_documents ORDER BY indexed_at DESC"
+                )?;
+                let result: Vec<KbDocument> = stmt.query_map([], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                result
+            }
+        };
+
+        Ok(docs)
+    }
+
+    /// Delete all documents for a source
+    pub fn delete_documents_for_source(&self, source_id: &str) -> Result<usize, DbError> {
+        let deleted = self.conn.execute(
+            "DELETE FROM kb_documents WHERE source_id = ?",
+            [source_id],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Get document count by namespace
+    pub fn get_document_count_by_namespace(&self) -> Result<Vec<(String, i64)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT namespace_id, COUNT(*) FROM kb_documents GROUP BY namespace_id"
+        )?;
+
+        let counts = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(counts)
+    }
 }
 
 /// FTS5 search result
@@ -980,6 +1709,76 @@ pub struct CustomVariable {
     pub name: String,
     pub value: String,
     pub created_at: String,
+}
+
+/// Namespace for organizing content
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Namespace {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Ingest source (web URL, YouTube video, GitHub repo, etc.)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IngestSource {
+    pub id: String,
+    pub source_type: String,
+    pub source_uri: String,
+    pub namespace_id: String,
+    pub title: Option<String>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub content_hash: Option<String>,
+    pub last_ingested_at: Option<String>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub metadata_json: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Ingest run (tracks a single ingest operation)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IngestRun {
+    pub id: String,
+    pub source_id: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub documents_added: Option<i32>,
+    pub documents_updated: Option<i32>,
+    pub documents_removed: Option<i32>,
+    pub chunks_added: Option<i32>,
+    pub error_message: Option<String>,
+}
+
+/// Network allowlist entry
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AllowlistEntry {
+    pub id: String,
+    pub host_pattern: String,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+/// KB Document with namespace support
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KbDocument {
+    pub id: String,
+    pub file_path: String,
+    pub file_hash: String,
+    pub title: Option<String>,
+    pub indexed_at: Option<String>,
+    pub chunk_count: Option<i32>,
+    pub ocr_quality: Option<String>,
+    pub partial_index: Option<bool>,
+    pub namespace_id: String,
+    pub source_type: String,
+    pub source_id: Option<String>,
 }
 
 /// Built-in decision trees: (id, name, category, tree_json)

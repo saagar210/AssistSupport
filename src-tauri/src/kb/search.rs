@@ -30,6 +30,8 @@ pub struct SearchResult {
     pub snippet: String,
     pub score: f64,
     pub source: SearchSource,
+    pub namespace_id: Option<String>,
+    pub source_type: Option<String>,
 }
 
 /// Source of the search result
@@ -46,6 +48,27 @@ const RRF_K: f64 = 60.0;
 /// Hybrid search engine
 pub struct HybridSearch;
 
+/// Search options for filtering
+#[derive(Debug, Clone, Default)]
+pub struct SearchOptions {
+    pub namespace_id: Option<String>,
+    pub limit: usize,
+}
+
+impl SearchOptions {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            namespace_id: None,
+            limit,
+        }
+    }
+
+    pub fn with_namespace(mut self, namespace_id: Option<String>) -> Self {
+        self.namespace_id = namespace_id;
+        self
+    }
+}
+
 impl HybridSearch {
     /// Perform FTS5-only search (sync version)
     pub fn search(
@@ -53,7 +76,16 @@ impl HybridSearch {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResult>, SearchError> {
-        let fts_results = Self::fts_search(db, query, limit)?;
+        Self::search_with_options(db, query, SearchOptions::new(limit))
+    }
+
+    /// Perform FTS5-only search with options
+    pub fn search_with_options(
+        db: &Database,
+        query: &str,
+        options: SearchOptions,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit)?;
         Ok(fts_results)
     }
 
@@ -66,13 +98,28 @@ impl HybridSearch {
         limit: usize,
         vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
     ) -> Result<Vec<SearchResult>, SearchError> {
+        Self::search_with_vectors_and_options(
+            db,
+            query,
+            SearchOptions::new(limit),
+            vector_results,
+        )
+    }
+
+    /// Perform hybrid search with options
+    pub fn search_with_vectors_and_options(
+        db: &Database,
+        query: &str,
+        options: SearchOptions,
+        vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
+    ) -> Result<Vec<SearchResult>, SearchError> {
         // Get FTS5 results (fetch more for fusion)
-        let fts_results = Self::fts_search(db, query, limit * 2)?;
+        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit * 2)?;
 
         // If no vector results, just return FTS5
         let vector_results = match vector_results {
             Some(vr) if !vr.is_empty() => vr,
-            _ => return Ok(fts_results.into_iter().take(limit).collect()),
+            _ => return Ok(fts_results.into_iter().take(options.limit).collect()),
         };
 
         // Convert vector results to SearchResults by looking up chunk metadata
@@ -84,7 +131,7 @@ impl HybridSearch {
         }
 
         // Use RRF fusion
-        Ok(Self::hybrid_search_with_vectors(fts_results, vector_search_results, limit))
+        Ok(Self::hybrid_search_with_vectors(fts_results, vector_search_results, options.limit))
     }
 
     /// Get a chunk by ID and convert to SearchResult
@@ -103,7 +150,9 @@ impl HybridSearch {
                 kb_documents.file_path,
                 kb_documents.title,
                 kb_chunks.heading_path,
-                kb_chunks.content
+                kb_chunks.content,
+                kb_documents.namespace_id,
+                kb_documents.source_type
             FROM kb_chunks
             JOIN kb_documents ON kb_chunks.document_id = kb_documents.id
             WHERE kb_chunks.id = ?
@@ -122,6 +171,8 @@ impl HybridSearch {
                     snippet,
                     score: 1.0 - distance as f64, // Convert distance to similarity
                     source: SearchSource::Vector,
+                    namespace_id: row.get(6)?,
+                    source_type: row.get(7)?,
                 })
             },
         ).map_err(|e| SearchError::Database(DbError::Sqlite(e)))
@@ -133,30 +184,80 @@ impl HybridSearch {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResult>, SearchError> {
+        Self::fts_search_with_namespace(db, query, None, limit)
+    }
+
+    /// Perform FTS5 keyword search with optional namespace filtering
+    pub fn fts_search_with_namespace(
+        db: &Database,
+        query: &str,
+        namespace_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, SearchError> {
         let conn = db.conn();
 
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT
-                kb_chunks.id,
-                kb_chunks.document_id,
-                kb_documents.file_path,
-                kb_documents.title,
-                kb_chunks.heading_path,
-                kb_chunks.content,
-                snippet(kb_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
-                bm25(kb_fts) as rank
-            FROM kb_fts
-            JOIN kb_chunks ON kb_fts.rowid = kb_chunks.rowid
-            JOIN kb_documents ON kb_chunks.document_id = kb_documents.id
-            WHERE kb_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-            "#,
-        ).map_err(|e| SearchError::Database(DbError::Sqlite(e)))?;
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(ns) = namespace_id {
+            (
+                r#"
+                SELECT
+                    kb_chunks.id,
+                    kb_chunks.document_id,
+                    kb_documents.file_path,
+                    kb_documents.title,
+                    kb_chunks.heading_path,
+                    kb_chunks.content,
+                    snippet(kb_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+                    bm25(kb_fts) as rank,
+                    kb_documents.namespace_id,
+                    kb_documents.source_type
+                FROM kb_fts
+                JOIN kb_chunks ON kb_fts.rowid = kb_chunks.rowid
+                JOIN kb_documents ON kb_chunks.document_id = kb_documents.id
+                WHERE kb_fts MATCH ?1 AND kb_documents.namespace_id = ?2
+                ORDER BY rank
+                LIMIT ?3
+                "#.to_string(),
+                vec![
+                    Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                    Box::new(ns.to_string()),
+                    Box::new(limit as i64),
+                ]
+            )
+        } else {
+            (
+                r#"
+                SELECT
+                    kb_chunks.id,
+                    kb_chunks.document_id,
+                    kb_documents.file_path,
+                    kb_documents.title,
+                    kb_chunks.heading_path,
+                    kb_chunks.content,
+                    snippet(kb_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+                    bm25(kb_fts) as rank,
+                    kb_documents.namespace_id,
+                    kb_documents.source_type
+                FROM kb_fts
+                JOIN kb_chunks ON kb_fts.rowid = kb_chunks.rowid
+                JOIN kb_documents ON kb_chunks.document_id = kb_documents.id
+                WHERE kb_fts MATCH ?1
+                ORDER BY rank
+                LIMIT ?2
+                "#.to_string(),
+                vec![
+                    Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                    Box::new(limit as i64),
+                ]
+            )
+        };
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?;
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
 
         let results = stmt
-            .query_map(params![query, limit as i64], |row| {
+            .query_map(params_refs.as_slice(), |row| {
                 Ok(SearchResult {
                     chunk_id: row.get(0)?,
                     document_id: row.get(1)?,
@@ -167,6 +268,8 @@ impl HybridSearch {
                     snippet: row.get(6)?,
                     score: row.get::<_, f64>(7)?.abs(), // BM25 returns negative, lower is better
                     source: SearchSource::Fts5,
+                    namespace_id: row.get(8)?,
+                    source_type: row.get(9)?,
                 })
             })
             .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?
@@ -350,6 +453,8 @@ mod tests {
                 snippet: "Content A".to_string(),
                 score: 1.0,
                 source: SearchSource::Fts5,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
             SearchResult {
                 chunk_id: "b".to_string(),
@@ -361,6 +466,8 @@ mod tests {
                 snippet: "Content B".to_string(),
                 score: 0.8,
                 source: SearchSource::Fts5,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
         ];
 
@@ -375,6 +482,8 @@ mod tests {
                 snippet: "Content B".to_string(),
                 score: 0.95,
                 source: SearchSource::Vector,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
             SearchResult {
                 chunk_id: "c".to_string(),
@@ -386,6 +495,8 @@ mod tests {
                 snippet: "Content C".to_string(),
                 score: 0.9,
                 source: SearchSource::Vector,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
         ];
 
@@ -412,6 +523,8 @@ mod tests {
                 snippet: "".to_string(),
                 score: 1.0,
                 source: SearchSource::Fts5,
+                namespace_id: Some("default".to_string()),
+                source_type: Some("file".to_string()),
             },
         ];
 

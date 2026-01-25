@@ -161,6 +161,8 @@ export interface SearchResult {
   snippet: string;
   score: number;
   source: 'Fts5' | 'Vector' | 'Hybrid';
+  namespace_id: string | null;
+  source_type: string | null;
 }
 
 // Embedding types
@@ -178,7 +180,7 @@ export interface OcrResult {
 }
 
 // UI State types
-export type Tab = 'draft' | 'followups' | 'sources' | 'settings';
+export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -284,4 +286,69 @@ export interface TemplateContext {
   ticketId?: string;
   customerName?: string;
   agentName?: string;
+}
+
+// Ingestion types
+export interface Namespace {
+  id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngestSource {
+  id: string;
+  source_type: string;
+  source_uri: string;
+  namespace_id: string;
+  title?: string | null;
+  etag?: string | null;
+  last_modified?: string | null;
+  content_hash?: string | null;
+  last_ingested_at?: string | null;
+  status: string;
+  error_message?: string | null;
+  metadata_json?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IngestResult {
+  document_id: string;
+  title: string;
+  source_uri: string;
+  chunk_count: number;
+  word_count: number;
+}
+
+export interface BatchIngestResult {
+  successful: IngestResult[];
+  failed: FailedSource[];
+  cancelled: boolean;
+}
+
+export interface FailedSource {
+  source: string;
+  error: string;
+}
+
+export interface KbDocumentInfo {
+  id: string;
+  file_path: string;
+  title?: string | null;
+  indexed_at?: string | null;
+  chunk_count?: number | null;
+  namespace_id: string;
+  source_type: string;
+  source_id?: string | null;
+}
+
+export interface DocumentChunk {
+  id: string;
+  chunk_index: number;
+  heading_path?: string | null;
+  content: string;
+  word_count?: number | null;
 }

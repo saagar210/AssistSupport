@@ -52,6 +52,15 @@ impl Default for VectorStoreConfig {
 pub struct VectorSearchResult {
     pub chunk_id: String,
     pub distance: f32,
+    pub namespace_id: Option<String>,
+    pub document_id: Option<String>,
+}
+
+/// Metadata for vector insertion
+#[derive(Debug, Clone, Default)]
+pub struct VectorMetadata {
+    pub namespace_id: String,
+    pub document_id: String,
 }
 
 /// Vector store manager
@@ -130,7 +139,7 @@ impl VectorStore {
         Ok(())
     }
 
-    /// Create the schema for chunks table
+    /// Create the schema for chunks table (v2 with namespace and document_id)
     fn create_schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             Field::new("id", DataType::Utf8, false),
@@ -142,7 +151,32 @@ impl VectorStore {
                 ),
                 false,
             ),
+            Field::new("namespace_id", DataType::Utf8, false),
+            Field::new("document_id", DataType::Utf8, false),
         ]))
+    }
+
+    /// Create the legacy schema (v1 without namespace/document_id) for migration detection
+    #[allow(dead_code)]
+    fn create_legacy_schema(&self) -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Utf8, false),
+            Field::new(
+                "vector",
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    self.config.embedding_dim as i32,
+                ),
+                false,
+            ),
+        ]))
+    }
+
+    /// Check if the table has the new schema with namespace_id
+    async fn table_has_namespace(&self) -> Result<bool, VectorError> {
+        let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
+        let schema = table.schema().await.map_err(|e| VectorError::LanceDb(e.to_string()))?;
+        Ok(schema.field_with_name("namespace_id").is_ok())
     }
 
     /// Create or open the chunks table
@@ -164,12 +198,21 @@ impl VectorStore {
                 .await
                 .map_err(|e| VectorError::LanceDb(e.to_string()))?;
             self.table = Some(table);
+
+            // Check if migration is needed (table doesn't have namespace_id)
+            if !self.table_has_namespace().await? {
+                // For now, we'll just log a warning. In production, you might want to
+                // migrate the data or recreate the table.
+                tracing::warn!("Vector table is using legacy schema without namespace_id. Consider rebuilding vectors.");
+            }
         } else {
-            // Create with initial empty data using from_iter_primitive
+            // Create with initial empty data using the new schema
             let schema = self.create_schema();
 
             // Create empty arrays with proper types
             let id_array = StringArray::from(Vec::<String>::new());
+            let namespace_array = StringArray::from(Vec::<String>::new());
+            let document_array = StringArray::from(Vec::<String>::new());
 
             // Create an empty FixedSizeListArray using from_iter_primitive
             let vector_array = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
@@ -179,7 +222,12 @@ impl VectorStore {
 
             let batch = RecordBatch::try_new(
                 schema.clone(),
-                vec![Arc::new(id_array), Arc::new(vector_array)],
+                vec![
+                    Arc::new(id_array),
+                    Arc::new(vector_array),
+                    Arc::new(namespace_array),
+                    Arc::new(document_array),
+                ],
             )
             .map_err(|e| VectorError::Arrow(e.to_string()))?;
 
@@ -197,11 +245,12 @@ impl VectorStore {
         Ok(())
     }
 
-    /// Insert embeddings into the vector store
-    pub async fn insert_embeddings(
+    /// Insert embeddings into the vector store with metadata
+    pub async fn insert_embeddings_with_metadata(
         &self,
         ids: &[String],
         embeddings: &[Vec<f32>],
+        metadata: &[VectorMetadata],
     ) -> Result<(), VectorError> {
         if !self.enabled {
             return Err(VectorError::Disabled);
@@ -209,9 +258,9 @@ impl VectorStore {
 
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
-        if ids.len() != embeddings.len() {
+        if ids.len() != embeddings.len() || ids.len() != metadata.len() {
             return Err(VectorError::LanceDb(
-                "IDs and embeddings count mismatch".into(),
+                "IDs, embeddings, and metadata count mismatch".into(),
             ));
         }
 
@@ -221,6 +270,12 @@ impl VectorStore {
 
         // Build arrays
         let id_array = StringArray::from(ids.to_vec());
+        let namespace_array = StringArray::from(
+            metadata.iter().map(|m| m.namespace_id.clone()).collect::<Vec<_>>()
+        );
+        let document_array = StringArray::from(
+            metadata.iter().map(|m| m.document_id.clone()).collect::<Vec<_>>()
+        );
 
         // Create FixedSizeListArray from embeddings
         let embedding_dim = self.config.embedding_dim as i32;
@@ -236,7 +291,12 @@ impl VectorStore {
 
         let batch = RecordBatch::try_new(
             schema.clone(),
-            vec![Arc::new(id_array), Arc::new(vector_array)],
+            vec![
+                Arc::new(id_array),
+                Arc::new(vector_array),
+                Arc::new(namespace_array),
+                Arc::new(document_array),
+            ],
         )
         .map_err(|e| VectorError::Arrow(e.to_string()))?;
 
@@ -251,10 +311,35 @@ impl VectorStore {
         Ok(())
     }
 
+    /// Insert embeddings into the vector store (legacy method without metadata)
+    pub async fn insert_embeddings(
+        &self,
+        ids: &[String],
+        embeddings: &[Vec<f32>],
+    ) -> Result<(), VectorError> {
+        // Create default metadata for backward compatibility
+        let metadata: Vec<VectorMetadata> = ids.iter().map(|_| VectorMetadata {
+            namespace_id: "default".to_string(),
+            document_id: String::new(),
+        }).collect();
+
+        self.insert_embeddings_with_metadata(ids, embeddings, &metadata).await
+    }
+
     /// Search for similar vectors
     pub async fn search_similar(
         &self,
         query_embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<VectorSearchResult>, VectorError> {
+        self.search_similar_in_namespace(query_embedding, None, limit).await
+    }
+
+    /// Search for similar vectors within a specific namespace
+    pub async fn search_similar_in_namespace(
+        &self,
+        query_embedding: &[f32],
+        namespace_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<VectorSearchResult>, VectorError> {
         if !self.enabled {
@@ -263,9 +348,14 @@ impl VectorStore {
 
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
-        let query = table
+        let mut query = table
             .vector_search(query_embedding)
             .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+
+        // Apply namespace filter if specified
+        if let Some(ns) = namespace_id {
+            query = query.only_if(format!("namespace_id = '{}'", ns));
+        }
 
         let results = query
             .limit(limit)
@@ -300,11 +390,20 @@ impl VectorStore {
                 .downcast_ref::<Float32Array>()
                 .ok_or_else(|| VectorError::Arrow("Invalid distance column type".into()))?;
 
+            // Try to get namespace and document columns (may not exist in legacy tables)
+            let namespace_col = batch.column_by_name("namespace_id");
+            let document_col = batch.column_by_name("document_id");
+
+            let namespaces = namespace_col.and_then(|c| c.as_any().downcast_ref::<StringArray>());
+            let documents = document_col.and_then(|c| c.as_any().downcast_ref::<StringArray>());
+
             for i in 0..batch.num_rows() {
                 let id = ids.value(i).to_string();
                 search_results.push(VectorSearchResult {
                     chunk_id: id,
                     distance: distances.value(i),
+                    namespace_id: namespaces.map(|n| n.value(i).to_string()),
+                    document_id: documents.map(|d| d.value(i).to_string()),
                 });
             }
         }
@@ -327,6 +426,42 @@ impl VectorStore {
         // Build filter expression for deletion
         let quoted_ids: Vec<String> = ids.iter().map(|id| format!("'{}'", id)).collect();
         let filter = format!("id IN ({})", quoted_ids.join(", "));
+
+        table
+            .delete(&filter)
+            .await
+            .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete all vectors for a specific document
+    pub async fn delete_by_document(&self, document_id: &str) -> Result<(), VectorError> {
+        if !self.enabled {
+            return Err(VectorError::Disabled);
+        }
+
+        let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
+
+        let filter = format!("document_id = '{}'", document_id);
+
+        table
+            .delete(&filter)
+            .await
+            .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete all vectors for a specific namespace
+    pub async fn delete_by_namespace(&self, namespace_id: &str) -> Result<(), VectorError> {
+        if !self.enabled {
+            return Err(VectorError::Disabled);
+        }
+
+        let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
+
+        let filter = format!("namespace_id = '{}'", namespace_id);
 
         table
             .delete(&filter)

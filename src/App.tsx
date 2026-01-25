@@ -3,6 +3,8 @@ import { TabBar } from './components/Layout/TabBar';
 import { DraftTab, DraftTabHandle } from './components/Draft/DraftTab';
 import { FollowUpsTab } from './components/FollowUps/FollowUpsTab';
 import { SourcesTab } from './components/Sources/SourcesTab';
+import { IngestTab } from './components/Ingest/IngestTab';
+import { KnowledgeBrowser } from './components/Knowledge';
 import { SettingsTab } from './components/Settings/SettingsTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
@@ -13,7 +15,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
 import './App.css';
 
-type TabId = 'draft' | 'followups' | 'sources' | 'settings';
+type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'settings';
 
 function App() {
   const { initResult, loading, error } = useInitialize();
@@ -78,8 +80,8 @@ function App() {
     onCancelGeneration: handleCancelGeneration,
     onExport: handleExport,
     onSwitchTab: (n) => {
-      const tabs: TabId[] = ['draft', 'followups', 'sources', 'settings'];
-      if (n >= 1 && n <= 4) setActiveTab(tabs[n - 1]);
+      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'settings'];
+      if (n >= 1 && n <= 6) setActiveTab(tabs[n - 1]);
     },
   });
 
@@ -131,6 +133,18 @@ function App() {
         return (
           <ErrorBoundary fallbackTitle="Sources tab encountered an error">
             <SourcesTab />
+          </ErrorBoundary>
+        );
+      case 'ingest':
+        return (
+          <ErrorBoundary fallbackTitle="Ingest tab encountered an error">
+            <IngestTab />
+          </ErrorBoundary>
+        );
+      case 'knowledge':
+        return (
+          <ErrorBoundary fallbackTitle="Knowledge tab encountered an error">
+            <KnowledgeBrowser />
           </ErrorBoundary>
         );
       case 'settings':

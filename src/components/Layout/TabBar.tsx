@@ -10,7 +10,9 @@ const tabs: { id: Tab; label: string; shortcut: string }[] = [
   { id: 'draft', label: 'Draft', shortcut: '1' },
   { id: 'followups', label: 'Follow-ups', shortcut: '2' },
   { id: 'sources', label: 'Sources', shortcut: '3' },
-  { id: 'settings', label: 'Settings', shortcut: '4' },
+  { id: 'ingest', label: 'Ingest', shortcut: '4' },
+  { id: 'knowledge', label: 'Knowledge', shortcut: '5' },
+  { id: 'settings', label: 'Settings', shortcut: '6' },
 ];
 
 export function TabBar({ activeTab, onTabChange }: TabBarProps) {
