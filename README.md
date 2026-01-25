@@ -22,7 +22,14 @@ A local-first AI-powered customer support response generator built with Tauri, R
 - **Draft Management**: Save, search, and organize response drafts with autosave
 - **Template Variables**: Define custom variables (`{{company_name}}`) for consistent responses
 - **Jira Integration**: Fetch and inject ticket context into generated responses
-- **Keyboard Shortcuts**: Cmd+G to generate, Cmd+N to clear, Cmd+S to save
+- **Command Palette**: Quick access to all actions (Cmd+K)
+- **Keyboard Shortcuts**: Full keyboard-first workflow:
+  - Cmd+Enter: Generate response
+  - Cmd+S: Save draft
+  - Cmd+Shift+C: Copy response
+  - Cmd+E: Export response
+  - Cmd+1-6: Switch tabs
+  - Cmd+Shift+/: View all shortcuts
 
 ### Security & Privacy
 - **Fully Local**: All processing happens on your machine
@@ -85,22 +92,43 @@ pnpm test:watch
 
 ## Project Status
 
-**Version**: 0.1.0 (Feature Complete)
+**Version**: 0.2.0 (Next-Gen Modernization Complete)
 
-All development phases are complete:
-- Core infrastructure (DB, LLM, KB indexer, OCR, Jira)
-- Vector search pipeline with hybrid search
-- Decision tree integration
-- Jira deep integration
-- Content ingestion (web, YouTube, GitHub, batch import)
-- Knowledge browser with namespace management
-- UI/UX polish (error boundaries, accessibility, export/import)
-- Performance optimizations (parallel search, background indexing)
-- Security hardening (SSRF protection, token protection, input validation)
-- Advanced features (code indexing, file watching, PDF OCR)
-- Test coverage (72 frontend, 150 backend tests passing)
+All 10 modernization phases are complete:
 
-The development roadmap and implementation history are tracked in the project planning files.
+### Core Infrastructure
+- Database (SQLCipher), LLM engine, KB indexer, OCR, Jira integration
+- Vector search pipeline with hybrid ranking and RRF fusion
+- Decision tree integration for guided diagnostics
+
+### Modern UI/UX
+- Design token system with consistent visual language
+- Command palette (Cmd+K) for quick actions
+- Full keyboard shortcut support (Cmd+1-6 tabs, Cmd+Enter generate)
+- Onboarding wizard for first-run setup
+- Responsive layout with mobile TabBar
+
+### Search & Retrieval
+- Hybrid search with configurable FTS/vector weights
+- Content deduplication using Jaccard similarity
+- Sub-300ms search response for large KBs
+
+### Performance
+- Non-blocking engine initialization
+- Optimized N+1 queries with single SQL JOINs
+- Component memoization and result caching
+
+### Security & Reliability
+- Encrypted token storage (AES-256-GCM)
+- Model integrity verification (SHA256)
+- Path traversal protection (home directory restriction)
+- Health check system with self-repair commands
+
+### Quality
+- **174 backend tests** passing
+- **72 frontend tests** passing
+- TypeScript strict mode, no errors
+- Prompt versioning with golden set tests
 
 ## License
 

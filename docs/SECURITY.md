@@ -234,7 +234,48 @@ For security issues, please report via:
 
 ---
 
+---
+
+## Diagnostics and Health Monitoring
+
+### System Health Checks
+
+AssistSupport includes built-in health monitoring for all critical components:
+
+| Component | Health Check | Auto-Repair |
+|-----------|--------------|-------------|
+| Database | Integrity check, table validation | Repair command available |
+| Vector Store | Index verification, count validation | Rebuild guidance |
+| LLM Engine | Model loaded, memory check | Reload suggestion |
+| Embedding Engine | Model loaded, test embedding | Reload suggestion |
+| Filesystem | Permissions, disk space | N/A |
+
+### Available Commands
+
+- `get_system_health`: Comprehensive health report
+- `run_quick_health_check`: Fast status overview
+- `repair_database_cmd`: Attempt database repair
+- `rebuild_vector_store`: Guidance for vector store rebuild
+- `get_failure_modes_cmd`: Known issues with remediation steps
+
+### Recovery Workflows
+
+For the top 5 failure modes, AssistSupport provides clear remediation:
+
+1. **Database corruption**: Run repair command, or delete and re-initialize
+2. **Model load failure**: Verify GGUF integrity, check RAM, try smaller model
+3. **Embedding failures**: Reload embedding model, verify vector consent
+4. **Search degradation**: Rebuild vector index, clear FTS cache
+5. **Token corruption**: Delete tokens.json, re-enter credentials
+
+---
+
 ## Changelog
+
+### v1.1 (2026-01-25)
+- Added diagnostics and health monitoring section
+- Documented self-repair commands
+- Added recovery workflows for top 5 failure modes
 
 ### v1.0 (2026-01-25)
 - Initial security documentation

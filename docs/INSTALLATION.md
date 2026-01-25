@@ -42,8 +42,20 @@ On first launch, AssistSupport will:
 1. Generate a new master encryption key
 2. Store it securely in your macOS Keychain
 3. Create an encrypted database
+4. Launch the **Onboarding Wizard**
 
 You'll be prompted to allow Keychain access - click "Allow" to proceed.
+
+### Onboarding Wizard
+
+The onboarding wizard guides you through initial setup:
+
+1. **Welcome**: Overview of features and privacy guarantees
+2. **Model Download**: Select and download an AI model (Llama 3.2 or Qwen 2.5)
+3. **Knowledge Base**: Point to a folder containing your documentation
+4. **Complete**: Verify setup and start using the app
+
+You can skip any step and configure settings later. The wizard only appears on first run.
 
 ### Uninstallation
 
@@ -74,3 +86,14 @@ xattr -cr /Applications/AssistSupport.app
 **Database errors**
 - Ensure ~/Library/Application Support/com.d.assistsupport exists and is writable
 - Check Console.app for detailed error messages
+- Use the built-in diagnostics panel (Settings > System Health) to run repair tools
+
+**Model not loading**
+- Check if you have enough RAM (model size + 2GB headroom)
+- Verify the GGUF file isn't corrupted (Settings > Models > Verify)
+- Try a smaller model (Llama 3.2 3B uses less memory)
+
+**Search returning poor results**
+- Ensure documents are indexed (Knowledge > check document count)
+- Try rebuilding the vector store (Settings > System Health > Rebuild)
+- Adjust search weights (Sources > Settings icon)
