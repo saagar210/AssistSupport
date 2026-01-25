@@ -9,6 +9,7 @@ pub mod kb;
 pub mod llm;
 pub mod prompts;
 pub mod security;
+pub mod validation;
 
 use crate::db::Database;
 use crate::kb::embeddings::EmbeddingEngine;

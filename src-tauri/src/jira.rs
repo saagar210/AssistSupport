@@ -4,6 +4,9 @@ use base64::{Engine as _, engine::general_purpose};
 use reqwest::{Client, header};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use zeroize::Zeroize;
+
+use crate::security::SecureString;
 
 #[derive(Debug, Error)]
 pub enum JiraError {
@@ -39,18 +42,21 @@ pub struct JiraTicket {
     pub issue_type: String,
 }
 
-/// Jira API client
+/// Jira API client with secure token handling
+/// Auth credentials are zeroed when the client is dropped
 pub struct JiraClient {
     client: Client,
     base_url: String,
-    auth_header: String,
+    auth_header: SecureString,
 }
 
 impl JiraClient {
     /// Create a new Jira client
+    /// The api_token is immediately encoded and the original cleared
     pub fn new(base_url: &str, email: &str, api_token: &str) -> Self {
-        let auth = format!("{}:{}", email, api_token);
-        let auth_header = format!("Basic {}", general_purpose::STANDARD.encode(auth));
+        let mut auth = format!("{}:{}", email, api_token);
+        let auth_header = SecureString::new(format!("Basic {}", general_purpose::STANDARD.encode(&auth)));
+        auth.zeroize(); // Clear the intermediate auth string
 
         Self {
             client: Client::new(),
@@ -64,7 +70,7 @@ impl JiraClient {
         let url = format!("{}/rest/api/3/myself", self.base_url);
         let resp = self.client
             .get(&url)
-            .header(header::AUTHORIZATION, &self.auth_header)
+            .header(header::AUTHORIZATION, self.auth_header.as_str())
             .header(header::ACCEPT, "application/json")
             .send()
             .await?;
@@ -81,7 +87,7 @@ impl JiraClient {
 
         let resp = self.client
             .get(&url)
-            .header(header::AUTHORIZATION, &self.auth_header)
+            .header(header::AUTHORIZATION, self.auth_header.as_str())
             .header(header::ACCEPT, "application/json")
             .send()
             .await?;

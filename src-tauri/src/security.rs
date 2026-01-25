@@ -69,6 +69,45 @@ impl MasterKey {
     }
 }
 
+/// Securely zeroed string wrapper for sensitive data like tokens
+/// The string is zeroed when dropped, preventing memory exposure
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct SecureString {
+    value: String,
+}
+
+impl SecureString {
+    /// Create a new SecureString from a String (takes ownership)
+    pub fn new(value: String) -> Self {
+        Self { value }
+    }
+
+    /// Get reference to the inner string
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+
+    /// Check if the string is empty
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+}
+
+impl From<String> for SecureString {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl std::fmt::Debug for SecureString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never expose the actual value in debug output
+        f.debug_struct("SecureString")
+            .field("value", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// Encrypted data with metadata for decryption
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EncryptedData {

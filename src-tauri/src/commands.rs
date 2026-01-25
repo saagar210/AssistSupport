@@ -4,6 +4,7 @@ use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
 use crate::security::{KeychainManager, MasterKey, SecurityError};
+use crate::validation::{validate_text_size, validate_non_empty, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -143,7 +144,11 @@ pub async fn search_kb(
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<crate::kb::search::SearchResult>, String> {
-    let limit = limit.unwrap_or(10);
+    // Validate query input
+    validate_non_empty(&query).map_err(|e| e.to_string())?;
+    validate_text_size(&query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
+
+    let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
 
     // Get query embedding if vector search is available (sync operation)
     let query_embedding = {
@@ -325,6 +330,10 @@ pub async fn generate_text(
     prompt: String,
     params: Option<GenerateParams>,
 ) -> Result<GenerationResult, String> {
+    // Validate prompt input
+    validate_non_empty(&prompt).map_err(|e| e.to_string())?;
+    validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+
     // Clone the Arc to use in async context
     let llm = state.llm.clone();
 
