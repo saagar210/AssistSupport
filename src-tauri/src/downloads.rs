@@ -335,7 +335,7 @@ pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, Stri
                 return Ok((size, sha256));
             }
             // Non-LFS file - get size from file object
-            let size = file.get("size")
+            let _size = file.get("size")
                 .and_then(|s| s.as_u64())
                 .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
             return Err(DownloadError::HuggingFaceApi(

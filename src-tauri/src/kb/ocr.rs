@@ -63,6 +63,7 @@ struct VisionOcrResponse {
 
 #[derive(Debug, serde::Deserialize)]
 struct VisionOcrResultItem {
+    #[allow(dead_code)] // Deserialized but we use full_text instead
     text: String,
     confidence: f32,
 }

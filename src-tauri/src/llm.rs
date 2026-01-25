@@ -86,7 +86,7 @@ pub enum GenerationEvent {
 }
 
 /// LLM Engine state
-pub(crate) struct LlmState {
+pub struct LlmState {
     backend: LlamaBackend,
     model: Option<LlamaModel>,
     model_info: Option<ModelInfo>,

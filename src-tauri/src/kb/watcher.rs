@@ -1,7 +1,7 @@
 //! File watcher for KB auto-sync
 //! Watches KB folder for changes and triggers incremental indexing
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, EventKind};
+use notify::{RecommendedWatcher, RecursiveMode, EventKind};
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, FileIdMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};

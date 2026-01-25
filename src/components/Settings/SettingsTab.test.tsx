@@ -92,16 +92,16 @@ describe('SettingsTab', () => {
   });
 
   describe('Appearance Section', () => {
-    it('renders theme selector', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders theme selector', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Appearance')).toBeInTheDocument();
       expect(screen.getByText('Light')).toBeInTheDocument();
       expect(screen.getByText('Dark')).toBeInTheDocument();
       expect(screen.getByText('System')).toBeInTheDocument();
     });
 
-    it('allows theme selection', () => {
-      renderWithProviders(<SettingsTab />);
+    it('allows theme selection', async () => {
+      await renderWithProviders(<SettingsTab />);
       const darkRadio = screen.getByLabelText('Dark');
       fireEvent.click(darkRadio);
       expect(darkRadio).toBeChecked();
@@ -109,76 +109,76 @@ describe('SettingsTab', () => {
   });
 
   describe('Language Model Section', () => {
-    it('renders model list', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders model list', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Language Model')).toBeInTheDocument();
       expect(screen.getByText('Llama 3.2 1B Instruct')).toBeInTheDocument();
       expect(screen.getByText('Llama 3.2 3B Instruct')).toBeInTheDocument();
       expect(screen.getByText('Phi-3 Mini 4K')).toBeInTheDocument();
     });
 
-    it('shows Download button for non-downloaded models', () => {
-      renderWithProviders(<SettingsTab />);
+    it('shows Download button for non-downloaded models', async () => {
+      await renderWithProviders(<SettingsTab />);
       const downloadButtons = screen.getAllByText('Download');
       expect(downloadButtons.length).toBe(3); // All 3 models need download
     });
   });
 
   describe('Context Window Section', () => {
-    it('renders context window selector', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders context window selector', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Context Window')).toBeInTheDocument();
       expect(screen.getByText('Load a model to configure context window.')).toBeInTheDocument();
     });
 
-    it('context window selector is disabled without loaded model', () => {
-      renderWithProviders(<SettingsTab />);
+    it('context window selector is disabled without loaded model', async () => {
+      await renderWithProviders(<SettingsTab />);
       const select = screen.getByRole('combobox');
       expect(select).toBeDisabled();
     });
   });
 
   describe('Knowledge Base Section', () => {
-    it('renders KB folder selector', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders KB folder selector', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Knowledge Base')).toBeInTheDocument();
       expect(screen.getByText('Select Folder')).toBeInTheDocument();
     });
 
-    it('shows placeholder when no folder selected', () => {
-      renderWithProviders(<SettingsTab />);
+    it('shows placeholder when no folder selected', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('No folder selected')).toBeInTheDocument();
     });
   });
 
   describe('Advanced Search Section', () => {
-    it('renders vector consent toggle', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders vector consent toggle', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Advanced Search')).toBeInTheDocument();
       expect(screen.getByText('Enable vector embeddings')).toBeInTheDocument();
     });
 
-    it('toggle is unchecked by default', () => {
-      renderWithProviders(<SettingsTab />);
+    it('toggle is unchecked by default', async () => {
+      await renderWithProviders(<SettingsTab />);
       const toggle = screen.getByRole('checkbox');
       expect(toggle).not.toBeChecked();
     });
   });
 
   describe('Template Variables Section', () => {
-    it('renders variables section', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders variables section', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Template Variables')).toBeInTheDocument();
       expect(screen.getByText('No custom variables defined yet.')).toBeInTheDocument();
     });
 
-    it('shows Add Variable button', () => {
-      renderWithProviders(<SettingsTab />);
+    it('shows Add Variable button', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('+ Add Variable')).toBeInTheDocument();
     });
 
     it('opens add variable form when button clicked', async () => {
-      renderWithProviders(<SettingsTab />);
+      await renderWithProviders(<SettingsTab />);
       fireEvent.click(screen.getByText('+ Add Variable'));
 
       await waitFor(() => {
@@ -188,7 +188,7 @@ describe('SettingsTab', () => {
     });
 
     it('validates variable name format', async () => {
-      renderWithProviders(<SettingsTab />);
+      await renderWithProviders(<SettingsTab />);
       fireEvent.click(screen.getByText('+ Add Variable'));
 
       await waitFor(() => {
@@ -213,24 +213,24 @@ describe('SettingsTab', () => {
   });
 
   describe('Jira Integration Section', () => {
-    it('renders Jira form when not connected', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders Jira form when not connected', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Jira Integration')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('https://your-company.atlassian.net')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('your.email@company.com')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('Your Jira API token')).toBeInTheDocument();
     });
 
-    it('Connect button is disabled without all fields', () => {
-      renderWithProviders(<SettingsTab />);
+    it('Connect button is disabled without all fields', async () => {
+      await renderWithProviders(<SettingsTab />);
       const connectButton = screen.getByRole('button', { name: /connect/i });
       expect(connectButton).toBeDisabled();
     });
   });
 
   describe('Data Backup Section', () => {
-    it('renders backup section', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders backup section', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Data Backup')).toBeInTheDocument();
       expect(screen.getByText('Export Data')).toBeInTheDocument();
       expect(screen.getByText('Import Data')).toBeInTheDocument();
@@ -238,8 +238,8 @@ describe('SettingsTab', () => {
   });
 
   describe('About Section', () => {
-    it('renders about info', () => {
-      renderWithProviders(<SettingsTab />);
+    it('renders about info', async () => {
+      await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('About')).toBeInTheDocument();
       expect(screen.getByText('Version 0.1.0')).toBeInTheDocument();
       expect(screen.getByText('All processing happens locally on your machine.')).toBeInTheDocument();

@@ -80,7 +80,7 @@ All development phases are complete:
 - Advanced features (code indexing, file watching, PDF OCR)
 - Test coverage (72 frontend, 59 backend tests passing)
 
-See [development plan](/Users/d/.claude/plans/declarative-hatching-globe.md) for detailed implementation history.
+The development roadmap and implementation history are tracked in the project planning files.
 
 ## License
 
