@@ -27,7 +27,7 @@ A local-first AI-powered customer support response generator built with Tauri, R
 ### Security & Privacy
 - **Fully Local**: All processing happens on your machine
 - **Encrypted Database**: SQLCipher with AES-256 encryption
-- **Secure Token Storage**: API tokens protected with zeroize-on-drop
+- **Secure Token Storage**: File-based credential storage with automatic migration
 - **Input Validation**: Path traversal protection, URL/ticket ID validation, and size limits
 - **Encrypted Backups**: Optional password protection for exported data (Argon2id + AES-256-GCM)
 - **Content Security Policy**: Minimal CSP allowlist for app security
@@ -98,7 +98,7 @@ All development phases are complete:
 - Performance optimizations (parallel search, background indexing)
 - Security hardening (SSRF protection, token protection, input validation)
 - Advanced features (code indexing, file watching, PDF OCR)
-- Test coverage (72 frontend, 84 backend tests passing)
+- Test coverage (72 frontend, 150 backend tests passing)
 
 The development roadmap and implementation history are tracked in the project planning files.
 
