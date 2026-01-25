@@ -2,6 +2,7 @@
 //! Handles batch ingestion of multiple sources
 
 use crate::db::Database;
+use crate::validation::validate_within_home;
 use super::{
     CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback,
     web::{WebIngester, WebIngestConfig},
@@ -41,6 +42,7 @@ pub enum BatchSource {
 
 impl BatchSource {
     /// Parse a source string into a BatchSource
+    /// Local paths must be within the user's home directory
     pub fn parse(source: &str) -> Option<Self> {
         let source = source.trim();
 
@@ -54,9 +56,14 @@ impl BatchSource {
             return Some(BatchSource::WebPage { url: source.to_string() });
         }
 
-        // Local paths (for GitHub repos)
+        // Local paths (for GitHub repos) - must be within home directory
         if Path::new(source).exists() {
-            return Some(BatchSource::GitHubRepo { path: source.to_string() });
+            // Validate the path is within home directory and not in sensitive locations
+            if let Ok(validated) = validate_within_home(Path::new(source)) {
+                return Some(BatchSource::GitHubRepo {
+                    path: validated.to_string_lossy().to_string(),
+                });
+            }
         }
 
         None

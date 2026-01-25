@@ -1,8 +1,20 @@
 //! Input validation module for AssistSupport
 //! Provides security checks for paths, sizes, and input formats
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+/// Sensitive directories under home that should never be indexed
+/// These contain credentials, keys, and other sensitive data
+const SENSITIVE_HOME_PATHS: &[&str] = &[
+    ".ssh",              // SSH private keys
+    ".aws",              // AWS credentials
+    ".gnupg",            // GPG keys
+    ".pgp",              // PGP keys
+    ".config",           // App configs (often contain tokens)
+    "Library/Keychains", // macOS Keychains
+];
 
 /// Maximum size for text inputs (10MB)
 pub const MAX_TEXT_INPUT_BYTES: usize = 10 * 1024 * 1024;
@@ -44,6 +56,104 @@ pub fn validate_path_within(path: &Path, allowed_root: &Path) -> Result<PathBuf,
     }
 
     Ok(canonical)
+}
+
+/// Check if a path is within a sensitive subdirectory of home
+fn is_sensitive_path(path: &Path, home: &Path) -> bool {
+    // Get relative path from home
+    let Ok(relative) = path.strip_prefix(home) else {
+        return false;
+    };
+
+    // Check if it starts with any sensitive path
+    for sensitive in SENSITIVE_HOME_PATHS {
+        if relative.starts_with(sensitive) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Validate that a path is within the user's home directory
+/// Auto-creates the directory if the parent is valid
+/// Blocks access to sensitive subdirectories (.ssh, .aws, .gnupg, .config, Library/Keychains)
+///
+/// # Arguments
+/// * `path` - The path to validate
+///
+/// # Returns
+/// * `Ok(PathBuf)` - The canonicalized path if valid
+/// * `Err(ValidationError)` - If the path is outside home, in a sensitive directory, or invalid
+pub fn validate_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
+    let home = dirs::home_dir().ok_or(ValidationError::InvalidFormat(
+        "Cannot determine home directory".into(),
+    ))?;
+
+    // If path exists, validate it
+    if path.exists() {
+        let canonical = path
+            .canonicalize()
+            .map_err(|_| ValidationError::PathNotFound(path.display().to_string()))?;
+        let canonical_home = home
+            .canonicalize()
+            .map_err(|_| ValidationError::PathNotFound(home.display().to_string()))?;
+
+        // Check if under home
+        if !canonical.starts_with(&canonical_home) {
+            return Err(ValidationError::PathTraversal);
+        }
+
+        // Check if it's a sensitive subdirectory
+        if is_sensitive_path(&canonical, &canonical_home) {
+            return Err(ValidationError::InvalidFormat(
+                "This directory contains sensitive data and cannot be used".into(),
+            ));
+        }
+
+        return Ok(canonical);
+    }
+
+    // Path doesn't exist - check parent and auto-create
+    let parent = path
+        .parent()
+        .ok_or(ValidationError::InvalidFormat("Invalid path".into()))?;
+
+    if !parent.exists() {
+        return Err(ValidationError::PathNotFound(
+            "Parent directory does not exist".into(),
+        ));
+    }
+
+    let canonical_parent = parent.canonicalize().map_err(|_| {
+        ValidationError::PathNotFound(parent.display().to_string())
+    })?;
+    let canonical_home = home
+        .canonicalize()
+        .map_err(|_| ValidationError::PathNotFound(home.display().to_string()))?;
+
+    // Check parent is under home
+    if !canonical_parent.starts_with(&canonical_home) {
+        return Err(ValidationError::PathTraversal);
+    }
+
+    // Check if target would be in sensitive location
+    let file_name = path
+        .file_name()
+        .ok_or(ValidationError::InvalidFormat("Invalid path".into()))?;
+    let target_path = canonical_parent.join(file_name);
+
+    if is_sensitive_path(&target_path, &canonical_home) {
+        return Err(ValidationError::InvalidFormat(
+            "This directory contains sensitive data and cannot be used".into(),
+        ));
+    }
+
+    // Create the directory
+    fs::create_dir_all(&target_path)
+        .map_err(|e| ValidationError::InvalidFormat(format!("Failed to create directory: {}", e)))?;
+
+    Ok(target_path)
 }
 
 /// Validate text input size
@@ -142,6 +252,93 @@ mod tests {
         assert!(matches!(
             validate_path_within(&valid_path, &temp),
             Err(ValidationError::PathNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_is_sensitive_path() {
+        let home = dirs::home_dir().unwrap();
+
+        // Should be sensitive
+        assert!(super::is_sensitive_path(&home.join(".ssh"), &home));
+        assert!(super::is_sensitive_path(&home.join(".ssh/id_rsa"), &home));
+        assert!(super::is_sensitive_path(&home.join(".aws"), &home));
+        assert!(super::is_sensitive_path(&home.join(".aws/credentials"), &home));
+        assert!(super::is_sensitive_path(&home.join(".gnupg"), &home));
+        assert!(super::is_sensitive_path(&home.join(".config"), &home));
+        assert!(super::is_sensitive_path(&home.join("Library/Keychains"), &home));
+
+        // Should not be sensitive
+        assert!(!super::is_sensitive_path(&home.join("Documents"), &home));
+        assert!(!super::is_sensitive_path(&home.join("Desktop"), &home));
+        assert!(!super::is_sensitive_path(&home.join(".bashrc"), &home)); // file, not dir
+    }
+
+    #[test]
+    fn test_validate_within_home_blocks_system_paths() {
+        // These should fail (outside home)
+        assert!(matches!(
+            validate_within_home(Path::new("/etc")),
+            Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
+        ));
+        assert!(matches!(
+            validate_within_home(Path::new("/var/log")),
+            Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
+        ));
+        assert!(matches!(
+            validate_within_home(Path::new("/usr/local")),
+            Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_validate_within_home_blocks_sensitive_dirs() {
+        let home = dirs::home_dir().unwrap();
+
+        // These should fail (sensitive directories)
+        if home.join(".ssh").exists() {
+            let result = validate_within_home(&home.join(".ssh"));
+            assert!(matches!(result, Err(ValidationError::InvalidFormat(_))));
+        }
+
+        if home.join(".aws").exists() {
+            let result = validate_within_home(&home.join(".aws"));
+            assert!(matches!(result, Err(ValidationError::InvalidFormat(_))));
+        }
+
+        if home.join(".config").exists() {
+            let result = validate_within_home(&home.join(".config"));
+            assert!(matches!(result, Err(ValidationError::InvalidFormat(_))));
+        }
+    }
+
+    #[test]
+    fn test_validate_within_home_allows_normal_dirs() {
+        let home = dirs::home_dir().unwrap();
+
+        // Documents should be allowed (if it exists)
+        if home.join("Documents").exists() {
+            let result = validate_within_home(&home.join("Documents"));
+            assert!(result.is_ok());
+        }
+
+        // Desktop should be allowed (if it exists)
+        if home.join("Desktop").exists() {
+            let result = validate_within_home(&home.join("Desktop"));
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_within_home_path_traversal() {
+        let home = dirs::home_dir().unwrap();
+
+        // Traversal attempt - should fail
+        let traversal_path = home.join("Documents").join("..").join("..").join("etc");
+        let result = validate_within_home(&traversal_path);
+        assert!(matches!(
+            result,
+            Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
         ));
     }
 }
