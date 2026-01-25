@@ -3,8 +3,8 @@
 use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
-use crate::security::{KeychainManager, MasterKey, SecurityError};
-use crate::validation::{validate_text_size, validate_non_empty, validate_url, validate_ticket_id, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES};
+use crate::security::{FileKeyStore, TOKEN_HUGGINGFACE, TOKEN_JIRA};
+use crate::validation::{validate_text_size, validate_non_empty, validate_url, validate_ticket_id, validate_within_home, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,17 +24,10 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
     let app_dir = get_app_data_dir();
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
-    // Check if this is first run (no master key in Keychain)
-    let (master_key, is_first_run) = match KeychainManager::get_master_key() {
-        Ok(key) => (key, false),
-        Err(SecurityError::MasterKeyNotFound) => {
-            // First run - generate new master key
-            let key = MasterKey::generate();
-            KeychainManager::store_master_key(&key).map_err(|e| e.to_string())?;
-            (key, true)
-        }
-        Err(e) => return Err(e.to_string()),
-    };
+    // Check if this is first run (no master key in file storage)
+    // FileKeyStore::get_master_key() handles migration from Keychain automatically
+    let is_first_run = !FileKeyStore::has_master_key();
+    let master_key = FileKeyStore::get_master_key().map_err(|e| e.to_string())?;
 
     // Open database
     let db_path = get_db_path();
@@ -131,10 +124,11 @@ pub fn set_vector_consent(
     db.set_vector_consent(enabled, encryption_supported).map_err(|e| e.to_string())
 }
 
-/// Check if Keychain is available
+/// Check if credential storage is available
+/// (Always true now that we use file-based storage)
 #[tauri::command]
 pub fn check_keychain_available() -> bool {
-    KeychainManager::is_available()
+    true // File-based storage is always available
 }
 
 /// Hybrid search for KB (FTS5 + vector when enabled)
@@ -967,7 +961,7 @@ pub fn delete_downloaded_model(filename: String) -> Result<(), String> {
 /// Get HuggingFace token status (not the actual token for security)
 #[tauri::command]
 pub fn has_hf_token() -> Result<bool, String> {
-    KeychainManager::get_hf_token()
+    FileKeyStore::get_token(TOKEN_HUGGINGFACE)
         .map(|t| t.is_some())
         .map_err(|e| e.to_string())
 }
@@ -975,13 +969,13 @@ pub fn has_hf_token() -> Result<bool, String> {
 /// Store HuggingFace token
 #[tauri::command]
 pub fn set_hf_token(token: String) -> Result<(), String> {
-    KeychainManager::store_hf_token(&token).map_err(|e| e.to_string())
+    FileKeyStore::store_token(TOKEN_HUGGINGFACE, &token).map_err(|e| e.to_string())
 }
 
 /// Delete HuggingFace token
 #[tauri::command]
 pub fn clear_hf_token() -> Result<(), String> {
-    KeychainManager::delete_hf_token().map_err(|e| e.to_string())
+    FileKeyStore::delete_token(TOKEN_HUGGINGFACE).map_err(|e| e.to_string())
 }
 
 use tauri::Emitter;
@@ -1079,22 +1073,36 @@ use crate::kb::indexer::{KbIndexer, IndexResult, IndexStats};
 const KB_FOLDER_SETTING: &str = "kb_folder";
 
 /// Set the KB folder path
+/// Path must be within user's home directory (auto-creates if needed)
+/// Blocks sensitive directories like .ssh, .aws, .gnupg, .config
 #[tauri::command]
 pub fn set_kb_folder(state: State<'_, AppState>, folder_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&folder_path);
+
+    // Validate path is within home directory (auto-creates if needed)
+    let validated_path = validate_within_home(path).map_err(|e| match e {
+        ValidationError::PathTraversal => {
+            "KB folder must be within your home directory".to_string()
+        }
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This directory cannot be used as it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid KB folder: {}", e),
+    })?;
+
+    // Verify it's a directory
+    if !validated_path.is_dir() {
+        return Err("Path is not a directory".into());
+    }
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Verify folder exists
-    let path = std::path::Path::new(&folder_path);
-    if !path.exists() || !path.is_dir() {
-        return Err("Folder does not exist".into());
-    }
 
     // Store in settings
     db.conn()
         .execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            rusqlite::params![KB_FOLDER_SETTING, &folder_path],
+            rusqlite::params![KB_FOLDER_SETTING, validated_path.to_string_lossy().as_ref()],
         )
         .map_err(|e| e.to_string())?;
 
@@ -1658,7 +1666,7 @@ pub fn is_jira_configured(state: State<'_, AppState>) -> Result<bool, String> {
         |row| row.get(0),
     );
 
-    let has_token = KeychainManager::get_jira_token()
+    let has_token = FileKeyStore::get_token(TOKEN_JIRA)
         .map(|t| t.is_some())
         .unwrap_or(false);
 
@@ -1706,8 +1714,8 @@ pub async fn configure_jira(
         return Err("Connection failed - check credentials".to_string());
     }
 
-    // Store token in Keychain
-    KeychainManager::store_jira_token(&api_token).map_err(|e| e.to_string())?;
+    // Store token in file storage
+    FileKeyStore::store_token(TOKEN_JIRA, &api_token).map_err(|e| e.to_string())?;
 
     // Store config in DB
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -1729,8 +1737,8 @@ pub async fn configure_jira(
 /// Clear Jira configuration
 #[tauri::command]
 pub fn clear_jira_config(state: State<'_, AppState>) -> Result<(), String> {
-    // Delete token from Keychain
-    let _ = KeychainManager::delete_jira_token();
+    // Delete token from file storage
+    let _ = FileKeyStore::delete_token(TOKEN_JIRA);
 
     // Delete config from DB
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -1773,8 +1781,8 @@ pub async fn get_jira_ticket(
         (base_url, email)
     };
 
-    // Get token from Keychain
-    let token = KeychainManager::get_jira_token()
+    // Get token from file storage
+    let token = FileKeyStore::get_token(TOKEN_JIRA)
         .map_err(|e| e.to_string())?
         .ok_or("Jira token not found")?;
 
@@ -2278,6 +2286,7 @@ pub fn ingest_youtube(
 }
 
 /// Ingest a GitHub repository (local path)
+/// Path must be within user's home directory
 #[tauri::command]
 pub fn ingest_github(
     state: State<'_, AppState>,
@@ -2287,6 +2296,17 @@ pub fn ingest_github(
     use crate::kb::ingest::github::{GitHubIngester, GitHubIngestConfig};
     use crate::kb::ingest::CancellationToken;
     use std::path::Path;
+
+    // Validate path is within home directory
+    let validated_path = validate_within_home(Path::new(&repo_path)).map_err(|e| match e {
+        ValidationError::PathTraversal => {
+            "Repository must be within your home directory".to_string()
+        }
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This directory cannot be used as it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid repository path: {}", e),
+    })?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
@@ -2299,7 +2319,7 @@ pub fn ingest_github(
     let cancel_token = CancellationToken::new();
 
     let results = ingester
-        .ingest_local_repo(db, Path::new(&repo_path), &namespace_id, &cancel_token, None)
+        .ingest_local_repo(db, &validated_path, &namespace_id, &cancel_token, None)
         .map_err(|e| e.to_string())?;
 
     Ok(results
