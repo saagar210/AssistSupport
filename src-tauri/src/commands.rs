@@ -825,7 +825,7 @@ pub fn set_context_window(
     match size {
         Some(s) => {
             // Validate range
-            if s < 2048 || s > 32768 {
+            if !(2048..=32768).contains(&s) {
                 return Err("Context window must be between 2048 and 32768".to_string());
             }
             db.conn().execute(

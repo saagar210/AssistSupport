@@ -200,7 +200,7 @@ impl EmbeddingEngine {
                 .map_err(|e| EmbeddingError::Generate(format!("Get embeddings error: {}", e)))?;
 
             // Normalize the embedding
-            let normalized = Self::normalize_embedding(&embeddings);
+            let normalized = Self::normalize_embedding(embeddings);
             all_embeddings.push(normalized);
 
             // Clear batch for next text

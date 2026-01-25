@@ -30,9 +30,10 @@ pub const SHORT_RESPONSE_PROMPT: &str = r#"Provide a brief, focused response. Ta
 pub const MEDIUM_RESPONSE_PROMPT: &str = r#"Provide a clear, helpful response. Target 150-200 words. Include relevant details but stay focused."#;
 
 /// Response length enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 pub enum ResponseLength {
     Short,
+    #[default]
     Medium,
     Long,
 }
@@ -55,11 +56,6 @@ impl ResponseLength {
     }
 }
 
-impl Default for ResponseLength {
-    fn default() -> Self {
-        ResponseLength::Medium
-    }
-}
 
 /// Decision tree path result
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

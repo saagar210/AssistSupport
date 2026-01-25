@@ -232,7 +232,7 @@ impl DownloadManager {
         if let Some(expected) = &source.sha256 {
             if sha256.to_lowercase() != expected.to_lowercase() {
                 let _ = progress_tx.send(DownloadProgress::Error {
-                    message: format!("Checksum mismatch"),
+                    message: "Checksum mismatch".to_string(),
                 }).await;
                 return Err(DownloadError::ChecksumMismatch {
                     expected: expected.clone(),

@@ -616,7 +616,7 @@ impl KbIndexer {
         let mut current_words = Vec::new();
 
         // Simple sentence splitting (could be improved)
-        for sentence in text.split(|c| c == '.' || c == '!' || c == '?') {
+        for sentence in text.split(['.', '!', '?']) {
             let sentence = sentence.trim();
             if sentence.is_empty() {
                 continue;
@@ -651,15 +651,13 @@ impl KbIndexer {
                 continue;
             }
 
-            if current_words.len() + words.len() > self.max_chunk_words {
-                if !current_words.is_empty() {
-                    chunks.push(Chunk {
-                        heading_path: heading_path.clone(),
-                        content: current_words.join(" "),
-                        word_count: current_words.len(),
-                    });
-                    current_words.clear();
-                }
+            if current_words.len() + words.len() > self.max_chunk_words && !current_words.is_empty() {
+                chunks.push(Chunk {
+                    heading_path: heading_path.clone(),
+                    content: current_words.join(" "),
+                    word_count: current_words.len(),
+                });
+                current_words.clear();
             }
 
             current_words.extend(words);

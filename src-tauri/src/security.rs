@@ -65,7 +65,7 @@ impl MasterKey {
 
     /// Get hex-encoded key for SQLCipher
     pub fn to_hex(&self) -> String {
-        hex::encode(&self.key)
+        hex::encode(self.key)
     }
 }
 
@@ -342,11 +342,14 @@ impl Crypto {
 }
 
 /// Export encryption utilities (Argon2id + AES-256-GCM with separate password)
+/// Export encryption result type (ciphertext, salt, nonce)
+pub type ExportEncryptResult = (Vec<u8>, [u8; SALT_LEN], [u8; NONCE_LEN]);
+
 pub struct ExportCrypto;
 
 impl ExportCrypto {
     /// Encrypt data for export with user-provided password
-    pub fn encrypt_for_export(data: &[u8], password: &str) -> Result<(Vec<u8>, [u8; SALT_LEN], [u8; NONCE_LEN]), SecurityError> {
+    pub fn encrypt_for_export(data: &[u8], password: &str) -> Result<ExportEncryptResult, SecurityError> {
         let salt = Crypto::generate_salt();
         let key = Crypto::derive_key_from_passphrase(password, &salt)?;
         let encrypted = Crypto::encrypt(&key, data)?;

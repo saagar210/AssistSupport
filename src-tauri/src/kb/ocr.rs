@@ -462,9 +462,8 @@ impl OcrManager {
     /// Recognize with fallback
     pub fn recognize_with_fallback(&self, image_path: &Path) -> Result<OcrResult, OcrError> {
         // Try preferred provider first
-        match self.recognize_with_provider(image_path, self.preferred_provider) {
-            Ok(result) => return Ok(result),
-            Err(_) => {}
+        if let Ok(result) = self.recognize_with_provider(image_path, self.preferred_provider) {
+            return Ok(result);
         }
 
         // Try all available providers

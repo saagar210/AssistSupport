@@ -176,7 +176,7 @@ impl PdfExtractor {
             .as_image()
             .into_rgba8()
             .save(output_path)
-            .map_err(|e| PdfError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| PdfError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }

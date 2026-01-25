@@ -183,9 +183,7 @@ fn process_event(event: &DebouncedEvent) -> Option<KbFileEvent> {
     let path = event.paths.first()?;
     let ext = path.extension().and_then(|e| e.to_str())?;
 
-    if DocumentType::from_extension(ext).is_none() {
-        return None;
-    }
+    DocumentType::from_extension(ext)?;
 
     let path_str = path.display().to_string();
 

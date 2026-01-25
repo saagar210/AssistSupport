@@ -28,7 +28,7 @@ pub fn extract_text(path: &Path) -> Result<String, XlsxError> {
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
             for row in range.rows() {
                 let row_text: Vec<String> = row.iter()
-                    .map(|cell| cell_to_string(cell))
+                    .map(cell_to_string)
                     .collect();
 
                 // Skip completely empty rows

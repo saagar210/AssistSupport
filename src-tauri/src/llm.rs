@@ -233,7 +233,7 @@ impl LlmEngine {
         // Create context with configurable window size
         // Use provided context_window, or model's training context (capped at 8192), or 4096 as fallback
         let n_ctx = params.context_window
-            .unwrap_or_else(|| model.n_ctx_train().min(8192).max(2048));
+            .unwrap_or_else(|| model.n_ctx_train().clamp(2048, 8192));
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(n_ctx));
 
@@ -334,11 +334,9 @@ impl LlmEngine {
             }
 
             // Send when we have whitespace (word boundary) or buffer is large
-            if piece.contains(char::is_whitespace) || word_buffer.len() > 20 {
-                if !word_buffer.is_empty() {
-                    let _ = tx.blocking_send(GenerationEvent::Token(word_buffer.clone()));
-                    word_buffer.clear();
-                }
+            if (piece.contains(char::is_whitespace) || word_buffer.len() > 20) && !word_buffer.is_empty() {
+                let _ = tx.blocking_send(GenerationEvent::Token(word_buffer.clone()));
+                word_buffer.clear();
             }
 
             // Exit if we hit a stop sequence
