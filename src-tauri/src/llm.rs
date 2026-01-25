@@ -258,8 +258,13 @@ impl LlmEngine {
             return Err(LlmError::Tokenize("Empty tokenization result".into()));
         }
 
-        // Create batch and add prompt tokens
-        let mut batch = LlamaBatch::new(512, 1);
+        // Create batch with dynamic size based on prompt length
+        // Use prompt tokens + expected max output as initial capacity
+        // Minimum 512, scale up for longer prompts, cap at n_ctx
+        let batch_size = (tokens.len() + params.max_tokens as usize)
+            .max(512)
+            .min(n_ctx as usize);
+        let mut batch = LlamaBatch::new(batch_size, 1);
 
         for (i, token) in tokens.iter().enumerate() {
             let is_last = i == tokens.len() - 1;
@@ -466,7 +471,7 @@ mod tests {
     fn test_model_load_and_generate() {
         let model_path = dirs::data_dir()
             .unwrap()
-            .join("com.d.assistsupport/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
+            .join("AssistSupport/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf");
 
         if !model_path.exists() {
             println!("Model not found at {:?}, skipping test", model_path);

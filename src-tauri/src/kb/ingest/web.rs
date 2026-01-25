@@ -8,6 +8,7 @@ use crate::kb::network::{
 };
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
+use futures::StreamExt;
 use reqwest::Client;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -162,17 +163,9 @@ impl WebIngester {
 
         let final_url = response.url().clone();
 
-        // Read body with size limit
-        let bytes = response.bytes().await.map_err(|e| {
-            IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-        })?;
-
-        if bytes.len() > self.config.max_page_size {
-            return Err(IngestError::ContentTooLarge {
-                size: bytes.len(),
-                max: self.config.max_page_size,
-            });
-        }
+        // Read body with streaming size limit
+        // This ensures we stop reading early if content exceeds max size
+        let bytes = read_body_with_limit(response, self.config.max_page_size).await?;
 
         // Convert to string
         let content = String::from_utf8_lossy(&bytes).to_string();
@@ -536,6 +529,38 @@ fn validate_redirect_target(
     }
 
     validate_url_for_ssrf(url, config).map(|_| ())
+}
+
+/// Read response body with streaming size limit.
+///
+/// Stops reading early if the content exceeds max_size, avoiding memory exhaustion.
+async fn read_body_with_limit(
+    response: reqwest::Response,
+    max_size: usize,
+) -> IngestResult<Vec<u8>> {
+    let mut stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    let mut total_bytes = 0usize;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| {
+            IngestError::Network(NetworkError::RequestFailed(e.to_string()))
+        })?;
+
+        total_bytes += chunk.len();
+
+        // Check size limit before adding to buffer
+        if total_bytes > max_size {
+            return Err(IngestError::ContentTooLarge {
+                size: total_bytes,
+                max: max_size,
+            });
+        }
+
+        buffer.extend_from_slice(&chunk);
+    }
+
+    Ok(buffer)
 }
 
 /// Extract title from HTML

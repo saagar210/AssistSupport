@@ -176,7 +176,7 @@ EXAMPLES:
 
 fn get_db_path() -> PathBuf {
     dirs::data_dir()
-        .map(|d| d.join("com.d.assistsupport/data/assistsupport.db"))
+        .map(|d| d.join("AssistSupport/assistsupport.db"))
         .expect("Could not determine data directory")
 }
 

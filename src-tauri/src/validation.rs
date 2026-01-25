@@ -22,6 +22,9 @@ pub const MAX_TEXT_INPUT_BYTES: usize = 10 * 1024 * 1024;
 /// Maximum size for search queries
 pub const MAX_QUERY_BYTES: usize = 10_000;
 
+/// Maximum length for namespace IDs
+pub const MAX_NAMESPACE_ID_LEN: usize = 64;
+
 #[derive(Debug, Error)]
 pub enum ValidationError {
     #[error("Path traversal detected: path escapes allowed directory")]
@@ -34,6 +37,129 @@ pub enum ValidationError {
     InvalidFormat(String),
     #[error("Empty input not allowed")]
     EmptyInput,
+    #[error("Invalid namespace ID: {0}")]
+    InvalidNamespaceId(String),
+}
+
+/// Normalize a user-provided namespace name into a valid slug ID.
+/// Converts to lowercase, replaces spaces/underscores with hyphens,
+/// removes invalid characters, and trims to max length.
+///
+/// # Examples
+/// ```
+/// use assistsupport_lib::validation::normalize_namespace_id;
+/// assert_eq!(normalize_namespace_id("My Namespace"), "my-namespace");
+/// assert_eq!(normalize_namespace_id("Product_Docs"), "product-docs");
+/// assert_eq!(normalize_namespace_id("UPPERCASE"), "uppercase");
+/// ```
+pub fn normalize_namespace_id(input: &str) -> String {
+    let normalized: String = input
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c
+            } else if c == ' ' || c == '_' {
+                '-'
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    // Collapse multiple hyphens and trim leading/trailing hyphens
+    let mut result = String::new();
+    let mut last_was_hyphen = true; // Start true to trim leading hyphens
+    for c in normalized.chars() {
+        if c == '-' {
+            if !last_was_hyphen {
+                result.push(c);
+                last_was_hyphen = true;
+            }
+        } else {
+            result.push(c);
+            last_was_hyphen = false;
+        }
+    }
+
+    // Trim trailing hyphen
+    if result.ends_with('-') {
+        result.pop();
+    }
+
+    // Truncate to max length
+    if result.len() > MAX_NAMESPACE_ID_LEN {
+        result.truncate(MAX_NAMESPACE_ID_LEN);
+        // Don't end on a hyphen after truncation
+        while result.ends_with('-') {
+            result.pop();
+        }
+    }
+
+    result
+}
+
+/// Validate a namespace ID against the slug pattern `[a-z0-9-]{1,64}`.
+/// IDs must be 1-64 characters, lowercase alphanumeric with hyphens.
+/// Cannot start or end with a hyphen.
+///
+/// # Arguments
+/// * `id` - The namespace ID to validate
+///
+/// # Returns
+/// * `Ok(())` if valid
+/// * `Err(ValidationError::InvalidNamespaceId)` if invalid
+pub fn validate_namespace_id(id: &str) -> Result<(), ValidationError> {
+    if id.is_empty() {
+        return Err(ValidationError::InvalidNamespaceId(
+            "Namespace ID cannot be empty".into(),
+        ));
+    }
+
+    if id.len() > MAX_NAMESPACE_ID_LEN {
+        return Err(ValidationError::InvalidNamespaceId(format!(
+            "Namespace ID exceeds maximum length of {} characters",
+            MAX_NAMESPACE_ID_LEN
+        )));
+    }
+
+    // Check pattern: [a-z0-9-]+, no leading/trailing hyphens
+    if id.starts_with('-') || id.ends_with('-') {
+        return Err(ValidationError::InvalidNamespaceId(
+            "Namespace ID cannot start or end with a hyphen".into(),
+        ));
+    }
+
+    for c in id.chars() {
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' {
+            return Err(ValidationError::InvalidNamespaceId(format!(
+                "Invalid character '{}'. Only lowercase letters, digits, and hyphens are allowed.",
+                c
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Normalize and validate a namespace ID in one step.
+/// First normalizes the input, then validates the result.
+///
+/// # Arguments
+/// * `input` - The user-provided namespace name or ID
+///
+/// # Returns
+/// * `Ok(String)` - The normalized and validated namespace ID
+/// * `Err(ValidationError)` - If the normalized ID is still invalid
+pub fn normalize_and_validate_namespace_id(input: &str) -> Result<String, ValidationError> {
+    let normalized = normalize_namespace_id(input);
+    if normalized.is_empty() {
+        return Err(ValidationError::InvalidNamespaceId(
+            "Input cannot be normalized to a valid namespace ID".into(),
+        ));
+    }
+    validate_namespace_id(&normalized)?;
+    Ok(normalized)
 }
 
 /// Validate that a path is within an allowed directory (prevents path traversal)
@@ -355,5 +481,118 @@ mod tests {
             result,
             Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
         ));
+    }
+
+    // Namespace ID tests
+    #[test]
+    fn test_normalize_namespace_id() {
+        // Basic normalization
+        assert_eq!(normalize_namespace_id("My Namespace"), "my-namespace");
+        assert_eq!(normalize_namespace_id("Product_Docs"), "product-docs");
+        assert_eq!(normalize_namespace_id("UPPERCASE"), "uppercase");
+        assert_eq!(normalize_namespace_id("already-valid"), "already-valid");
+
+        // Multiple spaces/underscores collapse
+        assert_eq!(normalize_namespace_id("a  b"), "a-b");
+        assert_eq!(normalize_namespace_id("a__b"), "a-b");
+        assert_eq!(normalize_namespace_id("a - b"), "a-b");
+
+        // Special characters removed
+        assert_eq!(normalize_namespace_id("a@b#c"), "a-b-c");
+        assert_eq!(normalize_namespace_id("hello!world"), "hello-world");
+
+        // Leading/trailing trimmed
+        assert_eq!(normalize_namespace_id("-test-"), "test");
+        assert_eq!(normalize_namespace_id("  test  "), "test");
+
+        // Numbers preserved
+        assert_eq!(normalize_namespace_id("product-v2"), "product-v2");
+        assert_eq!(normalize_namespace_id("123"), "123");
+    }
+
+    #[test]
+    fn test_normalize_namespace_id_truncation() {
+        let long_input = "a".repeat(100);
+        let normalized = normalize_namespace_id(&long_input);
+        assert_eq!(normalized.len(), MAX_NAMESPACE_ID_LEN);
+        assert!(normalized.chars().all(|c| c == 'a'));
+    }
+
+    #[test]
+    fn test_validate_namespace_id_valid() {
+        assert!(validate_namespace_id("default").is_ok());
+        assert!(validate_namespace_id("my-namespace").is_ok());
+        assert!(validate_namespace_id("product-v2").is_ok());
+        assert!(validate_namespace_id("a").is_ok());
+        assert!(validate_namespace_id("abc123").is_ok());
+        assert!(validate_namespace_id("a-b-c").is_ok());
+    }
+
+    #[test]
+    fn test_validate_namespace_id_invalid() {
+        // Empty
+        assert!(matches!(
+            validate_namespace_id(""),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+
+        // Too long
+        let long_id = "a".repeat(65);
+        assert!(matches!(
+            validate_namespace_id(&long_id),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+
+        // Leading/trailing hyphens
+        assert!(matches!(
+            validate_namespace_id("-test"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+        assert!(matches!(
+            validate_namespace_id("test-"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+
+        // Uppercase
+        assert!(matches!(
+            validate_namespace_id("MyNamespace"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+
+        // Special characters
+        assert!(matches!(
+            validate_namespace_id("test@namespace"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+        assert!(matches!(
+            validate_namespace_id("test namespace"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+        assert!(matches!(
+            validate_namespace_id("test_namespace"),
+            Err(ValidationError::InvalidNamespaceId(_))
+        ));
+    }
+
+    #[test]
+    fn test_normalize_and_validate_namespace_id() {
+        // Valid after normalization
+        assert_eq!(
+            normalize_and_validate_namespace_id("My Namespace").unwrap(),
+            "my-namespace"
+        );
+        assert_eq!(
+            normalize_and_validate_namespace_id("Product_V2").unwrap(),
+            "product-v2"
+        );
+
+        // Already valid
+        assert_eq!(
+            normalize_and_validate_namespace_id("default").unwrap(),
+            "default"
+        );
+
+        // Invalid - only special chars
+        assert!(normalize_and_validate_namespace_id("@#$%").is_err());
     }
 }

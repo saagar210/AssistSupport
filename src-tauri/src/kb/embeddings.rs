@@ -42,11 +42,16 @@ pub struct EmbeddingModelInfo {
     pub size_bytes: u64,
 }
 
+/// Context size for embeddings (tokens per text)
+const EMBEDDING_CTX_SIZE: u32 = 512;
+
 /// Internal state for embedding engine
 struct EmbeddingState {
     backend: LlamaBackend,
     model: Option<LlamaModel>,
     model_info: Option<EmbeddingModelInfo>,
+    /// Cached context params for reuse
+    ctx_params: Option<LlamaContextParams>,
 }
 
 /// Embedding engine for generating vector embeddings
@@ -60,10 +65,16 @@ impl EmbeddingEngine {
         let backend = LlamaBackend::init()
             .map_err(|e| EmbeddingError::BackendInit(e.to_string()))?;
 
+        // Pre-build context params for reuse
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(EMBEDDING_CTX_SIZE))
+            .with_embeddings(true);
+
         let state = EmbeddingState {
             backend,
             model: None,
             model_info: None,
+            ctx_params: Some(ctx_params),
         };
 
         Ok(Self {
@@ -152,6 +163,8 @@ impl EmbeddingEngine {
     }
 
     /// Generate embeddings for a batch of texts
+    ///
+    /// Optimized to reuse context params and use dynamic batch sizing.
     pub fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(vec![]);
@@ -161,16 +174,22 @@ impl EmbeddingEngine {
         let state = state_guard.as_ref().ok_or(EmbeddingError::NoModel)?;
         let model = state.model.as_ref().ok_or(EmbeddingError::NoModel)?;
 
-        // Create context for embeddings
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(512))
-            .with_embeddings(true);
+        // Use cached context params if available, otherwise create new ones
+        let ctx_params = state.ctx_params.clone().unwrap_or_else(|| {
+            LlamaContextParams::default()
+                .with_n_ctx(NonZeroU32::new(EMBEDDING_CTX_SIZE))
+                .with_embeddings(true)
+        });
 
+        // Create a single context for the entire batch (reuse across texts)
         let mut ctx = model.new_context(&state.backend, ctx_params)
             .map_err(|e| EmbeddingError::ContextCreate(e.to_string()))?;
 
         let embedding_dim = model.n_embd() as usize;
         let mut all_embeddings = Vec::with_capacity(texts.len());
+
+        // Pre-allocate a reasonably sized batch (will be reused)
+        let mut batch = LlamaBatch::new(EMBEDDING_CTX_SIZE as usize, 1);
 
         for text in texts {
             // Tokenize
@@ -183,8 +202,20 @@ impl EmbeddingEngine {
                 continue;
             }
 
-            // Create batch
-            let mut batch = LlamaBatch::new(512, 1);
+            // Truncate tokens if they exceed context size
+            let tokens = if tokens.len() > EMBEDDING_CTX_SIZE as usize {
+                tracing::warn!(
+                    "Text truncated from {} to {} tokens for embedding",
+                    tokens.len(),
+                    EMBEDDING_CTX_SIZE
+                );
+                &tokens[..EMBEDDING_CTX_SIZE as usize]
+            } else {
+                &tokens[..]
+            };
+
+            // Clear and reuse batch
+            batch.clear();
 
             for (i, token) in tokens.iter().enumerate() {
                 batch.add(*token, i as i32, &[0], i == tokens.len() - 1)
@@ -202,9 +233,6 @@ impl EmbeddingEngine {
             // Normalize the embedding
             let normalized = Self::normalize_embedding(embeddings);
             all_embeddings.push(normalized);
-
-            // Clear batch for next text
-            batch.clear();
         }
 
         Ok(all_embeddings)

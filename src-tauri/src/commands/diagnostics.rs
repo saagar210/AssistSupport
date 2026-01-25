@@ -171,7 +171,7 @@ pub fn get_database_stats_cmd(state: State<'_, AppState>) -> Result<DatabaseStat
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     let db_path = dirs::data_dir()
-        .map(|d| d.join("com.d.assistsupport/data/assistsupport.db"))
+        .map(|d| d.join("AssistSupport/assistsupport.db"))
         .ok_or("Could not determine database path")?;
 
     get_database_stats(db, &db_path)

@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+
+// Maximum streaming text buffer size (500KB) to prevent memory spikes
+const MAX_STREAMING_TEXT_SIZE = 500 * 1024;
 import type {
   ModelInfo,
   GenerationParams,
@@ -212,15 +215,27 @@ export function useLlm() {
       error: null,
     }));
 
-    // Set up token listener
+    // Set up token listener with size limit to prevent memory spikes
     const unlisten = await listen<StreamToken>('llm-token', (event) => {
       if (event.payload.done) {
         setState(prev => ({ ...prev, isStreaming: false }));
       } else {
-        setState(prev => ({
-          ...prev,
-          streamingText: prev.streamingText + event.payload.token,
-        }));
+        setState(prev => {
+          // Enforce maximum buffer size to prevent memory exhaustion
+          const newText = prev.streamingText + event.payload.token;
+          if (newText.length > MAX_STREAMING_TEXT_SIZE) {
+            // Truncate from the beginning, keeping recent content
+            const truncated = newText.slice(newText.length - MAX_STREAMING_TEXT_SIZE);
+            return {
+              ...prev,
+              streamingText: '...[truncated]...' + truncated,
+            };
+          }
+          return {
+            ...prev,
+            streamingText: newText,
+          };
+        });
         options?.onToken?.(event.payload.token);
       }
     });

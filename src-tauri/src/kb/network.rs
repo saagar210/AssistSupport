@@ -94,40 +94,57 @@ fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
     false
 }
 
+/// Check if an IPv6 address is IPv4-mapped (::ffff:x.x.x.x)
+fn get_ipv4_from_mapped(ipv6: &Ipv6Addr) -> Option<Ipv4Addr> {
+    let segments = ipv6.segments();
+    // IPv4-mapped format: ::ffff:x.x.x.x
+    // segments[0..5] should be 0, segment[5] should be 0xffff
+    if segments[0] == 0 && segments[1] == 0 && segments[2] == 0
+        && segments[3] == 0 && segments[4] == 0 && segments[5] == 0xffff
+    {
+        let high = segments[6];
+        let low = segments[7];
+        return Some(Ipv4Addr::new(
+            (high >> 8) as u8,
+            (high & 0xff) as u8,
+            (low >> 8) as u8,
+            (low & 0xff) as u8,
+        ));
+    }
+
+    // IPv4-compatible format (deprecated but still checked): ::x.x.x.x
+    if segments[0] == 0 && segments[1] == 0 && segments[2] == 0
+        && segments[3] == 0 && segments[4] == 0 && segments[5] == 0
+        && (segments[6] != 0 || segments[7] != 0)
+    {
+        let high = segments[6];
+        let low = segments[7];
+        return Some(Ipv4Addr::new(
+            (high >> 8) as u8,
+            (high & 0xff) as u8,
+            (low >> 8) as u8,
+            (low & 0xff) as u8,
+        ));
+    }
+
+    None
+}
+
 /// Check if an IP address should be blocked by SSRF protection
+/// This includes checking IPv6-mapped IPv4 addresses (::ffff:x.x.x.x)
 pub fn is_ip_blocked(ip: &IpAddr, config: &SsrfConfig) -> Option<String> {
     match ip {
-        IpAddr::V4(ipv4) => {
-            if config.block_loopback && ipv4.is_loopback() {
-                return Some("loopback address blocked".into());
-            }
-            if config.block_private && is_private_ipv4(ipv4) {
-                return Some("private IP range blocked".into());
-            }
-            if config.block_link_local && ipv4.is_link_local() {
-                return Some("link-local address blocked".into());
-            }
-            if config.block_multicast && ipv4.is_multicast() {
-                return Some("multicast address blocked".into());
-            }
-            // Block broadcast
-            if ipv4.is_broadcast() {
-                return Some("broadcast address blocked".into());
-            }
-            // Block documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
-            if (ipv4.octets()[0] == 192 && ipv4.octets()[1] == 0 && ipv4.octets()[2] == 2)
-                || (ipv4.octets()[0] == 198 && ipv4.octets()[1] == 51 && ipv4.octets()[2] == 100)
-                || (ipv4.octets()[0] == 203 && ipv4.octets()[1] == 0 && ipv4.octets()[2] == 113)
-            {
-                return Some("documentation IP range blocked".into());
-            }
-            // Block 0.0.0.0/8 (this network)
-            if ipv4.octets()[0] == 0 {
-                return Some("this-network address blocked".into());
-            }
-            None
-        }
+        IpAddr::V4(ipv4) => check_ipv4_blocked(ipv4, config),
         IpAddr::V6(ipv6) => {
+            // First, check if this is an IPv4-mapped or IPv4-compatible IPv6 address
+            // and apply IPv4 rules if so (prevents bypass via ::ffff:127.0.0.1)
+            if let Some(mapped_ipv4) = get_ipv4_from_mapped(ipv6) {
+                if let Some(reason) = check_ipv4_blocked(&mapped_ipv4, config) {
+                    return Some(format!("{} (IPv4-mapped)", reason));
+                }
+            }
+
+            // Apply IPv6-specific checks
             if config.block_loopback && ipv6.is_loopback() {
                 return Some("loopback address blocked".into());
             }
@@ -147,6 +164,44 @@ pub fn is_ip_blocked(ip: &IpAddr, config: &SsrfConfig) -> Option<String> {
             None
         }
     }
+}
+
+/// Check if an IPv4 address should be blocked
+fn check_ipv4_blocked(ipv4: &Ipv4Addr, config: &SsrfConfig) -> Option<String> {
+    if config.block_loopback && ipv4.is_loopback() {
+        return Some("loopback address blocked".into());
+    }
+    if config.block_private && is_private_ipv4(ipv4) {
+        return Some("private IP range blocked".into());
+    }
+    if config.block_link_local && ipv4.is_link_local() {
+        return Some("link-local address blocked".into());
+    }
+    if config.block_multicast && ipv4.is_multicast() {
+        return Some("multicast address blocked".into());
+    }
+    // Block broadcast
+    if ipv4.is_broadcast() {
+        return Some("broadcast address blocked".into());
+    }
+    // Block documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
+    if (ipv4.octets()[0] == 192 && ipv4.octets()[1] == 0 && ipv4.octets()[2] == 2)
+        || (ipv4.octets()[0] == 198 && ipv4.octets()[1] == 51 && ipv4.octets()[2] == 100)
+        || (ipv4.octets()[0] == 203 && ipv4.octets()[1] == 0 && ipv4.octets()[2] == 113)
+    {
+        return Some("documentation IP range blocked".into());
+    }
+    // Block 0.0.0.0/8 (this network)
+    if ipv4.octets()[0] == 0 {
+        return Some("this-network address blocked".into());
+    }
+    // Block AWS/cloud metadata endpoints (169.254.169.254)
+    if ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254
+        && ipv4.octets()[2] == 169 && ipv4.octets()[3] == 254
+    {
+        return Some("cloud metadata endpoint blocked".into());
+    }
+    None
 }
 
 /// Check if a host matches an allowlist pattern
@@ -377,6 +432,50 @@ mod tests {
         // Public (should not be blocked)
         assert!(is_ip_blocked(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), &config).is_none());
         assert!(is_ip_blocked(&IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), &config).is_none());
+
+        // Cloud metadata endpoint
+        assert!(is_ip_blocked(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), &config).is_some());
+    }
+
+    #[test]
+    fn test_ipv6_mapped_ipv4_blocked() {
+        let config = SsrfConfig::default();
+
+        // IPv6-mapped loopback (::ffff:127.0.0.1)
+        let mapped_loopback = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001);
+        let result = is_ip_blocked(&IpAddr::V6(mapped_loopback), &config);
+        assert!(result.is_some(), "IPv6-mapped loopback should be blocked");
+        assert!(result.unwrap().contains("IPv4-mapped"));
+
+        // IPv6-mapped private range (::ffff:192.168.1.1)
+        let mapped_private = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc0a8, 0x0101);
+        let result = is_ip_blocked(&IpAddr::V6(mapped_private), &config);
+        assert!(result.is_some(), "IPv6-mapped private should be blocked");
+
+        // IPv6-mapped 10.x.x.x (::ffff:10.0.0.1)
+        let mapped_10 = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001);
+        let result = is_ip_blocked(&IpAddr::V6(mapped_10), &config);
+        assert!(result.is_some(), "IPv6-mapped 10.0.0.1 should be blocked");
+
+        // IPv6-mapped cloud metadata (::ffff:169.254.169.254)
+        let mapped_metadata = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xa9fe, 0xa9fe);
+        let result = is_ip_blocked(&IpAddr::V6(mapped_metadata), &config);
+        assert!(result.is_some(), "IPv6-mapped metadata endpoint should be blocked");
+
+        // IPv6-mapped public (::ffff:8.8.8.8) should NOT be blocked
+        let mapped_public = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808);
+        let result = is_ip_blocked(&IpAddr::V6(mapped_public), &config);
+        assert!(result.is_none(), "IPv6-mapped public IP should not be blocked");
+    }
+
+    #[test]
+    fn test_ipv4_compatible_ipv6_blocked() {
+        let config = SsrfConfig::default();
+
+        // IPv4-compatible loopback (::127.0.0.1, deprecated but should still be blocked)
+        let compat_loopback = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0x7f00, 0x0001);
+        let result = is_ip_blocked(&IpAddr::V6(compat_loopback), &config);
+        assert!(result.is_some(), "IPv4-compatible loopback should be blocked");
     }
 
     #[test]

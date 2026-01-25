@@ -5,7 +5,7 @@
 //! - Keychain: Master key stored in macOS Keychain (default, most secure)
 //! - Passphrase: Master key wrapped with user passphrase (portable, offline backup)
 //!
-//! Credentials are stored under ~/Library/Application Support/com.d.assistsupport/
+//! Credentials are stored under ~/Library/Application Support/AssistSupport/
 //! with restrictive permissions. Tokens are encrypted at rest with the master key.
 
 use aes_gcm::{
@@ -25,7 +25,7 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-const SERVICE_NAME: &str = "com.d.assistsupport";
+const SERVICE_NAME: &str = "AssistSupport";
 const MASTER_KEY_ENTRY: &str = "master-key";
 const HF_TOKEN_ENTRY: &str = "huggingface-token";
 const JIRA_TOKEN_ENTRY: &str = "jira-api-token";
@@ -36,6 +36,40 @@ const ARGON2_PARALLELISM: u32 = 4;
 const SALT_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
+
+/// Permission mode for directories (owner rwx only)
+pub const DIR_PERMISSIONS: u32 = 0o700;
+
+/// Permission mode for private files (owner rw only)
+pub const FILE_PERMISSIONS: u32 = 0o600;
+
+/// Set secure permissions on a path (0o700 for directories, 0o600 for files)
+/// On non-Unix systems this is a no-op.
+#[cfg(unix)]
+pub fn set_secure_permissions(path: &Path, mode: u32) -> std::io::Result<()> {
+    let perms = fs::Permissions::from_mode(mode);
+    fs::set_permissions(path, perms)
+}
+
+#[cfg(not(unix))]
+pub fn set_secure_permissions(_path: &Path, _mode: u32) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Create a directory with secure permissions (0o700).
+/// Creates parent directories as needed.
+pub fn create_secure_dir(path: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(path)?;
+    set_secure_permissions(path, DIR_PERMISSIONS)?;
+    Ok(())
+}
+
+/// Create a directory for private data with 0o700 permissions.
+/// Returns the path for chaining.
+pub fn ensure_secure_data_dir(path: &Path) -> std::io::Result<&Path> {
+    create_secure_dir(path)?;
+    Ok(path)
+}
 
 /// Key storage mode for master key
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -344,7 +378,7 @@ struct KeyStorageConfig {
 
 /// Secure key storage with support for Keychain and passphrase modes
 ///
-/// Storage location: ~/Library/Application Support/com.d.assistsupport/
+/// Storage location: ~/Library/Application Support/AssistSupport/
 /// - key_storage.json: Storage mode configuration
 /// - master.key.wrap: Wrapped key file (passphrase mode only)
 /// - tokens.json: API tokens encrypted with the master key
@@ -392,10 +426,10 @@ impl FileKeyStore {
         Ok(())
     }
 
-    /// Get app data directory: ~/Library/Application Support/com.d.assistsupport/
+    /// Get app data directory: ~/Library/Application Support/AssistSupport/
     fn get_app_data_dir() -> Result<PathBuf, SecurityError> {
         dirs::data_dir()
-            .map(|d| d.join("com.d.assistsupport"))
+            .map(|d| d.join("AssistSupport"))
             .ok_or(SecurityError::ConfigDirNotFound)
     }
 
@@ -989,10 +1023,17 @@ impl Crypto {
     }
 
     /// Wrap master key with passphrase-derived key
+    ///
+    /// Security: The KEK (Key Encryption Key) is zeroized after use.
     pub fn wrap_key(master_key: &MasterKey, passphrase: &str) -> Result<WrappedKey, SecurityError> {
         let salt = Self::generate_salt();
-        let kek = Self::derive_key_from_passphrase(passphrase, &salt)?;
-        let encrypted_key = Self::encrypt(&kek, master_key.as_bytes())?;
+        let mut kek = Self::derive_key_from_passphrase(passphrase, &salt)?;
+        let encrypted_key = Self::encrypt(&kek, master_key.as_bytes());
+
+        // Zeroize the KEK immediately after use
+        kek.zeroize();
+
+        let encrypted_key = encrypted_key?;
 
         Ok(WrappedKey {
             encrypted_key,
@@ -1004,16 +1045,28 @@ impl Crypto {
     }
 
     /// Unwrap master key with passphrase
+    ///
+    /// Security: The KEK and intermediate key bytes are zeroized after use.
     pub fn unwrap_key(wrapped: &WrappedKey, passphrase: &str) -> Result<MasterKey, SecurityError> {
-        let kek = Self::derive_key_from_passphrase(passphrase, &wrapped.salt)?;
-        let key_bytes = Self::decrypt(&kek, &wrapped.encrypted_key)?;
+        let mut kek = Self::derive_key_from_passphrase(passphrase, &wrapped.salt)?;
+        let decrypted = Self::decrypt(&kek, &wrapped.encrypted_key);
+
+        // Zeroize the KEK immediately after use
+        kek.zeroize();
+
+        let mut key_bytes = decrypted?;
 
         if key_bytes.len() != KEY_LEN {
+            key_bytes.zeroize();
             return Err(SecurityError::InvalidKeyFormat);
         }
 
         let mut key = [0u8; KEY_LEN];
         key.copy_from_slice(&key_bytes);
+
+        // Zeroize the intermediate buffer
+        key_bytes.zeroize();
+
         Ok(MasterKey::from_bytes(key))
     }
 }
@@ -1026,26 +1079,40 @@ pub struct ExportCrypto;
 
 impl ExportCrypto {
     /// Encrypt data for export with user-provided password
+    ///
+    /// Security: The derived key is zeroized after use.
     pub fn encrypt_for_export(data: &[u8], password: &str) -> Result<ExportEncryptResult, SecurityError> {
         let salt = Crypto::generate_salt();
-        let key = Crypto::derive_key_from_passphrase(password, &salt)?;
-        let encrypted = Crypto::encrypt(&key, data)?;
+        let mut key = Crypto::derive_key_from_passphrase(password, &salt)?;
+        let result = Crypto::encrypt(&key, data);
+
+        // Zeroize the key after use
+        key.zeroize();
+
+        let encrypted = result?;
         Ok((encrypted.ciphertext, salt, encrypted.nonce))
     }
 
     /// Decrypt exported data
+    ///
+    /// Security: The derived key is zeroized after use.
     pub fn decrypt_export(
         ciphertext: &[u8],
         salt: &[u8; SALT_LEN],
         nonce: &[u8; NONCE_LEN],
         password: &str,
     ) -> Result<Vec<u8>, SecurityError> {
-        let key = Crypto::derive_key_from_passphrase(password, salt)?;
+        let mut key = Crypto::derive_key_from_passphrase(password, salt)?;
         let encrypted = EncryptedData {
             ciphertext: ciphertext.to_vec(),
             nonce: *nonce,
         };
-        Crypto::decrypt(&key, &encrypted)
+        let result = Crypto::decrypt(&key, &encrypted);
+
+        // Zeroize the key after use
+        key.zeroize();
+
+        result
     }
 }
 

@@ -51,6 +51,20 @@ impl Database {
         // Verify the key works by reading from the database
         conn.execute_batch("SELECT count(*) FROM sqlite_master;")?;
 
+        // Enable foreign key enforcement (required for ON DELETE CASCADE)
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
+        // Set busy timeout (5 seconds) to avoid SQLITE_BUSY errors
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+
+        // Use WAL journal mode for better concurrent read performance
+        // Note: WAL works with SQLCipher but plaintext_header_size may need adjustment
+        // for older SQLCipher versions. Default behavior is safe.
+        let _ = conn.execute_batch("PRAGMA journal_mode = WAL;");
+
+        // Set secure delete to overwrite deleted content
+        conn.execute_batch("PRAGMA secure_delete = ON;")?;
+
         let db = Self {
             conn,
             path: path.to_path_buf(),

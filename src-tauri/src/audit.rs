@@ -1,7 +1,7 @@
 //! Audit logging module for AssistSupport
 //!
 //! Provides structured audit logging for security-relevant events.
-//! Logs are stored as JSON lines at ~/Library/Application Support/com.d.assistsupport/audit.log
+//! Logs are stored as JSON lines at ~/Library/Application Support/AssistSupport/audit.log
 //!
 //! Features:
 //! - Structured JSON format
@@ -159,10 +159,11 @@ impl AuditLogger {
     /// Initialize the global audit logger
     pub fn init() -> Result<(), AuditError> {
         let log_dir = dirs::data_dir()
-            .map(|d| d.join("com.d.assistsupport"))
+            .map(|d| d.join("AssistSupport"))
             .ok_or(AuditError::LogDirNotFound)?;
 
-        fs::create_dir_all(&log_dir).map_err(|e| AuditError::IO(e.to_string()))?;
+        // Create directory with secure permissions (0o700)
+        crate::security::create_secure_dir(&log_dir).map_err(|e| AuditError::IO(e.to_string()))?;
 
         let logger = Self { log_dir };
 
@@ -224,11 +225,18 @@ impl AuditLogger {
         self.rotate_if_needed()?;
 
         let log_path = self.log_path();
+        let is_new = !log_path.exists();
+
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_path)
             .map_err(|e| AuditError::IO(e.to_string()))?;
+
+        // Set secure permissions on new files (0o600)
+        if is_new {
+            let _ = crate::security::set_secure_permissions(&log_path, crate::security::FILE_PERMISSIONS);
+        }
 
         let mut writer = BufWriter::new(file);
         let line =

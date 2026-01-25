@@ -11,6 +11,43 @@ use arrow_schema::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{connect, Connection, Table};
 
+/// Sanitize a string value for use in LanceDB filter expressions.
+/// This prevents filter injection attacks by escaping/rejecting malicious input.
+///
+/// # Security
+/// Escapes single quotes and validates that the input doesn't contain
+/// SQL injection patterns. Returns None if the input appears malicious.
+fn sanitize_filter_value(value: &str) -> Option<String> {
+    // Reject obviously malicious patterns
+    let lower = value.to_lowercase();
+    let suspicious_patterns = [
+        "' or ", "' and ", "';", "'--", "/*", "*/",
+        "union", "select", "insert", "update", "delete",
+        "drop", "truncate", "exec", "execute",
+    ];
+
+    for pattern in &suspicious_patterns {
+        if lower.contains(pattern) {
+            return None;
+        }
+    }
+
+    // Escape single quotes by doubling them
+    Some(value.replace('\'', "''"))
+}
+
+/// Sanitize a chunk/document ID for use in filter expressions.
+/// IDs should only contain alphanumeric characters, hyphens, and underscores.
+fn sanitize_id(id: &str) -> Option<String> {
+    // UUIDs and similar IDs should only have alphanumeric, hyphens, underscores
+    if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        Some(id.to_string())
+    } else {
+        // Fallback: escape the value
+        sanitize_filter_value(id)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum VectorError {
     #[error("LanceDB error: {0}")]
@@ -352,9 +389,11 @@ impl VectorStore {
             .vector_search(query_embedding)
             .map_err(|e| VectorError::LanceDb(e.to_string()))?;
 
-        // Apply namespace filter if specified
+        // Apply namespace filter if specified (with injection protection)
         if let Some(ns) = namespace_id {
-            query = query.only_if(format!("namespace_id = '{}'", ns));
+            let safe_ns = sanitize_filter_value(ns)
+                .ok_or_else(|| VectorError::LanceDb("Invalid namespace ID".into()))?;
+            query = query.only_if(format!("namespace_id = '{}'", safe_ns));
         }
 
         let results = query
@@ -423,8 +462,16 @@ impl VectorStore {
             return Ok(());
         }
 
-        // Build filter expression for deletion
-        let quoted_ids: Vec<String> = ids.iter().map(|id| format!("'{}'", id)).collect();
+        // Build filter expression for deletion (with injection protection)
+        let quoted_ids: Vec<String> = ids
+            .iter()
+            .filter_map(|id| sanitize_id(id).map(|safe_id| format!("'{}'", safe_id)))
+            .collect();
+
+        if quoted_ids.is_empty() {
+            return Ok(());
+        }
+
         let filter = format!("id IN ({})", quoted_ids.join(", "));
 
         table
@@ -443,7 +490,10 @@ impl VectorStore {
 
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
-        let filter = format!("document_id = '{}'", document_id);
+        // Sanitize document_id to prevent injection
+        let safe_doc_id = sanitize_id(document_id)
+            .ok_or_else(|| VectorError::LanceDb("Invalid document ID".into()))?;
+        let filter = format!("document_id = '{}'", safe_doc_id);
 
         table
             .delete(&filter)
@@ -461,7 +511,10 @@ impl VectorStore {
 
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
-        let filter = format!("namespace_id = '{}'", namespace_id);
+        // Sanitize namespace_id to prevent injection
+        let safe_ns_id = sanitize_filter_value(namespace_id)
+            .ok_or_else(|| VectorError::LanceDb("Invalid namespace ID".into()))?;
+        let filter = format!("namespace_id = '{}'", safe_ns_id);
 
         table
             .delete(&filter)
@@ -550,5 +603,52 @@ mod tests {
         assert!(!status.supported);
         assert!(!status.reason.is_empty());
         assert!(!status.recommendation.is_empty());
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_valid() {
+        // Normal values should pass
+        assert_eq!(sanitize_filter_value("my-namespace"), Some("my-namespace".to_string()));
+        assert_eq!(sanitize_filter_value("default"), Some("default".to_string()));
+        assert_eq!(sanitize_filter_value("namespace-123"), Some("namespace-123".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_escapes_quotes() {
+        // Single quotes should be escaped
+        assert_eq!(sanitize_filter_value("it's"), Some("it''s".to_string()));
+        assert_eq!(sanitize_filter_value("test'value"), Some("test''value".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_blocks_injection() {
+        // SQL injection attempts should be rejected
+        assert_eq!(sanitize_filter_value("' OR 1=1 --"), None);
+        assert_eq!(sanitize_filter_value("'; DROP TABLE"), None);
+        assert_eq!(sanitize_filter_value("test' AND 1=1"), None);
+        assert_eq!(sanitize_filter_value("union select"), None);
+        assert_eq!(sanitize_filter_value("/* comment */"), None);
+    }
+
+    #[test]
+    fn test_sanitize_id_valid() {
+        // UUIDs and simple IDs should pass
+        assert_eq!(sanitize_id("550e8400-e29b-41d4-a716-446655440000"), Some("550e8400-e29b-41d4-a716-446655440000".to_string()));
+        assert_eq!(sanitize_id("chunk_123"), Some("chunk_123".to_string()));
+        assert_eq!(sanitize_id("abc123"), Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_id_with_special_chars() {
+        // IDs with special chars should be sanitized
+        let result = sanitize_id("test'id");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("''"));
+    }
+
+    #[test]
+    fn test_sanitize_id_blocks_injection() {
+        // Injection attempts in IDs should be rejected
+        assert_eq!(sanitize_id("'; DROP TABLE --"), None);
     }
 }

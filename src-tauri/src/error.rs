@@ -63,6 +63,7 @@ impl ErrorCode {
     pub const VALIDATION_INPUT_TOO_LARGE: &'static str = "VALIDATION_INPUT_TOO_LARGE";
     pub const VALIDATION_INVALID_FORMAT: &'static str = "VALIDATION_INVALID_FORMAT";
     pub const VALIDATION_INVALID_URL: &'static str = "VALIDATION_INVALID_URL";
+    pub const VALIDATION_INVALID_NAMESPACE_ID: &'static str = "VALIDATION_INVALID_NAMESPACE_ID";
 
     // Security errors
     pub const SECURITY_AUTH_FAILED: &'static str = "SECURITY_AUTH_FAILED";
@@ -449,6 +450,11 @@ impl From<crate::validation::ValidationError> for AppError {
                 }
             }
             crate::validation::ValidationError::EmptyInput => Self::empty_input("Input"),
+            crate::validation::ValidationError::InvalidNamespaceId(msg) => Self::new(
+                ErrorCode::VALIDATION_INVALID_NAMESPACE_ID,
+                format!("Invalid namespace ID: {}", msg),
+                ErrorCategory::Validation,
+            ),
         }
     }
 }

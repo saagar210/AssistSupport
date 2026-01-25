@@ -18,7 +18,8 @@ AssistSupport is designed with a **local-first, security-conscious** architectur
 
 #### Database Encryption
 - **Technology**: SQLCipher with AES-256-CBC
-- **Key Management**: 256-bit master key stored in `~/Library/Application Support/com.d.assistsupport/master.key`
+- **Key Management**: 256-bit master key (Keychain or passphrase-wrapped)
+- **Database Location**: `~/Library/Application Support/AssistSupport/assistsupport.db`
 - **File Permissions**: 0600 (owner read/write only)
 - **Directory Permissions**: 0700 (owner access only)
 
@@ -45,13 +46,13 @@ AssistSupport supports two key storage modes:
 | **Passphrase** | Encrypted file | User-controlled, portable | Cross-platform, offline |
 
 **Keychain Mode** (default on macOS):
-- Key stored in system Keychain under `com.d.assistsupport.master-key`
+- Key stored in system Keychain under `AssistSupport.master-key`
 - Protected by macOS security (TouchID, password)
 - Automatically unlocked when user is logged in
 
 **Passphrase Mode**:
 - Key wrapped with AES-256-GCM, protected by Argon2id-derived key
-- Stored in `~/Library/Application Support/com.d.assistsupport/master.key.wrapped`
+- Stored in `~/Library/Application Support/AssistSupport/master.key.wrap`
 - User must enter passphrase on each app launch
 - Portable across systems
 
@@ -153,7 +154,7 @@ This protects credentials from network interception while allowing local/develop
 
 AssistSupport maintains an audit log for security-relevant events. The log is stored as JSON lines at:
 ```
-~/Library/Application Support/com.d.assistsupport/audit.log
+~/Library/Application Support/AssistSupport/audit.log
 ```
 
 ### Log Features
@@ -303,17 +304,17 @@ npm audit
 3. Delete and regenerate master key:
    ```bash
    # Delete all key storage files
-   rm ~/Library/Application\ Support/com.d.assistsupport/master.key
-   rm ~/Library/Application\ Support/com.d.assistsupport/master.key.wrapped
-   rm ~/Library/Application\ Support/com.d.assistsupport/tokens.json
+   rm ~/Library/Application\ Support/AssistSupport/master.key
+   rm ~/Library/Application\ Support/AssistSupport/master.key.wrap
+   rm ~/Library/Application\ Support/AssistSupport/tokens.json
 
    # If using Keychain mode, also delete from Keychain
-   security delete-generic-password -s "com.d.assistsupport.master-key" 2>/dev/null
+   security delete-generic-password -s "AssistSupport" -a "master-key" 2>/dev/null
    ```
 4. Restart application (new key generated automatically)
 5. Review audit log for suspicious activity:
    ```bash
-   cat ~/Library/Application\ Support/com.d.assistsupport/audit.log | jq '.'
+   cat ~/Library/Application\ Support/AssistSupport/audit.log | jq '.'
    ```
 
 ### If Database Compromised
@@ -371,6 +372,19 @@ For the top 5 failure modes, AssistSupport provides clear remediation:
 ---
 
 ## Changelog
+
+### v1.3 (2026-01-25)
+- **SSRF Hardening**: Added IPv6-mapped IPv4 detection and cloud metadata endpoint blocking
+- **Symlink Protection**: KB indexer now skips symlinks to prevent traversal attacks
+- **Filter Injection Prevention**: Vector store sanitizes all filter inputs
+- **SQLite Safety**: Enabled foreign keys, busy timeout, WAL mode, and secure delete
+- **File Size Limits**: Local file indexing enforces size limits (10MB text, 50MB binary)
+- **Streaming Memory Bounds**: Web ingestion and frontend streaming have size limits
+- **KEK Zeroization**: Passphrase-derived keys are explicitly zeroized after use
+- **Audit Coverage**: Token set/clear operations now logged
+- **Namespace ID Validation**: Enforced slug format `[a-z0-9-]{1,64}` with auto-normalization
+- **LLM Dynamic Batch Sizing**: Batch size scales with prompt length for better performance
+- **Embedding Context Reuse**: Improved batch embedding performance
 
 ### v1.2 (2026-01-25)
 - Added dual key storage modes (Keychain and Passphrase)

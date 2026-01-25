@@ -133,6 +133,28 @@ interface AppStatusState {
 - `ingest_sources` - Web/YouTube/GitHub sources
 - `namespaces` - KB organization
 
+### Namespace ID Policy
+
+Namespace IDs are used to organize knowledge base content. They follow a strict slug pattern for consistency and security:
+
+**ID Format**: `[a-z0-9-]{1,64}` (lowercase, alphanumeric, hyphens only)
+
+**Auto-Normalization**:
+- Uppercase → lowercase: `MyNamespace` → `my-namespace`
+- Spaces/underscores → hyphens: `Product Docs` → `product-docs`
+- Special characters removed
+- Leading/trailing hyphens trimmed
+- Max 64 characters (truncated if longer)
+
+**Display Names**: Stored separately for user-friendly labels (not subject to slug rules).
+
+**Usage**:
+```rust
+use crate::validation::normalize_and_validate_namespace_id;
+
+let ns_id = normalize_and_validate_namespace_id("My Namespace")?; // "my-namespace"
+```
+
 ## API Patterns
 
 ### Tauri Commands

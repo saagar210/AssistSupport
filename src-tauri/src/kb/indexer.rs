@@ -29,6 +29,10 @@ pub enum IndexerError {
     Parse(String),
     #[error("Unsupported file type: {0}")]
     UnsupportedFileType(String),
+    #[error("File too large: {size} bytes exceeds limit of {max} bytes")]
+    FileTooLarge { size: u64, max: u64 },
+    #[error("Symlink not allowed: {0}")]
+    SymlinkNotAllowed(String),
 }
 
 /// Document types that can be indexed
@@ -133,6 +137,15 @@ pub enum IndexProgress {
     Error { file_name: String, message: String },
 }
 
+/// Maximum file size for text files (10MB)
+const MAX_TEXT_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Maximum file size for binary files like PDF, DOCX (50MB)
+const MAX_BINARY_FILE_SIZE: u64 = 50 * 1024 * 1024;
+
+/// Maximum file size for images (20MB)
+const MAX_IMAGE_FILE_SIZE: u64 = 20 * 1024 * 1024;
+
 /// KB Indexer
 pub struct KbIndexer {
     pdf_extractor: PdfExtractor,
@@ -153,10 +166,52 @@ impl KbIndexer {
     }
 
     /// Calculate SHA256 hash of file contents
+    ///
+    /// Uses streaming to handle large files efficiently.
     pub fn file_hash(path: &Path) -> Result<String, IndexerError> {
-        let content = std::fs::read(path)?;
-        let hash = Sha256::digest(&content);
-        Ok(format!("{:x}", hash))
+        use std::io::Read;
+
+        let file = std::fs::File::open(path)?;
+        let mut hasher = Sha256::new();
+        let mut reader = std::io::BufReader::new(file);
+        let mut buffer = [0u8; 8192];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Check if a path is a symlink
+    fn is_symlink(path: &Path) -> bool {
+        path.symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    }
+
+    /// Get file size, returning an error if the file is a symlink
+    fn get_file_size_safe(path: &Path) -> Result<u64, IndexerError> {
+        if Self::is_symlink(path) {
+            return Err(IndexerError::SymlinkNotAllowed(
+                path.to_string_lossy().to_string()
+            ));
+        }
+        let metadata = std::fs::metadata(path)?;
+        Ok(metadata.len())
+    }
+
+    /// Get max file size for a document type
+    fn max_file_size(doc_type: &DocumentType) -> u64 {
+        match doc_type {
+            DocumentType::Pdf | DocumentType::Docx | DocumentType::Xlsx => MAX_BINARY_FILE_SIZE,
+            DocumentType::Image => MAX_IMAGE_FILE_SIZE,
+            _ => MAX_TEXT_FILE_SIZE,
+        }
     }
 
     /// Scan a folder for indexable documents
@@ -172,6 +227,12 @@ impl KbIndexer {
             return Ok(());
         }
 
+        // Skip symlinked directories for security
+        if Self::is_symlink(folder) {
+            tracing::warn!("Skipping symlinked directory: {:?}", folder);
+            return Ok(());
+        }
+
         for entry in std::fs::read_dir(folder)? {
             let entry = entry?;
             let path = entry.path();
@@ -182,6 +243,12 @@ impl KbIndexer {
                 .map(|n| n.starts_with('.'))
                 .unwrap_or(false)
             {
+                continue;
+            }
+
+            // Skip symlinks for security (prevent symlink traversal attacks)
+            if Self::is_symlink(&path) {
+                tracing::warn!("Skipping symlink: {:?}", path);
                 continue;
             }
 
@@ -205,6 +272,16 @@ impl KbIndexer {
 
         let doc_type = DocumentType::from_extension(ext)
             .ok_or_else(|| IndexerError::UnsupportedFileType(ext.to_string()))?;
+
+        // Check file size limit before reading
+        let file_size = Self::get_file_size_safe(path)?;
+        let max_size = Self::max_file_size(&doc_type);
+        if file_size > max_size {
+            return Err(IndexerError::FileTooLarge {
+                size: file_size,
+                max: max_size,
+            });
+        }
 
         match doc_type {
             DocumentType::Markdown => self.parse_markdown(path),
@@ -1080,5 +1157,105 @@ If self-service is not available, contact IT support for an admin reset.
         let result2 = indexer.index_folder(&db, kb_dir.path(), |_| {}).unwrap();
         assert_eq!(result2.skipped, 2);
         assert_eq!(result2.indexed, 0);
+    }
+
+    #[test]
+    fn test_symlink_detection() {
+        // Test the is_symlink helper
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("regular.txt");
+        std::fs::write(&file_path, "test").unwrap();
+
+        assert!(!KbIndexer::is_symlink(&file_path));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_files_skipped_in_scan() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+
+        // Create a regular file
+        let real_file = dir.path().join("real.md");
+        std::fs::write(&real_file, "# Real file").unwrap();
+
+        // Create a symlink to the file
+        let symlink_file = dir.path().join("symlink.md");
+        symlink(&real_file, &symlink_file).unwrap();
+
+        let indexer = KbIndexer::new();
+        let files = indexer.scan_folder(dir.path()).unwrap();
+
+        // Should only contain the real file, not the symlink
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("real.md"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_directories_skipped_in_scan() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+
+        // Create a real subdirectory with a file
+        let real_subdir = dir.path().join("real_subdir");
+        std::fs::create_dir(&real_subdir).unwrap();
+        std::fs::write(real_subdir.join("doc.md"), "# Doc").unwrap();
+
+        // Create a symlinked directory
+        let symlink_subdir = dir.path().join("symlink_subdir");
+        symlink(&real_subdir, &symlink_subdir).unwrap();
+
+        let indexer = KbIndexer::new();
+        let files = indexer.scan_folder(dir.path()).unwrap();
+
+        // Should only find the file in the real directory, not the symlinked one
+        assert_eq!(files.len(), 1);
+        assert!(files[0].to_string_lossy().contains("real_subdir"));
+    }
+
+    #[test]
+    fn test_file_size_limit_constants() {
+        // Verify size limits are reasonable
+        assert!(MAX_TEXT_FILE_SIZE <= 10 * 1024 * 1024); // 10MB max for text
+        assert!(MAX_BINARY_FILE_SIZE <= 50 * 1024 * 1024); // 50MB max for binary
+        assert!(MAX_IMAGE_FILE_SIZE <= 20 * 1024 * 1024); // 20MB max for images
+    }
+
+    #[test]
+    fn test_max_file_size_by_type() {
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::Markdown), MAX_TEXT_FILE_SIZE);
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::PlainText), MAX_TEXT_FILE_SIZE);
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::Pdf), MAX_BINARY_FILE_SIZE);
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::Docx), MAX_BINARY_FILE_SIZE);
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::Xlsx), MAX_BINARY_FILE_SIZE);
+        assert_eq!(KbIndexer::max_file_size(&DocumentType::Image), MAX_IMAGE_FILE_SIZE);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_rejected_in_parse() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+
+        // Create a real file
+        let real_file = dir.path().join("real.md");
+        std::fs::write(&real_file, "# Test").unwrap();
+
+        // Create a symlink
+        let symlink_file = dir.path().join("symlink.md");
+        symlink(&real_file, &symlink_file).unwrap();
+
+        let indexer = KbIndexer::new();
+
+        // Parsing the real file should succeed
+        assert!(indexer.parse_document(&real_file).is_ok());
+
+        // Parsing the symlink should fail with SymlinkNotAllowed
+        let result = indexer.parse_document(&symlink_file);
+        assert!(matches!(result, Err(IndexerError::SymlinkNotAllowed(_))));
     }
 }

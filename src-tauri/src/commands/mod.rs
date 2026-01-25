@@ -24,7 +24,7 @@ use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
 use crate::security::{FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA};
-use crate::validation::{validate_text_size, validate_non_empty, validate_url, is_http_url, validate_ticket_id, validate_within_home, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
+use crate::validation::{validate_text_size, validate_non_empty, validate_url, is_http_url, validate_ticket_id, validate_within_home, normalize_and_validate_namespace_id, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,9 +40,9 @@ static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(Atomi
 /// Initialize the application
 #[tauri::command]
 pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, String> {
-    // Ensure app data directory exists
+    // Ensure app data directory exists with secure permissions (0o700)
     let app_dir = get_app_data_dir();
-    std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
+    crate::security::create_secure_dir(&app_dir).map_err(|e| e.to_string())?;
 
     // Initialize audit logger
     let _ = AuditLogger::init();
@@ -1183,13 +1183,17 @@ pub fn has_hf_token() -> Result<bool, String> {
 /// Store HuggingFace token
 #[tauri::command]
 pub fn set_hf_token(token: String) -> Result<(), String> {
-    FileKeyStore::store_token(TOKEN_HUGGINGFACE, &token).map_err(|e| e.to_string())
+    FileKeyStore::store_token(TOKEN_HUGGINGFACE, &token).map_err(|e| e.to_string())?;
+    audit::audit_token_set("huggingface");
+    Ok(())
 }
 
 /// Delete HuggingFace token
 #[tauri::command]
 pub fn clear_hf_token() -> Result<(), String> {
-    FileKeyStore::delete_token(TOKEN_HUGGINGFACE).map_err(|e| e.to_string())
+    FileKeyStore::delete_token(TOKEN_HUGGINGFACE).map_err(|e| e.to_string())?;
+    audit::audit_token_cleared("huggingface");
+    Ok(())
 }
 
 use tauri::Emitter;
@@ -1977,6 +1981,7 @@ pub async fn configure_jira(
 
     // Store token in file storage
     FileKeyStore::store_token(TOKEN_JIRA, &api_token).map_err(|e| e.to_string())?;
+    audit::audit_token_set("jira");
 
     // Store config in DB
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -2017,6 +2022,7 @@ pub async fn configure_jira(
 pub fn clear_jira_config(state: State<'_, AppState>) -> Result<(), String> {
     // Delete token from file storage
     let _ = FileKeyStore::delete_token(TOKEN_JIRA);
+    audit::audit_token_cleared("jira");
 
     // Delete config from DB
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -2678,6 +2684,10 @@ pub fn ingest_url(
     use crate::kb::ingest::web::{WebIngester, WebIngestConfig};
     use crate::kb::ingest::CancellationToken;
 
+    // Validate and normalize namespace ID
+    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -2717,6 +2727,10 @@ pub fn ingest_youtube(
 ) -> Result<IngestResult, String> {
     use crate::kb::ingest::youtube::{YouTubeIngester, YouTubeIngestConfig};
     use crate::kb::ingest::CancellationToken;
+
+    // Validate and normalize namespace ID
+    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
@@ -2764,6 +2778,10 @@ pub fn ingest_github(
     use crate::kb::ingest::github::{GitHubIngester, GitHubIngestConfig};
     use crate::kb::ingest::CancellationToken;
     use std::path::Path;
+
+    // Validate and normalize namespace ID
+    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     // Validate path is within home directory
     let validated_path = validate_within_home(Path::new(&repo_path)).map_err(|e| match e {
@@ -3461,6 +3479,10 @@ pub fn add_namespace_rule(
     pattern: String,
     reason: Option<String>,
 ) -> Result<String, String> {
+    // Validate and normalize namespace ID
+    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -3487,6 +3509,10 @@ pub fn list_namespace_rules(
     state: State<'_, AppState>,
     namespace_id: String,
 ) -> Result<Vec<crate::db::NamespaceRule>, String> {
+    // Validate and normalize namespace ID
+    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
+        .map_err(|e| e.to_string())?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
