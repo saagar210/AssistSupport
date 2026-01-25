@@ -142,6 +142,23 @@ pub fn run() {
             commands::export_backup,
             commands::preview_backup_import,
             commands::import_backup,
+            // Ingestion commands
+            commands::ingest_url,
+            commands::ingest_youtube,
+            commands::ingest_github,
+            commands::process_source_file,
+            // Namespace commands
+            commands::list_namespaces,
+            commands::create_namespace,
+            commands::rename_namespace,
+            commands::delete_namespace,
+            // Ingest source management commands
+            commands::list_ingest_sources,
+            commands::delete_ingest_source,
+            commands::get_document_chunks,
+            commands::delete_kb_document,
+            commands::clear_knowledge_data,
+            commands::check_ytdlp_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

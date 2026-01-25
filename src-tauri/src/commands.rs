@@ -2192,8 +2192,9 @@ pub struct FailedSource {
 }
 
 /// Ingest a web page URL
+/// Uses block_in_place to run async operations while holding DB lock
 #[tauri::command]
-pub async fn ingest_url(
+pub fn ingest_url(
     state: State<'_, AppState>,
     url: String,
     namespace_id: String,
@@ -2211,10 +2212,15 @@ pub async fn ingest_url(
     let ingester = WebIngester::new(config).map_err(|e| e.to_string())?;
     let cancel_token = CancellationToken::new();
 
-    let result = ingester
-        .ingest_page(db, &url, &namespace_id, &cancel_token, None)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Use block_in_place to run async code in sync context
+    let result = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            ingester
+                .ingest_page(db, &url, &namespace_id, &cancel_token, None)
+                .await
+        })
+    })
+    .map_err(|e| e.to_string())?;
 
     Ok(IngestResult {
         document_id: result.id,
@@ -2226,8 +2232,9 @@ pub async fn ingest_url(
 }
 
 /// Ingest a YouTube video transcript
+/// Uses block_in_place to run async operations while holding DB lock
 #[tauri::command]
-pub async fn ingest_youtube(
+pub fn ingest_youtube(
     state: State<'_, AppState>,
     url: String,
     namespace_id: String,
@@ -2251,10 +2258,15 @@ pub async fn ingest_youtube(
 
     let cancel_token = CancellationToken::new();
 
-    let result = ingester
-        .ingest_video(db, &url, &namespace_id, &cancel_token, None)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Use block_in_place to run async code in sync context
+    let result = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            ingester
+                .ingest_video(db, &url, &namespace_id, &cancel_token, None)
+                .await
+        })
+    })
+    .map_err(|e| e.to_string())?;
 
     Ok(IngestResult {
         document_id: result.id,
@@ -2303,8 +2315,9 @@ pub fn ingest_github(
 }
 
 /// Process a YAML source file for batch ingestion
+/// Uses block_in_place to run async operations while holding DB lock
 #[tauri::command]
-pub async fn process_source_file(
+pub fn process_source_file(
     state: State<'_, AppState>,
     file_path: String,
 ) -> Result<BatchIngestResult, String> {
@@ -2332,10 +2345,16 @@ pub async fn process_source_file(
     let config = BatchIngestConfig::default();
     let ingester = BatchIngester::new(config).map_err(|e| e.to_string())?;
     let cancel_token = CancellationToken::new();
+    let namespace = source_file.namespace.clone();
 
-    let result = ingester
-        .ingest_from_strings(db, &sources, &source_file.namespace, &cancel_token, None)
-        .await;
+    // Use block_in_place to run async code in sync context
+    let result = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            ingester
+                .ingest_from_strings(db, &sources, &namespace, &cancel_token, None)
+                .await
+        })
+    });
 
     Ok(BatchIngestResult {
         successful: result

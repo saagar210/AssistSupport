@@ -5,27 +5,30 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import "./styles/themes.css";
 
-// Global error handler
-window.onerror = (message, source, lineno, colno, error) => {
-  document.body.innerHTML = `
-    <div style="padding: 20px; font-family: monospace; color: red;">
-      <h1>JavaScript Error</h1>
-      <p><strong>Message:</strong> ${message}</p>
-      <p><strong>Source:</strong> ${source}</p>
-      <p><strong>Line:</strong> ${lineno}:${colno}</p>
-      <pre>${error?.stack || 'No stack trace'}</pre>
-    </div>
-  `;
+// Global error handler - logs to console, shows safe message to user
+window.onerror = (message, _source, _lineno, _colno, error) => {
+  // Log full details to console for debugging
+  console.error('JavaScript Error:', { message, error });
+
+  // Show safe message without exposing internals
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
+  errorDiv.innerHTML = '<h1>Application Error</h1><p>An unexpected error occurred. Please restart the application.</p><p>Check the developer console for details.</p>';
+  document.body.innerHTML = '';
+  document.body.appendChild(errorDiv);
   return true;
 };
 
 window.onunhandledrejection = (event) => {
-  document.body.innerHTML = `
-    <div style="padding: 20px; font-family: monospace; color: red;">
-      <h1>Unhandled Promise Rejection</h1>
-      <pre>${event.reason?.stack || event.reason || 'Unknown error'}</pre>
-    </div>
-  `;
+  // Log full details to console for debugging
+  console.error('Unhandled Promise Rejection:', event.reason);
+
+  // Show safe message without exposing internals
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
+  errorDiv.innerHTML = '<h1>Application Error</h1><p>An unexpected error occurred. Please restart the application.</p><p>Check the developer console for details.</p>';
+  document.body.innerHTML = '';
+  document.body.appendChild(errorDiv);
 };
 
 try {
@@ -39,10 +42,13 @@ try {
     </React.StrictMode>,
   );
 } catch (e) {
-  document.body.innerHTML = `
-    <div style="padding: 20px; font-family: monospace; color: red;">
-      <h1>Render Error</h1>
-      <pre>${e instanceof Error ? e.stack : String(e)}</pre>
-    </div>
-  `;
+  // Log full details to console for debugging
+  console.error('Render Error:', e);
+
+  // Show safe message without exposing internals
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
+  errorDiv.innerHTML = '<h1>Application Error</h1><p>Failed to initialize the application. Please restart.</p><p>Check the developer console for details.</p>';
+  document.body.innerHTML = '';
+  document.body.appendChild(errorDiv);
 }

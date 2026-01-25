@@ -94,8 +94,11 @@ impl JiraClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(JiraError::Api(format!("HTTP {}: {}", status, body)));
+            // Log the response body for debugging but don't expose in error message
+            if let Ok(body) = resp.text().await {
+                tracing::debug!("Jira API error response: {}", body);
+            }
+            return Err(JiraError::Api(format!("HTTP {} error fetching ticket", status)));
         }
 
         let json: serde_json::Value = resp.json().await?;
