@@ -307,21 +307,21 @@ impl KbIndexer {
         Ok(ParsedDocument { title, sections })
     }
 
-    /// Parse a PDF file
+    /// Parse a PDF file with automatic OCR fallback for scanned documents
     fn parse_pdf(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
-        let pages = self.pdf_extractor.extract_text(path)?;
+        // Use OCR fallback for scanned PDFs (< 100 chars per page average)
+        let ocr_manager = &self.ocr_manager;
+        let pages = self.pdf_extractor.extract_text_with_ocr_fallback(path, |img_path| {
+            ocr_manager
+                .recognize(img_path)
+                .map(|r| r.text)
+                .map_err(|e| e.to_string())
+        })?;
 
-        // Check if any page needs OCR (less than 50 chars)
+        // Combine all pages
         let mut all_text = String::new();
-        for (_i, page_text) in pages.iter().enumerate() {
-            if page_text.trim().len() < 50 {
-                // Try OCR on this page
-                // Note: Would need to render page to image first
-                // For now, just use the extracted text
-                all_text.push_str(page_text);
-            } else {
-                all_text.push_str(page_text);
-            }
+        for page_text in pages.iter() {
+            all_text.push_str(page_text);
             all_text.push_str("\n\n");
         }
 

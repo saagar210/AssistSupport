@@ -8,4 +8,5 @@ pub mod ocr;
 pub mod pdf;
 pub mod search;
 pub mod vectors;
+pub mod watcher;
 pub mod xlsx;

@@ -87,6 +87,10 @@ pub fn run() {
             commands::list_kb_documents,
             commands::remove_kb_document,
             commands::generate_kb_embeddings,
+            // KB Watcher commands
+            commands::start_kb_watcher,
+            commands::stop_kb_watcher,
+            commands::is_kb_watcher_running,
             // Embedding commands
             commands::init_embedding_engine,
             commands::load_embedding_model,

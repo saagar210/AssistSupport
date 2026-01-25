@@ -1084,8 +1084,6 @@ pub async fn index_kb(
     window: tauri::Window,
     state: State<'_, AppState>,
 ) -> Result<IndexResult, String> {
-    use crate::kb::indexer::IndexProgress;
-
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -1170,6 +1168,78 @@ pub fn remove_kb_document(file_path: String, state: State<'_, AppState>) -> Resu
 
     let indexer = KbIndexer::new();
     indexer.remove_document(db, &file_path).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// KB Watcher Commands
+// ============================================================================
+
+use crate::kb::watcher::KbWatcher;
+use std::sync::Mutex as StdMutex;
+
+/// Global watcher instance
+static KB_WATCHER: Lazy<StdMutex<Option<KbWatcher>>> = Lazy::new(|| StdMutex::new(None));
+
+/// Start watching KB folder for changes
+#[tauri::command]
+pub async fn start_kb_watcher(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    // Get KB folder path
+    let folder_path = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![KB_FOLDER_SETTING],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|_| "KB folder not configured")?
+    };
+
+    let path = std::path::Path::new(&folder_path);
+
+    // Create and start watcher
+    let mut watcher = KbWatcher::new(path).map_err(|e| e.to_string())?;
+    let mut rx = watcher.start().map_err(|e| e.to_string())?;
+
+    // Store watcher instance
+    {
+        let mut guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
+        *guard = Some(watcher);
+    }
+
+    // Spawn event handler
+    let window_clone = window.clone();
+    tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            // Emit event to frontend
+            let _ = window_clone.emit("kb:file:changed", &event);
+        }
+    });
+
+    Ok(true)
+}
+
+/// Stop watching KB folder
+#[tauri::command]
+pub fn stop_kb_watcher() -> Result<bool, String> {
+    let mut guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
+    if let Some(mut watcher) = guard.take() {
+        watcher.stop();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Check if KB watcher is running
+#[tauri::command]
+pub fn is_kb_watcher_running() -> Result<bool, String> {
+    let guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
+    Ok(guard.as_ref().map(|w| w.is_running()).unwrap_or(false))
 }
 
 /// Generate embeddings for all KB chunks

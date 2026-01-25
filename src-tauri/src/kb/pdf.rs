@@ -121,6 +121,118 @@ impl PdfExtractor {
         Ok(pages.join("\n\n---\n\n"))
     }
 
+    /// Check if a PDF needs OCR (scanned/image PDF with low text content)
+    /// Returns true if average text per page is less than threshold chars
+    pub fn needs_ocr(&self, pdf_path: &Path, chars_per_page_threshold: usize) -> Result<bool, PdfError> {
+        let pages = self.extract_text(pdf_path)?;
+        if pages.is_empty() {
+            return Ok(true);
+        }
+
+        let total_chars: usize = pages.iter().map(|p| p.len()).sum();
+        let avg_chars = total_chars / pages.len();
+
+        Ok(avg_chars < chars_per_page_threshold)
+    }
+
+    /// Render a PDF page to an image file
+    /// Returns the path to the rendered image
+    pub fn render_page_to_image(&self, pdf_path: &Path, page_index: usize, output_path: &Path) -> Result<(), PdfError> {
+        use pdfium_render::prelude::*;
+
+        let pdfium_path = self.pdfium_path.as_ref().ok_or(PdfError::LibraryNotFound)?;
+
+        let pdfium = Pdfium::new(
+            Pdfium::bind_to_library(
+                Pdfium::pdfium_platform_library_name_at_path(
+                    pdfium_path
+                        .parent()
+                        .unwrap_or(Path::new(".")),
+                ),
+            )
+            .map_err(|e| PdfError::LoadFailed(e.to_string()))?,
+        );
+
+        let document = pdfium
+            .load_pdf_from_file(pdf_path, None)
+            .map_err(|e| PdfError::OpenFailed(e.to_string()))?;
+
+        let page = document
+            .pages()
+            .get(page_index as u16)
+            .map_err(|e| PdfError::PageError(e.to_string()))?;
+
+        // Render at 150 DPI for good OCR quality
+        let render_config = PdfRenderConfig::new()
+            .set_target_width(1200)
+            .set_maximum_height(1600);
+
+        let bitmap = page
+            .render_with_config(&render_config)
+            .map_err(|e| PdfError::PageError(format!("Failed to render page: {}", e)))?;
+
+        // Convert to image and save as PNG
+        bitmap
+            .as_image()
+            .into_rgba8()
+            .save(output_path)
+            .map_err(|e| PdfError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+
+        Ok(())
+    }
+
+    /// Extract text with OCR fallback for scanned PDFs
+    /// Uses OCR if average text per page is below threshold
+    pub fn extract_text_with_ocr_fallback(
+        &self,
+        pdf_path: &Path,
+        ocr_fn: impl Fn(&Path) -> Result<String, String>,
+    ) -> Result<Vec<String>, PdfError> {
+        let regular_pages = self.extract_text(pdf_path)?;
+
+        // Check if we need OCR (less than 100 chars average per page)
+        let total_chars: usize = regular_pages.iter().map(|p| p.len()).sum();
+        let avg_chars = if regular_pages.is_empty() { 0 } else { total_chars / regular_pages.len() };
+
+        if avg_chars >= 100 {
+            // Regular PDF with good text - return as is
+            return Ok(regular_pages);
+        }
+
+        // Scanned PDF - need OCR for each page
+        tracing::info!("PDF appears to be scanned (avg {} chars/page), using OCR", avg_chars);
+
+        let page_count = self.page_count(pdf_path)?;
+        let mut ocr_pages = Vec::with_capacity(page_count);
+        let temp_dir = std::env::temp_dir();
+
+        for page_idx in 0..page_count {
+            let img_path = temp_dir.join(format!("pdf_ocr_page_{}.png", page_idx));
+
+            // Render page to image
+            if let Err(e) = self.render_page_to_image(pdf_path, page_idx, &img_path) {
+                tracing::warn!("Failed to render page {}: {}", page_idx, e);
+                // Fall back to whatever text we got
+                ocr_pages.push(regular_pages.get(page_idx).cloned().unwrap_or_default());
+                continue;
+            }
+
+            // Run OCR on the rendered image
+            match ocr_fn(&img_path) {
+                Ok(text) => ocr_pages.push(text),
+                Err(e) => {
+                    tracing::warn!("OCR failed for page {}: {}", page_idx, e);
+                    ocr_pages.push(regular_pages.get(page_idx).cloned().unwrap_or_default());
+                }
+            }
+
+            // Clean up temp image
+            let _ = std::fs::remove_file(&img_path);
+        }
+
+        Ok(ocr_pages)
+    }
+
     /// Get page count for a PDF
     pub fn page_count(&self, pdf_path: &Path) -> Result<usize, PdfError> {
         let pdfium_path = self.pdfium_path.as_ref().ok_or(PdfError::LibraryNotFound)?;
