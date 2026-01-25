@@ -291,6 +291,62 @@ impl DownloadManager {
     }
 }
 
+/// Fetch file info from HuggingFace API to get SHA256 checksum
+/// Returns (size_bytes, sha256) if successful
+pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, String), DownloadError> {
+    // HuggingFace API endpoint for file metadata
+    let url = format!(
+        "https://huggingface.co/api/models/{}/tree/main",
+        repo
+    );
+
+    let client = reqwest::Client::new();
+    let response = client.get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| DownloadError::Network(e.to_string()))?;
+
+    if !response.status().is_success() {
+        return Err(DownloadError::HuggingFaceApi(format!(
+            "HTTP {}", response.status()
+        )));
+    }
+
+    let body: serde_json::Value = response.json()
+        .await
+        .map_err(|e| DownloadError::Network(e.to_string()))?;
+
+    // Find the file in the response
+    let files = body.as_array()
+        .ok_or_else(|| DownloadError::HuggingFaceApi("Invalid API response".into()))?;
+
+    for file in files {
+        if file.get("path").and_then(|p| p.as_str()) == Some(filename) {
+            // Get LFS info which contains the SHA256
+            if let Some(lfs) = file.get("lfs") {
+                let size = lfs.get("size")
+                    .and_then(|s| s.as_u64())
+                    .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
+                let sha256 = lfs.get("sha256")
+                    .and_then(|s| s.as_str())
+                    .ok_or_else(|| DownloadError::HuggingFaceApi("Missing sha256".into()))?
+                    .to_string();
+                return Ok((size, sha256));
+            }
+            // Non-LFS file - get size from file object
+            let size = file.get("size")
+                .and_then(|s| s.as_u64())
+                .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
+            return Err(DownloadError::HuggingFaceApi(
+                "File is not LFS - no SHA256 available".into()
+            ));
+        }
+    }
+
+    Err(DownloadError::FileNotFound(filename.to_string()))
+}
+
 /// Recommended models
 pub fn recommended_models() -> Vec<ModelSource> {
     vec![

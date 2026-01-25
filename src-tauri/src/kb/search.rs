@@ -176,6 +176,34 @@ impl HybridSearch {
         Ok(results)
     }
 
+    /// Fuse pre-computed FTS results with vector results
+    ///
+    /// This is used when FTS and vector searches are run in parallel.
+    /// Takes pre-computed FTS results and optional raw vector results.
+    pub fn fuse_results(
+        db: &Database,
+        fts_results: Vec<SearchResult>,
+        vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        // If no vector results, just return FTS results
+        let vector_results = match vector_results {
+            Some(vr) if !vr.is_empty() => vr,
+            _ => return Ok(fts_results.into_iter().take(limit).collect()),
+        };
+
+        // Convert vector results to SearchResults by looking up chunk metadata
+        let mut vector_search_results = Vec::with_capacity(vector_results.len());
+        for vr in vector_results {
+            if let Ok(sr) = Self::get_chunk_as_search_result(db, &vr.chunk_id, vr.distance) {
+                vector_search_results.push(sr);
+            }
+        }
+
+        // Use RRF fusion
+        Ok(Self::hybrid_search_with_vectors(fts_results, vector_search_results, limit))
+    }
+
     /// Perform hybrid search with RRF fusion
     ///
     /// This combines FTS5 and vector search results using Reciprocal Rank Fusion.

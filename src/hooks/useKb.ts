@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import type {
   KbDocument,
   IndexStats,
@@ -9,14 +10,37 @@ import type {
   VectorConsent,
 } from '../types';
 
+export interface IndexingProgress {
+  current: number;
+  total: number;
+  currentFile: string | null;
+  percentage: number;
+}
+
 export interface KbState {
   folderPath: string | null;
   stats: IndexStats | null;
   documents: KbDocument[];
   indexing: boolean;
+  indexingProgress: IndexingProgress | null;
   searching: boolean;
   error: string | null;
 }
+
+// Event payload types from backend
+interface IndexProgressStarted {
+  Started: { total_files: number };
+}
+interface IndexProgressProcessing {
+  Processing: { current: number; total: number; file_name: string };
+}
+interface IndexProgressCompleted {
+  Completed: { indexed: number; skipped: number; errors: number };
+}
+interface IndexProgressError {
+  Error: { file_name: string; message: string };
+}
+type IndexProgressEvent = IndexProgressStarted | IndexProgressProcessing | IndexProgressCompleted | IndexProgressError;
 
 export function useKb() {
   const [state, setState] = useState<KbState>({
@@ -24,9 +48,56 @@ export function useKb() {
     stats: null,
     documents: [],
     indexing: false,
+    indexingProgress: null,
     searching: false,
     error: null,
   });
+
+  // Listen for indexing progress events
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    listen<IndexProgressEvent>('kb:indexing:progress', (event) => {
+      const payload = event.payload;
+
+      if ('Started' in payload) {
+        setState(prev => ({
+          ...prev,
+          indexingProgress: {
+            current: 0,
+            total: payload.Started.total_files,
+            currentFile: null,
+            percentage: 0,
+          },
+        }));
+      } else if ('Processing' in payload) {
+        const { current, total, file_name } = payload.Processing;
+        setState(prev => ({
+          ...prev,
+          indexingProgress: {
+            current,
+            total,
+            currentFile: file_name,
+            percentage: Math.round((current / total) * 100),
+          },
+        }));
+      } else if ('Completed' in payload) {
+        setState(prev => ({
+          ...prev,
+          indexingProgress: null,
+        }));
+      } else if ('Error' in payload) {
+        // Log error but continue indexing
+        console.warn(`Indexing error for ${payload.Error.file_name}: ${payload.Error.message}`);
+      }
+    }).then(fn => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   const loadKbInfo = useCallback(async () => {
     try {

@@ -136,6 +136,7 @@ pub fn check_keychain_available() -> bool {
 }
 
 /// Hybrid search for KB (FTS5 + vector when enabled)
+/// Uses parallel execution when vector search is available
 #[tauri::command]
 pub async fn search_kb(
     state: State<'_, AppState>,
@@ -144,7 +145,7 @@ pub async fn search_kb(
 ) -> Result<Vec<crate::kb::search::SearchResult>, String> {
     let limit = limit.unwrap_or(10);
 
-    // First, check if vector search is available and get query embedding (sync)
+    // Get query embedding if vector search is available (sync operation)
     let query_embedding = {
         let vectors_lock = state.vectors.read().await;
         let embeddings_lock = state.embeddings.read();
@@ -160,23 +161,37 @@ pub async fn search_kb(
         }
     }; // Locks released here
 
-    // Now do async vector search if we have an embedding
-    let vector_results = if let Some(embedding) = query_embedding {
-        let vectors_lock = state.vectors.read().await;
-        if let Some(vectors) = vectors_lock.as_ref() {
-            vectors.search_similar(&embedding, limit * 2).await.ok()
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    // Clone state references for parallel execution
+    let vectors_state = state.vectors.clone();
 
-    // Now do the DB search
+    // Start vector search as a spawned task (runs in parallel with FTS)
+    let vector_handle = tokio::spawn(async move {
+        if let Some(embedding) = query_embedding {
+            let vectors_lock = vectors_state.read().await;
+            if let Some(vectors) = vectors_lock.as_ref() {
+                return vectors.search_similar(&embedding, limit * 2).await.ok();
+            }
+        }
+        None
+    });
+
+    // Do FTS search (sync, fast) - runs while vector search is in progress
+    let fts_results = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        crate::kb::search::HybridSearch::fts_search(db, &query, limit * 2)
+            .map_err(|e| e.to_string())?
+    }; // DB lock released here
+
+    // Wait for vector search to complete
+    let vector_results = vector_handle.await.unwrap_or(None);
+
+    // Re-acquire DB lock for fusion (needed for vector result enrichment)
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    crate::kb::search::HybridSearch::search_with_vectors(db, &query, limit, vector_results)
+    // Fuse results using the pre-computed FTS results
+    crate::kb::search::HybridSearch::fuse_results(db, fts_results, vector_results, limit)
         .map_err(|e| e.to_string())
 }
 
@@ -864,7 +879,18 @@ pub async fn download_model(
     let manager = DownloadManager::new(&app_dir);
     manager.init().map_err(|e| e.to_string())?;
 
-    let source = ModelSource::huggingface(repo, filename);
+    // Fetch file info (size and SHA256) from HuggingFace API for verification
+    let mut source = ModelSource::huggingface(repo, filename);
+    match crate::downloads::fetch_hf_file_info(repo, filename).await {
+        Ok((size, sha256)) => {
+            source.size_bytes = Some(size);
+            source.sha256 = Some(sha256);
+        }
+        Err(e) => {
+            // Log warning but continue without checksum verification
+            eprintln!("Warning: Could not fetch file info for checksum verification: {}", e);
+        }
+    }
 
     // Create progress channel
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
@@ -956,9 +982,14 @@ pub fn get_kb_folder(state: State<'_, AppState>) -> Result<Option<String>, Strin
     }
 }
 
-/// Index the KB folder
+/// Index the KB folder with progress events
 #[tauri::command]
-pub fn index_kb(state: State<'_, AppState>) -> Result<IndexResult, String> {
+pub async fn index_kb(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+) -> Result<IndexResult, String> {
+    use crate::kb::indexer::IndexProgress;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -976,10 +1007,11 @@ pub fn index_kb(state: State<'_, AppState>) -> Result<IndexResult, String> {
         return Err("KB folder does not exist".into());
     }
 
-    // Run indexing
+    // Run indexing with progress events
     let indexer = KbIndexer::new();
-    let result = indexer.index_folder(db, path, |_progress| {
-        // TODO: Send progress events to frontend
+    let result = indexer.index_folder(db, path, |progress| {
+        // Emit progress event to frontend
+        let _ = window.emit("kb:indexing:progress", &progress);
     }).map_err(|e| e.to_string())?;
 
     Ok(result)
