@@ -1,18 +1,23 @@
 //! Security module for AssistSupport
 //! Handles encryption, key management, and credential storage
 //!
-//! Credentials are stored in plain files under ~/Library/Application Support/com.d.assistsupport/
-//! to avoid macOS Keychain password prompts.
+//! Credentials are stored in app files under ~/Library/Application Support/com.d.assistsupport/
+//! with restrictive permissions. Tokens are encrypted at rest with the master key.
 
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use argon2::{Argon2, Params, Version};
+use base64::{Engine as _, engine::general_purpose};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -124,6 +129,13 @@ impl std::fmt::Debug for SecureString {
 pub struct EncryptedData {
     pub ciphertext: Vec<u8>,
     pub nonce: [u8; NONCE_LEN],
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct EncryptedTokensFile {
+    encrypted: bool,
+    nonce_b64: String,
+    ciphertext_b64: String,
 }
 
 /// Key wrapping data for passphrase-based protection
@@ -265,10 +277,48 @@ pub const TOKEN_JIRA: &str = "jira_api_token";
 ///
 /// Storage location: ~/Library/Application Support/com.d.assistsupport/
 /// - master.key: 64-char hex-encoded DB encryption key
-/// - tokens.json: API tokens (HuggingFace, Jira)
+/// - tokens.json: API tokens encrypted with the master key
 pub struct FileKeyStore;
 
 impl FileKeyStore {
+    fn tokens_file_error(msg: impl Into<String>) -> SecurityError {
+        SecurityError::FileIO(format!("Invalid tokens.json: {}", msg.into()))
+    }
+
+    fn set_permissions(path: &Path, mode: u32) -> Result<(), SecurityError> {
+        #[cfg(unix)]
+        {
+            let perms = fs::Permissions::from_mode(mode);
+            fs::set_permissions(path, perms).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn write_private_file(path: &Path, contents: &[u8]) -> Result<(), SecurityError> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| SecurityError::FileIO("Missing parent directory".into()))?;
+
+        let mut temp = NamedTempFile::new_in(parent)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        temp.write_all(contents)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        temp.as_file()
+            .sync_all()
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        #[cfg(unix)]
+        {
+            temp.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        }
+
+        temp.persist(path)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        Self::set_permissions(path, 0o600)?;
+        Ok(())
+    }
+
     /// Get app data directory: ~/Library/Application Support/com.d.assistsupport/
     fn get_app_data_dir() -> Result<PathBuf, SecurityError> {
         dirs::data_dir()
@@ -290,7 +340,97 @@ impl FileKeyStore {
     fn ensure_dir() -> Result<PathBuf, SecurityError> {
         let dir = Self::get_app_data_dir()?;
         fs::create_dir_all(&dir).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        Self::set_permissions(&dir, 0o700)?;
         Ok(dir)
+    }
+
+    fn read_tokens_map_with_key(
+        master_key: &MasterKey,
+    ) -> Result<HashMap<String, String>, SecurityError> {
+        let tokens_path = Self::tokens_path()?;
+
+        if !tokens_path.exists() {
+            return Ok(HashMap::new());
+        }
+
+        let content = fs::read_to_string(&tokens_path)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let value: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| SecurityError::FileIO(format!("Invalid tokens.json: {}", e)))?;
+
+        let (tokens, was_plaintext) = Self::decode_tokens_value(value, master_key)?;
+        if was_plaintext {
+            Self::store_tokens_map_with_key(master_key, &tokens)?;
+        }
+
+        Ok(tokens)
+    }
+
+    fn decode_tokens_value(
+        value: serde_json::Value,
+        master_key: &MasterKey,
+    ) -> Result<(HashMap<String, String>, bool), SecurityError> {
+        if value.get("encrypted").and_then(|v| v.as_bool()) == Some(true) {
+            let encrypted: EncryptedTokensFile = serde_json::from_value(value)
+                .map_err(|e| Self::tokens_file_error(e.to_string()))?;
+
+            let nonce_bytes = general_purpose::STANDARD
+                .decode(&encrypted.nonce_b64)
+                .map_err(|e| Self::tokens_file_error(format!("Invalid nonce: {}", e)))?;
+            if nonce_bytes.len() != NONCE_LEN {
+                return Err(Self::tokens_file_error("Invalid nonce length"));
+            }
+            let mut nonce = [0u8; NONCE_LEN];
+            nonce.copy_from_slice(&nonce_bytes);
+
+            let ciphertext = general_purpose::STANDARD
+                .decode(&encrypted.ciphertext_b64)
+                .map_err(|e| Self::tokens_file_error(format!("Invalid ciphertext: {}", e)))?;
+
+            let decrypted = Crypto::decrypt(
+                master_key.as_bytes(),
+                &EncryptedData { ciphertext, nonce },
+            )?;
+            let tokens: HashMap<String, String> = serde_json::from_slice(&decrypted)
+                .map_err(|e| Self::tokens_file_error(e.to_string()))?;
+
+            return Ok((tokens, false));
+        }
+
+        let tokens: HashMap<String, String> = serde_json::from_value(value)
+            .map_err(|e| Self::tokens_file_error(e.to_string()))?;
+        Ok((tokens, true))
+    }
+
+    fn store_tokens_map_with_key(
+        master_key: &MasterKey,
+        tokens: &HashMap<String, String>,
+    ) -> Result<(), SecurityError> {
+        Self::ensure_dir()?;
+        let tokens_path = Self::tokens_path()?;
+
+        let serialized = serde_json::to_vec(tokens)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let encrypted = Crypto::encrypt(master_key.as_bytes(), &serialized)?;
+        let payload = EncryptedTokensFile {
+            encrypted: true,
+            nonce_b64: general_purpose::STANDARD.encode(encrypted.nonce),
+            ciphertext_b64: general_purpose::STANDARD.encode(encrypted.ciphertext),
+        };
+
+        let content = serde_json::to_string_pretty(&payload)
+            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        Self::write_private_file(&tokens_path, content.as_bytes())
+    }
+
+    fn store_token_with_key(
+        master_key: &MasterKey,
+        name: &str,
+        value: &str,
+    ) -> Result<(), SecurityError> {
+        let mut tokens = Self::read_tokens_map_with_key(master_key)?;
+        tokens.insert(name.to_string(), value.to_string());
+        Self::store_tokens_map_with_key(master_key, &tokens)
     }
 
     /// Get master key (migrates from Keychain on first call if needed)
@@ -322,7 +462,7 @@ impl FileKeyStore {
             let _ = KeychainManager::delete_master_key();
 
             // Also migrate any tokens
-            Self::migrate_tokens_from_keychain()?;
+            Self::migrate_tokens_from_keychain(&key)?;
 
             return Ok(key);
         }
@@ -330,6 +470,7 @@ impl FileKeyStore {
         // 3. Generate new key (first run)
         let key = MasterKey::generate();
         Self::store_master_key(&key)?;
+        Self::migrate_tokens_from_keychain(&key)?;
         Ok(key)
     }
 
@@ -338,92 +479,61 @@ impl FileKeyStore {
         Self::ensure_dir()?;
         let key_path = Self::master_key_path()?;
         let hex = hex::encode(key.as_bytes());
-        fs::write(&key_path, hex).map_err(|e| SecurityError::FileIO(e.to_string()))
+        Self::write_private_file(&key_path, hex.as_bytes())
     }
 
     /// Delete master key file
     pub fn delete_master_key() -> Result<(), SecurityError> {
         let key_path = Self::master_key_path()?;
         if key_path.exists() {
-            fs::remove_file(&key_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&key_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
         Ok(())
     }
 
     /// Get a token by name from tokens.json
     pub fn get_token(name: &str) -> Result<Option<String>, SecurityError> {
-        let tokens_path = Self::tokens_path()?;
-
-        if !tokens_path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&tokens_path)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-
-        let tokens: HashMap<String, String> = serde_json::from_str(&content)
-            .map_err(|e| SecurityError::FileIO(format!("Invalid tokens.json: {}", e)))?;
-
+        let master_key = Self::get_master_key()?;
+        let tokens = Self::read_tokens_map_with_key(&master_key)?;
         Ok(tokens.get(name).cloned())
     }
 
     /// Store a token by name to tokens.json
     pub fn store_token(name: &str, value: &str) -> Result<(), SecurityError> {
-        Self::ensure_dir()?;
-        let tokens_path = Self::tokens_path()?;
-
-        // Read existing tokens or create empty map
-        let mut tokens: HashMap<String, String> = if tokens_path.exists() {
-            let content = fs::read_to_string(&tokens_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-            serde_json::from_str(&content)
-                .map_err(|e| SecurityError::FileIO(format!("Invalid tokens.json: {}", e)))?
-        } else {
-            HashMap::new()
-        };
-
-        // Add/update token
-        tokens.insert(name.to_string(), value.to_string());
-
-        // Write back
-        let content = serde_json::to_string_pretty(&tokens)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-        fs::write(&tokens_path, content).map_err(|e| SecurityError::FileIO(e.to_string()))
+        let master_key = Self::get_master_key()?;
+        Self::store_token_with_key(&master_key, name, value)
     }
 
     /// Delete a token by name from tokens.json
     pub fn delete_token(name: &str) -> Result<(), SecurityError> {
+        let master_key = Self::get_master_key()?;
         let tokens_path = Self::tokens_path()?;
-
         if !tokens_path.exists() {
             return Ok(());
         }
 
-        let content = fs::read_to_string(&tokens_path)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-
-        let mut tokens: HashMap<String, String> = serde_json::from_str(&content)
-            .map_err(|e| SecurityError::FileIO(format!("Invalid tokens.json: {}", e)))?;
-
+        let mut tokens = Self::read_tokens_map_with_key(&master_key)?;
         tokens.remove(name);
 
-        // Write back (even if empty)
-        let content = serde_json::to_string_pretty(&tokens)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-        fs::write(&tokens_path, content).map_err(|e| SecurityError::FileIO(e.to_string()))
+        if tokens.is_empty() {
+            secure_delete_file(&tokens_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            return Ok(());
+        }
+
+        Self::store_tokens_map_with_key(&master_key, &tokens)
     }
 
     /// Migrate tokens from Keychain to file storage
-    fn migrate_tokens_from_keychain() -> Result<(), SecurityError> {
+    fn migrate_tokens_from_keychain(master_key: &MasterKey) -> Result<(), SecurityError> {
         // Migrate HuggingFace token
         if let Ok(Some(token)) = KeychainManager::get_hf_token() {
-            Self::store_token(TOKEN_HUGGINGFACE, &token)?;
+            Self::store_token_with_key(master_key, TOKEN_HUGGINGFACE, &token)?;
             let _ = KeychainManager::delete_hf_token();
         }
 
         // Migrate Jira token
         if let Ok(Some(token)) = KeychainManager::get_jira_token() {
-            Self::store_token(TOKEN_JIRA, &token)?;
+            Self::store_token_with_key(master_key, TOKEN_JIRA, &token)?;
             let _ = KeychainManager::delete_jira_token();
         }
 

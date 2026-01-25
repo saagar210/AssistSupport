@@ -6,14 +6,11 @@
 
 mod common;
 
-use assistsupport_lib::db::Database;
 use assistsupport_lib::kb::indexer::{IndexProgress, KbIndexer};
 use assistsupport_lib::kb::search::HybridSearch;
-use assistsupport_lib::security::MasterKey;
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tempfile::TempDir;
 
 /// No-op progress callback for tests that don't need progress
 fn noop_progress(_: IndexProgress) {}
@@ -111,11 +108,11 @@ fn test_namespace_isolation() {
     let ctx = common::TestContext::new().expect("Failed to create context");
 
     // Create two namespaces
-    let ns1 = ctx
+    let _ns1 = ctx
         .db
         .create_namespace("internal", None, None)
         .expect("Failed to create namespace 1");
-    let ns2 = ctx
+    let _ns2 = ctx
         .db
         .create_namespace("external", None, None)
         .expect("Failed to create namespace 2");

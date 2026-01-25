@@ -6,6 +6,7 @@ import type {
   IndexStats,
   IndexResult,
   SearchResult,
+  SearchOptions,
   IndexedFile,
   VectorConsent,
 } from '../types';
@@ -216,15 +217,24 @@ export function useKb() {
   const search = useCallback(async (
     query: string,
     limit?: number,
-    namespaceId?: string | null
+    namespaceId?: string | null,
+    options?: SearchOptions
   ): Promise<SearchResult[]> => {
     setState(prev => ({ ...prev, searching: true, error: null }));
     try {
-      const results = await invoke<SearchResult[]>('search_kb', {
-        query,
-        limit: limit ?? 10,
-        namespaceId: namespaceId ?? null,
-      });
+      // Use advanced search if options provided, otherwise use basic search
+      const results = options
+        ? await invoke<SearchResult[]>('search_kb_with_options', {
+            query,
+            limit: limit ?? 10,
+            namespaceId: namespaceId ?? null,
+            options,
+          })
+        : await invoke<SearchResult[]>('search_kb', {
+            query,
+            limit: limit ?? 10,
+            namespaceId: namespaceId ?? null,
+          });
       setState(prev => ({ ...prev, searching: false }));
       return results;
     } catch (e) {

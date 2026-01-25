@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { TabBar } from './components/Layout/TabBar';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Sidebar, Header, TabBar } from './components/Layout';
 import { DraftTab, DraftTabHandle } from './components/Draft/DraftTab';
 import { FollowUpsTab } from './components/FollowUps/FollowUpsTab';
 import { SourcesTab } from './components/Sources/SourcesTab';
@@ -9,7 +9,11 @@ import { SettingsTab } from './components/Settings/SettingsTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Button } from './components/shared/Button';
+import { CommandPalette, useCommandPalette, type Command } from './components/shared/CommandPalette';
+import { KeyboardShortcuts, useKeyboardShortcutsHelp } from './components/shared/KeyboardShortcuts';
+import { OnboardingWizard } from './components/shared/OnboardingWizard';
 import { useInitialize } from './hooks/useInitialize';
+import { useLlm } from './hooks/useLlm';
 import { useToastContext } from './contexts/ToastContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
@@ -19,10 +23,35 @@ type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'setti
 
 function App() {
   const { initResult, loading, error } = useInitialize();
+  const { getLoadedModel } = useLlm();
   const { toasts, addToast, removeToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<TabId>('draft');
   const [pendingDraft, setPendingDraft] = useState<SavedDraft | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [modelName, setModelName] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const draftRef = useRef<DraftTabHandle>(null);
+  const commandPalette = useCommandPalette();
+  const shortcutsHelp = useKeyboardShortcutsHelp();
+
+  // Check model status periodically
+  useEffect(() => {
+    async function checkModel() {
+      try {
+        const loaded = await getLoadedModel();
+        setModelLoaded(!!loaded);
+        setModelName(loaded || null);
+      } catch {
+        setModelLoaded(false);
+        setModelName(null);
+      }
+    }
+
+    checkModel();
+    const interval = setInterval(checkModel, 5000);
+    return () => clearInterval(interval);
+  }, [getLoadedModel]);
 
   const handleGenerate = useCallback(() => {
     if (activeTab === 'draft') {
@@ -85,17 +114,177 @@ function App() {
     },
   });
 
+  // Show onboarding on first run (check localStorage to not show again after completion)
   useEffect(() => {
     if (initResult?.is_first_run) {
-      addToast('Welcome to AssistSupport! Configure your settings to get started.', 'info');
+      const hasCompletedOnboarding = localStorage.getItem('onboarding-completed');
+      if (!hasCompletedOnboarding) {
+        setShowOnboarding(true);
+      }
     }
-  }, [initResult?.is_first_run, addToast]);
+  }, [initResult?.is_first_run]);
+
+  const handleOnboardingComplete = useCallback(() => {
+    localStorage.setItem('onboarding-completed', 'true');
+    setShowOnboarding(false);
+    addToast('Setup complete! Start drafting responses with AI assistance.', 'success');
+  }, [addToast]);
+
+  const handleOnboardingSkip = useCallback(() => {
+    localStorage.setItem('onboarding-completed', 'true');
+    setShowOnboarding(false);
+    addToast('You can configure settings anytime from the Settings tab.', 'info');
+  }, [addToast]);
+
+  // Persist sidebar state
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar-collapsed');
+    if (saved !== null) {
+      setSidebarCollapsed(saved === 'true');
+    }
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar-collapsed', String(next));
+      return next;
+    });
+  }, []);
+
+  // Command palette commands
+  const commands: Command[] = useMemo(() => [
+    // Navigation commands
+    {
+      id: 'nav-draft',
+      label: 'Go to Draft',
+      description: 'Create and edit support responses',
+      icon: 'draft',
+      shortcut: 'Cmd+1',
+      category: 'navigation',
+      action: () => setActiveTab('draft'),
+    },
+    {
+      id: 'nav-followups',
+      label: 'Go to Follow-ups',
+      description: 'View saved drafts and history',
+      icon: 'followups',
+      shortcut: 'Cmd+2',
+      category: 'navigation',
+      action: () => setActiveTab('followups'),
+    },
+    {
+      id: 'nav-sources',
+      label: 'Go to Sources',
+      description: 'Search knowledge base',
+      icon: 'sources',
+      shortcut: 'Cmd+3',
+      category: 'navigation',
+      action: () => setActiveTab('sources'),
+    },
+    {
+      id: 'nav-ingest',
+      label: 'Go to Ingest',
+      description: 'Add content to knowledge base',
+      icon: 'ingest',
+      shortcut: 'Cmd+4',
+      category: 'navigation',
+      action: () => setActiveTab('ingest'),
+    },
+    {
+      id: 'nav-knowledge',
+      label: 'Go to Knowledge',
+      description: 'Browse indexed documents',
+      icon: 'knowledge',
+      shortcut: 'Cmd+5',
+      category: 'navigation',
+      action: () => setActiveTab('knowledge'),
+    },
+    {
+      id: 'nav-settings',
+      label: 'Go to Settings',
+      description: 'Configure app preferences',
+      icon: 'settings',
+      shortcut: 'Cmd+6',
+      category: 'navigation',
+      action: () => setActiveTab('settings'),
+    },
+    // Draft actions
+    {
+      id: 'action-generate',
+      label: 'Generate Response',
+      description: 'Generate AI response for current draft',
+      icon: 'sparkles',
+      shortcut: 'Cmd+Enter',
+      category: 'draft',
+      action: handleGenerate,
+      disabled: activeTab !== 'draft',
+    },
+    {
+      id: 'action-save',
+      label: 'Save Draft',
+      description: 'Save current draft to history',
+      icon: 'save',
+      shortcut: 'Cmd+S',
+      category: 'draft',
+      action: handleSaveDraft,
+      disabled: activeTab !== 'draft',
+    },
+    {
+      id: 'action-copy',
+      label: 'Copy Response',
+      description: 'Copy generated response to clipboard',
+      icon: 'copy',
+      shortcut: 'Cmd+Shift+C',
+      category: 'draft',
+      action: handleCopyResponse,
+      disabled: activeTab !== 'draft',
+    },
+    {
+      id: 'action-export',
+      label: 'Export Response',
+      description: 'Export response as file',
+      icon: 'download',
+      shortcut: 'Cmd+E',
+      category: 'draft',
+      action: handleExport,
+      disabled: activeTab !== 'draft',
+    },
+    {
+      id: 'action-cancel',
+      label: 'Cancel Generation',
+      description: 'Stop current AI generation',
+      icon: 'x',
+      shortcut: 'Escape',
+      category: 'draft',
+      action: handleCancelGeneration,
+      disabled: activeTab !== 'draft',
+    },
+    // Settings actions
+    {
+      id: 'settings-toggle-sidebar',
+      label: sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar',
+      description: 'Toggle sidebar visibility',
+      icon: sidebarCollapsed ? 'panelLeftOpen' : 'panelLeftClose',
+      category: 'settings',
+      action: handleToggleSidebar,
+    },
+    {
+      id: 'settings-shortcuts',
+      label: 'Keyboard Shortcuts',
+      description: 'View all keyboard shortcuts',
+      icon: 'command',
+      shortcut: 'Cmd+Shift+/',
+      category: 'settings',
+      action: shortcutsHelp.open,
+    },
+  ], [activeTab, sidebarCollapsed, handleGenerate, handleSaveDraft, handleCopyResponse, handleExport, handleCancelGeneration, handleToggleSidebar, shortcutsHelp.open]);
 
   if (loading) {
     return (
       <div className="app-loading">
         <div className="loading-spinner" />
-        <p>Initializing AssistSupport...</p>
+        <p className="app-loading-text">Initializing AssistSupport...</p>
       </div>
     );
   }
@@ -158,10 +347,31 @@ function App() {
 
   return (
     <div className="app">
-      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="app-main">
-        {renderTab()}
-      </main>
+      {/* Mobile navigation - visible only on small screens */}
+      <div className="mobile-nav">
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+
+      {/* Desktop sidebar - hidden on small screens */}
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
+      />
+
+      <div className="app-content">
+        <Header
+          activeTab={activeTab}
+          modelLoaded={modelLoaded}
+          modelName={modelName}
+          onOpenCommandPalette={commandPalette.open}
+        />
+        <main className="app-main">
+          {renderTab()}
+        </main>
+      </div>
+
       <ToastContainer>
         {toasts.map(toast => (
           <Toast
@@ -172,6 +382,24 @@ function App() {
           />
         ))}
       </ToastContainer>
+
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        commands={commands}
+      />
+
+      <KeyboardShortcuts
+        isOpen={shortcutsHelp.isOpen}
+        onClose={shortcutsHelp.close}
+      />
+
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
+        />
+      )}
     </div>
   );
 }

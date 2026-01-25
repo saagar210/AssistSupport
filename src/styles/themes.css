@@ -1,98 +1,218 @@
-/* AssistSupport Theme System - Tailwind-inspired Slate palette */
+/* ============================================================================
+   AssistSupport Theme System v2.0
+   ============================================================================
+   Premium color palette using Tailwind Slate with intentional accent colors.
+   Supports light/dark themes with WCAG AA accessibility compliance.
+   ============================================================================ */
 
 :root {
-  /* Light theme (default) - Tailwind Slate palette */
-  --bg-primary: #ffffff;          /* white */
-  --bg-secondary: #f8fafc;        /* slate-50 */
-  --bg-tertiary: #f1f5f9;         /* slate-100 */
-  --bg-hover: #e2e8f0;            /* slate-200 */
-  --text-primary: #0f172a;        /* slate-900 */
-  --text-secondary: #475569;      /* slate-600 */
-  --text-muted: #94a3b8;          /* slate-400 */
-  --border-color: #e2e8f0;        /* slate-200 */
-  --border-strong: #cbd5e1;       /* slate-300 */
+  /* =========================================================================
+     LIGHT THEME (Default)
+     Using Tailwind Slate palette - sophisticated neutral gray with blue undertones
+     ========================================================================= */
 
-  /* Accent colors - Tailwind Blue */
-  --accent-primary: #2563eb;      /* blue-600 */
-  --accent-hover: #1d4ed8;        /* blue-700 */
-  --accent-light: #dbeafe;        /* blue-100 */
+  /* Backgrounds */
+  --bg-primary: #ffffff;            /* White - main content area */
+  --bg-secondary: #f8fafc;          /* Slate-50 - subtle background */
+  --bg-tertiary: #f1f5f9;           /* Slate-100 - emphasized sections */
+  --bg-elevated: #ffffff;           /* Elevated surfaces (cards, modals) */
+  --bg-hover: #e2e8f0;              /* Slate-200 - hover states */
+  --bg-active: #cbd5e1;             /* Slate-300 - pressed/active states */
+  --bg-inverse: #0f172a;            /* Slate-900 - inverse backgrounds */
 
-  /* Semantic colors */
-  --success: #16a34a;             /* green-600 */
-  --success-light: #dcfce7;       /* green-100 */
-  --warning: #d97706;             /* amber-600 */
-  --warning-light: #fef3c7;       /* amber-100 */
-  --error: #dc2626;               /* red-600 */
-  --error-light: #fee2e2;         /* red-100 */
-  --info: #2563eb;                /* blue-600 */
-  --info-light: #dbeafe;          /* blue-100 */
+  /* Text */
+  --text-primary: #0f172a;          /* Slate-900 - primary text */
+  --text-secondary: #475569;        /* Slate-600 - secondary text */
+  --text-muted: #94a3b8;            /* Slate-400 - muted/placeholder */
+  --text-inverse: #f8fafc;          /* Slate-50 - text on dark bg */
+  --text-link: #2563eb;             /* Blue-600 - link text */
+  --text-link-hover: #1d4ed8;       /* Blue-700 - link hover */
 
-  /* Component-specific */
+  /* Borders */
+  --border-light: #f1f5f9;          /* Slate-100 - subtle dividers */
+  --border-color: #e2e8f0;          /* Slate-200 - default borders */
+  --border-strong: #cbd5e1;         /* Slate-300 - emphasized borders */
+  --border-inverse: #334155;        /* Slate-700 */
+
+  /* Accent - Primary Blue */
+  --accent-primary: #2563eb;        /* Blue-600 - primary accent */
+  --accent-hover: #1d4ed8;          /* Blue-700 - accent hover */
+  --accent-active: #1e40af;         /* Blue-800 - accent pressed */
+  --accent-light: #dbeafe;          /* Blue-100 - accent backgrounds */
+  --accent-lighter: #eff6ff;        /* Blue-50 - subtle accent bg */
+  --accent-gradient: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  --border-color-hover: #94a3b8;    /* Slate-400 - border hover */
+
+  /* Semantic Colors - Success (Green) */
+  --success: #16a34a;               /* Green-600 */
+  --success-hover: #15803d;         /* Green-700 */
+  --success-light: #dcfce7;         /* Green-100 */
+  --success-lighter: #f0fdf4;       /* Green-50 */
+
+  /* Semantic Colors - Warning (Amber) */
+  --warning: #d97706;               /* Amber-600 */
+  --warning-hover: #b45309;         /* Amber-700 */
+  --warning-light: #fef3c7;         /* Amber-100 */
+  --warning-lighter: #fffbeb;       /* Amber-50 */
+
+  /* Semantic Colors - Error (Red) */
+  --error: #dc2626;                 /* Red-600 */
+  --error-hover: #b91c1c;           /* Red-700 */
+  --error-light: #fee2e2;           /* Red-100 */
+  --error-lighter: #fef2f2;         /* Red-50 */
+
+  /* Semantic Colors - Info (Blue - same as accent) */
+  --info: #2563eb;                  /* Blue-600 */
+  --info-hover: #1d4ed8;            /* Blue-700 */
+  --info-light: #dbeafe;            /* Blue-100 */
+  --info-lighter: #eff6ff;          /* Blue-50 */
+
+  /* Component-specific tokens */
   --input-bg: #ffffff;
-  --input-border: #cbd5e1;        /* slate-300 */
-  --input-focus: #2563eb;         /* blue-600 */
+  --input-border: #cbd5e1;          /* Slate-300 */
+  --input-border-hover: #94a3b8;    /* Slate-400 */
+  --input-focus: #2563eb;           /* Blue-600 */
+  --input-placeholder: #94a3b8;     /* Slate-400 */
+
+  /* Cards */
   --card-bg: #ffffff;
-  --card-shadow: rgba(0, 0, 0, 0.1);
+  --card-border: #e2e8f0;           /* Slate-200 */
+  --card-shadow: rgba(15, 23, 42, 0.08);
 
   /* Tab bar */
-  --tab-bg: #f8fafc;
+  --tab-bg: #f8fafc;                /* Slate-50 */
   --tab-active-bg: #ffffff;
-  --tab-text: #64748b;
-  --tab-active-text: #0f172a;
+  --tab-text: #64748b;              /* Slate-500 */
+  --tab-active-text: #0f172a;       /* Slate-900 */
+  --tab-indicator: #2563eb;         /* Blue-600 */
+
+  /* Sidebar */
+  --sidebar-bg: #f8fafc;            /* Slate-50 */
+  --sidebar-border: #e2e8f0;        /* Slate-200 */
+  --sidebar-item-hover: #e2e8f0;    /* Slate-200 */
+  --sidebar-item-active: #dbeafe;   /* Blue-100 */
 
   /* Scrollbar */
-  --scrollbar-track: #f1f5f9;
-  --scrollbar-thumb: #cbd5e1;
-  --scrollbar-thumb-hover: #94a3b8;
+  --scrollbar-track: #f1f5f9;       /* Slate-100 */
+  --scrollbar-thumb: #cbd5e1;       /* Slate-300 */
+  --scrollbar-thumb-hover: #94a3b8; /* Slate-400 */
+
+  /* Overlay */
+  --overlay-bg: rgba(15, 23, 42, 0.4);
+  --backdrop-blur: 4px;
+
+  /* Code/Syntax */
+  --code-bg: #f1f5f9;               /* Slate-100 */
+  --code-text: #0f172a;             /* Slate-900 */
+  --code-border: #e2e8f0;           /* Slate-200 */
 }
 
+/* ============================================================================
+   DARK THEME
+   ============================================================================ */
+
 :root[data-theme="dark"] {
-  /* Dark theme - Tailwind Slate palette inverted */
-  --bg-primary: #0f172a;          /* slate-900 */
-  --bg-secondary: #1e293b;        /* slate-800 */
-  --bg-tertiary: #334155;         /* slate-700 */
-  --bg-hover: #475569;            /* slate-600 */
-  --text-primary: #f8fafc;        /* slate-50 */
-  --text-secondary: #cbd5e1;      /* slate-300 */
-  --text-muted: #64748b;          /* slate-500 */
-  --border-color: #334155;        /* slate-700 */
-  --border-strong: #475569;       /* slate-600 */
+  /* Backgrounds */
+  --bg-primary: #0f172a;            /* Slate-900 - main content */
+  --bg-secondary: #1e293b;          /* Slate-800 - subtle background */
+  --bg-tertiary: #334155;           /* Slate-700 - emphasized sections */
+  --bg-elevated: #1e293b;           /* Slate-800 - elevated surfaces */
+  --bg-hover: #475569;              /* Slate-600 - hover states */
+  --bg-active: #64748b;             /* Slate-500 - pressed/active */
+  --bg-inverse: #f8fafc;            /* Slate-50 - inverse backgrounds */
 
-  /* Accent colors - slightly brighter for dark mode */
-  --accent-primary: #3b82f6;      /* blue-500 */
-  --accent-hover: #60a5fa;        /* blue-400 */
-  --accent-light: #1e3a5f;        /* custom dark blue */
+  /* Text */
+  --text-primary: #f8fafc;          /* Slate-50 - primary text */
+  --text-secondary: #cbd5e1;        /* Slate-300 - secondary text */
+  --text-muted: #64748b;            /* Slate-500 - muted/placeholder */
+  --text-inverse: #0f172a;          /* Slate-900 - text on light bg */
+  --text-link: #60a5fa;             /* Blue-400 - link text */
+  --text-link-hover: #93c5fd;       /* Blue-300 - link hover */
 
-  /* Semantic colors - adjusted for dark */
-  --success: #22c55e;             /* green-500 */
-  --success-light: #14532d;       /* green-900 */
-  --warning: #f59e0b;             /* amber-500 */
-  --warning-light: #78350f;       /* amber-900 */
-  --error: #ef4444;               /* red-500 */
-  --error-light: #7f1d1d;         /* red-900 */
-  --info: #3b82f6;                /* blue-500 */
-  --info-light: #1e3a5f;          /* custom */
+  /* Borders */
+  --border-light: #1e293b;          /* Slate-800 - subtle dividers */
+  --border-color: #334155;          /* Slate-700 - default borders */
+  --border-strong: #475569;         /* Slate-600 - emphasized borders */
+  --border-inverse: #e2e8f0;        /* Slate-200 */
 
-  /* Component-specific */
-  --input-bg: #1e293b;            /* slate-800 */
-  --input-border: #475569;        /* slate-600 */
-  --input-focus: #3b82f6;         /* blue-500 */
-  --card-bg: #1e293b;             /* slate-800 */
+  /* Accent - Brighter blue for dark mode */
+  --accent-primary: #3b82f6;        /* Blue-500 */
+  --accent-hover: #60a5fa;          /* Blue-400 */
+  --accent-active: #2563eb;         /* Blue-600 */
+  --accent-light: #1e3a5f;          /* Custom dark blue */
+  --accent-lighter: #172554;        /* Blue-950 */
+  --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  --border-color-hover: #64748b;    /* Slate-500 - border hover */
+
+  /* Semantic Colors - Success */
+  --success: #22c55e;               /* Green-500 */
+  --success-hover: #4ade80;         /* Green-400 */
+  --success-light: #14532d;         /* Green-900 */
+  --success-lighter: #052e16;       /* Green-950 */
+
+  /* Semantic Colors - Warning */
+  --warning: #f59e0b;               /* Amber-500 */
+  --warning-hover: #fbbf24;         /* Amber-400 */
+  --warning-light: #78350f;         /* Amber-900 */
+  --warning-lighter: #451a03;       /* Amber-950 */
+
+  /* Semantic Colors - Error */
+  --error: #ef4444;                 /* Red-500 */
+  --error-hover: #f87171;           /* Red-400 */
+  --error-light: #7f1d1d;           /* Red-900 */
+  --error-lighter: #450a0a;         /* Red-950 */
+
+  /* Semantic Colors - Info */
+  --info: #3b82f6;                  /* Blue-500 */
+  --info-hover: #60a5fa;            /* Blue-400 */
+  --info-light: #1e3a5f;            /* Custom */
+  --info-lighter: #172554;          /* Blue-950 */
+
+  /* Component-specific tokens */
+  --input-bg: #1e293b;              /* Slate-800 */
+  --input-border: #475569;          /* Slate-600 */
+  --input-border-hover: #64748b;    /* Slate-500 */
+  --input-focus: #3b82f6;           /* Blue-500 */
+  --input-placeholder: #64748b;     /* Slate-500 */
+
+  /* Cards */
+  --card-bg: #1e293b;               /* Slate-800 */
+  --card-border: #334155;           /* Slate-700 */
   --card-shadow: rgba(0, 0, 0, 0.3);
 
   /* Tab bar */
-  --tab-bg: #1e293b;
-  --tab-active-bg: #0f172a;
-  --tab-text: #94a3b8;
-  --tab-active-text: #f8fafc;
+  --tab-bg: #1e293b;                /* Slate-800 */
+  --tab-active-bg: #0f172a;         /* Slate-900 */
+  --tab-text: #94a3b8;              /* Slate-400 */
+  --tab-active-text: #f8fafc;       /* Slate-50 */
+  --tab-indicator: #3b82f6;         /* Blue-500 */
+
+  /* Sidebar */
+  --sidebar-bg: #1e293b;            /* Slate-800 */
+  --sidebar-border: #334155;        /* Slate-700 */
+  --sidebar-item-hover: #334155;    /* Slate-700 */
+  --sidebar-item-active: #1e3a5f;   /* Custom dark blue */
 
   /* Scrollbar */
-  --scrollbar-track: #1e293b;
-  --scrollbar-thumb: #475569;
-  --scrollbar-thumb-hover: #64748b;
+  --scrollbar-track: #1e293b;       /* Slate-800 */
+  --scrollbar-thumb: #475569;       /* Slate-600 */
+  --scrollbar-thumb-hover: #64748b; /* Slate-500 */
+
+  /* Overlay */
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+  --backdrop-blur: 4px;
+
+  /* Code/Syntax */
+  --code-bg: #1e293b;               /* Slate-800 */
+  --code-text: #e2e8f0;             /* Slate-200 */
+  --code-border: #334155;           /* Slate-700 */
 }
 
-/* Global scrollbar styles */
+/* ============================================================================
+   GLOBAL STYLES
+   ============================================================================ */
+
+/* Scrollbar styles */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -109,4 +229,21 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-light);
+  color: var(--text-primary);
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring on mouse click, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
 }

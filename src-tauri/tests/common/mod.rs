@@ -9,12 +9,14 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Test context holding temporary resources
+#[allow(dead_code)]
 pub struct TestContext {
     pub temp_dir: TempDir,
     pub db: Database,
     pub db_path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl TestContext {
     /// Create a new test context with an encrypted database
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -90,6 +92,7 @@ impl Default for TestContext {
 }
 
 /// Create a simple test database without full context
+#[allow(dead_code)]
 pub fn create_test_db() -> Result<(TempDir, Database), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test.db");
@@ -100,6 +103,7 @@ pub fn create_test_db() -> Result<(TempDir, Database), Box<dyn std::error::Error
 }
 
 /// Generate test markdown content
+#[allow(dead_code)]
 pub fn generate_test_markdown(title: &str, content: &str) -> String {
     format!("# {}\n\n{}", title, content)
 }

@@ -1,0 +1,213 @@
+/* ============================================================================
+   Header Component - Contextual App Header
+   ============================================================================ */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  height: 52px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  gap: var(--space-4);
+}
+
+/* Header Left - Title and Context */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 200px;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.header-icon {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.header-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  line-height: 1.2;
+  letter-spacing: var(--tracking-tight);
+}
+
+.header-description {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+/* Header Center - Command Palette Trigger */
+.header-center {
+  flex: 1;
+  max-width: 480px;
+  display: flex;
+  justify-content: center;
+}
+
+.command-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-1-5) var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.command-trigger:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color-hover);
+}
+
+.command-trigger:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.command-placeholder {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.command-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+/* Header Right - Model Status */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 150px;
+  justify-content: flex-end;
+}
+
+.model-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2-5);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.model-indicator .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.model-indicator.loaded .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.model-indicator.not-loaded .status-dot {
+  background: var(--warning);
+}
+
+.model-indicator.loaded .model-status-text {
+  color: var(--success);
+}
+
+.model-indicator.not-loaded .model-status-text {
+  color: var(--warning);
+}
+
+.model-status-text {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile Header */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .header-left {
+    min-width: auto;
+  }
+
+  .header-description {
+    display: none;
+  }
+
+  .header-center {
+    display: none;
+  }
+
+  .model-status-text {
+    display: none;
+  }
+}
+
+/* Tablet adjustments */
+@media (max-width: 1024px) {
+  .header-center {
+    max-width: 320px;
+  }
+
+  .command-placeholder {
+    display: none;
+  }
+
+  .model-status-text {
+    max-width: 80px;
+  }
+}

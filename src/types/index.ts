@@ -86,12 +86,22 @@ export interface GenerateWithContextParams {
   gen_params?: GenerationParams;
 }
 
+export interface GenerationMetrics {
+  tokens_per_second: number;
+  sources_used: number;
+  word_count: number;
+  length_target_met: boolean;
+  context_utilization: number;
+}
+
 export interface GenerateWithContextResult {
   text: string;
   tokens_generated: number;
   duration_ms: number;
   source_chunk_ids: string[];
   sources: ContextSource[];
+  metrics: GenerationMetrics;
+  prompt_template_version: string;
 }
 
 export interface ContextSource {
@@ -163,6 +173,17 @@ export interface SearchResult {
   source: 'Fts5' | 'Vector' | 'Hybrid';
   namespace_id: string | null;
   source_type: string | null;
+}
+
+export interface SearchOptions {
+  /** Weight for FTS5 results (0.0-1.0, default 0.5) */
+  fts_weight?: number;
+  /** Weight for vector results (0.0-1.0, default 0.5) */
+  vector_weight?: number;
+  /** Enable deduplication (default true) */
+  enable_dedup?: boolean;
+  /** Deduplication threshold (0.0-1.0, default 0.85) */
+  dedup_threshold?: number;
 }
 
 // Embedding types
@@ -298,6 +319,11 @@ export interface Namespace {
   updated_at: string;
 }
 
+export interface NamespaceWithCounts extends Namespace {
+  document_count: number;
+  source_count: number;
+}
+
 export interface IngestSource {
   id: string;
   source_type: string;
@@ -351,4 +377,69 @@ export interface DocumentChunk {
   heading_path?: string | null;
   content: string;
   word_count?: number | null;
+}
+
+// Source health types
+export interface SourceHealth {
+  id: string;
+  source_type: string;
+  source_uri: string;
+  title: string | null;
+  status: 'pending' | 'active' | 'stale' | 'error' | 'removed';
+  error_message: string | null;
+  last_ingested_at: string | null;
+  document_count: number;
+  days_since_refresh: number | null;
+}
+
+export interface SourceHealthSummary {
+  total_sources: number;
+  active_sources: number;
+  stale_sources: number;
+  error_sources: number;
+  pending_sources: number;
+  sources: SourceHealth[];
+}
+
+// Diagnostics types
+export type HealthStatus = 'healthy' | 'warning' | 'error' | 'unavailable';
+
+export interface ComponentHealth {
+  name: string;
+  status: HealthStatus;
+  message: string;
+  details: string | null;
+  can_repair: boolean;
+}
+
+export interface SystemHealth {
+  database: ComponentHealth;
+  vector_store: ComponentHealth;
+  llm_engine: ComponentHealth;
+  embedding_model: ComponentHealth;
+  file_system: ComponentHealth;
+  overall_status: HealthStatus;
+  checked_at: string;
+}
+
+export interface RepairResult {
+  component: string;
+  success: boolean;
+  action_taken: string;
+  message: string | null;
+}
+
+export interface FailureMode {
+  id: string;
+  problem: string;
+  symptoms: string[];
+  resolution_steps: string[];
+  auto_repair_available: boolean;
+}
+
+export interface QuickHealthResult {
+  healthy: boolean;
+  checks_passed: number;
+  checks_total: number;
+  issues: string[];
 }

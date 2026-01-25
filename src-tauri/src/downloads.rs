@@ -8,7 +8,7 @@ use thiserror::Error;
 use sha2::{Sha256, Digest};
 use tokio::sync::mpsc;
 
-use crate::security::KeychainManager;
+use crate::security::{FileKeyStore, TOKEN_HUGGINGFACE};
 
 #[derive(Debug, Error)]
 pub enum DownloadError {
@@ -126,8 +126,8 @@ impl DownloadManager {
         let dest_path = self.models_dir.join(&source.filename);
         let partial_path = self.downloads_dir.join(format!("{}.partial", source.filename));
 
-        // Get HuggingFace token from Keychain (optional)
-        let hf_token = KeychainManager::get_hf_token().ok().flatten();
+        // Get HuggingFace token from file-based storage (optional)
+        let hf_token = FileKeyStore::get_token(TOKEN_HUGGINGFACE).ok().flatten();
 
         // Build HTTP client
         let mut headers = reqwest::header::HeaderMap::new();

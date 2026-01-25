@@ -1084,6 +1084,43 @@ impl Database {
         Ok(namespaces)
     }
 
+    /// List all namespaces with document and source counts (optimized single query)
+    pub fn list_namespaces_with_counts(&self) -> Result<Vec<NamespaceWithCounts>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                n.id, n.name, n.description, n.color, n.created_at, n.updated_at,
+                COALESCE(d.doc_count, 0) as document_count,
+                COALESCE(s.source_count, 0) as source_count
+             FROM namespaces n
+             LEFT JOIN (
+                 SELECT namespace_id, COUNT(*) as doc_count
+                 FROM kb_documents
+                 GROUP BY namespace_id
+             ) d ON d.namespace_id = n.id
+             LEFT JOIN (
+                 SELECT namespace_id, COUNT(*) as source_count
+                 FROM ingest_sources
+                 GROUP BY namespace_id
+             ) s ON s.namespace_id = n.id
+             ORDER BY n.name"
+        )?;
+
+        let namespaces = stmt.query_map([], |row| {
+            Ok(NamespaceWithCounts {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+                document_count: row.get(6)?,
+                source_count: row.get(7)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(namespaces)
+    }
+
     /// Get a namespace by ID
     pub fn get_namespace(&self, namespace_id: &str) -> Result<Namespace, DbError> {
         self.conn.query_row(
@@ -1720,6 +1757,19 @@ pub struct Namespace {
     pub color: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Namespace with document and source counts (optimized query result)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NamespaceWithCounts {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub document_count: i64,
+    pub source_count: i64,
 }
 
 /// Ingest source (web URL, YouTube video, GitHub repo, etc.)

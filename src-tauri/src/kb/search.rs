@@ -42,29 +42,65 @@ pub enum SearchSource {
     Hybrid,
 }
 
-/// RRF (Reciprocal Rank Fusion) constant
+/// RRF (Reciprocal Rank Fusion) constant - higher values favor higher-ranked results
 const RRF_K: f64 = 60.0;
+
+/// Default similarity threshold for deduplication (0.0-1.0)
+const DEFAULT_DEDUP_THRESHOLD: f64 = 0.85;
 
 /// Hybrid search engine
 pub struct HybridSearch;
 
-/// Search options for filtering
-#[derive(Debug, Clone, Default)]
+/// Search options for filtering and tuning
+#[derive(Debug, Clone)]
 pub struct SearchOptions {
     pub namespace_id: Option<String>,
     pub limit: usize,
+    /// Weight for FTS5 results in hybrid search (0.0-1.0)
+    pub fts_weight: f64,
+    /// Weight for vector results in hybrid search (0.0-1.0)
+    pub vector_weight: f64,
+    /// Similarity threshold for deduplication (0.0-1.0, higher = more aggressive)
+    pub dedup_threshold: f64,
+    /// Enable content-based deduplication
+    pub enable_dedup: bool,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            namespace_id: None,
+            limit: 10,
+            fts_weight: 0.5,
+            vector_weight: 0.5,
+            dedup_threshold: DEFAULT_DEDUP_THRESHOLD,
+            enable_dedup: true,
+        }
+    }
 }
 
 impl SearchOptions {
     pub fn new(limit: usize) -> Self {
         Self {
-            namespace_id: None,
             limit,
+            ..Default::default()
         }
     }
 
     pub fn with_namespace(mut self, namespace_id: Option<String>) -> Self {
         self.namespace_id = namespace_id;
+        self
+    }
+
+    pub fn with_weights(mut self, fts_weight: f64, vector_weight: f64) -> Self {
+        self.fts_weight = fts_weight.clamp(0.0, 1.0);
+        self.vector_weight = vector_weight.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_dedup(mut self, enable: bool, threshold: f64) -> Self {
+        self.enable_dedup = enable;
+        self.dedup_threshold = threshold.clamp(0.0, 1.0);
         self
     }
 }
@@ -113,13 +149,21 @@ impl HybridSearch {
         options: SearchOptions,
         vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
     ) -> Result<Vec<SearchResult>, SearchError> {
-        // Get FTS5 results (fetch more for fusion)
-        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit * 2)?;
+        // Get FTS5 results (fetch more for fusion and dedup)
+        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit * 3)?;
 
-        // If no vector results, just return FTS5
+        // If no vector results, just return FTS5 (with dedup if enabled)
         let vector_results = match vector_results {
             Some(vr) if !vr.is_empty() => vr,
-            _ => return Ok(fts_results.into_iter().take(options.limit).collect()),
+            _ => {
+                let results: Vec<_> = fts_results.into_iter().take(options.limit * 2).collect();
+                let results = if options.enable_dedup {
+                    Self::deduplicate_results(results, options.dedup_threshold)
+                } else {
+                    results
+                };
+                return Ok(results.into_iter().take(options.limit).collect());
+            }
         };
 
         // Convert vector results to SearchResults by looking up chunk metadata
@@ -130,8 +174,22 @@ impl HybridSearch {
             }
         }
 
-        // Use RRF fusion
-        Ok(Self::hybrid_search_with_vectors(fts_results, vector_search_results, options.limit))
+        // Use RRF fusion with configurable weights
+        let mut results = Self::hybrid_search_with_weights(
+            fts_results,
+            vector_search_results,
+            options.fts_weight,
+            options.vector_weight,
+            options.limit * 2,
+        );
+
+        // Apply deduplication if enabled
+        if options.enable_dedup {
+            results = Self::deduplicate_results(results, options.dedup_threshold);
+        }
+
+        results.truncate(options.limit);
+        Ok(results)
     }
 
     /// Get a chunk by ID and convert to SearchResult
@@ -289,10 +347,32 @@ impl HybridSearch {
         vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
         limit: usize,
     ) -> Result<Vec<SearchResult>, SearchError> {
-        // If no vector results, just return FTS results
+        Self::fuse_results_with_options(db, fts_results, vector_results, SearchOptions::new(limit))
+    }
+
+    /// Fuse pre-computed FTS results with vector results using configurable options
+    ///
+    /// This is used when FTS and vector searches are run in parallel.
+    /// Takes pre-computed FTS results and optional raw vector results.
+    /// Applies configurable weights for fusion and optional deduplication.
+    pub fn fuse_results_with_options(
+        db: &Database,
+        fts_results: Vec<SearchResult>,
+        vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
+        options: SearchOptions,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        // If no vector results, just return FTS results (with dedup if enabled)
         let vector_results = match vector_results {
             Some(vr) if !vr.is_empty() => vr,
-            _ => return Ok(fts_results.into_iter().take(limit).collect()),
+            _ => {
+                let results: Vec<_> = fts_results.into_iter().take(options.limit * 2).collect();
+                let results = if options.enable_dedup {
+                    Self::deduplicate_results(results, options.dedup_threshold)
+                } else {
+                    results
+                };
+                return Ok(results.into_iter().take(options.limit).collect());
+            }
         };
 
         // Convert vector results to SearchResults by looking up chunk metadata
@@ -303,11 +383,25 @@ impl HybridSearch {
             }
         }
 
-        // Use RRF fusion
-        Ok(Self::hybrid_search_with_vectors(fts_results, vector_search_results, limit))
+        // Use weighted RRF fusion
+        let mut results = Self::hybrid_search_with_weights(
+            fts_results,
+            vector_search_results,
+            options.fts_weight,
+            options.vector_weight,
+            options.limit * 2,
+        );
+
+        // Apply deduplication if enabled
+        if options.enable_dedup {
+            results = Self::deduplicate_results(results, options.dedup_threshold);
+        }
+
+        results.truncate(options.limit);
+        Ok(results)
     }
 
-    /// Perform hybrid search with RRF fusion
+    /// Perform hybrid search with RRF fusion (default equal weights)
     ///
     /// This combines FTS5 and vector search results using Reciprocal Rank Fusion.
     /// RRF score = sum(1 / (k + rank)) for each result list
@@ -316,22 +410,41 @@ impl HybridSearch {
         vector_results: Vec<SearchResult>,
         limit: usize,
     ) -> Vec<SearchResult> {
+        Self::hybrid_search_with_weights(fts_results, vector_results, 0.5, 0.5, limit)
+    }
+
+    /// Perform hybrid search with configurable weights
+    ///
+    /// This combines FTS5 and vector search results using weighted RRF.
+    /// Weights control the relative importance of each result source.
+    pub fn hybrid_search_with_weights(
+        fts_results: Vec<SearchResult>,
+        vector_results: Vec<SearchResult>,
+        fts_weight: f64,
+        vector_weight: f64,
+        limit: usize,
+    ) -> Vec<SearchResult> {
         use std::collections::HashMap;
 
-        // Build RRF scores
+        // Normalize weights
+        let total_weight = fts_weight + vector_weight;
+        let fts_w = if total_weight > 0.0 { fts_weight / total_weight } else { 0.5 };
+        let vec_w = if total_weight > 0.0 { vector_weight / total_weight } else { 0.5 };
+
+        // Build RRF scores with weights
         let mut rrf_scores: HashMap<String, (f64, Option<SearchResult>)> = HashMap::new();
 
-        // Add FTS5 scores
+        // Add FTS5 scores (weighted)
         for (rank, result) in fts_results.into_iter().enumerate() {
-            let score = 1.0 / (RRF_K + rank as f64 + 1.0);
+            let score = fts_w * (1.0 / (RRF_K + rank as f64 + 1.0));
             rrf_scores.entry(result.chunk_id.clone())
                 .and_modify(|(s, _)| *s += score)
                 .or_insert((score, Some(result)));
         }
 
-        // Add vector scores
+        // Add vector scores (weighted)
         for (rank, result) in vector_results.into_iter().enumerate() {
-            let score = 1.0 / (RRF_K + rank as f64 + 1.0);
+            let score = vec_w * (1.0 / (RRF_K + rank as f64 + 1.0));
             rrf_scores.entry(result.chunk_id.clone())
                 .and_modify(|(s, existing)| {
                     *s += score;
@@ -357,6 +470,62 @@ impl HybridSearch {
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
         results.truncate(limit);
         results
+    }
+
+    /// Deduplicate results based on content similarity
+    ///
+    /// Uses Jaccard similarity of word sets to detect near-duplicates.
+    /// Results with similarity above threshold are removed (keeping the higher-scored one).
+    pub fn deduplicate_results(results: Vec<SearchResult>, threshold: f64) -> Vec<SearchResult> {
+        if results.is_empty() || threshold >= 1.0 {
+            return results;
+        }
+
+        let mut deduped: Vec<SearchResult> = Vec::with_capacity(results.len());
+
+        for result in results {
+            // Check if this result is too similar to any already-kept result
+            let is_duplicate = deduped.iter().any(|kept| {
+                Self::content_similarity(&kept.content, &result.content) >= threshold
+            });
+
+            if !is_duplicate {
+                deduped.push(result);
+            }
+        }
+
+        deduped
+    }
+
+    /// Calculate Jaccard similarity between two content strings
+    ///
+    /// Returns value between 0.0 (no overlap) and 1.0 (identical)
+    fn content_similarity(a: &str, b: &str) -> f64 {
+        use std::collections::HashSet;
+
+        // Tokenize into word sets (lowercase, alphanumeric only)
+        let tokenize = |s: &str| -> HashSet<String> {
+            s.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| w.len() > 2) // Skip very short words
+                .map(String::from)
+                .collect()
+        };
+
+        let set_a = tokenize(a);
+        let set_b = tokenize(b);
+
+        if set_a.is_empty() && set_b.is_empty() {
+            return 1.0; // Both empty = identical
+        }
+        if set_a.is_empty() || set_b.is_empty() {
+            return 0.0; // One empty = no similarity
+        }
+
+        let intersection = set_a.intersection(&set_b).count();
+        let union = set_a.union(&set_b).count();
+
+        intersection as f64 / union as f64
     }
 
     /// Get chunk content by ID
@@ -532,5 +701,150 @@ mod tests {
         assert!(context.contains("VPN Guide"));
         assert!(context.contains("Connection Issues"));
         assert!(context.contains("If VPN fails"));
+    }
+
+    #[test]
+    fn test_content_similarity() {
+        // Identical content
+        let sim = HybridSearch::content_similarity(
+            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox jumps over the lazy dog",
+        );
+        assert!((sim - 1.0).abs() < 0.001);
+
+        // Similar content
+        let sim = HybridSearch::content_similarity(
+            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox runs over the lazy cat",
+        );
+        assert!(sim > 0.5);
+
+        // Different content
+        let sim = HybridSearch::content_similarity(
+            "The quick brown fox jumps over the lazy dog",
+            "Python programming language tutorial for beginners",
+        );
+        assert!(sim < 0.3);
+    }
+
+    #[test]
+    fn test_deduplication() {
+        let results = vec![
+            SearchResult {
+                chunk_id: "1".to_string(),
+                document_id: "d1".to_string(),
+                file_path: "/test.md".to_string(),
+                title: None,
+                heading_path: None,
+                content: "The VPN connection requires proper configuration settings.".to_string(),
+                snippet: "VPN connection".to_string(),
+                score: 1.0,
+                source: SearchSource::Fts5,
+                namespace_id: None,
+                source_type: None,
+            },
+            SearchResult {
+                chunk_id: "2".to_string(),
+                document_id: "d1".to_string(),
+                file_path: "/test.md".to_string(),
+                title: None,
+                heading_path: None,
+                content: "The VPN connection needs proper configuration settings.".to_string(),
+                snippet: "VPN connection".to_string(),
+                score: 0.9,
+                source: SearchSource::Fts5,
+                namespace_id: None,
+                source_type: None,
+            },
+            SearchResult {
+                chunk_id: "3".to_string(),
+                document_id: "d2".to_string(),
+                file_path: "/other.md".to_string(),
+                title: None,
+                heading_path: None,
+                content: "Email configuration is done through the admin panel.".to_string(),
+                snippet: "Email config".to_string(),
+                score: 0.8,
+                source: SearchSource::Fts5,
+                namespace_id: None,
+                source_type: None,
+            },
+        ];
+
+        // With high threshold, first two should be deduped (very similar)
+        let deduped = HybridSearch::deduplicate_results(results, 0.7);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].chunk_id, "1"); // Higher score kept
+        assert_eq!(deduped[1].chunk_id, "3"); // Different content kept
+    }
+
+    #[test]
+    fn test_weighted_rrf() {
+        let fts_results = vec![
+            SearchResult {
+                chunk_id: "a".to_string(),
+                document_id: "d1".to_string(),
+                file_path: "/test.md".to_string(),
+                title: None,
+                heading_path: None,
+                content: "A".to_string(),
+                snippet: "A".to_string(),
+                score: 1.0,
+                source: SearchSource::Fts5,
+                namespace_id: None,
+                source_type: None,
+            },
+        ];
+
+        let vector_results = vec![
+            SearchResult {
+                chunk_id: "b".to_string(),
+                document_id: "d1".to_string(),
+                file_path: "/test.md".to_string(),
+                title: None,
+                heading_path: None,
+                content: "B".to_string(),
+                snippet: "B".to_string(),
+                score: 1.0,
+                source: SearchSource::Vector,
+                namespace_id: None,
+                source_type: None,
+            },
+        ];
+
+        // With heavy FTS weight, FTS result should rank higher
+        let results = HybridSearch::hybrid_search_with_weights(
+            fts_results.clone(),
+            vector_results.clone(),
+            0.9,
+            0.1,
+            10,
+        );
+        assert_eq!(results[0].chunk_id, "a");
+
+        // With heavy vector weight, vector result should rank higher
+        let results = HybridSearch::hybrid_search_with_weights(
+            fts_results,
+            vector_results,
+            0.1,
+            0.9,
+            10,
+        );
+        assert_eq!(results[0].chunk_id, "b");
+    }
+
+    #[test]
+    fn test_search_options_builder() {
+        let opts = SearchOptions::new(20)
+            .with_namespace(Some("test".to_string()))
+            .with_weights(0.7, 0.3)
+            .with_dedup(true, 0.9);
+
+        assert_eq!(opts.limit, 20);
+        assert_eq!(opts.namespace_id, Some("test".to_string()));
+        assert!((opts.fts_weight - 0.7).abs() < 0.001);
+        assert!((opts.vector_weight - 0.3).abs() < 0.001);
+        assert!(opts.enable_dedup);
+        assert!((opts.dedup_threshold - 0.9).abs() < 0.001);
     }
 }

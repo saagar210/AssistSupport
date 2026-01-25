@@ -64,10 +64,16 @@ pub struct WebIngester {
 impl WebIngester {
     /// Create a new web ingester
     pub fn new(config: WebIngestConfig) -> IngestResult<Self> {
+        let ssrf_config = config.ssrf.clone();
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .user_agent(&config.user_agent)
-            .redirect(reqwest::redirect::Policy::limited(10))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                match validate_redirect_target(attempt.url().as_str(), &ssrf_config, attempt.previous().len()) {
+                    Ok(()) => attempt.follow(),
+                    Err(err) => attempt.error(err),
+                }
+            }))
             .build()
             .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
@@ -78,7 +84,6 @@ impl WebIngester {
     pub async fn fetch_page(&self, url: &str) -> IngestResult<FetchedPage> {
         // Validate URL for SSRF
         let validated_url = validate_url_for_ssrf(url, &self.config.ssrf)?;
-        let canonical = canonicalize_url(url)?;
 
         // Make request
         let response = self
@@ -155,6 +160,8 @@ impl WebIngester {
             }
         }
 
+        let final_url = response.url().clone();
+
         // Read body with size limit
         let bytes = response.bytes().await.map_err(|e| {
             IngestError::Network(NetworkError::RequestFailed(e.to_string()))
@@ -170,8 +177,10 @@ impl WebIngester {
         // Convert to string
         let content = String::from_utf8_lossy(&bytes).to_string();
 
+        let canonical = canonicalize_url(final_url.as_str())?;
+
         // Check for login page
-        if is_login_page(&validated_url, Some(&content)) {
+        if is_login_page(&final_url, Some(&content)) {
             return Err(IngestError::AuthRequired(format!(
                 "URL {} appears to be a login page. Please download the content manually after authenticating.",
                 url
@@ -182,7 +191,7 @@ impl WebIngester {
         let title = extract_html_title(&content);
 
         Ok(FetchedPage {
-            url: url.to_string(),
+            url: final_url.to_string(),
             canonical_url: canonical,
             content,
             content_type,
@@ -480,6 +489,18 @@ impl WebIngester {
     }
 }
 
+fn validate_redirect_target(
+    url: &str,
+    config: &SsrfConfig,
+    previous_len: usize,
+) -> Result<(), NetworkError> {
+    if previous_len > 10 {
+        return Err(NetworkError::RequestFailed("too many redirects".into()));
+    }
+
+    validate_url_for_ssrf(url, config).map(|_| ())
+}
+
 /// Extract title from HTML
 fn extract_html_title(html: &str) -> Option<String> {
     // Simple regex extraction (avoids full HTML parser)
@@ -647,5 +668,26 @@ mod tests {
         assert_eq!(headings.len(), 2);
         assert_eq!(headings[0], (1, "Title".to_string()));
         assert_eq!(headings[1], (2, "Subtitle".to_string()));
+    }
+
+    #[test]
+    fn test_redirect_validation_blocks_private() {
+        let config = SsrfConfig::default();
+        let result = validate_redirect_target("http://127.0.0.1", &config, 0);
+        assert!(matches!(result, Err(NetworkError::SsrfBlocked(_))));
+    }
+
+    #[test]
+    fn test_redirect_validation_allows_public() {
+        let config = SsrfConfig::default();
+        let result = validate_redirect_target("http://8.8.8.8", &config, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_redirect_validation_too_many_hops() {
+        let config = SsrfConfig::default();
+        let result = validate_redirect_target("http://8.8.8.8", &config, 11);
+        assert!(matches!(result, Err(NetworkError::RequestFailed(_))));
     }
 }

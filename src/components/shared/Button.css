@@ -1,38 +1,76 @@
+/* ============================================================================
+   Button Component Styles
+   ============================================================================
+   Premium button system with variants, sizes, and states.
+   Uses design tokens for consistent styling.
+   ============================================================================ */
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border: none;
-  border-radius: 6px;
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-weight: var(--weight-medium);
   cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
+  transition: var(--transition-colors), box-shadow var(--duration-fast) var(--ease-in-out);
+  white-space: nowrap;
+  text-decoration: none;
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
-/* Sizes */
+/* ============================================================================
+   Button Sizes
+   ============================================================================ */
+
 .btn-small {
-  padding: 6px 12px;
-  font-size: 13px;
+  height: var(--btn-height-sm);
+  padding: 0 var(--btn-padding-x-sm);
+  font-size: var(--text-sm);
 }
 
 .btn-medium {
-  padding: 8px 16px;
-  font-size: 14px;
+  height: var(--btn-height-md);
+  padding: 0 var(--btn-padding-x-md);
+  font-size: var(--text-base);
 }
 
 .btn-large {
-  padding: 12px 24px;
-  font-size: 16px;
+  height: var(--btn-height-lg);
+  padding: 0 var(--btn-padding-x-lg);
+  font-size: var(--text-md);
 }
 
-/* Variants */
+/* Icon-only buttons */
+.btn-icon-only {
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.btn-icon-only.btn-small {
+  width: var(--btn-height-sm);
+}
+
+.btn-icon-only.btn-medium {
+  width: var(--btn-height-md);
+}
+
+.btn-icon-only.btn-large {
+  width: var(--btn-height-lg);
+}
+
+/* ============================================================================
+   Button Variants
+   ============================================================================ */
+
+/* Primary - Main action */
 .btn-primary {
   background: var(--accent-primary);
   color: white;
@@ -42,25 +80,53 @@
   background: var(--accent-hover);
 }
 
+.btn-primary:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.btn-primary:focus-visible {
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* Secondary - Alternative action */
 .btn-secondary {
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
+.btn-secondary:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.btn-secondary:focus-visible {
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* Danger - Destructive action */
 .btn-danger {
   background: var(--error);
   color: white;
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--error-hover);
 }
 
+.btn-danger:active:not(:disabled) {
+  background: #991b1b; /* red-800 */
+}
+
+.btn-danger:focus-visible {
+  box-shadow: 0 0 0 3px var(--error-light);
+}
+
+/* Ghost - Minimal emphasis */
 .btn-ghost {
   background: transparent;
   color: var(--text-primary);
@@ -70,9 +136,45 @@
   background: var(--bg-hover);
 }
 
-/* Loading state */
+.btn-ghost:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.btn-ghost:focus-visible {
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* Link - Text-like button */
+.btn-link {
+  background: transparent;
+  color: var(--text-link);
+  padding: 0;
+  height: auto;
+  font-weight: var(--weight-regular);
+}
+
+.btn-link:hover:not(:disabled) {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+/* Success variant */
+.btn-success {
+  background: var(--success);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--success-hover);
+}
+
+/* ============================================================================
+   Loading State
+   ============================================================================ */
+
 .btn-loading {
   position: relative;
+  pointer-events: none;
 }
 
 .btn-spinner {
@@ -80,16 +182,60 @@
   height: 16px;
   border: 2px solid currentColor;
   border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
+  border-radius: var(--radius-full);
+  animation: btn-spin 0.6s linear infinite;
 }
 
 .btn-text-loading {
   opacity: 0.7;
 }
 
-@keyframes spin {
+@keyframes btn-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ============================================================================
+   Button Group
+   ============================================================================ */
+
+.btn-group {
+  display: inline-flex;
+}
+
+.btn-group .btn {
+  border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.btn-group .btn:last-child {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.btn-group .btn-secondary:not(:last-child) {
+  border-right: none;
+}
+
+/* ============================================================================
+   Full Width
+   ============================================================================ */
+
+.btn-full {
+  width: 100%;
+}
+
+/* ============================================================================
+   Reduced Motion
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner {
+    animation-duration: 1.5s;
   }
 }

@@ -1,12 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   Namespace,
+  NamespaceWithCounts as BackendNamespaceWithCounts,
   IngestSource,
   KbDocumentInfo,
   DocumentChunk,
 } from '../types';
 
+// Frontend type with camelCase properties
 export interface NamespaceWithCounts extends Namespace {
   documentCount: number;
   sourceCount: number;
@@ -23,6 +25,18 @@ export interface KnowledgeState {
   error: string | null;
 }
 
+// Simple cache for expensive operations
+let namespacesCache: { data: NamespaceWithCounts[]; timestamp: number } | null = null;
+const CACHE_TTL = 30000; // 30 seconds
+
+function isCacheValid(): boolean {
+  return namespacesCache !== null && (Date.now() - namespacesCache.timestamp) < CACHE_TTL;
+}
+
+function invalidateCache() {
+  namespacesCache = null;
+}
+
 export function useKnowledge() {
   const [state, setState] = useState<KnowledgeState>({
     namespaces: [],
@@ -35,29 +49,35 @@ export function useKnowledge() {
     error: null,
   });
 
-  // Load all namespaces with counts
-  const loadNamespaces = useCallback(async () => {
+  // Load all namespaces with counts using optimized single query
+  const loadNamespaces = useCallback(async (forceRefresh = false) => {
+    // Use cache if valid and not forcing refresh
+    if (!forceRefresh && isCacheValid()) {
+      setState(prev => ({
+        ...prev,
+        namespaces: namespacesCache!.data,
+        loading: false,
+      }));
+      return namespacesCache!.data;
+    }
+
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const namespaces = await invoke<Namespace[]>('list_namespaces');
+      // Use optimized backend command that returns counts in single query
+      const backendNamespaces = await invoke<BackendNamespaceWithCounts[]>('list_namespaces_with_counts');
 
-      // Get document counts for each namespace
-      const namespacesWithCounts: NamespaceWithCounts[] = await Promise.all(
-        namespaces.map(async (ns) => {
-          const docs = await invoke<KbDocumentInfo[]>('list_kb_documents', {
-            namespaceId: ns.id,
-            sourceId: null,
-          });
-          const sources = await invoke<IngestSource[]>('list_ingest_sources', {
-            namespaceId: ns.id,
-          });
-          return {
-            ...ns,
-            documentCount: docs.length,
-            sourceCount: sources.length,
-          };
-        })
-      );
+      // Map snake_case to camelCase for frontend consistency
+      const namespacesWithCounts: NamespaceWithCounts[] = backendNamespaces.map(ns => ({
+        ...ns,
+        documentCount: ns.document_count,
+        sourceCount: ns.source_count,
+      }));
+
+      // Update cache
+      namespacesCache = {
+        data: namespacesWithCounts,
+        timestamp: Date.now(),
+      };
 
       setState(prev => ({
         ...prev,
@@ -93,6 +113,7 @@ export function useKnowledge() {
     }
 
     try {
+      // Parallel fetch for sources and documents
       const [sources, documents] = await Promise.all([
         invoke<IngestSource[]>('list_ingest_sources', { namespaceId }),
         invoke<KbDocumentInfo[]>('list_kb_documents', {
@@ -137,6 +158,7 @@ export function useKnowledge() {
   const deleteNamespace = useCallback(async (namespaceId: string): Promise<void> => {
     try {
       await invoke('delete_namespace', { name: namespaceId });
+      invalidateCache(); // Invalidate cache on mutation
       setState(prev => ({
         ...prev,
         namespaces: prev.namespaces.filter(ns => ns.id !== namespaceId),
@@ -152,6 +174,7 @@ export function useKnowledge() {
   const deleteSource = useCallback(async (sourceId: string): Promise<void> => {
     try {
       await invoke('delete_ingest_source', { sourceId });
+      invalidateCache(); // Invalidate cache on mutation
       setState(prev => ({
         ...prev,
         sources: prev.sources.filter(s => s.id !== sourceId),
@@ -167,6 +190,7 @@ export function useKnowledge() {
   const deleteDocument = useCallback(async (documentId: string): Promise<void> => {
     try {
       await invoke('delete_kb_document', { documentId });
+      invalidateCache(); // Invalidate cache on mutation
       setState(prev => ({
         ...prev,
         documents: prev.documents.filter(d => d.id !== documentId),
@@ -183,10 +207,11 @@ export function useKnowledge() {
   const clearAll = useCallback(async (namespaceId?: string): Promise<void> => {
     try {
       await invoke('clear_knowledge_data', { namespaceId });
+      invalidateCache(); // Invalidate cache on mutation
       if (namespaceId) {
         // Reload the specific namespace
         await selectNamespace(namespaceId);
-        await loadNamespaces();
+        await loadNamespaces(true);
       } else {
         // Clear everything
         setState(prev => ({
@@ -196,7 +221,7 @@ export function useKnowledge() {
           selectedDocument: null,
           chunks: [],
         }));
-        await loadNamespaces();
+        await loadNamespaces(true);
       }
     } catch (e) {
       setState(prev => ({ ...prev, error: String(e) }));
@@ -204,8 +229,8 @@ export function useKnowledge() {
     }
   }, [loadNamespaces, selectNamespace]);
 
-  return {
-    ...state,
+  // Memoize the return value to prevent unnecessary re-renders
+  const actions = useMemo(() => ({
     loadNamespaces,
     selectNamespace,
     selectDocument,
@@ -213,5 +238,10 @@ export function useKnowledge() {
     deleteSource,
     deleteDocument,
     clearAll,
+  }), [loadNamespaces, selectNamespace, selectDocument, deleteNamespace, deleteSource, deleteDocument, clearAll]);
+
+  return {
+    ...state,
+    ...actions,
   };
 }

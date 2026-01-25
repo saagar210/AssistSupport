@@ -1,3 +1,7 @@
+/* ============================================================================
+   Draft Tab - Main Composition Workspace
+   ============================================================================ */
+
 .draft-tab {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -15,6 +19,7 @@
   flex-direction: column;
   border-right: 1px solid var(--border-color);
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
 .draft-panel:last-child {
@@ -30,7 +35,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
@@ -38,15 +43,23 @@
 
 .panel-header h3 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .panel-content {
   flex: 1;
   overflow: auto;
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 /* Responsive stacking */

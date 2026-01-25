@@ -1,8 +1,10 @@
 //! OCR module for AssistSupport
 //! Pluggable OCR providers: Vision (macOS default), Tesseract (optional)
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tempfile::NamedTempFile;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -41,6 +43,26 @@ impl std::fmt::Display for OcrProvider {
             OcrProvider::None => write!(f, "None"),
         }
     }
+}
+
+fn sanitize_extension(ext: &str) -> String {
+    let cleaned: String = ext.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if cleaned.is_empty() {
+        "img".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn write_temp_image(image_data: &[u8], format: &str) -> Result<NamedTempFile, OcrError> {
+    let safe_ext = sanitize_extension(format);
+    let mut temp = tempfile::Builder::new()
+        .prefix("assistsupport_ocr_")
+        .suffix(&format!(".{}", safe_ext))
+        .tempfile()?;
+    temp.write_all(image_data)?;
+    temp.as_file().sync_all()?;
+    Ok(temp)
 }
 
 /// OCR engine trait for pluggable providers
@@ -205,17 +227,8 @@ impl OcrEngine for VisionOcr {
     }
 
     fn recognize_bytes(&self, image_data: &[u8], format: &str) -> Result<OcrResult, OcrError> {
-        // Write to temp file and process
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("ocr_temp.{}", format));
-        std::fs::write(&temp_path, image_data)?;
-
-        let result = self.recognize(&temp_path);
-
-        // Clean up temp file
-        let _ = std::fs::remove_file(&temp_path);
-
-        result
+        let temp = write_temp_image(image_data, format)?;
+        self.recognize(temp.path())
     }
 }
 
@@ -369,13 +382,8 @@ impl OcrEngine for TesseractOcr {
     }
 
     fn recognize_bytes(&self, image_data: &[u8], format: &str) -> Result<OcrResult, OcrError> {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("ocr_temp.{}", format));
-        std::fs::write(&temp_path, image_data)?;
-
-        let result = self.recognize(&temp_path);
-        let _ = std::fs::remove_file(&temp_path);
-        result
+        let temp = write_temp_image(image_data, format)?;
+        self.recognize(temp.path())
     }
 }
 

@@ -3,7 +3,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
+import "./styles/design-tokens.css";
 import "./styles/themes.css";
+import "./styles/components.css";
 
 // Global error handler - logs to console, shows safe message to user
 window.onerror = (message, _source, _lineno, _colno, error) => {

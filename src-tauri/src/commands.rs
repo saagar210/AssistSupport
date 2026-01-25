@@ -131,6 +131,19 @@ pub fn check_keychain_available() -> bool {
     true // File-based storage is always available
 }
 
+/// Search options for advanced search tuning
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SearchOptionsParam {
+    /// Weight for FTS5 results (0.0-1.0, default 0.5)
+    pub fts_weight: Option<f64>,
+    /// Weight for vector results (0.0-1.0, default 0.5)
+    pub vector_weight: Option<f64>,
+    /// Enable deduplication (default true)
+    pub enable_dedup: Option<bool>,
+    /// Deduplication threshold (0.0-1.0, default 0.85)
+    pub dedup_threshold: Option<f64>,
+}
+
 /// Hybrid search for KB (FTS5 + vector when enabled)
 /// Uses parallel execution when vector search is available
 #[tauri::command]
@@ -140,11 +153,40 @@ pub async fn search_kb(
     limit: Option<usize>,
     namespace_id: Option<String>,
 ) -> Result<Vec<crate::kb::search::SearchResult>, String> {
+    search_kb_with_options(state, query, limit, namespace_id, None).await
+}
+
+/// Advanced search with configurable options
+#[tauri::command]
+pub async fn search_kb_with_options(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<usize>,
+    namespace_id: Option<String>,
+    options: Option<SearchOptionsParam>,
+) -> Result<Vec<crate::kb::search::SearchResult>, String> {
+    use crate::kb::search::{HybridSearch, SearchOptions};
+
     // Validate query input
     validate_non_empty(&query).map_err(|e| e.to_string())?;
     validate_text_size(&query, MAX_QUERY_BYTES).map_err(|e| e.to_string())?;
 
     let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
+
+    // Build search options
+    let mut search_opts = SearchOptions::new(limit)
+        .with_namespace(namespace_id.clone());
+
+    if let Some(opts) = options {
+        if let (Some(fts_w), Some(vec_w)) = (opts.fts_weight, opts.vector_weight) {
+            search_opts = search_opts.with_weights(fts_w, vec_w);
+        }
+        if let Some(enable) = opts.enable_dedup {
+            let threshold = opts.dedup_threshold.unwrap_or(0.85);
+            search_opts = search_opts.with_dedup(enable, threshold);
+        }
+    }
+
     let ns_id = namespace_id.clone();
     let ns_id_for_vector = namespace_id.clone();
 
@@ -173,7 +215,7 @@ pub async fn search_kb(
             let vectors_lock = vectors_state.read().await;
             if let Some(vectors) = vectors_lock.as_ref() {
                 return vectors
-                    .search_similar_in_namespace(&embedding, ns_id_for_vector.as_deref(), limit * 2)
+                    .search_similar_in_namespace(&embedding, ns_id_for_vector.as_deref(), limit * 3)
                     .await
                     .ok();
             }
@@ -185,7 +227,7 @@ pub async fn search_kb(
     let fts_results = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        crate::kb::search::HybridSearch::fts_search_with_namespace(db, &query, ns_id.as_deref(), limit * 2)
+        HybridSearch::fts_search_with_namespace(db, &query, ns_id.as_deref(), limit * 3)
             .map_err(|e| e.to_string())?
     }; // DB lock released here
 
@@ -196,8 +238,8 @@ pub async fn search_kb(
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    // Fuse results using the pre-computed FTS results
-    crate::kb::search::HybridSearch::fuse_results(db, fts_results, vector_results, limit)
+    // Fuse results with configurable options (weights, dedup)
+    HybridSearch::fuse_results_with_options(db, fts_results, vector_results, search_opts)
         .map_err(|e| e.to_string())
 }
 
@@ -504,6 +546,21 @@ pub struct GenerateWithContextParams {
     pub gen_params: Option<GenerateParams>,
 }
 
+/// Quality metrics for generation
+#[derive(serde::Serialize)]
+pub struct GenerationMetrics {
+    /// Tokens generated per second
+    pub tokens_per_second: f64,
+    /// Number of KB sources used in context
+    pub sources_used: u32,
+    /// Approximate word count of response
+    pub word_count: u32,
+    /// Response length vs target (Short/Medium/Long)
+    pub length_target_met: bool,
+    /// Percentage of context window used
+    pub context_utilization: f64,
+}
+
 /// Result of context-aware generation
 #[derive(serde::Serialize)]
 pub struct GenerateWithContextResult {
@@ -517,6 +574,10 @@ pub struct GenerateWithContextResult {
     pub source_chunk_ids: Vec<String>,
     /// KB search results used for context
     pub sources: Vec<ContextSource>,
+    /// Quality metrics for the generation
+    pub metrics: GenerationMetrics,
+    /// Prompt template version used for this generation (for A/B tracking)
+    pub prompt_template_version: String,
 }
 
 /// Source information for context
@@ -602,7 +663,9 @@ pub async fn generate_with_context(
     }
 
     let source_chunk_ids = builder.get_source_chunk_ids();
+    let response_length = params.response_length.unwrap_or_default();
     let prompt = builder.build();
+    let prompt_length = prompt.len();
 
     validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
@@ -613,12 +676,42 @@ pub async fn generate_with_context(
         params.gen_params,
     ).await?;
 
+    // Calculate quality metrics
+    let word_count = gen_result.text.split_whitespace().count() as u32;
+    let target_words = response_length.target_words() as u32;
+    let length_target_met = match response_length {
+        crate::prompts::ResponseLength::Short => word_count <= target_words + 40,
+        crate::prompts::ResponseLength::Medium => word_count >= target_words / 2 && word_count <= target_words * 2,
+        crate::prompts::ResponseLength::Long => word_count >= target_words / 2,
+    };
+
+    let tokens_per_second = if gen_result.duration_ms > 0 {
+        (gen_result.tokens_generated as f64 * 1000.0) / gen_result.duration_ms as f64
+    } else {
+        0.0
+    };
+
+    // Estimate context utilization (prompt tokens / typical 4096 context window)
+    let estimated_prompt_tokens = prompt_length / 4;
+    let context_window = 4096; // Default, could be read from model
+    let context_utilization = (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+
+    let metrics = GenerationMetrics {
+        tokens_per_second,
+        sources_used: sources.len() as u32,
+        word_count,
+        length_target_met,
+        context_utilization,
+    };
+
     Ok(GenerateWithContextResult {
         text: gen_result.text,
         tokens_generated: gen_result.tokens_generated,
         duration_ms: gen_result.duration_ms,
         source_chunk_ids,
         sources,
+        metrics,
+        prompt_template_version: crate::prompts::PROMPT_TEMPLATE_VERSION.to_string(),
     })
 }
 
@@ -702,7 +795,9 @@ pub async fn generate_streaming(
     }
 
     let source_chunk_ids = builder.get_source_chunk_ids();
+    let response_length = params.response_length.unwrap_or_default();
     let prompt = builder.build();
+    let prompt_length = prompt.len();
 
     validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
@@ -770,12 +865,42 @@ pub async fn generate_streaming(
         }
     }
 
+    // Calculate quality metrics
+    let word_count = text.split_whitespace().count() as u32;
+    let target_words = response_length.target_words() as u32;
+    let length_target_met = match response_length {
+        crate::prompts::ResponseLength::Short => word_count <= target_words + 40,
+        crate::prompts::ResponseLength::Medium => word_count >= target_words / 2 && word_count <= target_words * 2,
+        crate::prompts::ResponseLength::Long => word_count >= target_words / 2,
+    };
+
+    let tokens_per_second = if duration_ms > 0 {
+        (tokens_generated as f64 * 1000.0) / duration_ms as f64
+    } else {
+        0.0
+    };
+
+    // Estimate context utilization (prompt tokens / typical 4096 context window)
+    let estimated_prompt_tokens = prompt_length / 4;
+    let context_window = 4096; // Default, could be read from model
+    let context_utilization = (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+
+    let metrics = GenerationMetrics {
+        tokens_per_second,
+        sources_used: sources.len() as u32,
+        word_count,
+        length_target_met,
+        context_utilization,
+    };
+
     Ok(GenerateWithContextResult {
         text,
         tokens_generated,
         duration_ms,
         source_chunk_ids,
         sources,
+        metrics,
+        prompt_template_version: crate::prompts::PROMPT_TEMPLATE_VERSION.to_string(),
     })
 }
 
@@ -953,6 +1078,26 @@ pub fn get_models_dir() -> Result<String, String> {
 /// Delete a downloaded model
 #[tauri::command]
 pub fn delete_downloaded_model(filename: String) -> Result<(), String> {
+    use std::path::Component;
+    use std::path::Path;
+
+    let path = Path::new(&filename);
+    let mut components = path.components();
+    let is_single_filename = matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none();
+    if path.is_absolute() || !is_single_filename {
+        return Err("Invalid model filename".into());
+    }
+
+    let has_gguf_ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("gguf"))
+        .unwrap_or(false);
+    if !has_gguf_ext {
+        return Err("Only .gguf model files can be deleted".into());
+    }
+
     let app_dir = get_app_data_dir();
     let manager = DownloadManager::new(&app_dir);
     manager.delete_model(&filename).map_err(|e| e.to_string())
@@ -2408,6 +2553,14 @@ pub fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<crate::db::Name
     db.list_namespaces().map_err(|e| e.to_string())
 }
 
+/// List all namespaces with document and source counts (optimized single query)
+#[tauri::command]
+pub fn list_namespaces_with_counts(state: State<'_, AppState>) -> Result<Vec<crate::db::NamespaceWithCounts>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.list_namespaces_with_counts().map_err(|e| e.to_string())
+}
+
 /// Create a new namespace
 #[tauri::command]
 pub fn create_namespace(
@@ -2459,6 +2612,170 @@ pub fn delete_ingest_source(state: State<'_, AppState>, source_id: String) -> Re
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_ingest_source(&source_id).map_err(|e| e.to_string())
+}
+
+/// Get source health summary for a namespace
+#[derive(serde::Serialize)]
+pub struct SourceHealthSummary {
+    pub total_sources: u32,
+    pub active_sources: u32,
+    pub stale_sources: u32,
+    pub error_sources: u32,
+    pub pending_sources: u32,
+    pub sources: Vec<SourceHealth>,
+}
+
+#[derive(serde::Serialize)]
+pub struct SourceHealth {
+    pub id: String,
+    pub source_type: String,
+    pub source_uri: String,
+    pub title: Option<String>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub last_ingested_at: Option<String>,
+    pub document_count: u32,
+    pub days_since_refresh: Option<i64>,
+}
+
+#[tauri::command]
+pub fn get_source_health(
+    state: State<'_, AppState>,
+    namespace_id: Option<String>,
+) -> Result<SourceHealthSummary, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Get all sources with document counts
+    let sql = r#"
+        SELECT
+            s.id,
+            s.source_type,
+            s.source_uri,
+            s.title,
+            s.status,
+            s.error_message,
+            s.last_ingested_at,
+            COUNT(d.id) as document_count,
+            CASE
+                WHEN s.last_ingested_at IS NOT NULL
+                THEN julianday('now') - julianday(s.last_ingested_at)
+                ELSE NULL
+            END as days_since
+        FROM ingest_sources s
+        LEFT JOIN kb_documents d ON d.source_id = s.id
+        WHERE (?1 IS NULL OR s.namespace_id = ?1)
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+    "#;
+
+    let mut stmt = db.conn().prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([namespace_id], |row| {
+        Ok(SourceHealth {
+            id: row.get(0)?,
+            source_type: row.get(1)?,
+            source_uri: row.get(2)?,
+            title: row.get(3)?,
+            status: row.get(4)?,
+            error_message: row.get(5)?,
+            last_ingested_at: row.get(6)?,
+            document_count: row.get::<_, i64>(7)? as u32,
+            days_since_refresh: row.get(8)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let sources: Vec<SourceHealth> = rows.filter_map(|r| r.ok()).collect();
+
+    let mut summary = SourceHealthSummary {
+        total_sources: sources.len() as u32,
+        active_sources: 0,
+        stale_sources: 0,
+        error_sources: 0,
+        pending_sources: 0,
+        sources,
+    };
+
+    for source in &summary.sources {
+        match source.status.as_str() {
+            "active" => summary.active_sources += 1,
+            "stale" => summary.stale_sources += 1,
+            "error" => summary.error_sources += 1,
+            "pending" => summary.pending_sources += 1,
+            _ => {}
+        }
+    }
+
+    Ok(summary)
+}
+
+/// Retry a failed or stale source
+#[tauri::command]
+pub fn retry_source(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> Result<IngestResult, String> {
+    // Get source details
+    let source = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.get_ingest_source(&source_id).map_err(|e| e.to_string())?
+    };
+
+    // Mark as pending
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.update_ingest_source_status(&source_id, "pending", None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Re-ingest based on source type
+    match source.source_type.as_str() {
+        "web" => {
+            ingest_url(state, source.source_uri, source.namespace_id)
+        }
+        "youtube" => {
+            ingest_youtube(state, source.source_uri, source.namespace_id)
+        }
+        "github" => {
+            let results: Vec<IngestResult> = ingest_github(state, source.source_uri.clone(), source.namespace_id)?;
+            // Return summary for multi-file results
+            Ok(IngestResult {
+                document_id: source_id,
+                title: source.title.unwrap_or_else(|| "Repository".to_string()),
+                source_uri: source.source_uri,
+                chunk_count: results.iter().map(|r| r.chunk_count).sum(),
+                word_count: results.iter().map(|r| r.word_count).sum(),
+            })
+        }
+        _ => Err(format!("Unknown source type: {}", source.source_type)),
+    }
+}
+
+/// Mark sources as stale if they haven't been refreshed in N days
+#[tauri::command]
+pub fn mark_stale_sources(
+    state: State<'_, AppState>,
+    days_threshold: Option<u32>,
+) -> Result<u32, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let days = days_threshold.unwrap_or(7) as i64;
+
+    let sql = r#"
+        UPDATE ingest_sources
+        SET status = 'stale', updated_at = datetime('now')
+        WHERE status = 'active'
+        AND last_ingested_at IS NOT NULL
+        AND julianday('now') - julianday(last_ingested_at) > ?
+    "#;
+
+    let count = db.conn()
+        .execute(sql, [days])
+        .map_err(|e| e.to_string())?;
+
+    Ok(count as u32)
 }
 
 /// Get document chunks
@@ -2565,4 +2882,162 @@ pub fn check_ytdlp_available() -> Result<bool, String> {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false))
+}
+
+// ============================================================================
+// Diagnostics and Health Check Commands
+// ============================================================================
+
+use crate::diagnostics::{
+    SystemHealth, ComponentHealth, HealthStatus, RepairResult, FailureMode,
+    check_database_health, check_llm_health,
+    check_embedding_health, check_filesystem_health, repair_database,
+    get_failure_modes,
+};
+
+/// Get comprehensive system health status
+#[tauri::command]
+pub async fn get_system_health(state: State<'_, AppState>) -> Result<SystemHealth, String> {
+    // Check database
+    let database = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        match db_lock.as_ref() {
+            Some(db) => check_database_health(db),
+            None => ComponentHealth::unavailable("Database", "Not initialized"),
+        }
+    };
+
+    // Check vector store
+    let vector_store = {
+        let vectors = state.vectors.read().await;
+        crate::diagnostics::check_vector_store_health(vectors.as_ref()).await
+    };
+
+    // Check LLM engine
+    let llm_engine = {
+        let llm = state.llm.read();
+        check_llm_health(llm.as_ref())
+    };
+
+    // Check embedding model
+    let embedding_model = {
+        let embeddings = state.embeddings.read();
+        check_embedding_health(embeddings.as_ref())
+    };
+
+    // Check file system
+    let file_system = check_filesystem_health();
+
+    // Calculate overall status
+    let overall_status = database.status
+        .worst(vector_store.status)
+        .worst(llm_engine.status)
+        .worst(embedding_model.status)
+        .worst(file_system.status);
+
+    Ok(SystemHealth {
+        database,
+        vector_store,
+        llm_engine,
+        embedding_model,
+        file_system,
+        overall_status,
+        checked_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+/// Attempt to repair the database
+#[tauri::command]
+pub fn repair_database_cmd(state: State<'_, AppState>) -> Result<RepairResult, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    Ok(repair_database(db))
+}
+
+/// Get guidance on rebuilding vector store
+#[tauri::command]
+pub fn rebuild_vector_store() -> RepairResult {
+    crate::diagnostics::get_vector_rebuild_guidance()
+}
+
+/// Get list of known failure modes and their solutions
+#[tauri::command]
+pub fn get_failure_modes_cmd() -> Vec<FailureMode> {
+    get_failure_modes()
+}
+
+/// Run a quick connectivity/health test
+#[tauri::command]
+pub async fn run_quick_health_check(state: State<'_, AppState>) -> Result<QuickHealthResult, String> {
+    let mut checks_passed = 0;
+    let mut checks_total = 0;
+    let mut issues: Vec<String> = Vec::new();
+
+    // Check 1: Database accessible
+    checks_total += 1;
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = db_lock.as_ref() {
+            if db.check_integrity().is_ok() {
+                checks_passed += 1;
+            } else {
+                issues.push("Database integrity check failed".to_string());
+            }
+        } else {
+            issues.push("Database not initialized".to_string());
+        }
+    }
+
+    // Check 2: Can query KB
+    checks_total += 1;
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = db_lock.as_ref() {
+            if db.conn().query_row::<i64, _, _>("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0)).is_ok() {
+                checks_passed += 1;
+            } else {
+                issues.push("Cannot query knowledge base".to_string());
+            }
+        }
+    }
+
+    // Check 3: File system writable
+    checks_total += 1;
+    let fs_health = check_filesystem_health();
+    if fs_health.status == HealthStatus::Healthy {
+        checks_passed += 1;
+    } else {
+        issues.push(format!("File system: {}", fs_health.message));
+    }
+
+    // Check 4: Model loaded (optional, warning only)
+    checks_total += 1;
+    {
+        let llm = state.llm.read();
+        if let Some(engine) = llm.as_ref() {
+            if engine.is_model_loaded() {
+                checks_passed += 1;
+            } else {
+                issues.push("No LLM model loaded".to_string());
+            }
+        } else {
+            issues.push("LLM engine not initialized".to_string());
+        }
+    }
+
+    Ok(QuickHealthResult {
+        healthy: issues.is_empty() || (checks_passed >= 3), // Allow model to be unloaded
+        checks_passed,
+        checks_total,
+        issues,
+    })
+}
+
+/// Result of a quick health check
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QuickHealthResult {
+    pub healthy: bool,
+    pub checks_passed: u32,
+    pub checks_total: u32,
+    pub issues: Vec<String>,
 }

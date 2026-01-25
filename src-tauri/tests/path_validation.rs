@@ -293,7 +293,7 @@ fn test_home_directory_itself() {
 
 #[test]
 fn test_path_with_spaces() {
-    let ctx = common::TestContext::new().expect("Failed to create test context");
+    let _ctx = common::TestContext::new().expect("Failed to create test context");
 
     // Note: This test uses temp dir which may not be in home, so we use a different approach
     // We'll just verify the function handles spaces in paths correctly

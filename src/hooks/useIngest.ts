@@ -7,6 +7,7 @@ import type {
   BatchIngestResult,
   KbDocumentInfo,
   DocumentChunk,
+  SourceHealthSummary,
 } from '../types';
 
 export interface IngestState {
@@ -265,6 +266,43 @@ export function useIngest() {
     }
   }, []);
 
+  // Get source health summary
+  const getSourceHealth = useCallback(async (
+    namespaceId?: string
+  ): Promise<SourceHealthSummary> => {
+    try {
+      return await invoke<SourceHealthSummary>('get_source_health', {
+        namespaceId,
+      });
+    } catch (e) {
+      setState(prev => ({ ...prev, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
+  // Retry a failed or stale source
+  const retrySource = useCallback(async (sourceId: string): Promise<IngestResult> => {
+    setState(prev => ({ ...prev, ingesting: true, error: null }));
+    try {
+      const result = await invoke<IngestResult>('retry_source', { sourceId });
+      setState(prev => ({ ...prev, ingesting: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({ ...prev, ingesting: false, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
+  // Mark sources as stale
+  const markStaleSources = useCallback(async (daysThreshold?: number): Promise<number> => {
+    try {
+      return await invoke<number>('mark_stale_sources', { daysThreshold });
+    } catch (e) {
+      setState(prev => ({ ...prev, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
   return {
     ...state,
     loadNamespaces,
@@ -282,5 +320,8 @@ export function useIngest() {
     ingestYoutube,
     ingestGithub,
     processSourceFile,
+    getSourceHealth,
+    retrySource,
+    markStaleSources,
   };
 }

@@ -3,10 +3,12 @@
 pub mod backup;
 pub mod commands;
 pub mod db;
+pub mod diagnostics;
 pub mod downloads;
 pub mod jira;
 pub mod kb;
 pub mod llm;
+pub mod model_integrity;
 pub mod prompts;
 pub mod security;
 pub mod sources;
@@ -54,6 +56,7 @@ pub fn run() {
             commands::set_vector_consent,
             commands::check_keychain_available,
             commands::search_kb,
+            commands::search_kb_with_options,
             commands::get_search_context,
             // LLM commands
             commands::init_llm_engine,
@@ -149,16 +152,26 @@ pub fn run() {
             commands::process_source_file,
             // Namespace commands
             commands::list_namespaces,
+            commands::list_namespaces_with_counts,
             commands::create_namespace,
             commands::rename_namespace,
             commands::delete_namespace,
             // Ingest source management commands
             commands::list_ingest_sources,
             commands::delete_ingest_source,
+            commands::get_source_health,
+            commands::retry_source,
+            commands::mark_stale_sources,
             commands::get_document_chunks,
             commands::delete_kb_document,
             commands::clear_knowledge_data,
             commands::check_ytdlp_available,
+            // Diagnostics commands
+            commands::get_system_health,
+            commands::repair_database_cmd,
+            commands::rebuild_vector_store,
+            commands::get_failure_modes_cmd,
+            commands::run_quick_health_check,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

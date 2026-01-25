@@ -2,6 +2,7 @@
 //! Bundles libpdfium.dylib for zero system dependencies
 
 use std::path::{Path, PathBuf};
+use tempfile::TempDir;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -204,10 +205,10 @@ impl PdfExtractor {
 
         let page_count = self.page_count(pdf_path)?;
         let mut ocr_pages = Vec::with_capacity(page_count);
-        let temp_dir = std::env::temp_dir();
+        let temp_dir = TempDir::new()?;
 
         for page_idx in 0..page_count {
-            let img_path = temp_dir.join(format!("pdf_ocr_page_{}.png", page_idx));
+            let img_path = temp_dir.path().join(format!("pdf_ocr_page_{}.png", page_idx));
 
             // Render page to image
             if let Err(e) = self.render_page_to_image(pdf_path, page_idx, &img_path) {

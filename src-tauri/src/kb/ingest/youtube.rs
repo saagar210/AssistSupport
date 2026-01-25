@@ -3,6 +3,7 @@
 
 use crate::db::{Database, IngestSource};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
+use crate::kb::network::NetworkError;
 use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
 use std::process::Command;
 use std::time::Duration;
@@ -164,25 +165,7 @@ impl YouTubeIngester {
     pub async fn fetch_transcript(&self, video_id: &str) -> IngestResult<Vec<TranscriptEntry>> {
         let url = format!("https://www.youtube.com/watch?v={}", video_id);
 
-        // Try to get subtitles with yt-dlp
-        // Note: This command writes subtitle files - we use the metadata approach below instead
-        let _sub_output = tokio::process::Command::new(&self.config.ytdlp_path)
-            .args([
-                "--write-subs",
-                "--write-auto-subs",
-                "--sub-format", "json3",
-                "--sub-langs", &self.config.preferred_language,
-                "--skip-download",
-                "--no-warnings",
-                "-o", "-", // Output to stdout
-                &url,
-            ])
-            .output()
-            .await
-            .map_err(|e| IngestError::Io(e))?;
-
-        // yt-dlp writes subtitle files, we need a different approach
-        // Let's use the --dump-json and extract from automatic captions
+        // Use the --dump-json metadata to locate caption URLs
         let output = tokio::process::Command::new(&self.config.ytdlp_path)
             .args([
                 "--dump-json",
@@ -204,23 +187,108 @@ impl YouTubeIngester {
             .map_err(|e| IngestError::Parse(e.to_string()))?;
 
         // Try to get subtitles URL from automatic_captions or subtitles
-        let subs = json["automatic_captions"].get(&self.config.preferred_language)
-            .or_else(|| json["subtitles"].get(&self.config.preferred_language));
+        let subs = json["automatic_captions"]
+            .get(&self.config.preferred_language)
+            .or_else(|| json["subtitles"].get(&self.config.preferred_language))
+            .and_then(|v| v.as_array());
 
-        if subs.is_none() {
-            // No captions available
-            return Err(IngestError::NotFound(format!(
-                "No captions available for video {} in language {}",
-                video_id, self.config.preferred_language
-            )));
-        }
-
-        // For now, we'll extract from description if no subtitles
-        // In production, you'd download the actual subtitle file
-        // This is a simplified implementation
         let description = json["description"].as_str().unwrap_or("");
 
-        // If description is reasonably long, use it as transcript
+        let subs = match subs {
+            Some(subs) if !subs.is_empty() => subs,
+            _ => {
+                // No captions available; fall back to description if available
+                if description.len() > 100 {
+                    return Ok(vec![TranscriptEntry {
+                        start_secs: 0.0,
+                        duration_secs: json["duration"].as_f64().unwrap_or(0.0),
+                        text: description.to_string(),
+                    }]);
+                }
+                return Err(IngestError::NotFound(format!(
+                    "No captions available for video {} in language {}",
+                    video_id, self.config.preferred_language
+                )));
+            }
+        };
+
+        let mut selected: Option<&serde_json::Value> = None;
+        for entry in subs {
+            let ext = entry.get("ext").and_then(|v| v.as_str()).unwrap_or("");
+            if ext.eq_ignore_ascii_case("json3") {
+                selected = Some(entry);
+                break;
+            }
+            if ext.eq_ignore_ascii_case("vtt") && selected.is_none() {
+                selected = Some(entry);
+            }
+            if selected.is_none() {
+                selected = Some(entry);
+            }
+        }
+
+        let selected = selected.ok_or_else(|| {
+            IngestError::NotFound(format!(
+                "No usable caption formats for video {}",
+                video_id
+            ))
+        })?;
+
+        let caption_url = selected
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| IngestError::Parse("Caption URL missing".into()))?;
+        let caption_ext = selected.get("ext").and_then(|v| v.as_str()).unwrap_or("");
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(self.config.timeout_secs))
+            .build()
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        let response = client
+            .get(caption_url)
+            .send()
+            .await
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        if !response.status().is_success() {
+            return Err(IngestError::Network(NetworkError::RequestFailed(format!(
+                "HTTP {} fetching captions",
+                response.status()
+            ))));
+        }
+
+        if let Some(content_length) = response.content_length() {
+            if content_length as usize > self.config.max_transcript_size {
+                return Err(IngestError::ContentTooLarge {
+                    size: content_length as usize,
+                    max: self.config.max_transcript_size,
+                });
+            }
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        if body.len() > self.config.max_transcript_size {
+            return Err(IngestError::ContentTooLarge {
+                size: body.len(),
+                max: self.config.max_transcript_size,
+            });
+        }
+
+        let entries = if caption_ext.eq_ignore_ascii_case("json3") {
+            parse_json3_transcript(&body)?
+        } else {
+            parse_plain_transcript(&body)
+        };
+
+        if !entries.is_empty() {
+            return Ok(entries);
+        }
+
         if description.len() > 100 {
             return Ok(vec![TranscriptEntry {
                 start_secs: 0.0,
@@ -229,7 +297,6 @@ impl YouTubeIngester {
             }]);
         }
 
-        // Otherwise report no transcript
         Err(IngestError::NotFound(format!(
             "No transcript available for video {}",
             video_id
@@ -471,6 +538,66 @@ impl YouTubeIngester {
     }
 }
 
+fn parse_ms(value: &serde_json::Value) -> Option<f64> {
+    value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)).or_else(|| {
+        value.as_str().and_then(|s| s.parse::<f64>().ok())
+    })
+}
+
+fn parse_json3_transcript(body: &str) -> Result<Vec<TranscriptEntry>, IngestError> {
+    let json: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| IngestError::Parse(e.to_string()))?;
+    let mut entries = Vec::new();
+
+    if let Some(events) = json.get("events").and_then(|v| v.as_array()) {
+        for event in events {
+            let start_ms = parse_ms(&event["tStartMs"]).unwrap_or(0.0);
+            let duration_ms = parse_ms(&event["dDurationMs"]).unwrap_or(0.0);
+            let mut text = String::new();
+
+            if let Some(segs) = event.get("segs").and_then(|v| v.as_array()) {
+                for seg in segs {
+                    if let Some(chunk) = seg.get("utf8").and_then(|v| v.as_str()) {
+                        text.push_str(chunk);
+                    }
+                }
+            }
+
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                entries.push(TranscriptEntry {
+                    start_secs: start_ms / 1000.0,
+                    duration_secs: duration_ms / 1000.0,
+                    text: trimmed.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(entries)
+}
+
+fn parse_plain_transcript(body: &str) -> Vec<TranscriptEntry> {
+    let text = body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.starts_with("WEBVTT"))
+        .filter(|line| !line.contains("-->"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![TranscriptEntry {
+            start_secs: 0.0,
+            duration_secs: 0.0,
+            text,
+        }]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,5 +630,46 @@ mod tests {
 
         // Invalid
         assert_eq!(YouTubeIngester::extract_video_id("https://example.com"), None);
+    }
+
+    #[test]
+    fn test_parse_json3_transcript_basic() {
+        let body = r#"
+        {
+          "events": [
+            {
+              "tStartMs": 1000,
+              "dDurationMs": 2000,
+              "segs": [
+                {"utf8": "Hello "},
+                {"utf8": "world"}
+              ]
+            }
+          ]
+        }
+        "#;
+
+        let entries = parse_json3_transcript(body).expect("Failed to parse json3");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "Hello world");
+        assert!((entries[0].start_secs - 1.0).abs() < 0.01);
+        assert!((entries[0].duration_secs - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_plain_transcript_vtt() {
+        let body = r#"
+        WEBVTT
+
+        00:00:00.000 --> 00:00:02.000
+        Hello
+
+        00:00:02.000 --> 00:00:04.000
+        world
+        "#;
+
+        let entries = parse_plain_transcript(body);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "Hello world");
     }
 }
