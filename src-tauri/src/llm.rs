@@ -258,6 +258,15 @@ impl LlmEngine {
             return Err(LlmError::Tokenize("Empty tokenization result".into()));
         }
 
+        // Validate prompt fits within context window
+        let min_generation_tokens = 64;
+        if tokens.len() + min_generation_tokens > n_ctx as usize {
+            return Err(LlmError::Generate(format!(
+                "Prompt too long: {} tokens exceeds context window of {} (need {} reserved for generation)",
+                tokens.len(), n_ctx, min_generation_tokens
+            )));
+        }
+
         // Create batch with dynamic size based on prompt length
         // Use prompt tokens + expected max output as initial capacity
         // Minimum 512, scale up for longer prompts, cap at n_ctx

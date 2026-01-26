@@ -537,6 +537,7 @@ fn test_wrapped_key_components() {
 // ============================================================================
 
 #[test]
+#[allow(deprecated)]
 fn test_ssrf_blocks_localhost_variants() {
     use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
 
@@ -557,6 +558,7 @@ fn test_ssrf_blocks_localhost_variants() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_ssrf_blocks_private_ranges() {
     use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
 
@@ -576,6 +578,7 @@ fn test_ssrf_blocks_private_ranges() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_ssrf_blocks_invalid_schemes() {
     use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
 
@@ -593,6 +596,7 @@ fn test_ssrf_blocks_invalid_schemes() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_ssrf_allowlist_bypass() {
     use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
 
@@ -604,6 +608,7 @@ fn test_ssrf_allowlist_bypass() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_ssrf_metadata_endpoints() {
     use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
 

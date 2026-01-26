@@ -90,7 +90,7 @@ cd src-tauri && cargo bench
 **Version**: 0.3.0
 
 ### Test Coverage
-- **225 backend tests** (unit, integration, security, E2E)
+- **366 backend tests** (unit, integration, security, E2E)
 - **72 frontend tests**
 - TypeScript strict mode enabled
 - Performance benchmarks with Criterion

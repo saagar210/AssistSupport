@@ -158,7 +158,8 @@ impl MasterKey {
         &self.key
     }
 
-    /// Get hex-encoded key for SQLCipher
+    /// Get hex-encoded key for SQLCipher.
+    /// SECURITY: Caller MUST zeroize the returned String after use.
     pub fn to_hex(&self) -> String {
         hex::encode(self.key)
     }
@@ -246,7 +247,7 @@ impl KeychainManager {
         let entry = keyring::Entry::new(SERVICE_NAME, MASTER_KEY_ENTRY)
             .map_err(|e| SecurityError::Keychain(e.to_string()))?;
 
-        let secret = entry
+        let mut secret = entry
             .get_secret()
             .map_err(|e| match e {
                 keyring::Error::NoEntry => SecurityError::MasterKeyNotFound,
@@ -254,11 +255,13 @@ impl KeychainManager {
             })?;
 
         if secret.len() != KEY_LEN {
+            secret.zeroize();
             return Err(SecurityError::InvalidKeyFormat);
         }
 
         let mut key_bytes = [0u8; KEY_LEN];
         key_bytes.copy_from_slice(&secret);
+        secret.zeroize();
         Ok(MasterKey::from_bytes(key_bytes))
     }
 
@@ -757,17 +760,23 @@ impl FileKeyStore {
 
     /// Read legacy plaintext key file
     fn read_legacy_key_file(path: &Path) -> Result<MasterKey, SecurityError> {
-        let hex = fs::read_to_string(path)
+        let mut hex = fs::read_to_string(path)
             .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-        let bytes = hex::decode(hex.trim())
-            .map_err(|_| SecurityError::InvalidKeyFormat)?;
+        let mut bytes = hex::decode(hex.trim())
+            .map_err(|_| {
+                hex.zeroize();
+                SecurityError::InvalidKeyFormat
+            })?;
+        hex.zeroize();
 
         if bytes.len() != KEY_LEN {
+            bytes.zeroize();
             return Err(SecurityError::InvalidKeyFormat);
         }
 
         let mut key_bytes = [0u8; KEY_LEN];
         key_bytes.copy_from_slice(&bytes);
+        bytes.zeroize();
         Ok(MasterKey::from_bytes(key_bytes))
     }
 

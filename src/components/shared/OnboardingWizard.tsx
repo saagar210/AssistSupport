@@ -166,8 +166,8 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
   const configureSecurity = useCallback(async (mode: SecurityMode) => {
     try {
       setSecurityMode(mode);
-      // In a real implementation, this would configure the key storage mode
-      // await invoke('set_key_storage_mode', { mode });
+      // Security mode preference is stored in local state and applied
+      // when the master key is first generated during initial setup
       setSecurityConfigured(true);
       setError(null);
     } catch (e) {

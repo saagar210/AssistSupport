@@ -176,9 +176,15 @@ AssistSupport maintains an audit log for security-relevant events. The log is st
 | `token_cleared` | Info | Token removed |
 | `jira_configured` | Info | Jira integration configured |
 | `jira_http_opt_in` | Warning | User opted into insecure HTTP |
+| `jira_connection_failed` | Warning | Jira connection attempt failed |
 | `path_validation_failed` | Warning | Path security check failed |
+| `encryption_failed` | Error | Encryption operation failed |
+| `decryption_failed` | Error | Decryption operation failed |
+| `authentication_failed` | Error | Authentication attempt failed |
 | `app_initialized` | Info | Application started |
 | `database_repaired` | Info | Database repair completed |
+| `vector_store_rebuilt` | Info | Vector store rebuilt |
+| `custom:*` | Varies | Extensible custom event types |
 
 ### Log Entry Format
 

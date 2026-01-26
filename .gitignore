@@ -35,6 +35,18 @@ coverage/
 src-tauri/target/
 **/target/
 
+# Sensitive / secrets
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+master.key*
+key_storage.json
+tokens.json
+*.secret
+
 # Python
 __pycache__/
 *.pyc

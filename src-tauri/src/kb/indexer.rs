@@ -296,7 +296,8 @@ impl KbIndexer {
 
     /// Parse a Markdown file
     fn parse_markdown(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
-        let content = std::fs::read_to_string(path)?;
+        let raw = std::fs::read(path)?;
+        let content = String::from_utf8_lossy(&raw).into_owned();
         let parser = pulldown_cmark::Parser::new(&content);
 
         let mut title: Option<String> = None;
@@ -420,7 +421,8 @@ impl KbIndexer {
 
     /// Parse a plain text file
     fn parse_plaintext(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
-        let content = std::fs::read_to_string(path)?;
+        let raw = std::fs::read(path)?;
+        let content = String::from_utf8_lossy(&raw).into_owned();
         let title = path.file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
@@ -488,7 +490,8 @@ impl KbIndexer {
 
     /// Parse a code file into logical chunks (functions, classes, etc.)
     fn parse_code(&self, path: &Path, lang: CodeLanguage) -> Result<ParsedDocument, IndexerError> {
-        let content = std::fs::read_to_string(path)?;
+        let raw = std::fs::read(path)?;
+        let content = String::from_utf8_lossy(&raw).into_owned();
         let title = path.file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());

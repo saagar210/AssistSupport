@@ -523,7 +523,7 @@ impl VectorStore {
 
         // Apply namespace filter if specified (with injection protection)
         if let Some(ns) = namespace_id {
-            let safe_ns = sanitize_filter_value(ns)
+            let safe_ns = sanitize_id(ns)
                 .ok_or_else(|| VectorError::LanceDb("Invalid namespace ID".into()))?;
             query = query.only_if(format!("namespace_id = '{}'", safe_ns));
         }
@@ -644,7 +644,7 @@ impl VectorStore {
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
         // Sanitize namespace_id to prevent injection
-        let safe_ns_id = sanitize_filter_value(namespace_id)
+        let safe_ns_id = sanitize_id(namespace_id)
             .ok_or_else(|| VectorError::LanceDb("Invalid namespace ID".into()))?;
         let filter = format!("namespace_id = '{}'", safe_ns_id);
 

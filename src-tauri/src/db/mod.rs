@@ -12,6 +12,7 @@ use chrono::Utc;
 use rusqlite::{Connection, Result as SqliteResult, params};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use zeroize::Zeroize;
 
 const CURRENT_SCHEMA_VERSION: i32 = 7;
 
@@ -48,8 +49,12 @@ impl Database {
 
         // Set SQLCipher key (hex-encoded)
         // Using default SQLCipher 4 settings for compatibility
-        let key_pragma = format!("PRAGMA key = \"x'{}'\"", master_key.to_hex());
-        conn.execute_batch(&key_pragma)?;
+        let mut hex_key = master_key.to_hex();
+        let mut key_pragma = format!("PRAGMA key = \"x'{}'\"", hex_key);
+        hex_key.zeroize();
+        let pragma_result = conn.execute_batch(&key_pragma);
+        key_pragma.zeroize();
+        pragma_result?;
 
         // Verify the key works by reading from the database
         conn.execute_batch("SELECT count(*) FROM sqlite_master;")?;
@@ -72,6 +77,13 @@ impl Database {
             conn,
             path: path.to_path_buf(),
         };
+
+        // Set secure file permissions on database file
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
 
         // Verify FTS5 is available
         db.verify_fts5()?;
@@ -738,6 +750,13 @@ impl Database {
 
         // Copy the database file
         std::fs::copy(&self.path, &backup_path)?;
+
+        // Set secure file permissions on backup file
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&backup_path, std::fs::Permissions::from_mode(0o600));
+        }
 
         Ok(backup_path)
     }
@@ -2255,7 +2274,7 @@ impl Database {
                 let metadata_json: Option<String> = row.get(10)?;
                 Ok(Job {
                     id: row.get(0)?,
-                    job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap(),
+                    job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap_or(JobType::Custom("unknown".into())),
                     status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                     created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                         .map(|t| t.with_timezone(&Utc))
@@ -2289,7 +2308,7 @@ impl Database {
             let metadata_json: Option<String> = row.get(10)?;
             Ok(Job {
                 id: row.get(0)?,
-                job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap(),
+                job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap_or(JobType::Custom("unknown".into())),
                 status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                     .map(|t| t.with_timezone(&Utc))
@@ -3160,7 +3179,7 @@ const BUILTIN_TREES: &[(&str, &str, &str, &str)] = &[
 /// Get the application data directory
 pub fn get_app_data_dir() -> PathBuf {
     dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .expect("Platform data directory must be available")
         .join("AssistSupport")
 }
 
@@ -3192,7 +3211,7 @@ pub fn get_downloads_dir() -> PathBuf {
 /// Get logs directory
 pub fn get_logs_dir() -> PathBuf {
     dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .expect("Platform data directory must be available")
         .join("Logs")
         .join("AssistSupport")
 }
@@ -3200,7 +3219,7 @@ pub fn get_logs_dir() -> PathBuf {
 /// Get cache directory
 pub fn get_cache_dir() -> PathBuf {
     dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .expect("Platform cache directory must be available")
         .join("AssistSupport")
 }
 

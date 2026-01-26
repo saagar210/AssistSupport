@@ -237,14 +237,18 @@ impl AuditLogger {
             let to = self.rotated_path(i + 1);
 
             if from.exists() {
-                let _ = fs::rename(&from, &to);
+                if let Err(e) = fs::rename(&from, &to) {
+                    eprintln!("[audit] Warning: log rotation rename failed: {}", e);
+                }
             }
         }
 
         // Delete oldest if it exists
         let oldest = self.rotated_path(MAX_LOG_FILES);
         if oldest.exists() {
-            let _ = fs::remove_file(&oldest);
+            if let Err(e) = fs::remove_file(&oldest) {
+                eprintln!("[audit] Warning: failed to remove oldest log file: {}", e);
+            }
         }
 
         Ok(())
@@ -433,27 +437,51 @@ pub fn log_audit(entry: AuditEntry) -> Result<(), AuditError> {
     logger.write(&entry)
 }
 
+/// Bounded channel sender for the audit writer thread.
+/// Lazily initialized on first use via `OnceLock`.
+static AUDIT_SENDER: std::sync::OnceLock<std::sync::mpsc::SyncSender<AuditEntry>> =
+    std::sync::OnceLock::new();
+
+/// Initialize the bounded audit writer channel and background thread.
+/// Returns a reference to the sender. Safe to call multiple times.
+fn audit_sender() -> &'static std::sync::mpsc::SyncSender<AuditEntry> {
+    AUDIT_SENDER.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<AuditEntry>(256);
+        std::thread::Builder::new()
+            .name("audit-writer".into())
+            .spawn(move || {
+                for entry in rx {
+                    match log_audit(entry.clone()) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            notify_error(&e, &entry);
+                            add_to_ring_buffer(entry);
+                        }
+                    }
+                }
+            })
+            .expect("Failed to spawn audit-writer thread");
+        tx
+    })
+}
+
 /// Log an audit event with best-effort delivery (uses ring buffer fallback)
 ///
 /// This function:
-/// - Attempts to write to disk
-/// - On failure, stores in ring buffer for later retry
+/// - Sends the event to a bounded channel processed by a single writer thread
+/// - On channel full, stores in ring buffer for later retry
 /// - Notifies error callback if set
 /// - Never blocks or fails (fire-and-forget semantics)
 ///
 /// Use this for informational events that are nice to have but not critical.
 pub fn log_audit_best_effort(entry: AuditEntry) {
-    std::thread::spawn(move || {
-        match log_audit(entry.clone()) {
-            Ok(()) => {}
-            Err(e) => {
-                // Notify callback
-                notify_error(&e, &entry);
-                // Store in ring buffer for later retry
-                add_to_ring_buffer(entry);
-            }
-        }
-    });
+    let sender = audit_sender();
+    if let Err(std::sync::mpsc::TrySendError::Full(entry))
+        | Err(std::sync::mpsc::TrySendError::Disconnected(entry)) = sender.try_send(entry)
+    {
+        // Channel full or disconnected — buffer for later retry
+        add_to_ring_buffer(entry);
+    }
 }
 
 /// Log an audit event (fire and forget, ignores errors)

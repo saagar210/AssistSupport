@@ -9,6 +9,7 @@ use thiserror::Error;
 use zeroize::Zeroize;
 
 use crate::security::SecureString;
+use crate::validation::validate_ticket_id;
 
 #[derive(Debug, Error)]
 pub enum JiraError {
@@ -134,6 +135,9 @@ impl JiraClient {
 
     /// Get a ticket by key (e.g., "HELP-123")
     pub async fn get_ticket(&self, ticket_key: &str) -> Result<JiraTicket, JiraError> {
+        validate_ticket_id(ticket_key)
+            .map_err(|e| JiraError::Api(format!("Invalid ticket key: {}", e)))?;
+
         let url = format!(
             "{}/rest/api/3/issue/{}?fields=summary,description,status,priority,assignee,reporter,created,updated,issuetype",
             self.base_url, ticket_key
@@ -233,6 +237,9 @@ impl JiraClient {
         body: &str,
         visibility: Option<CommentVisibility>,
     ) -> Result<String, JiraError> {
+        validate_ticket_id(ticket_key)
+            .map_err(|e| JiraError::Api(format!("Invalid ticket key: {}", e)))?;
+
         let url = format!(
             "{}/rest/api/3/issue/{}/comment",
             self.base_url, ticket_key

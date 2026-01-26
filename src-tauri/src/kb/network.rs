@@ -167,6 +167,14 @@ pub fn is_ip_blocked(ip: &IpAddr, config: &SsrfConfig) -> Option<String> {
             if ipv6.is_unspecified() {
                 return Some("unspecified address blocked".into());
             }
+            // Block AWS IMDSv2 IPv6 metadata endpoint (fd00:ec2::254)
+            let segments = ipv6.segments();
+            if segments[0] == 0xfd00 && segments[1] == 0x0ec2
+                && segments[2..7] == [0, 0, 0, 0, 0]
+                && segments[7] == 0x0254
+            {
+                return Some("cloud metadata endpoint blocked (IPv6)".into());
+            }
             None
         }
     }
@@ -239,6 +247,7 @@ fn is_host_in_allowlist(host: &str, allowlist: &[String]) -> bool {
 /// 3. Resolves DNS and checks all resulting IPs against blocked ranges
 ///
 /// Returns Ok(()) if the URL is safe to access, Err otherwise.
+#[deprecated(since = "0.3.1", note = "Use validate_url_for_ssrf_with_pinning to prevent DNS rebinding")]
 pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, NetworkError> {
     // Parse URL
     let url = Url::parse(url_str)
@@ -579,6 +588,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_validate_url_blocked() {
         let config = SsrfConfig::default();
 
@@ -595,6 +605,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_validate_url_allowed() {
         let mut config = SsrfConfig::default();
 

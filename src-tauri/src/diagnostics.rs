@@ -288,8 +288,8 @@ pub fn check_embedding_health(embeddings: Option<&crate::kb::embeddings::Embeddi
 
 /// Check file system health (data directories)
 pub fn check_filesystem_health() -> ComponentHealth {
-    let app_data_dir = dirs::data_local_dir()
-        .map(|p| p.join("com.assistsupport.app"));
+    let app_data_dir = dirs::data_dir()
+        .map(|p| p.join("AssistSupport"));
 
     match app_data_dir {
         Some(path) => {
@@ -620,11 +620,66 @@ pub struct ResourceMetrics {
     pub memory_warning: bool,
 }
 
+/// Get process resident memory in bytes using platform-native APIs.
+/// Returns 0 on non-macOS platforms or on failure.
+#[cfg(target_os = "macos")]
+fn get_process_memory_bytes() -> u64 {
+    use std::mem::MaybeUninit;
+
+    // mach FFI types
+    type MachPort = u32;
+    type KernReturn = i32;
+
+    #[repr(C)]
+    struct MachTaskBasicInfo {
+        virtual_size: u64,
+        resident_size: u64,
+        resident_size_max: u64,
+        user_time: [u32; 2],   // time_value_t
+        system_time: [u32; 2], // time_value_t
+        policy: i32,
+        suspend_count: i32,
+    }
+
+    const MACH_TASK_BASIC_INFO: u32 = 20;
+    const MACH_TASK_BASIC_INFO_COUNT: u32 =
+        (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
+
+    extern "C" {
+        fn mach_task_self() -> MachPort;
+        fn task_info(
+            target_task: MachPort,
+            flavor: u32,
+            task_info_out: *mut MachTaskBasicInfo,
+            task_info_out_cnt: *mut u32,
+        ) -> KernReturn;
+    }
+
+    unsafe {
+        let mut info = MaybeUninit::<MachTaskBasicInfo>::zeroed();
+        let mut count = MACH_TASK_BASIC_INFO_COUNT;
+        let kr = task_info(
+            mach_task_self(),
+            MACH_TASK_BASIC_INFO,
+            info.as_mut_ptr(),
+            &mut count,
+        );
+        if kr == 0 {
+            info.assume_init().resident_size
+        } else {
+            0
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_process_memory_bytes() -> u64 {
+    0
+}
+
 /// Get current resource usage metrics
 pub fn get_resource_metrics() -> ResourceMetrics {
-    // Get process memory usage via sysinfo would be ideal but we'll use a simpler approach
-    // For now, return placeholder - in production, use sysinfo crate
-    let memory_bytes = 0u64; // Would use sysinfo::Process::memory()
+    let memory_bytes = get_process_memory_bytes();
 
     // Default threshold: 4GB for LLM operations
     let memory_threshold_bytes = 4 * 1024 * 1024 * 1024u64;
