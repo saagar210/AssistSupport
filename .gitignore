@@ -47,6 +47,14 @@ key_storage.json
 tokens.json
 *.secret
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Model files
+*.gguf
+
 # Python
 __pycache__/
 *.pyc

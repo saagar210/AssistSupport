@@ -61,7 +61,7 @@ A local-first AI-powered customer support response generator built with Tauri, R
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/AssistSupport.git
+git clone https://github.com/saagar210/AssistSupport.git
 cd AssistSupport
 
 # Install frontend dependencies
