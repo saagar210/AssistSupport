@@ -92,7 +92,7 @@ pnpm tauri dev      # Development
 pnpm tauri build    # Production
 ```
 
-## Current State (v0.3.0)
+## Current State (v0.3.2)
 - All core features complete
 - Security hardening complete
 - Comprehensive test coverage
