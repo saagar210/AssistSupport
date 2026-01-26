@@ -1,1 +1,0 @@
-Check network: ping -c 4 google.com

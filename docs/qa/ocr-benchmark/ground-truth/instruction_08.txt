@@ -1,1 +1,0 @@
-Backup database: pg_dump mydb > backup.sql

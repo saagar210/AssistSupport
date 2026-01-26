@@ -1,1 +1,0 @@
-WARNING: Disk space low on /dev/sda1

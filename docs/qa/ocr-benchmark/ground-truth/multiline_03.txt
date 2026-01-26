@@ -1,4 +1,0 @@
-Error Stack Trace:
-TypeError: Cannot read property
-  at Object.<anonymous> (app.js:42)
-  at Module._compile (loader.js:999)

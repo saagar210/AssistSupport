@@ -1,1 +1,0 @@
-Restart service: systemctl restart apache2

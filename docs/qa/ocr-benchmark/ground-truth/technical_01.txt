@@ -1,1 +1,0 @@
-CPU: Intel Core i7-12700K @ 3.6GHz

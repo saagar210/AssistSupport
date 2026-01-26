@@ -1,4 +1,0 @@
-Firewall Rules:
-[ALLOW] TCP 22 (SSH)
-[ALLOW] TCP 80,443 (HTTP/S)
-[DENY] UDP 53 (DNS)

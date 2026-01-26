@@ -1,5 +1,0 @@
-User Session Log
-================
-Login: 09:15 AM
-IP: 192.168.1.50
-Duration: 2h 34m

@@ -43,8 +43,8 @@ The 5% WER threshold is based on production document expectations (larger text, 
 
 ## Files
 
-- `images/`: 55 test images (20 image-only, 35 text-based)
-- `ground-truth/`: Corresponding ground truth text files
 - `benchmark_results.json`: Detailed per-image results
 - `run_benchmark.py`: Benchmark runner script
-- `generate_benchmark.swift`: Image generation script
+- `generate_benchmark.swift`: Image generation script (generates `images/` and `ground-truth/`)
+
+To regenerate benchmark data: `swift generate_benchmark.swift`
