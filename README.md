@@ -1,6 +1,66 @@
 # AssistSupport
 
-A local-first AI-powered customer support response generator built with Tauri, React, and Rust. All data stays on your machine — no cloud, no telemetry.
+**The AI assistant for IT support engineers who can't use ChatGPT.**
+
+Generate first-response drafts for support tickets — offline, encrypted, on your machine.
+Hybrid search across your KB. HIPAA/GDPR/FISMA ready.
+
+---
+
+### For IT Support Engineers
+
+You need to:
+- Draft responses faster (less time typing, more time solving)
+- Keep company data off the cloud (no ChatGPT, no vendor APIs)
+- Use your internal KB + documentation (not internet search)
+- Meet compliance (SOC2, HIPAA, GDPR, FISMA)
+
+AssistSupport does all of this. Runs locally. No telemetry. No vendor lock-in.
+
+---
+
+## The Problem
+
+You're spending hours drafting ticket responses using:
+- Outdated internal documentation you can't search
+- ChatGPT (but your company won't approve it)
+- Memory of what you've said before
+
+## The Solution
+
+**AssistSupport** is your offline AI assistant that:
+- Searches **your KB** (not the internet)
+- Drafts responses in **seconds**
+- Keeps data **100% on your machine**
+- Works **completely offline** (no internet needed after setup)
+
+### Real Example
+
+```
+You receive:  "Can't connect to VPN on Windows 11"
+Search finds: Your 47 VPN troubleshooting docs
+AI drafts:    "1. Verify Cisco AnyConnect version... 2. Check Windows 11 network..."
+You refine:   Add ticket reference, adjust language
+You copy:     Paste into Jira — done in under a minute
+```
+
+See the [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) for more workflow examples.
+
+---
+
+## Why Not Just Use ChatGPT?
+
+| Feature | AssistSupport | ChatGPT | Custom Scripts |
+|---------|---------------|---------|----------------|
+| **Works Offline** | Yes | No | Yes |
+| **Searches Your KB** | Yes | No (internet only) | Maybe |
+| **HIPAA Compliant** | Yes | No | If built right |
+| **Data Stays Local** | Yes | OpenAI servers | Yes |
+| **Pre-Built** | Yes | N/A | Need to build |
+| **Hybrid Search** | FTS + Vector | N/A | Usually vector only |
+| **Cost** | Free (MIT) | $20/mo | Engineering time |
+
+---
 
 ## Features
 
@@ -32,6 +92,7 @@ A local-first AI-powered customer support response generator built with Tauri, R
 - **Path Security**: Home directory restriction, sensitive directory blocking
 - **SSRF Protection**: Comprehensive network security for web ingestion
 - **Audit Logging**: Security event tracking
+- **Compliance**: Validated against HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, NIST SP 800-53 ([report](docs/compliance/COMPLIANCE_REPORT.md))
 
 ## Tech Stack
 
@@ -72,6 +133,13 @@ pnpm install
 pnpm tauri dev
 ```
 
+### First Run
+
+1. **Key Storage**: Choose Keychain (recommended) or passphrase mode
+2. **Model Selection**: Pick an LLM model (Llama 3.2 3B recommended)
+3. **Knowledge Base**: Point to your team's documentation folder
+4. **Start generating**: Type a question, search your KB, get a draft response
+
 ### Build for Production
 
 ```bash
@@ -83,15 +151,33 @@ The `.dmg` / `.app` output will be in `src-tauri/target/release/bundle/`.
 ### Testing
 
 ```bash
-# Frontend tests (72 tests)
+# Frontend tests
 pnpm test
 
-# Backend tests (366 tests)
+# Backend tests
 cd src-tauri && cargo test
 
 # Performance benchmarks
 cd src-tauri && cargo bench
 ```
+
+## For IT Support Teams
+
+### Individual Setup
+Each engineer clones, installs, and runs. Point KB to a shared drive or local docs folder.
+
+### Team Shared KB (Recommended)
+Set up a shared documentation folder and have each engineer point AssistSupport at it:
+
+```
+IT_KnowledgeBase/
+├── Windows/          # connectivity, accounts, software
+├── Network/          # VPN, printing, email
+├── Accounts/         # password resets, MFA
+└── Procedures/       # onboarding, offboarding
+```
+
+See the [IT Support Guide](docs/IT_SUPPORT_GUIDE.md#setup-for-your-team) for detailed deployment options.
 
 ## Project Structure
 
@@ -116,11 +202,14 @@ src-tauri/src/          # Rust backend
 
 | Document | Description |
 |----------|-------------|
+| [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) | Workflows, team setup, integration |
 | [Architecture](docs/ARCHITECTURE.md) | System design and code structure |
 | [Security](docs/SECURITY.md) | Encryption, key management, threat model |
+| [Compliance Report](docs/compliance/COMPLIANCE_REPORT.md) | HIPAA/GDPR/FISMA/SOC2/ISO 27001 validation |
 | [Installation](docs/INSTALLATION.md) | Setup and configuration guide |
 | [Performance](docs/PERFORMANCE.md) | Tuning and optimization |
 | [Operations](docs/OPERATIONS.md) | Daily usage and maintenance |
+| [Roadmap](docs/ROADMAP.md) | Planned features and priorities |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ## Keyboard Shortcuts
@@ -140,7 +229,7 @@ src-tauri/src/          # Rust backend
 
 **Rust build fails with missing system libraries**
 ```bash
-# Ensure Xcode Command Line Tools are installed
+brew install protobuf pkgconf cmake leptonica tesseract
 xcode-select --install
 ```
 
@@ -151,6 +240,9 @@ rm -rf src-tauri/target node_modules
 pnpm install
 pnpm tauri dev
 ```
+
+**"Could not determine which binary to run"**
+- Ensure `default-run = "assistsupport"` is set in `src-tauri/Cargo.toml` `[package]` section
 
 **LLM model fails to load**
 - Ensure model is a valid `.gguf` file
@@ -163,7 +255,7 @@ pnpm tauri dev
 
 ## Security
 
-See [SECURITY.md](docs/SECURITY.md) for the full security model.
+See [SECURITY.md](docs/SECURITY.md) for the full security model and [Compliance Report](docs/compliance/COMPLIANCE_REPORT.md) for validation against 7 security standards.
 
 To report a vulnerability, please see the [security policy](SECURITY.md).
 

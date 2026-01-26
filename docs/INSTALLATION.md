@@ -177,6 +177,54 @@ cd src-tauri && cargo clean
 pnpm tauri build
 ```
 
+## Team Setup (IT Support Teams)
+
+### For Teams of 5-50 Engineers
+
+See the [IT Support Guide](IT_SUPPORT_GUIDE.md#setup-for-your-team) for three deployment options:
+1. **Individual Setup** — Each engineer installs locally
+2. **Team Shared KB** (recommended) — Shared documentation folder
+3. **Enterprise Deployment** — Sync, audit, compliance controls
+
+### Creating a Shared Knowledge Base
+
+**Step 1: Choose Storage**
+- Option A: Shared network drive (`\\shared-drive\IT_KB`)
+- Option B: NFS mount (`/mnt/shared/kb`)
+- Option C: Git repo (for version control)
+
+**Step 2: Organize Documents**
+```
+IT_KnowledgeBase/
+├── Windows/
+│   ├── connectivity.md
+│   ├── accounts.md
+│   └── software-installation.md
+├── Network/
+│   ├── vpn-setup.md
+│   ├── printer-setup.md
+│   └── email-config.md
+├── Accounts/
+│   ├── password-resets.md
+│   └── mfa-setup.md
+└── Procedures/
+    ├── onboarding.md
+    └── offboarding.md
+```
+
+**Step 3: Designate KB Owner**
+- Responsible for document updates
+- Reviews new procedures
+- Removes obsolete docs
+- Communicates changes to team
+
+**Step 4: Each Engineer Configures**
+1. Launch AssistSupport
+2. Settings > Knowledge Base
+3. Select shared folder
+4. Click "Re-index"
+5. Start using
+
 ## Uninstallation
 
 ### Remove Application
