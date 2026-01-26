@@ -1,6 +1,6 @@
 # AssistSupport
 
-A local-first AI-powered customer support response generator built with Tauri, React, and Rust.
+A local-first AI-powered customer support response generator built with Tauri, React, and Rust. All data stays on your machine — no cloud, no telemetry.
 
 ## Features
 
@@ -35,44 +35,80 @@ A local-first AI-powered customer support response generator built with Tauri, R
 
 ## Tech Stack
 
-- **Frontend**: React 19 + TypeScript + Vite
-- **Backend**: Rust + Tauri 2.x
-- **Database**: SQLite with SQLCipher encryption + FTS5
-- **Vector Store**: LanceDB
-- **LLM Runtime**: llama.cpp via llama-cpp-2 bindings
-- **PDF Processing**: PDFium (bundled)
-- **OCR**: macOS Vision framework
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19 + TypeScript (strict) + Vite |
+| Backend | Rust + Tauri 2.x |
+| Database | SQLite with SQLCipher encryption + FTS5 |
+| Vector Store | LanceDB |
+| LLM Runtime | llama.cpp via llama-cpp-2 bindings |
+| PDF Processing | PDFium (bundled) |
+| OCR | macOS Vision framework |
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- Rust 1.75+
-- pnpm 8+ (or npm)
-- macOS 13+ (Ventura or later)
 
-### Development
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| macOS | 13+ (Ventura) | Required for Vision OCR and Tauri 2 |
+| Node.js | 20+ | |
+| pnpm | 8+ | `npm install -g pnpm` |
+| Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Xcode CLT | Latest | `xcode-select --install` |
+
+### Install & Run
+
 ```bash
-# Install dependencies
+# Clone the repo
+git clone https://github.com/YOUR_USERNAME/AssistSupport.git
+cd AssistSupport
+
+# Install frontend dependencies
 pnpm install
 
-# Development mode
+# Run in development mode (starts both frontend dev server and Tauri backend)
 pnpm tauri dev
+```
 
-# Production build
+### Build for Production
+
+```bash
 pnpm tauri build
 ```
 
+The `.dmg` / `.app` output will be in `src-tauri/target/release/bundle/`.
+
 ### Testing
+
 ```bash
-# Frontend tests
+# Frontend tests (72 tests)
 pnpm test
 
-# Backend tests
+# Backend tests (366 tests)
 cd src-tauri && cargo test
 
-# Benchmarks
+# Performance benchmarks
 cd src-tauri && cargo bench
+```
+
+## Project Structure
+
+```
+src/                    # React frontend (TypeScript)
+├── components/         # UI components by feature
+├── contexts/           # React contexts (app state, theme, toast)
+├── hooks/              # Custom hooks (LLM, KB, drafts, etc.)
+└── styles/             # CSS design tokens and components
+
+src-tauri/src/          # Rust backend
+├── commands/           # Tauri command handlers (~200 endpoints)
+├── db/                 # SQLCipher database layer
+├── kb/                 # Knowledge base (indexer, search, embeddings, vectors)
+│   └── ingest/         # Web, YouTube, GitHub content ingestion
+├── llm.rs              # LLM engine (llama.cpp bindings)
+├── security.rs         # Encryption, key management, SecureString
+└── audit.rs            # Security audit logging
 ```
 
 ## Documentation
@@ -84,28 +120,7 @@ cd src-tauri && cargo bench
 | [Installation](docs/INSTALLATION.md) | Setup and configuration guide |
 | [Performance](docs/PERFORMANCE.md) | Tuning and optimization |
 | [Operations](docs/OPERATIONS.md) | Daily usage and maintenance |
-
-## Project Status
-
-**Version**: 0.3.0
-
-### Test Coverage
-- **366 backend tests** (unit, integration, security, E2E)
-- **72 frontend tests**
-- TypeScript strict mode enabled
-- Performance benchmarks with Criterion
-
-### Completed Features
-- Full LLM integration with streaming generation
-- Hybrid search (FTS5 + vector)
-- Multi-format document ingestion
-- Web/YouTube/GitHub content ingestion
-- Encrypted database and credential storage
-- Dual key storage modes (Keychain/Passphrase)
-- SSRF and path traversal protection
-- Audit logging
-- Health diagnostics and self-repair
-- CLI tool for automation
+| [Changelog](CHANGELOG.md) | Release history |
 
 ## Keyboard Shortcuts
 
@@ -120,6 +135,37 @@ cd src-tauri && cargo bench
 | `Cmd+/` | Focus search |
 | `Cmd+1-6` | Switch tabs |
 
+## Troubleshooting
+
+**Rust build fails with missing system libraries**
+```bash
+# Ensure Xcode Command Line Tools are installed
+xcode-select --install
+```
+
+**`pnpm tauri dev` fails to start**
+```bash
+# Rebuild from clean state
+rm -rf src-tauri/target node_modules
+pnpm install
+pnpm tauri dev
+```
+
+**LLM model fails to load**
+- Ensure model is a valid `.gguf` file
+- Check available RAM (models need 2-8GB depending on size)
+- Try a smaller model first (Llama 3.2 1B)
+
+**Database encryption error on first launch**
+- The app creates its database at `~/Library/Application Support/AssistSupport/`
+- If migrating from a previous version, check the migration log in the app
+
+## Security
+
+See [SECURITY.md](docs/SECURITY.md) for the full security model.
+
+To report a vulnerability, please see the [security policy](SECURITY.md).
+
 ## License
 
-MIT
+[MIT](LICENSE)
