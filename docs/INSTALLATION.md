@@ -42,8 +42,8 @@ brew install tesseract       # OCR engine
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-org/assistsupport.git
-cd assistsupport
+git clone https://github.com/saagar210/AssistSupport.git
+cd AssistSupport
 ```
 
 ### 2. Install Dependencies
@@ -142,6 +142,9 @@ If upgrading from a version without Keychain support:
 - Or switch to passphrase mode in Settings
 
 ### Build Errors
+
+#### "Could not determine which binary to run"
+The project has two binaries (`assistsupport` and `assistsupport-cli`). The `default-run` field in `Cargo.toml` should resolve this automatically. If you see this error, ensure `default-run = "assistsupport"` is set in the `[package]` section of `src-tauri/Cargo.toml`.
 
 #### Missing protobuf compiler
 ```
