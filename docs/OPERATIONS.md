@@ -270,14 +270,14 @@ View application logs:
 log show --predicate 'process == "AssistSupport"' --last 1h
 
 # Audit log
-cat ~/Library/Application\ Support/com.d.assistsupport/audit.log
+cat ~/Library/Application\ Support/AssistSupport/audit.log
 ```
 
 ### Reset to Defaults
 
 Full reset (caution - deletes all data):
 ```bash
-rm -rf ~/Library/Application\ Support/com.d.assistsupport
+rm -rf ~/Library/Application\ Support/AssistSupport
 ```
 
 Then restart the application.

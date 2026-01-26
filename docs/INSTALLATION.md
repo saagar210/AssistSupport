@@ -73,9 +73,8 @@ Configure your knowledge base folder:
 
 ### Application Data Location
 ```
-~/Library/Application Support/com.d.assistsupport/
-├── data/
-│   └── assistsupport.db     # Encrypted SQLite database
+~/Library/Application Support/AssistSupport/
+├── assistsupport.db         # Encrypted SQLite database
 ├── vectors/
 │   └── lance/               # Vector store data
 ├── audit.log                # Security audit log
@@ -86,7 +85,7 @@ Configure your knowledge base folder:
 
 ### Model Storage
 ```
-~/Library/Application Support/com.d.assistsupport/models/
+~/Library/Application Support/AssistSupport/models/
 ├── Llama-3.2-1B-Instruct-Q4_K_M.gguf
 ├── Llama-3.2-3B-Instruct-Q4_K_M.gguf
 ├── Phi-3.1-mini-4k-instruct-Q4_K_M.gguf
@@ -111,7 +110,7 @@ If upgrading from a version without Keychain support:
 ## Troubleshooting
 
 ### "Cannot open database"
-- Delete and recreate: `rm -rf ~/Library/Application\ Support/com.d.assistsupport/data`
+- Delete and recreate: `rm -rf ~/Library/Application\ Support/AssistSupport/assistsupport.db`
 - Re-index your knowledge base
 
 ### "Model failed to load"
@@ -137,10 +136,10 @@ pnpm tauri build
 2. Delete from Applications folder
 3. Remove application data:
    ```bash
-   rm -rf ~/Library/Application\ Support/com.d.assistsupport
+   rm -rf ~/Library/Application\ Support/AssistSupport
    ```
 
 ### Remove from Keychain
 ```bash
-security delete-generic-password -s "com.d.assistsupport.master-key" 2>/dev/null
+security delete-generic-password -s "AssistSupport" -a "master-key" 2>/dev/null
 ```

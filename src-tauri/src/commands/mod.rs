@@ -3913,7 +3913,8 @@ pub fn create_job(
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    let job_type_enum: JobType = job_type.parse().unwrap();
+    let job_type_enum: JobType = job_type.parse()
+        .map_err(|_| format!("Invalid job type: {}", job_type))?;
     let mut job = Job::new(job_type_enum);
     if let Some(meta) = metadata {
         job = job.with_metadata(meta);
