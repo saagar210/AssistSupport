@@ -12,6 +12,25 @@
 - **Node.js**: 20.x or later
 - **Rust**: 1.75 or later
 - **pnpm**: 8.x or later (or npm)
+- **Xcode Command Line Tools**: Latest version
+  ```bash
+  xcode-select --install
+  ```
+
+### Required System Dependencies (Native Build)
+The following system libraries are required for compiling native Rust dependencies:
+
+```bash
+# Install all at once
+brew install protobuf pkgconf cmake leptonica tesseract
+
+# Or individually:
+brew install protobuf        # Protocol Buffers compiler (for llama-cpp)
+brew install pkgconf         # Pkg-config helper
+brew install cmake           # Build system for llama.cpp
+brew install leptonica       # Image processing library (for OCR)
+brew install tesseract       # OCR engine
+```
 
 ### Optional Dependencies
 - **yt-dlp**: Required for YouTube transcript ingestion
@@ -123,6 +142,32 @@ If upgrading from a version without Keychain support:
 - Or switch to passphrase mode in Settings
 
 ### Build Errors
+
+#### Missing protobuf compiler
+```
+Error: Could not find `protoc`
+Solution: brew install protobuf
+```
+
+#### Missing pkg-config
+```
+Error: The pkg-config command could not be found
+Solution: brew install pkgconf
+```
+
+#### Missing leptonica or tesseract
+```
+Error: Could not run `pkg-config --libs --cflags lept` or `tesseract`
+Solution: brew install leptonica tesseract
+```
+
+#### Missing cmake
+```
+Error: failed to execute command: No such file or directory (os error 2)
+Solution: brew install cmake
+```
+
+#### General build issues
 ```bash
 # Clean and rebuild
 cd src-tauri && cargo clean

@@ -56,6 +56,7 @@ A local-first AI-powered customer support response generator built with Tauri, R
 | pnpm | 8+ | `npm install -g pnpm` |
 | Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Xcode CLT | Latest | `xcode-select --install` |
+| **System Libraries** | | `brew install protobuf pkgconf cmake leptonica tesseract` |
 
 ### Install & Run
 

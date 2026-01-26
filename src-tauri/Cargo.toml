@@ -4,6 +4,7 @@ version = "0.3.1"
 description = "AI-powered IT Support Assistant"
 authors = ["you"]
 edition = "2021"
+default-run = "assistsupport"
 
 [lib]
 name = "assistsupport_lib"
