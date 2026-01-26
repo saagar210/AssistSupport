@@ -1,8 +1,16 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { useDownload } from '../../hooks/useDownload';
 import { Icon } from './Icon';
 import './OnboardingWizard.css';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -87,13 +95,21 @@ const MODEL_OPTIONS: ModelOption[] = [
 
 export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) {
   const [currentStep, setCurrentStep] = useState<Step>('welcome');
-  const [downloadingModel, setDownloadingModel] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
   const [modelDownloaded, setModelDownloaded] = useState(false);
   const [kbFolder, setKbFolder] = useState<string | null>(null);
   const [securityMode, setSecurityMode] = useState<SecurityMode>('keychain');
   const [securityConfigured, setSecurityConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const {
+    isDownloading: downloadingModel,
+    downloadProgress: downloadProgressState,
+    error: downloadError,
+    downloadModel: startDownload,
+    cancelDownload,
+  } = useDownload();
+
+  const downloadProgress = downloadProgressState?.percent ?? 0;
 
   const currentStepIndex = STEP_ORDER.indexOf(currentStep);
   const stepInfo = STEPS[currentStep];
@@ -117,33 +133,14 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
   }, [currentStepIndex]);
 
   const downloadModel = useCallback(async (model: ModelOption) => {
-    setDownloadingModel(true);
-    setDownloadProgress(0);
     setError(null);
-
     try {
-      // Start download
-      await invoke('download_model', {
-        modelId: model.modelId,
-      });
-
-      // Simulate progress (actual progress would come from events)
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 10;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          setModelDownloaded(true);
-          setDownloadingModel(false);
-        }
-        setDownloadProgress(Math.min(progress, 100));
-      }, 500);
+      await startDownload(model.modelId);
+      setModelDownloaded(true);
     } catch (e) {
       setError(String(e));
-      setDownloadingModel(false);
     }
-  }, []);
+  }, [startDownload]);
 
   const selectKbFolder = useCallback(async () => {
     try {
@@ -262,7 +259,20 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                     style={{ width: `${downloadProgress}%` }}
                   />
                 </div>
-                <p>Downloading... {Math.round(downloadProgress)}%</p>
+                <p>
+                  Downloading... {Math.round(downloadProgress)}%
+                  {downloadProgressState && downloadProgressState.speed_bps > 0 && (
+                    <span className="download-speed"> ({formatBytes(downloadProgressState.speed_bps)}/s)</span>
+                  )}
+                </p>
+                {downloadProgressState && downloadProgressState.total_bytes > 0 && (
+                  <p className="download-detail">
+                    {formatBytes(downloadProgressState.downloaded_bytes)} / {formatBytes(downloadProgressState.total_bytes)}
+                  </p>
+                )}
+                <button className="onboarding-btn-ghost" onClick={cancelDownload}>
+                  Cancel Download
+                </button>
               </div>
             ) : modelDownloaded ? (
               <div className="onboarding-success">
@@ -390,10 +400,10 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           ))}
         </div>
 
-        {error && (
+        {(error || downloadError) && (
           <div className="onboarding-error">
             <Icon name="alertCircle" size={16} />
-            {error}
+            {error || downloadError}
           </div>
         )}
 
