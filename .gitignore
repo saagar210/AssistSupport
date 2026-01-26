@@ -1,39 +1,38 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Dependencies
+node_modules/
 
-node_modules
-dist
-dist-ssr
+# Build outputs
+dist/
+dist-ssr/
+out/
+build/
 *.local
 
-# Editor directories and files
+# Tauri / Rust
+src-tauri/target/
+**/target/
+
+# Test & coverage
+coverage/
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# Editors
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Node / Next
-node_modules/
-.next/
-out/
-dist/
-build/
-coverage/
-
-# Tauri / Rust
-src-tauri/target/
-**/target/
+# OS
+.DS_Store
+Thumbs.db
 
 # Sensitive / secrets
 *.key
@@ -42,6 +41,7 @@ src-tauri/target/
 *.pfx
 .env
 .env.*
+!.env.example
 master.key*
 key_storage.json
 tokens.json
@@ -50,18 +50,11 @@ tokens.json
 # Python
 __pycache__/
 *.pyc
-.pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .venv/
 
-# General
-.DS_Store
-*.log
+# Misc
 .cache/
 tmp/
-
-# Tauri / Rust
-src-tauri/target/
-**/target/
-
+.next/
