@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] - 2026-01-26
+
+### Changed
+- **Repositioning**: Refocused messaging for IT support engineers (from generic "customer support")
+- **README**: Added competitive comparison (vs ChatGPT), compliance badges, "Why IT Support Engineers Use This" section
+- **Compliance Report**: Added quick-link header with per-standard navigation
+
+### Added
+- `docs/IT_SUPPORT_GUIDE.md` - Complete guide with 5 workflow examples, 3 team deployment options, Jira integration guide, compliance section
+- `docs/QUICKSTART_IT_SUPPORT.md` - 5-minute setup guide for IT support engineers
+- `docs/ROADMAP.md` - Q1-Q3 2026 feature priorities (ServiceNow, analytics, Windows installer)
+- Team setup section in `docs/INSTALLATION.md` with shared KB configuration
+- `planning/` directory with testing strategy and results
+
+### Fixed
+- Frontend test setup: Added localStorage mock to `src/test/setup.ts` (resolves 18 SettingsTab test failures in jsdom)
+
 ## [0.3.1] - 2026-01-25
 
 ### Fixed

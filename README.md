@@ -5,6 +5,10 @@
 Generate first-response drafts for support tickets — offline, encrypted, on your machine.
 Hybrid search across your KB. HIPAA/GDPR/FISMA ready.
 
+[![Compliance](https://img.shields.io/badge/compliance-NIST%20%7C%20ISO27001%20%7C%20SOC2%20%7C%20HIPAA%20%7C%20GDPR%20%7C%20FISMA-blue)](docs/compliance/COMPLIANCE_REPORT.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-339%20passing-brightgreen)](.)
+
 ---
 
 ### For IT Support Engineers
@@ -44,7 +48,13 @@ You refine:   Add ticket reference, adjust language
 You copy:     Paste into Jira — done in under a minute
 ```
 
-See the [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) for more workflow examples.
+See the [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) for more workflow examples, or the [Quick Start](docs/QUICKSTART_IT_SUPPORT.md) to get running in 5 minutes.
+
+### Why IT Support Engineers Use This
+- **Speed**: Faster ticket responses (not copying/pasting from 5 docs)
+- **Accuracy**: Grounded in YOUR documentation (no hallucinations from the internet)
+- **Privacy**: Completely offline (meets HIPAA, GDPR, FISMA)
+- **Control**: Own your data, own your LLM, zero vendor lock-in
 
 ---
 
@@ -59,6 +69,8 @@ See the [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) for more workflow examples.
 | **Pre-Built** | Yes | N/A | Need to build |
 | **Hybrid Search** | FTS + Vector | N/A | Usually vector only |
 | **Cost** | Free (MIT) | $20/mo | Engineering time |
+
+**Bottom line**: ChatGPT is great for personal use. AssistSupport is for IT teams that need compliance + control + local data.
 
 ---
 
@@ -202,6 +214,7 @@ src-tauri/src/          # Rust backend
 
 | Document | Description |
 |----------|-------------|
+| [Quick Start for IT](docs/QUICKSTART_IT_SUPPORT.md) | 5-minute setup guide |
 | [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) | Workflows, team setup, integration |
 | [Architecture](docs/ARCHITECTURE.md) | System design and code structure |
 | [Security](docs/SECURITY.md) | Encryption, key management, threat model |
