@@ -26,7 +26,7 @@ AssistSupport is designed with a **local-first, security-conscious** architectur
 #### Token Encryption
 - **Technology**: AES-256-GCM with authenticated encryption
 - **Storage**: Encrypted `tokens.json` file
-- **Protected Tokens**: HuggingFace API token, Jira API token
+- **Protected Tokens**: HuggingFace API token, Jira API token, GitHub tokens (per host)
 - **Key Derivation**: Master key used for token encryption
 
 ### 2. Key Management
@@ -204,15 +204,18 @@ All downloaded models are verified against SHA256 checksums:
 2. **Verification**: Compared against expected hash (when available)
 3. **Allowlist**: Known-good models have pre-verified hashes
 
+Built-in model downloads are blocked if the allowlist entry is missing or mismatched.
+
 ### Model Allowlist
 
 Verified models with known-good hashes:
 
 | Model | Repository | Status |
 |-------|------------|--------|
-| Qwen2.5-7B-Instruct | Qwen/Qwen2.5-7B-Instruct-GGUF | Verified |
-| Llama-3.2-3B-Instruct | bartowski/Llama-3.2-3B-Instruct-GGUF | Verified |
-| nomic-embed-text-v1.5 | nomic-ai/nomic-embed-text-v1.5-GGUF | Verified |
+| Llama-3.2-1B-Instruct (Q4_K_M) | bartowski/Llama-3.2-1B-Instruct-GGUF | Verified |
+| Llama-3.2-3B-Instruct (Q4_K_M) | bartowski/Llama-3.2-3B-Instruct-GGUF | Verified |
+| Phi-3.1-mini-4k-instruct (Q4_K_M) | bartowski/Phi-3.1-mini-4k-instruct-GGUF | Verified |
+| nomic-embed-text-v1.5 (Q5_K_M) | nomic-ai/nomic-embed-text-v1.5-GGUF | Verified |
 
 ### Custom Models
 

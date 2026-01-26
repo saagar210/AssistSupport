@@ -5,10 +5,19 @@ import { DiagnosisPanel, TreeResult } from './DiagnosisPanel';
 import { ResponsePanel } from './ResponsePanel';
 import { useLlm } from '../../hooks/useLlm';
 import { useDrafts } from '../../hooks/useDrafts';
+import { useKb } from '../../hooks/useKb';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { JiraTicket } from '../../hooks/useJira';
-import type { ContextSource, ResponseLength, SavedDraft } from '../../types';
+import type {
+  ContextSource,
+  ResponseLength,
+  SavedDraft,
+  ChecklistItem,
+  ChecklistState,
+  FirstResponseTone,
+  SearchResult,
+} from '../../types';
 import './DraftTab.css';
 
 export interface DraftTabHandle {
@@ -27,8 +36,19 @@ interface DraftTabProps {
 
 export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft }, ref) {
   const { error: showError, success: showSuccess } = useToastContext();
-  const { generateStreaming, streamingText, isStreaming, clearStreamingText, cancelGeneration } = useLlm();
+  const {
+    generateStreaming,
+    streamingText,
+    isStreaming,
+    clearStreamingText,
+    cancelGeneration,
+    generateFirstResponse,
+    generateChecklist,
+    updateChecklist,
+    generateWithContextParams,
+  } = useLlm();
   const { saveDraft, triggerAutosave, cancelAutosave } = useDrafts();
+  const { search: searchKb } = useKb();
   const appStatus = useAppStatus();
 
   // Use centralized model status from AppStatusContext
@@ -39,6 +59,21 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [diagnosticNotes, setDiagnosticNotes] = useState('');
   const [treeResult, setTreeResult] = useState<TreeResult | null>(null);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [checklistCompleted, setChecklistCompleted] = useState<Record<string, boolean>>({});
+  const [checklistGenerating, setChecklistGenerating] = useState(false);
+  const [checklistUpdating, setChecklistUpdating] = useState(false);
+  const [checklistError, setChecklistError] = useState<string | null>(null);
+  const [firstResponse, setFirstResponse] = useState('');
+  const [firstResponseTone, setFirstResponseTone] = useState<FirstResponseTone>('slack');
+  const [firstResponseGenerating, setFirstResponseGenerating] = useState(false);
+  const [approvalQuery, setApprovalQuery] = useState('');
+  const [approvalResults, setApprovalResults] = useState<SearchResult[]>([]);
+  const [approvalSearching, setApprovalSearching] = useState(false);
+  const [approvalSummary, setApprovalSummary] = useState('');
+  const [approvalSummarizing, setApprovalSummarizing] = useState(false);
+  const [approvalSources, setApprovalSources] = useState<ContextSource[]>([]);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [response, setResponse] = useState('');
   const [sources, setSources] = useState<ContextSource[]>([]);
   const [responseLength, setResponseLength] = useState<ResponseLength>('Medium');
@@ -86,11 +121,237 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     }
   }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError]);
 
+  const handleGenerateFirstResponse = useCallback(async () => {
+    if (firstResponseGenerating) return;
+
+    if (!modelLoaded) {
+      showError('No model loaded. Go to Settings to load a model.');
+      return;
+    }
+
+    const ticketFallback = currentTicket
+      ? `${currentTicket.summary}${currentTicket.description ? `\n\n${currentTicket.description}` : ''}`
+      : '';
+    const promptInput = input.trim() || ticketFallback.trim() || ocrText?.trim() || '';
+    if (!promptInput) {
+      showError('Add ticket details or notes before generating a first response.');
+      return;
+    }
+
+    setFirstResponseGenerating(true);
+    try {
+      const result = await generateFirstResponse({
+        user_input: promptInput,
+        tone: firstResponseTone,
+        ocr_text: ocrText ?? undefined,
+        jira_ticket: currentTicket ?? undefined,
+      });
+      setFirstResponse(result.text);
+    } catch (e) {
+      console.error('First response generation failed:', e);
+      showError(`First response failed: ${e}`);
+    } finally {
+      setFirstResponseGenerating(false);
+    }
+  }, [input, firstResponseGenerating, modelLoaded, generateFirstResponse, firstResponseTone, ocrText, currentTicket, showError]);
+
+  const handleCopyFirstResponse = useCallback(async () => {
+    if (!firstResponse.trim()) return;
+    try {
+      await navigator.clipboard.writeText(firstResponse);
+      showSuccess('First response copied to clipboard');
+    } catch (e) {
+      showError('Failed to copy first response');
+    }
+  }, [firstResponse, showSuccess, showError]);
+
+  const handleClearFirstResponse = useCallback(() => {
+    setFirstResponse('');
+  }, []);
+
+  const handleChecklistGenerate = useCallback(async () => {
+    if (checklistGenerating) return;
+
+    if (!modelLoaded) {
+      showError('No model loaded. Go to Settings to load a model.');
+      return;
+    }
+
+    const ticketFallback = currentTicket
+      ? `${currentTicket.summary}${currentTicket.description ? `\n\n${currentTicket.description}` : ''}`
+      : '';
+    const promptInput = input.trim() || ticketFallback.trim() || ocrText?.trim() || '';
+    if (!promptInput) {
+      setChecklistError('Add ticket details or notes before generating a checklist.');
+      return;
+    }
+
+    setChecklistGenerating(true);
+    setChecklistError(null);
+    try {
+      const treeDecisions = treeResult ? {
+        tree_name: treeResult.treeName,
+        path_summary: treeResult.pathSummary,
+      } : undefined;
+
+      const result = await generateChecklist({
+        user_input: promptInput,
+        ocr_text: ocrText ?? undefined,
+        diagnostic_notes: diagnosticNotes || undefined,
+        tree_decisions: treeDecisions,
+        jira_ticket: currentTicket ?? undefined,
+      });
+
+      setChecklistItems(result.items);
+      setChecklistCompleted({});
+    } catch (e) {
+      console.error('Checklist generation failed:', e);
+      setChecklistError(`Checklist failed: ${e}`);
+    } finally {
+      setChecklistGenerating(false);
+    }
+  }, [input, checklistGenerating, modelLoaded, treeResult, ocrText, diagnosticNotes, currentTicket, generateChecklist, showError]);
+
+  const handleChecklistUpdate = useCallback(async () => {
+    if (!checklistItems.length || checklistUpdating) return;
+
+    if (!modelLoaded) {
+      showError('No model loaded. Go to Settings to load a model.');
+      return;
+    }
+
+    const ticketFallback = currentTicket
+      ? `${currentTicket.summary}${currentTicket.description ? `\n\n${currentTicket.description}` : ''}`
+      : '';
+    const promptInput = input.trim() || ticketFallback.trim() || ocrText?.trim() || '';
+    if (!promptInput) {
+      setChecklistError('Add ticket details or notes before updating the checklist.');
+      return;
+    }
+
+    setChecklistUpdating(true);
+    setChecklistError(null);
+    try {
+      const treeDecisions = treeResult ? {
+        tree_name: treeResult.treeName,
+        path_summary: treeResult.pathSummary,
+      } : undefined;
+
+      const completedIds = Object.keys(checklistCompleted).filter(id => checklistCompleted[id]);
+      const checklist: ChecklistState = {
+        items: checklistItems,
+        completed_ids: completedIds,
+      };
+
+      const result = await updateChecklist({
+        user_input: promptInput,
+        ocr_text: ocrText ?? undefined,
+        diagnostic_notes: diagnosticNotes || undefined,
+        tree_decisions: treeDecisions,
+        jira_ticket: currentTicket ?? undefined,
+        checklist,
+      });
+
+      const updatedCompleted: Record<string, boolean> = {};
+      for (const item of result.items) {
+        if (checklistCompleted[item.id]) {
+          updatedCompleted[item.id] = true;
+        }
+      }
+
+      setChecklistItems(result.items);
+      setChecklistCompleted(updatedCompleted);
+    } catch (e) {
+      console.error('Checklist update failed:', e);
+      setChecklistError(`Checklist update failed: ${e}`);
+    } finally {
+      setChecklistUpdating(false);
+    }
+  }, [checklistItems, checklistUpdating, modelLoaded, input, ocrText, diagnosticNotes, treeResult, currentTicket, checklistCompleted, updateChecklist, showError]);
+
+  const handleChecklistToggle = useCallback((id: string) => {
+    setChecklistCompleted(prev => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  }, []);
+
+  const handleChecklistClear = useCallback(() => {
+    setChecklistItems([]);
+    setChecklistCompleted({});
+    setChecklistError(null);
+  }, []);
+
+  const handleApprovalSearch = useCallback(async () => {
+    if (!approvalQuery.trim()) {
+      setApprovalError('Enter a search term to look up approvals.');
+      return;
+    }
+
+    setApprovalSearching(true);
+    setApprovalError(null);
+    try {
+      const results = await searchKb(approvalQuery.trim(), 5);
+      setApprovalResults(results);
+    } catch (e) {
+      console.error('Approval search failed:', e);
+      setApprovalError('Approval search failed.');
+    } finally {
+      setApprovalSearching(false);
+    }
+  }, [approvalQuery, searchKb]);
+
+  const handleApprovalSummarize = useCallback(async () => {
+    if (!approvalQuery.trim()) {
+      setApprovalError('Enter a search term to summarize approvals.');
+      return;
+    }
+
+    if (!modelLoaded) {
+      showError('No model loaded. Go to Settings to load a model.');
+      return;
+    }
+
+    setApprovalSummarizing(true);
+    setApprovalError(null);
+    try {
+      const prompt = `Summarize the approval steps and owner(s) for: ${approvalQuery.trim()}. Keep it concise. If sources do not mention it, say so.`;
+      const result = await generateWithContextParams({
+        user_input: prompt,
+        kb_limit: 5,
+        response_length: 'Short',
+      });
+
+      setApprovalSummary(result.text);
+      setApprovalSources(result.sources);
+    } catch (e) {
+      console.error('Approval summary failed:', e);
+      setApprovalError('Approval summary failed.');
+    } finally {
+      setApprovalSummarizing(false);
+    }
+  }, [approvalQuery, modelLoaded, generateWithContextParams, showError]);
+
   const handleClear = useCallback(() => {
     setInput('');
     setOcrText(null);
     setDiagnosticNotes('');
     setTreeResult(null);
+    setChecklistItems([]);
+    setChecklistCompleted({});
+    setChecklistError(null);
+    setChecklistGenerating(false);
+    setChecklistUpdating(false);
+    setFirstResponse('');
+    setFirstResponseTone('slack');
+    setFirstResponseGenerating(false);
+    setApprovalQuery('');
+    setApprovalResults([]);
+    setApprovalSummary('');
+    setApprovalSources([]);
+    setApprovalError(null);
+    setApprovalSearching(false);
+    setApprovalSummarizing(false);
     setResponse('');
     setOriginalResponse('');
     setIsResponseEdited(false);
@@ -134,13 +395,68 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
         const diagData = JSON.parse(draft.diagnosis_json);
         setDiagnosticNotes(diagData.notes || '');
         setTreeResult(diagData.treeResult || null);
+        const checklistState = diagData.checklist;
+        if (checklistState?.items) {
+          setChecklistItems(checklistState.items);
+          const completed: Record<string, boolean> = {};
+          for (const id of checklistState.completed_ids || []) {
+            completed[id] = true;
+          }
+          setChecklistCompleted(completed);
+        } else {
+          setChecklistItems([]);
+          setChecklistCompleted({});
+        }
+        setChecklistError(null);
+
+        const firstResponseState = diagData.firstResponse;
+        if (firstResponseState?.text) {
+          setFirstResponse(firstResponseState.text);
+          setFirstResponseTone(firstResponseState.tone || 'slack');
+        } else {
+          setFirstResponse('');
+          setFirstResponseTone('slack');
+        }
+
+        const approvalState = diagData.approval;
+        if (approvalState) {
+          setApprovalQuery(approvalState.query || '');
+          setApprovalSummary(approvalState.summary || '');
+          setApprovalSources(approvalState.sources || []);
+        } else {
+          setApprovalQuery('');
+          setApprovalSummary('');
+          setApprovalSources([]);
+        }
+        setApprovalResults([]);
+        setApprovalError(null);
       } catch {
         setDiagnosticNotes('');
         setTreeResult(null);
+        setChecklistItems([]);
+        setChecklistCompleted({});
+        setChecklistError(null);
+        setFirstResponse('');
+        setFirstResponseTone('slack');
+        setApprovalQuery('');
+        setApprovalSummary('');
+        setApprovalSources([]);
+        setApprovalResults([]);
+        setApprovalError(null);
       }
     } else {
       setDiagnosticNotes('');
       setTreeResult(null);
+      setChecklistItems([]);
+      setChecklistCompleted({});
+      setChecklistError(null);
+      setFirstResponse('');
+      setFirstResponseTone('slack');
+      setApprovalQuery('');
+      setApprovalSummary('');
+      setApprovalSources([]);
+      setApprovalResults([]);
+      setApprovalError(null);
     }
     setCurrentTicketId(draft.ticket_id);
     if (draft.kb_sources_json) {
@@ -155,15 +471,57 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setOcrText(null);
   }, []);
 
+  const buildDiagnosisJson = useCallback(() => {
+    const completedIds = Object.keys(checklistCompleted).filter(id => checklistCompleted[id]);
+    const checklistState = checklistItems.length > 0
+      ? { items: checklistItems, completed_ids: completedIds }
+      : null;
+    const firstResponseState = firstResponse.trim()
+      ? { text: firstResponse, tone: firstResponseTone }
+      : null;
+    const approvalState = (approvalQuery.trim() || approvalSummary.trim() || approvalSources.length > 0)
+      ? { query: approvalQuery, summary: approvalSummary, sources: approvalSources }
+      : null;
+
+    const diagnosisData: Record<string, unknown> = {};
+    if (diagnosticNotes.trim()) {
+      diagnosisData.notes = diagnosticNotes;
+    }
+    if (treeResult) {
+      diagnosisData.treeResult = treeResult;
+    }
+    if (checklistState) {
+      diagnosisData.checklist = checklistState;
+    }
+    if (firstResponseState) {
+      diagnosisData.firstResponse = firstResponseState;
+    }
+    if (approvalState) {
+      diagnosisData.approval = approvalState;
+    }
+
+    return Object.keys(diagnosisData).length > 0
+      ? JSON.stringify(diagnosisData)
+      : null;
+  }, [
+    checklistCompleted,
+    checklistItems,
+    firstResponse,
+    firstResponseTone,
+    approvalQuery,
+    approvalSummary,
+    approvalSources,
+    diagnosticNotes,
+    treeResult,
+  ]);
+
   const handleSaveDraft = useCallback(async () => {
     if (!input.trim()) {
       showError('Cannot save empty draft');
       return;
     }
 
-    const diagnosisData = (diagnosticNotes || treeResult)
-      ? JSON.stringify({ notes: diagnosticNotes, treeResult })
-      : null;
+    const diagnosisData = buildDiagnosisJson();
 
     const draftId = await saveDraft({
       input_text: input,
@@ -179,7 +537,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     if (draftId) {
       showSuccess('Draft saved');
     }
-  }, [input, diagnosticNotes, treeResult, response, currentTicketId, sources, saveDraft, showError, showSuccess]);
+  }, [input, buildDiagnosisJson, response, currentTicketId, sources, saveDraft, showError, showSuccess]);
 
   // Load initial draft if provided
   useEffect(() => {
@@ -188,12 +546,19 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     }
   }, [initialDraft, handleLoadDraft]);
 
+  useEffect(() => {
+    if (!approvalQuery.trim()) {
+      setApprovalResults([]);
+      setApprovalSummary('');
+      setApprovalSources([]);
+      setApprovalError(null);
+    }
+  }, [approvalQuery]);
+
   // Trigger autosave on content changes
   useEffect(() => {
     if (input.trim()) {
-      const diagnosisData = (diagnosticNotes || treeResult)
-        ? JSON.stringify({ notes: diagnosticNotes, treeResult })
-        : null;
+      const diagnosisData = buildDiagnosisJson();
 
       triggerAutosave({
         input_text: input,
@@ -208,7 +573,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     return () => {
       cancelAutosave();
     };
-  }, [input, diagnosticNotes, treeResult, response, currentTicketId, sources, loadedModelName, triggerAutosave, cancelAutosave]);
+  }, [input, buildDiagnosisJson, response, currentTicketId, sources, loadedModelName, triggerAutosave, cancelAutosave]);
 
   const handleCopyResponse = useCallback(async () => {
     if (!response) return;
@@ -267,6 +632,14 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           onTicketIdChange={setCurrentTicketId}
           ticket={currentTicket}
           onTicketChange={setCurrentTicket}
+          firstResponse={firstResponse}
+          onFirstResponseChange={setFirstResponse}
+          firstResponseTone={firstResponseTone}
+          onFirstResponseToneChange={setFirstResponseTone}
+          onGenerateFirstResponse={handleGenerateFirstResponse}
+          onCopyFirstResponse={handleCopyFirstResponse}
+          onClearFirstResponse={handleClearFirstResponse}
+          firstResponseGenerating={firstResponseGenerating}
         />
       </div>
 
@@ -279,6 +652,27 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           treeResult={treeResult}
           onTreeComplete={handleTreeComplete}
           onTreeClear={handleTreeClear}
+          checklistItems={checklistItems}
+          checklistCompleted={checklistCompleted}
+          checklistGenerating={checklistGenerating}
+          checklistUpdating={checklistUpdating}
+          checklistError={checklistError}
+          onChecklistToggle={handleChecklistToggle}
+          onChecklistGenerate={handleChecklistGenerate}
+          onChecklistUpdate={handleChecklistUpdate}
+          onChecklistClear={handleChecklistClear}
+          approvalQuery={approvalQuery}
+          onApprovalQueryChange={setApprovalQuery}
+          approvalResults={approvalResults}
+          approvalSearching={approvalSearching}
+          approvalSummary={approvalSummary}
+          approvalSummarizing={approvalSummarizing}
+          approvalSources={approvalSources}
+          onApprovalSearch={handleApprovalSearch}
+          onApprovalSummarize={handleApprovalSummarize}
+          approvalError={approvalError}
+          modelLoaded={modelLoaded}
+          hasTicket={!!currentTicket}
           collapsed={diagnosisCollapsed}
           onToggleCollapse={() => setDiagnosisCollapsed(!diagnosisCollapsed)}
         />

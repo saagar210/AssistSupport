@@ -114,6 +114,49 @@ export interface ContextSource {
 }
 
 export type ResponseLength = 'Short' | 'Medium' | 'Long';
+export type FirstResponseTone = 'slack' | 'jira';
+
+export interface FirstResponseParams {
+  user_input: string;
+  tone: FirstResponseTone;
+  ocr_text?: string;
+  jira_ticket?: JiraTicketContext;
+}
+
+export interface FirstResponseResult {
+  text: string;
+  tokens_generated: number;
+  duration_ms: number;
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  category?: string | null;
+  priority?: string | null;
+  details?: string | null;
+}
+
+export interface ChecklistState {
+  items: ChecklistItem[];
+  completed_ids: string[];
+}
+
+export interface ChecklistGenerateParams {
+  user_input: string;
+  ocr_text?: string;
+  diagnostic_notes?: string;
+  tree_decisions?: TreeDecisions;
+  jira_ticket?: JiraTicketContext;
+}
+
+export interface ChecklistUpdateParams extends ChecklistGenerateParams {
+  checklist: ChecklistState;
+}
+
+export interface ChecklistResult {
+  items: ChecklistItem[];
+}
 
 // Download types
 export interface ModelSource {
@@ -307,6 +350,14 @@ export interface TemplateContext {
   ticketId?: string;
   customerName?: string;
   agentName?: string;
+}
+
+export interface AuditEntry {
+  timestamp: string;
+  event: string;
+  severity: 'info' | 'warning' | 'error' | 'critical';
+  message: string;
+  context?: Record<string, unknown> | null;
 }
 
 // Ingestion types

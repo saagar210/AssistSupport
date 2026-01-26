@@ -31,6 +31,14 @@ describe('InputPanel', () => {
     onTicketIdChange: vi.fn(),
     ticket: null,
     onTicketChange: vi.fn(),
+    firstResponse: '',
+    onFirstResponseChange: vi.fn(),
+    firstResponseTone: 'slack' as const,
+    onFirstResponseToneChange: vi.fn(),
+    onGenerateFirstResponse: vi.fn(),
+    onCopyFirstResponse: vi.fn(),
+    onClearFirstResponse: vi.fn(),
+    firstResponseGenerating: false,
   };
 
   beforeEach(() => {
@@ -119,7 +127,7 @@ describe('InputPanel', () => {
 
   it('disables Clear button when no content', () => {
     render(<InputPanel {...defaultProps} value="" ocrText={null} ticket={null} />);
-    const clearButton = screen.getByRole('button', { name: /clear/i });
+    const clearButton = screen.getByRole('button', { name: 'Clear' });
     expect(clearButton).toBeDisabled();
   });
 

@@ -68,8 +68,14 @@ Supported formats:
 3. Transcripts are extracted and indexed
 
 #### GitHub Repositories
-1. Supports public repos or local clones
-2. Indexes README, docs/, and code comments
+1. Supports local repos and remote HTTPS URLs (GitHub.com or GitHub Enterprise)
+2. Private repos require a per-host token (stored encrypted)
+3. Indexes README, docs/, and code comments
+
+#### Audit Logs
+1. Settings > Audit Logs
+2. Refresh to view recent events
+3. Export JSON for sharing or compliance review
 
 ### Organizing with Namespaces
 

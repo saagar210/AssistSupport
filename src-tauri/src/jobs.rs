@@ -32,18 +32,22 @@ impl std::fmt::Display for JobStatus {
     }
 }
 
-impl JobStatus {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for JobStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "queued" => Some(Self::Queued),
-            "running" => Some(Self::Running),
-            "succeeded" => Some(Self::Succeeded),
-            "failed" => Some(Self::Failed),
-            "cancelled" => Some(Self::Cancelled),
-            _ => None,
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(()),
         }
     }
+}
 
+impl JobStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
@@ -76,9 +80,11 @@ impl std::fmt::Display for JobType {
     }
 }
 
-impl JobType {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for JobType {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "ingest_web" => Self::IngestWeb,
             "ingest_youtube" => Self::IngestYoutube,
             "ingest_github" => Self::IngestGithub,
@@ -92,7 +98,7 @@ impl JobType {
                     Self::Custom(other.to_string())
                 }
             }
-        }
+        })
     }
 }
 

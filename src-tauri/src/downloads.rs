@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::io::{Read, Write};
 use std::fs::{File, OpenOptions};
+use std::time::Duration;
 use thiserror::Error;
 use sha2::{Sha256, Digest};
 use tokio::sync::mpsc;
@@ -37,6 +38,9 @@ pub enum DownloadProgress {
     Error { message: String },
     Cancelled,
 }
+
+const CONNECT_TIMEOUT_SECS: u64 = 20;
+const DOWNLOAD_TIMEOUT_SECS: u64 = 4 * 60 * 60;
 
 /// Model source information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -141,6 +145,8 @@ impl DownloadManager {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
             .build()
             .map_err(|e| DownloadError::Network(e.to_string()))?;
 
@@ -157,10 +163,28 @@ impl DownloadManager {
             request = request.header("Range", format!("bytes={}-", resume_from));
         }
 
-        let response = request.send().await
-            .map_err(|e| DownloadError::Network(e.to_string()))?;
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(e) => {
+                let message = format!("Network error: {}", e);
+                let _ = progress_tx.send(DownloadProgress::Error {
+                    message: message.clone(),
+                }).await;
+                cleanup_partial_file(&partial_path);
+                return Err(DownloadError::Network(message));
+            }
+        };
 
         if !response.status().is_success() && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            let message = format!(
+                "HTTP {}: {}",
+                response.status(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            );
+            let _ = progress_tx.send(DownloadProgress::Error {
+                message: message.clone(),
+            }).await;
+            cleanup_partial_file(&partial_path);
             return Err(DownloadError::Network(format!(
                 "HTTP {}: {}",
                 response.status(),
@@ -202,11 +226,29 @@ impl DownloadManager {
             // Check cancellation
             if cancel_flag.load(Ordering::Relaxed) {
                 let _ = progress_tx.send(DownloadProgress::Cancelled).await;
+                drop(file);
+                cleanup_partial_file(&partial_path);
                 return Err(DownloadError::Cancelled);
             }
 
-            let chunk = chunk.map_err(|e| DownloadError::Network(e.to_string()))?;
-            file.write_all(&chunk)?;
+            let chunk = match chunk {
+                Ok(data) => data,
+                Err(e) => {
+                    let message = format!("Network error: {}", e);
+                    let _ = progress_tx.send(DownloadProgress::Error {
+                        message: message.clone(),
+                    }).await;
+                    cleanup_partial_file(&partial_path);
+                    return Err(DownloadError::Network(message));
+                }
+            };
+            if let Err(e) = file.write_all(&chunk) {
+                let _ = progress_tx.send(DownloadProgress::Error {
+                    message: "Failed to write download data".to_string(),
+                }).await;
+                cleanup_partial_file(&partial_path);
+                return Err(DownloadError::Io(e));
+            }
             downloaded += chunk.len() as u64;
 
             // Report progress every 100ms
@@ -228,11 +270,26 @@ impl DownloadManager {
         }
 
         // Sync to disk
-        file.sync_all()?;
+        if let Err(e) = file.sync_all() {
+            let _ = progress_tx.send(DownloadProgress::Error {
+                message: "Failed to sync download to disk".to_string(),
+            }).await;
+            cleanup_partial_file(&partial_path);
+            return Err(DownloadError::Io(e));
+        }
         drop(file);
 
         // Calculate checksum
-        let sha256 = self.calculate_sha256(&partial_path)?;
+        let sha256 = match self.calculate_sha256(&partial_path) {
+            Ok(hash) => hash,
+            Err(e) => {
+                let _ = progress_tx.send(DownloadProgress::Error {
+                    message: "Checksum calculation failed".to_string(),
+                }).await;
+                cleanup_partial_file(&partial_path);
+                return Err(e);
+            }
+        };
 
         // Verify checksum if provided
         if let Some(expected) = &source.sha256 {
@@ -240,6 +297,7 @@ impl DownloadManager {
                 let _ = progress_tx.send(DownloadProgress::Error {
                     message: "Checksum mismatch".to_string(),
                 }).await;
+                cleanup_partial_file(&partial_path);
                 return Err(DownloadError::ChecksumMismatch {
                     expected: expected.clone(),
                     actual: sha256,
@@ -248,7 +306,13 @@ impl DownloadManager {
         }
 
         // Move to final location
-        std::fs::rename(&partial_path, &dest_path)?;
+        if let Err(e) = std::fs::rename(&partial_path, &dest_path) {
+            let _ = progress_tx.send(DownloadProgress::Error {
+                message: "Failed to finalize download".to_string(),
+            }).await;
+            cleanup_partial_file(&partial_path);
+            return Err(DownloadError::Io(e));
+        }
 
         let _ = progress_tx.send(DownloadProgress::Completed {
             path: dest_path.clone(),
@@ -297,6 +361,12 @@ impl DownloadManager {
     }
 }
 
+fn cleanup_partial_file(path: &Path) {
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// Fetch file info from HuggingFace API to get SHA256 checksum
 /// Returns (size_bytes, sha256) if successful
 pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, String), DownloadError> {
@@ -306,7 +376,11 @@ pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, Stri
         repo
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| DownloadError::Network(e.to_string()))?;
     let response = client.get(&url)
         .header("Accept", "application/json")
         .send()
@@ -334,9 +408,9 @@ pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, Stri
                 let size = lfs.get("size")
                     .and_then(|s| s.as_u64())
                     .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
-                let sha256 = lfs.get("sha256")
+                let sha256 = lfs.get("oid")
                     .and_then(|s| s.as_str())
-                    .ok_or_else(|| DownloadError::HuggingFaceApi("Missing sha256".into()))?
+                    .ok_or_else(|| DownloadError::HuggingFaceApi("Missing LFS oid".into()))?
                     .to_string();
                 return Ok((size, sha256));
             }
@@ -357,25 +431,32 @@ pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, Stri
 pub fn recommended_models() -> Vec<ModelSource> {
     vec![
         ModelSource {
-            name: "Qwen2.5-7B-Instruct (Recommended)".to_string(),
-            repo: "Qwen/Qwen2.5-7B-Instruct-GGUF".to_string(),
-            filename: "qwen2.5-7b-instruct-q5_k_m.gguf".to_string(),
-            size_bytes: Some(5_500_000_000),
-            sha256: None,
+            name: "Llama-3.2-1B-Instruct (Fast)".to_string(),
+            repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".to_string(),
+            filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string(),
+            size_bytes: Some(807_694_464),
+            sha256: Some("6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83".to_string()),
         },
         ModelSource {
-            name: "Llama-3.2-3B-Instruct (Fast)".to_string(),
+            name: "Llama-3.2-3B-Instruct (Balanced)".to_string(),
             repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".to_string(),
-            filename: "Llama-3.2-3B-Instruct-Q5_K_M.gguf".to_string(),
-            size_bytes: Some(2_500_000_000),
-            sha256: None,
+            filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
+            size_bytes: Some(2_019_377_696),
+            sha256: Some("6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff".to_string()),
+        },
+        ModelSource {
+            name: "Phi-3.1-mini-4k-instruct (Reasoning)".to_string(),
+            repo: "bartowski/Phi-3.1-mini-4k-instruct-GGUF".to_string(),
+            filename: "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf".to_string(),
+            size_bytes: Some(2_393_232_096),
+            sha256: Some("d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f".to_string()),
         },
         ModelSource {
             name: "nomic-embed-text (Embeddings)".to_string(),
             repo: "nomic-ai/nomic-embed-text-v1.5-GGUF".to_string(),
             filename: "nomic-embed-text-v1.5.Q5_K_M.gguf".to_string(),
-            size_bytes: Some(550_000_000),
-            sha256: None,
+            size_bytes: Some(99_588_928),
+            sha256: Some("0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6".to_string()),
         },
     ]
 }
@@ -386,10 +467,10 @@ mod tests {
 
     #[test]
     fn test_model_source_url() {
-        let source = ModelSource::huggingface("Qwen/Qwen2.5-7B-Instruct-GGUF", "model.gguf");
+        let source = ModelSource::huggingface("bartowski/Llama-3.2-1B-Instruct-GGUF", "model.gguf");
         assert_eq!(
             source.download_url(),
-            "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/model.gguf"
+            "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/model.gguf"
         );
     }
 
@@ -397,7 +478,7 @@ mod tests {
     fn test_recommended_models() {
         let models = recommended_models();
         assert!(models.len() >= 3);
-        assert!(models.iter().any(|m| m.name.contains("Qwen")));
+        assert!(models.iter().any(|m| m.name.contains("Llama")));
         assert!(models.iter().any(|m| m.name.contains("embed")));
     }
 }

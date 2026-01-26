@@ -655,3 +655,77 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
+
+/* Audit log section */
+.audit-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.audit-row {
+  display: grid;
+  grid-template-columns: 90px 160px 1fr 180px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.audit-severity {
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-size: 0.7rem;
+}
+
+.audit-severity.info {
+  color: var(--color-primary);
+}
+
+.audit-severity.warning {
+  color: var(--color-warning);
+}
+
+.audit-severity.error,
+.audit-severity.critical {
+  color: var(--color-danger);
+}
+
+.audit-event {
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.audit-message {
+  color: var(--text-primary);
+}
+
+.audit-time {
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.audit-empty {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .audit-row {
+    grid-template-columns: 1fr;
+  }
+  .audit-time {
+    text-align: left;
+  }
+}

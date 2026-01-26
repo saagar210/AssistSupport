@@ -9,7 +9,7 @@ import { useEmbedding } from '../../hooks/useEmbedding';
 import { useCustomVariables } from '../../hooks/useCustomVariables';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { ModelInfo, CustomVariable } from '../../types';
+import type { ModelInfo, CustomVariable, AuditEntry } from '../../types';
 import './SettingsTab.css';
 
 const AVAILABLE_MODELS: ModelInfo[] = [
@@ -95,6 +95,9 @@ export function SettingsTab() {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState<'export' | 'import' | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditExporting, setAuditExporting] = useState(false);
 
   // Custom variables state
   const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
@@ -102,10 +105,23 @@ export function SettingsTab() {
   const [showVariableForm, setShowVariableForm] = useState(false);
   const [variableFormError, setVariableFormError] = useState<string | null>(null);
 
+  const loadAuditEntries = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const entries = await invoke<AuditEntry[]>('get_audit_entries', { limit: 200 });
+      setAuditEntries(entries ?? []);
+    } catch (err) {
+      showError(`Failed to load audit logs: ${err}`);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [showError]);
+
   useEffect(() => {
     loadInitialState();
     loadVariables();
-  }, [loadVariables]);
+    loadAuditEntries();
+  }, [loadVariables, loadAuditEntries]);
 
   async function loadInitialState() {
     try {
@@ -439,6 +455,30 @@ export function SettingsTab() {
       setBackupLoading(null);
     }
   }, [showSuccess, showError, loadVariables]);
+
+  const handleExportAuditLog = useCallback(async () => {
+    setAuditExporting(true);
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const path = await save({
+        title: 'Export Audit Log',
+        defaultPath: 'assist-support-audit.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!path) {
+        setAuditExporting(false);
+        return;
+      }
+      const output = await invoke<string>('export_audit_log', { exportPath: path });
+      showSuccess(`Audit log exported to ${output}`);
+    } catch (err) {
+      if (String(err) !== 'Export cancelled') {
+        showError(`Audit export failed: ${err}`);
+      }
+    } finally {
+      setAuditExporting(false);
+    }
+  }, [showSuccess, showError]);
 
   return (
     <div className="settings-tab">
@@ -963,6 +1003,48 @@ export function SettingsTab() {
               {backupLoading === 'import' ? 'Importing...' : 'Import Data'}
             </Button>
           </div>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>Audit Logs</h2>
+        <p className="settings-description">
+          Security and system events recorded locally. Export for review or compliance.
+        </p>
+        <div className="audit-actions">
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={loadAuditEntries}
+            disabled={auditLoading}
+          >
+            {auditLoading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={handleExportAuditLog}
+            disabled={auditExporting}
+          >
+            {auditExporting ? 'Exporting...' : 'Export JSON'}
+          </Button>
+        </div>
+        <div className="audit-list">
+          {auditEntries.length === 0 ? (
+            <p className="audit-empty">No audit entries yet.</p>
+          ) : (
+            auditEntries
+              .slice()
+              .reverse()
+              .map((entry, index) => (
+                <div className="audit-row" key={`${entry.timestamp}-${index}`}>
+                  <span className={`audit-severity ${entry.severity}`}>{entry.severity}</span>
+                  <span className="audit-event">{entry.event}</span>
+                  <span className="audit-message">{entry.message}</span>
+                  <span className="audit-time">{new Date(entry.timestamp).toLocaleString()}</span>
+                </div>
+              ))
+          )}
         </div>
       </section>
 

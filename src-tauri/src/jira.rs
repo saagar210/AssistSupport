@@ -148,9 +148,13 @@ impl JiraClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            // Log the response body for debugging but don't expose in error message
+            // Log size only to avoid leaking sensitive data in responses
             if let Ok(body) = resp.text().await {
-                tracing::debug!("Jira API error response: {}", body);
+                tracing::debug!(
+                    "Jira API error response received (status: {}, bytes: {})",
+                    status,
+                    body.len()
+                );
             }
             return Err(JiraError::Api(format!("HTTP {} error fetching ticket", status)));
         }

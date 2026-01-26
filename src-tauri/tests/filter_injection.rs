@@ -59,9 +59,41 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
         .flat_map(|c| c.to_lowercase())
         .collect();
 
-    // Block SQL-like injection patterns
-    let patterns = [
+    // SQL keywords to block (with word-boundary awareness)
+    let sql_keywords = [
         "select", "insert", "update", "delete", "drop", "union",
+    ];
+
+    let has_boundary_before = |pos: usize| -> bool {
+        pos == 0
+            || matches!(
+                ascii_lower.as_bytes().get(pos - 1),
+                Some(b' ' | b'\'' | b'"' | b'(' | b')' | b';' | b',')
+            )
+    };
+    let has_boundary_after = |pos: usize| -> bool {
+        pos >= ascii_lower.len()
+            || matches!(
+                ascii_lower.as_bytes().get(pos),
+                Some(b' ' | b'\'' | b'"' | b'(' | b')' | b';' | b',') | None
+            )
+    };
+
+    for keyword in &sql_keywords {
+        let kw_len = keyword.len();
+        let mut search_from = 0;
+        while let Some(rel_pos) = ascii_lower[search_from..].find(keyword) {
+            let pos = search_from + rel_pos;
+            let end = pos + kw_len;
+            if has_boundary_before(pos) && has_boundary_after(end) {
+                return None;
+            }
+            search_from = pos + 1;
+        }
+    }
+
+    // Other patterns to block (non-word-boundary)
+    let patterns = [
         " or ", " and ", " not ",
         "--", "/*", "*/",
         "';", "\";", "1=1", "1 = 1",
@@ -256,14 +288,16 @@ fn test_allows_unicode_text() {
 
 #[test]
 fn test_handles_partial_keywords() {
-    // SQL keywords require word boundaries (space-delimited)
-    // "selection" contains "select" so it's blocked for safety
-    // This is conservative but secure - better to block false positives
-    assert!(sanitize_filter_value("selection").is_none()); // contains "select"
-    assert!(sanitize_filter_value("inserts").is_none());   // contains "insert"
-    assert!(sanitize_filter_value("deleted").is_none());   // contains "delete"
+    // SQL keywords now use word-boundary matching
+    // Partial matches should pass
+    assert!(sanitize_filter_value("selection").is_some());
+    assert!(sanitize_filter_value("inserts").is_some());
+    assert!(sanitize_filter_value("deleted").is_some());
 
-    // However, " or " and " and " require space boundaries
+    // Full keyword with boundary still blocked
+    assert!(sanitize_filter_value("'; SELECT * --").is_none());
+
+    // " or " and " and " require space boundaries
     assert!(sanitize_filter_value("forest").is_some());  // contains "or" but not " or "
     assert!(sanitize_filter_value("android").is_some()); // contains "and" but not " and "
 }

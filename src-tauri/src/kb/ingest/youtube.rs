@@ -1,7 +1,7 @@
 //! YouTube transcript ingestion module for AssistSupport
 //! Uses yt-dlp to extract video transcripts/captions
 
-use crate::db::{Database, IngestSource};
+use crate::db::{Database, IngestRunCompletion, IngestSource};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use crate::kb::network::NetworkError;
 use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
@@ -130,7 +130,7 @@ impl YouTubeIngester {
             ])
             .output()
             .await
-            .map_err(|e| IngestError::Io(e))?;
+            .map_err(IngestError::Io)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -175,7 +175,7 @@ impl YouTubeIngester {
             ])
             .output()
             .await
-            .map_err(|e| IngestError::Io(e))?;
+            .map_err(IngestError::Io)?;
 
         if !output.status.success() {
             return Err(IngestError::Parse(
@@ -455,7 +455,15 @@ impl YouTubeIngester {
                 }
 
                 // Complete the run with no changes
-                db.complete_ingest_run(&run_id, "completed", 0, 0, 0, 0, None)?;
+                db.complete_ingest_run(IngestRunCompletion {
+                    run_id: &run_id,
+                    status: "completed",
+                    docs_added: 0,
+                    docs_updated: 0,
+                    docs_removed: 0,
+                    chunks_added: 0,
+                    error_message: None,
+                })?;
 
                 return Ok(IngestedDocument {
                     id: doc_id,
@@ -532,7 +540,15 @@ impl YouTubeIngester {
         for (i, chunk) in chunks.iter().enumerate() {
             if cancel_token.is_cancelled() {
                 db.conn().execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
-                db.complete_ingest_run(&run_id, "cancelled", 0, 0, 0, 0, None)?;
+                db.complete_ingest_run(IngestRunCompletion {
+                    run_id: &run_id,
+                    status: "cancelled",
+                    docs_added: 0,
+                    docs_updated: 0,
+                    docs_removed: 0,
+                    chunks_added: 0,
+                    error_message: None,
+                })?;
                 return Err(IngestError::Cancelled);
             }
 
@@ -553,7 +569,15 @@ impl YouTubeIngester {
         }
 
         // Complete ingest run
-        db.complete_ingest_run(&run_id, "completed", 1, 0, 0, chunk_count as i32, None)?;
+        db.complete_ingest_run(IngestRunCompletion {
+            run_id: &run_id,
+            status: "completed",
+            docs_added: 1,
+            docs_updated: 0,
+            docs_removed: 0,
+            chunks_added: chunk_count as i32,
+            error_message: None,
+        })?;
 
         // Report progress
         if let Some(progress) = progress {

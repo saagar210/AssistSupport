@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, KeyboardEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { useJira, JiraTicket } from '../../hooks/useJira';
-import type { ResponseLength, OcrResult } from '../../types';
+import type { ResponseLength, OcrResult, FirstResponseTone } from '../../types';
 import './InputPanel.css';
 
 interface InputPanelProps {
@@ -20,6 +20,14 @@ interface InputPanelProps {
   onTicketIdChange: (id: string | null) => void;
   ticket: JiraTicket | null;
   onTicketChange: (ticket: JiraTicket | null) => void;
+  firstResponse: string;
+  onFirstResponseChange: (text: string) => void;
+  firstResponseTone: FirstResponseTone;
+  onFirstResponseToneChange: (tone: FirstResponseTone) => void;
+  onGenerateFirstResponse: () => void;
+  onCopyFirstResponse: () => void;
+  onClearFirstResponse: () => void;
+  firstResponseGenerating: boolean;
 }
 
 export function InputPanel({
@@ -37,6 +45,14 @@ export function InputPanel({
   onTicketIdChange,
   ticket,
   onTicketChange,
+  firstResponse,
+  onFirstResponseChange,
+  firstResponseTone,
+  onFirstResponseToneChange,
+  onGenerateFirstResponse,
+  onCopyFirstResponse,
+  onClearFirstResponse,
+  firstResponseGenerating,
 }: InputPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { checkConfiguration, getTicket, configured } = useJira();
@@ -163,6 +179,7 @@ export function InputPanel({
   }, [onOcrTextChange]);
 
   const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
+  const hasFirstResponseInput = Boolean(value.trim() || ticket || ocrText);
 
   return (
     <>
@@ -182,7 +199,7 @@ export function InputPanel({
             variant="ghost"
             size="small"
             onClick={onClear}
-            disabled={!value && !ocrText && !ticket}
+            disabled={!value && !ocrText && !ticket && !firstResponse}
           >
             Clear
           </Button>
@@ -283,6 +300,53 @@ export function InputPanel({
             )}
           </div>
         )}
+
+        <div className="first-response-section">
+          <div className="first-response-header">
+            <h4>First Response</h4>
+            <div className="first-response-actions">
+              <select
+                className="first-response-tone"
+                value={firstResponseTone}
+                onChange={e => onFirstResponseToneChange(e.target.value as FirstResponseTone)}
+              >
+                <option value="slack">Slack (friendly)</option>
+                <option value="jira">Jira (concise)</option>
+              </select>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={onGenerateFirstResponse}
+                loading={firstResponseGenerating}
+                disabled={!modelLoaded || !hasFirstResponseInput}
+              >
+                Draft Reply
+              </Button>
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={onCopyFirstResponse}
+                disabled={!firstResponse.trim()}
+              >
+                Copy
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={onClearFirstResponse}
+                disabled={!firstResponse.trim()}
+              >
+                Clear Reply
+              </Button>
+            </div>
+          </div>
+          <textarea
+            className="first-response-textarea"
+            placeholder="Drafted first response will appear here..."
+            value={firstResponse}
+            onChange={e => onFirstResponseChange(e.target.value)}
+          />
+        </div>
 
         <div className="input-footer">
           <span className="word-count">{wordCount} words</span>

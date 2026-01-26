@@ -5,7 +5,7 @@
 //! All DNS resolution is performed once at validation time, and the validated
 //! IPs are used for the actual HTTP connection.
 
-use crate::db::{Database, IngestSource};
+use crate::db::{Database, IngestRunCompletion, IngestSource};
 use crate::kb::dns::{build_ip_url, PinnedDnsResolver, ValidatedUrl};
 use crate::kb::network::{
     canonicalize_url, extract_same_origin_links, is_login_page,
@@ -503,7 +503,15 @@ impl WebIngester {
                 }
 
                 // Complete the run with no changes
-                db.complete_ingest_run(&run_id, "completed", 0, 0, 0, 0, None)?;
+                db.complete_ingest_run(IngestRunCompletion {
+                    run_id: &run_id,
+                    status: "completed",
+                    docs_added: 0,
+                    docs_updated: 0,
+                    docs_removed: 0,
+                    chunks_added: 0,
+                    error_message: None,
+                })?;
 
                 return Ok(IngestedDocument {
                     id: doc_id,
@@ -526,7 +534,15 @@ impl WebIngester {
         };
 
         if cancel_token.is_cancelled() {
-            db.complete_ingest_run(&run_id, "cancelled", 0, 0, 0, 0, None)?;
+            db.complete_ingest_run(IngestRunCompletion {
+                run_id: &run_id,
+                status: "cancelled",
+                docs_added: 0,
+                docs_updated: 0,
+                docs_removed: 0,
+                chunks_added: 0,
+                error_message: None,
+            })?;
             return Err(IngestError::Cancelled);
         }
 
@@ -585,7 +601,15 @@ impl WebIngester {
             if cancel_token.is_cancelled() {
                 // Rollback by deleting the document (cascades to chunks)
                 db.conn().execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
-                db.complete_ingest_run(&run_id, "cancelled", 0, 0, 0, 0, None)?;
+                db.complete_ingest_run(IngestRunCompletion {
+                    run_id: &run_id,
+                    status: "cancelled",
+                    docs_added: 0,
+                    docs_updated: 0,
+                    docs_removed: 0,
+                    chunks_added: 0,
+                    error_message: None,
+                })?;
                 return Err(IngestError::Cancelled);
             }
 
@@ -606,7 +630,15 @@ impl WebIngester {
         }
 
         // Complete ingest run
-        db.complete_ingest_run(&run_id, "completed", 1, 0, 0, chunk_count as i32, None)?;
+        db.complete_ingest_run(IngestRunCompletion {
+            run_id: &run_id,
+            status: "completed",
+            docs_added: 1,
+            docs_updated: 0,
+            docs_removed: 0,
+            chunks_added: chunk_count as i32,
+            error_message: None,
+        })?;
 
         // Report progress
         if let Some(progress) = progress {
@@ -754,14 +786,11 @@ fn build_sections_from_headings(content: &str, headings: &[(usize, String)]) -> 
 
     // For web pages, we typically have the full text already extracted
     // Create sections based on headings (simplified approach)
-    let mut sections = Vec::new();
-
-    // Add initial content before first heading (if any)
-    sections.push(Section {
+    let sections = vec![Section {
         heading: None,
         level: 0,
         content: content.to_string(),
-    });
+    }];
 
     // Note: A more sophisticated approach would split the content by heading positions
     // but that requires tracking positions in the HTML which is complex.

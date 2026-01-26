@@ -215,6 +215,19 @@
   padding-top: 1rem;
 }
 
+.token-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.token-status {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
 .ingest-warning {
   padding: 1rem;
   background: var(--color-warning-bg);

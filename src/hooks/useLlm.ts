@@ -2,8 +2,6 @@ import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
-// Maximum streaming text buffer size (500KB) to prevent memory spikes
-const MAX_STREAMING_TEXT_SIZE = 500 * 1024;
 import type {
   ModelInfo,
   GenerationParams,
@@ -15,7 +13,15 @@ import type {
   TreeDecisions,
   JiraTicketContext,
   GgufFileInfo,
+  FirstResponseParams,
+  FirstResponseResult,
+  ChecklistGenerateParams,
+  ChecklistUpdateParams,
+  ChecklistResult,
 } from '../types';
+
+// Maximum streaming text buffer size (500KB) to prevent memory spikes
+const MAX_STREAMING_TEXT_SIZE = 500 * 1024;
 
 export interface LlmState {
   modelInfo: ModelInfo | null;
@@ -161,6 +167,86 @@ export function useLlm() {
         response_length: responseLength,
       };
       const result = await invoke<GenerateWithContextResult>('generate_with_context', {
+        params,
+      });
+      setState(prev => ({ ...prev, generating: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        generating: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
+  const generateWithContextParams = useCallback(async (
+    params: GenerateWithContextParams
+  ): Promise<GenerateWithContextResult> => {
+    setState(prev => ({ ...prev, generating: true, error: null }));
+    try {
+      const result = await invoke<GenerateWithContextResult>('generate_with_context', {
+        params,
+      });
+      setState(prev => ({ ...prev, generating: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        generating: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
+  const generateFirstResponse = useCallback(async (
+    params: FirstResponseParams
+  ): Promise<FirstResponseResult> => {
+    setState(prev => ({ ...prev, generating: true, error: null }));
+    try {
+      const result = await invoke<FirstResponseResult>('generate_first_response', {
+        params,
+      });
+      setState(prev => ({ ...prev, generating: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        generating: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
+  const generateChecklist = useCallback(async (
+    params: ChecklistGenerateParams
+  ): Promise<ChecklistResult> => {
+    setState(prev => ({ ...prev, generating: true, error: null }));
+    try {
+      const result = await invoke<ChecklistResult>('generate_troubleshooting_checklist', {
+        params,
+      });
+      setState(prev => ({ ...prev, generating: false }));
+      return result;
+    } catch (e) {
+      setState(prev => ({
+        ...prev,
+        generating: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, []);
+
+  const updateChecklist = useCallback(async (
+    params: ChecklistUpdateParams
+  ): Promise<ChecklistResult> => {
+    setState(prev => ({ ...prev, generating: true, error: null }));
+    try {
+      const result = await invoke<ChecklistResult>('update_troubleshooting_checklist', {
         params,
       });
       setState(prev => ({ ...prev, generating: false }));
@@ -359,11 +445,15 @@ export function useLlm() {
     unloadModel,
     generate,
     generateWithContext,
+    generateWithContextParams,
     generateStreaming,
     clearStreamingText,
     cancelGeneration,
     testModel,
     getContextWindow,
     setContextWindow,
+    generateFirstResponse,
+    generateChecklist,
+    updateChecklist,
   };
 }

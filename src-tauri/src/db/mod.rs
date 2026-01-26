@@ -2063,13 +2063,13 @@ impl Database {
     }
 
     /// Complete an ingest run
-    pub fn complete_ingest_run(&self, run_id: &str, status: &str, docs_added: i32, docs_updated: i32, docs_removed: i32, chunks_added: i32, error_message: Option<&str>) -> Result<(), DbError> {
+    pub fn complete_ingest_run(&self, completion: IngestRunCompletion<'_>) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE ingest_runs SET completed_at = ?, status = ?, documents_added = ?,
                     documents_updated = ?, documents_removed = ?, chunks_added = ?, error_message = ?
              WHERE id = ?",
-            params![now, status, docs_added, docs_updated, docs_removed, chunks_added, error_message, run_id],
+            params![now, completion.status, completion.docs_added, completion.docs_updated, completion.docs_removed, completion.chunks_added, completion.error_message, completion.run_id],
         )?;
         Ok(())
     }
@@ -2255,8 +2255,8 @@ impl Database {
                 let metadata_json: Option<String> = row.get(10)?;
                 Ok(Job {
                     id: row.get(0)?,
-                    job_type: JobType::from_str(&row.get::<_, String>(1)?),
-                    status: JobStatus::from_str(&status_str).unwrap_or(JobStatus::Queued),
+                    job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap(),
+                    status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                     created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                         .map(|t| t.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
@@ -2289,8 +2289,8 @@ impl Database {
             let metadata_json: Option<String> = row.get(10)?;
             Ok(Job {
                 id: row.get(0)?,
-                job_type: JobType::from_str(&row.get::<_, String>(1)?),
-                status: JobStatus::from_str(&status_str).unwrap_or(JobStatus::Queued),
+                job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap(),
+                status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                     .map(|t| t.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
@@ -3111,6 +3111,17 @@ pub struct IngestRun {
     pub documents_removed: Option<i32>,
     pub chunks_added: Option<i32>,
     pub error_message: Option<String>,
+}
+
+/// Parameters for completing an ingest run (avoids too-many-arguments)
+pub struct IngestRunCompletion<'a> {
+    pub run_id: &'a str,
+    pub status: &'a str,
+    pub docs_added: i32,
+    pub docs_updated: i32,
+    pub docs_removed: i32,
+    pub chunks_added: i32,
+    pub error_message: Option<&'a str>,
 }
 
 /// Network allowlist entry

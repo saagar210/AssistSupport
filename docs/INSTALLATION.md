@@ -58,8 +58,9 @@ On first launch, the onboarding wizard guides you through:
 
 ### 2. Model Selection
 Choose an LLM model:
-- **Qwen 2.5 7B** (recommended): Best balance of quality and speed
-- **Llama 3.2 3B**: Faster, lower RAM usage
+- **Llama 3.2 3B** (recommended): Best balance of quality and speed
+- **Phi 3 Mini 4K**: Strong reasoning, higher RAM usage
+- **Llama 3.2 1B**: Fastest, lowest RAM usage
 - **Custom GGUF**: Load your own model file
 
 ### 3. Knowledge Base Setup
@@ -86,9 +87,10 @@ Configure your knowledge base folder:
 ### Model Storage
 ```
 ~/Library/Application Support/com.d.assistsupport/models/
-├── qwen2.5-7b-instruct-q4_k_m.gguf
-├── llama-3.2-3b-instruct-q4_k_m.gguf
-└── nomic-embed-text-v1.5-q8_0.gguf
+├── Llama-3.2-1B-Instruct-Q4_K_M.gguf
+├── Llama-3.2-3B-Instruct-Q4_K_M.gguf
+├── Phi-3.1-mini-4k-instruct-Q4_K_M.gguf
+└── nomic-embed-text-v1.5.Q5_K_M.gguf
 ```
 
 ## Upgrading

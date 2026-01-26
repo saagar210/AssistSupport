@@ -67,8 +67,7 @@ interface ModelOption {
   name: string;
   size: string;
   description: string;
-  repo: string;
-  filename: string;
+  modelId: string;
 }
 
 const MODEL_OPTIONS: ModelOption[] = [
@@ -76,15 +75,13 @@ const MODEL_OPTIONS: ModelOption[] = [
     name: 'Llama 3.2 3B',
     size: '2.0 GB',
     description: 'Fast and efficient, great for most tasks',
-    repo: 'bartowski/Llama-3.2-3B-Instruct-GGUF',
-    filename: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+    modelId: 'llama-3.2-3b-instruct',
   },
   {
-    name: 'Qwen 2.5 7B',
-    size: '4.7 GB',
-    description: 'Higher quality responses, needs more RAM',
-    repo: 'Qwen/Qwen2.5-7B-Instruct-GGUF',
-    filename: 'qwen2.5-7b-instruct-q4_k_m.gguf',
+    name: 'Phi 3 Mini 4K',
+    size: '2.4 GB',
+    description: 'Stronger reasoning, requires more RAM',
+    modelId: 'phi-3-mini-4k-instruct',
   },
 ];
 
@@ -127,9 +124,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     try {
       // Start download
       await invoke('download_model', {
-        repo: model.repo,
-        filename: model.filename,
-        modelId: model.name.toLowerCase().replace(/\s+/g, '-'),
+        modelId: model.modelId,
       });
 
       // Simulate progress (actual progress would come from events)

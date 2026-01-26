@@ -85,7 +85,7 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
         })
         .collect();
 
-    // SQL keywords to block
+    // SQL keywords to block (with word-boundary awareness)
     let sql_keywords = [
         "select", "insert", "update", "delete", "drop", "truncate",
         "exec", "execute", "union", "alter", "create",
@@ -100,10 +100,32 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
         "1=1", "1 = 1",
     ];
 
-    // Check SQL keywords
+    // Check SQL keywords with word-boundary awareness
+    let has_boundary_before = |pos: usize| -> bool {
+        pos == 0
+            || matches!(
+                ascii_lower.as_bytes().get(pos - 1),
+                Some(b' ' | b'\'' | b'"' | b'(' | b')' | b';' | b',')
+            )
+    };
+    let has_boundary_after = |pos: usize| -> bool {
+        pos >= ascii_lower.len()
+            || matches!(
+                ascii_lower.as_bytes().get(pos),
+                Some(b' ' | b'\'' | b'"' | b'(' | b')' | b';' | b',') | None
+            )
+    };
+
     for keyword in &sql_keywords {
-        if ascii_lower.contains(keyword) {
-            return None;
+        let kw_len = keyword.len();
+        let mut search_from = 0;
+        while let Some(rel_pos) = ascii_lower[search_from..].find(keyword) {
+            let pos = search_from + rel_pos;
+            let end = pos + kw_len;
+            if has_boundary_before(pos) && has_boundary_after(end) {
+                return None;
+            }
+            search_from = pos + 1;
         }
     }
 
@@ -800,6 +822,24 @@ mod tests {
         assert_eq!(sanitize_filter_value("SELECT"), None);
         assert_eq!(sanitize_filter_value("Select"), None);
         assert_eq!(sanitize_filter_value("sElEcT"), None);
+    }
+
+    #[test]
+    fn test_sanitize_filter_value_word_boundary_keywords() {
+        // Partial matches should pass (no word boundary)
+        assert!(sanitize_filter_value("selection").is_some());
+        assert!(sanitize_filter_value("insertion").is_some());
+        assert!(sanitize_filter_value("undeleted").is_some());
+        assert!(sanitize_filter_value("inserts").is_some());
+        assert!(sanitize_filter_value("deleted").is_some());
+        assert!(sanitize_filter_value("executor").is_some());
+        assert!(sanitize_filter_value("creative").is_some());
+
+        // Full keyword with boundary still blocked
+        assert!(sanitize_filter_value("'; SELECT * --").is_none());
+        assert!(sanitize_filter_value("select *").is_none());
+        assert!(sanitize_filter_value("'select'").is_none());
+        assert!(sanitize_filter_value("(delete)").is_none());
     }
 
     #[test]

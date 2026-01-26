@@ -689,11 +689,11 @@ impl SimHash {
             .filter(|w| w.len() > 2)
         {
             let hash = Self::hash_token(token);
-            for i in 0..64 {
+            for (i, val) in v.iter_mut().enumerate().take(64) {
                 if (hash >> i) & 1 == 1 {
-                    v[i] += 1;
+                    *val += 1;
                 } else {
-                    v[i] -= 1;
+                    *val -= 1;
                 }
             }
         }

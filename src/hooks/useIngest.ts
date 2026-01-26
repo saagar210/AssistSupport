@@ -249,6 +249,37 @@ export function useIngest() {
     }
   }, []);
 
+  // Ingest a GitHub repository from HTTPS URL
+  const ingestGithubRemote = useCallback(async (
+    repoUrl: string,
+    namespaceId: string
+  ): Promise<IngestResult[]> => {
+    setState(prev => ({ ...prev, ingesting: true, error: null }));
+    try {
+      const results = await invoke<IngestResult[]>('ingest_github_remote', {
+        repoUrl,
+        namespaceId,
+      });
+      setState(prev => ({ ...prev, ingesting: false }));
+      return results;
+    } catch (e) {
+      setState(prev => ({ ...prev, ingesting: false, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
+  const hasGithubToken = useCallback(async (host: string): Promise<boolean> => {
+    return await invoke<boolean>('has_github_token', { host });
+  }, []);
+
+  const setGithubToken = useCallback(async (host: string, token: string): Promise<void> => {
+    await invoke('set_github_token', { host, token });
+  }, []);
+
+  const clearGithubToken = useCallback(async (host: string): Promise<void> => {
+    await invoke('clear_github_token', { host });
+  }, []);
+
   // Process a YAML source file
   const processSourceFile = useCallback(async (
     filePath: string
@@ -319,6 +350,10 @@ export function useIngest() {
     ingestUrl,
     ingestYoutube,
     ingestGithub,
+    ingestGithubRemote,
+    hasGithubToken,
+    setGithubToken,
+    clearGithubToken,
     processSourceFile,
     getSourceHealth,
     retrySource,

@@ -51,39 +51,51 @@ impl ModelAllowlist {
     pub fn new() -> Self {
         let mut hashes = HashMap::new();
 
-        // Qwen2.5-7B-Instruct Q5_K_M - verified 2025-01
+        // Llama-3.2-1B-Instruct Q4_K_M - verified 2026-01
         hashes.insert(
-            "qwen2.5-7b-instruct-q5_k_m.gguf".to_lowercase(),
+            "llama-3.2-1b-instruct-q4_k_m.gguf".to_lowercase(),
             AllowedModel {
-                name: "Qwen2.5-7B-Instruct Q5_K_M".to_string(),
-                repo: "Qwen/Qwen2.5-7B-Instruct-GGUF".to_string(),
-                sha256: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456".to_string(),
-                size_bytes: 5_500_000_000,
-                verified_date: "2025-01-25",
+                name: "Llama-3.2-1B-Instruct Q4_K_M".to_string(),
+                repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".to_string(),
+                sha256: "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83".to_string(),
+                size_bytes: 807_694_464,
+                verified_date: "2026-01-25",
             },
         );
 
-        // Llama-3.2-3B-Instruct Q5_K_M - verified 2025-01
+        // Llama-3.2-3B-Instruct Q4_K_M - verified 2026-01
         hashes.insert(
-            "llama-3.2-3b-instruct-q5_k_m.gguf".to_lowercase(),
+            "llama-3.2-3b-instruct-q4_k_m.gguf".to_lowercase(),
             AllowedModel {
-                name: "Llama-3.2-3B-Instruct Q5_K_M".to_string(),
+                name: "Llama-3.2-3B-Instruct Q4_K_M".to_string(),
                 repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".to_string(),
-                sha256: "b2c3d4e5f67890123456789012345678901234abcdef1234567890abcdef1234".to_string(),
-                size_bytes: 2_500_000_000,
-                verified_date: "2025-01-25",
+                sha256: "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff".to_string(),
+                size_bytes: 2_019_377_696,
+                verified_date: "2026-01-25",
             },
         );
 
-        // nomic-embed-text-v1.5 Q5_K_M - verified 2025-01
+        // Phi-3.1-mini-4k-instruct Q4_K_M - verified 2026-01
+        hashes.insert(
+            "phi-3.1-mini-4k-instruct-q4_k_m.gguf".to_lowercase(),
+            AllowedModel {
+                name: "Phi-3.1-mini-4k-instruct Q4_K_M".to_string(),
+                repo: "bartowski/Phi-3.1-mini-4k-instruct-GGUF".to_string(),
+                sha256: "d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f".to_string(),
+                size_bytes: 2_393_232_096,
+                verified_date: "2026-01-25",
+            },
+        );
+
+        // nomic-embed-text-v1.5 Q5_K_M - verified 2026-01
         hashes.insert(
             "nomic-embed-text-v1.5.q5_k_m.gguf".to_lowercase(),
             AllowedModel {
                 name: "nomic-embed-text-v1.5 Q5_K_M".to_string(),
                 repo: "nomic-ai/nomic-embed-text-v1.5-GGUF".to_string(),
-                sha256: "c3d4e5f678901234567890123456789012345abcdef1234567890abcdef12345".to_string(),
-                size_bytes: 550_000_000,
-                verified_date: "2025-01-25",
+                sha256: "0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6".to_string(),
+                size_bytes: 99_588_928,
+                verified_date: "2026-01-25",
             },
         );
 
@@ -100,6 +112,11 @@ impl ModelAllowlist {
         self.hashes
             .get(&filename.to_lowercase())
             .map(|m| m.sha256.as_str())
+    }
+
+    /// Get the allowed model metadata by filename
+    pub fn get_allowed_model(&self, filename: &str) -> Option<&AllowedModel> {
+        self.hashes.get(&filename.to_lowercase())
     }
 
     /// Get all allowed models
@@ -226,10 +243,10 @@ mod tests {
         let allowlist = ModelAllowlist::new();
 
         // Known model should be found
-        assert!(allowlist.is_allowed("qwen2.5-7b-instruct-q5_k_m.gguf"));
+        assert!(allowlist.is_allowed("llama-3.2-1b-instruct-q4_k_m.gguf"));
 
         // Case insensitive
-        assert!(allowlist.is_allowed("QWEN2.5-7B-INSTRUCT-Q5_K_M.GGUF"));
+        assert!(allowlist.is_allowed("PHI-3.1-MINI-4K-INSTRUCT-Q4_K_M.GGUF"));
 
         // Unknown model
         assert!(!allowlist.is_allowed("unknown-model.gguf"));

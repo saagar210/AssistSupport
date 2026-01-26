@@ -120,6 +120,219 @@
   color: var(--text-primary);
 }
 
+.checklist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.checklist-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.check-item.done .check-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.check-text {
+  display: block;
+}
+
+.check-meta {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.check-category,
+.check-priority {
+  padding: var(--space-0-5) var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.priority-high {
+  color: var(--error);
+  background: var(--error-light);
+}
+
+.priority-medium {
+  color: var(--warning);
+  background: var(--warning-light);
+}
+
+.priority-low {
+  color: var(--success);
+  background: var(--success-light);
+}
+
+.checklist-progress {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.checklist-error {
+  margin-bottom: var(--space-2);
+  padding: var(--space-1-5) var(--space-2-5);
+  background: var(--error-light);
+  color: var(--error);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+/* Approval Lookup */
+.approval-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.approval-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.approval-input {
+  width: 100%;
+  padding: var(--space-2-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  transition: var(--transition-colors);
+}
+
+.approval-input:hover:not(:focus) {
+  border-color: var(--input-border-hover);
+}
+
+.approval-input:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.approval-loading {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.approval-error {
+  margin-top: var(--space-2);
+  padding: var(--space-1-5) var(--space-2-5);
+  background: var(--error-light);
+  color: var(--error);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.approval-results {
+  list-style: none;
+  margin: var(--space-2) 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.approval-result {
+  padding: var(--space-2-5);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.approval-result-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.approval-result-heading {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.approval-result-snippet {
+  margin-top: var(--space-1-5);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.approval-summary {
+  margin-top: var(--space-2);
+  padding: var(--space-2-5);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.approval-summary-header {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.approval-summary-text {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.approval-sources {
+  list-style: none;
+  margin: var(--space-2) 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.approval-source {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  display: flex;
+  gap: var(--space-1-5);
+  align-items: center;
+}
+
+.approval-source-number {
+  font-family: var(--font-mono);
+}
+
+.approval-source-title {
+  color: var(--text-secondary);
+}
+
+.approval-source-heading {
+  color: var(--text-muted);
+}
+
 /* Notes Textarea */
 .notes-textarea {
   width: 100%;

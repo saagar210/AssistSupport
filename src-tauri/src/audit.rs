@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -358,6 +358,68 @@ pub enum AuditError {
     NotInitialized,
 }
 
+fn audit_log_dir() -> Result<PathBuf, AuditError> {
+    dirs::data_dir()
+        .map(|d| d.join("AssistSupport"))
+        .ok_or(AuditError::LogDirNotFound)
+}
+
+fn list_audit_log_files() -> Result<Vec<PathBuf>, AuditError> {
+    let log_dir = audit_log_dir()?;
+    if !log_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut files: Vec<(usize, PathBuf)> = Vec::new();
+    for entry in fs::read_dir(&log_dir).map_err(|e| AuditError::IO(e.to_string()))? {
+        let entry = entry.map_err(|e| AuditError::IO(e.to_string()))?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == AUDIT_LOG_NAME {
+            files.push((0, entry.path()));
+        } else if let Some(suffix) = name.strip_prefix(&format!("{}.", AUDIT_LOG_NAME)) {
+            if let Ok(index) = suffix.parse::<usize>() {
+                files.push((index, entry.path()));
+            }
+        }
+    }
+
+    // Oldest first: highest index, then current log (index 0) last.
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(files.into_iter().map(|(_, path)| path).collect())
+}
+
+/// Read audit entries from log files, optionally limiting results to the most recent entries.
+pub fn read_audit_entries(limit: Option<usize>) -> Result<Vec<AuditEntry>, AuditError> {
+    let files = list_audit_log_files()?;
+    let mut entries = Vec::new();
+
+    for path in files {
+        let file = OpenOptions::new()
+            .read(true)
+            .open(&path)
+            .map_err(|e| AuditError::IO(e.to_string()))?;
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            let line = line.map_err(|e| AuditError::IO(e.to_string()))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
+                entries.push(entry);
+            }
+        }
+    }
+
+    if let Some(limit) = limit {
+        if entries.len() > limit {
+            entries = entries[entries.len() - limit..].to_vec();
+        }
+    }
+
+    Ok(entries)
+}
+
 /// Log an audit event (synchronous, returns errors)
 pub fn log_audit(entry: AuditEntry) -> Result<(), AuditError> {
     let guard = AUDIT_LOGGER.lock().map_err(|_| AuditError::LockFailed)?;
@@ -600,6 +662,79 @@ pub fn audit_vector_store_rebuilt(details: &str) {
             AuditSeverity::Info,
             format!("Vector store rebuilt: {}", details),
         ),
+    );
+}
+
+pub fn audit_model_download_started(model_id: &str, repo: &str, filename: &str) {
+    log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("model_download_started".to_string()),
+            AuditSeverity::Info,
+            format!("Model download started: {}", model_id),
+        )
+        .with_context(serde_json::json!({
+            "model_id": model_id,
+            "repo": repo,
+            "filename": filename,
+        })),
+    );
+}
+
+pub fn audit_model_download_completed(model_id: &str, sha256: &str, size_bytes: u64) {
+    log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("model_download_completed".to_string()),
+            AuditSeverity::Info,
+            format!("Model download completed: {}", model_id),
+        )
+        .with_context(serde_json::json!({
+            "model_id": model_id,
+            "sha256": sha256,
+            "size_bytes": size_bytes,
+        })),
+    );
+}
+
+pub fn audit_model_download_failed(model_id: &str, stage: &str, error: &str) {
+    log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("model_download_failed".to_string()),
+            AuditSeverity::Error,
+            format!("Model download failed: {}", model_id),
+        )
+        .with_context(serde_json::json!({
+            "model_id": model_id,
+            "stage": stage,
+            "error": error,
+        })),
+    );
+}
+
+pub fn audit_model_integrity_verified(model_id: &str, sha256: &str) {
+    log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("model_integrity_verified".to_string()),
+            AuditSeverity::Info,
+            format!("Model integrity verified: {}", model_id),
+        )
+        .with_context(serde_json::json!({
+            "model_id": model_id,
+            "sha256": sha256,
+        })),
+    );
+}
+
+pub fn audit_model_integrity_unverified(model_id: &str, sha256: &str) {
+    log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("model_integrity_unverified".to_string()),
+            AuditSeverity::Warning,
+            format!("Model integrity unverified: {}", model_id),
+        )
+        .with_context(serde_json::json!({
+            "model_id": model_id,
+            "sha256": sha256,
+        })),
     );
 }
 

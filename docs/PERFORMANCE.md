@@ -2,7 +2,7 @@
 
 ## Baseline Metrics
 
-These benchmarks were measured on Apple M4 Pro (48GB RAM):
+These benchmarks were measured on Apple M4 Pro (48GB RAM).
 
 ### Encryption Performance
 | Operation | 1KB | 64KB | 1MB |
@@ -34,13 +34,13 @@ Note: This is intentionally slow for security (brute-force resistance).
 | Phrase | ~2 ms | ~10 ms | ~40 ms |
 
 ### LLM Generation
-Highly dependent on model and hardware:
+Highly dependent on model and hardware. Model throughput benchmarks are pending:
 
 | Model | Tokens/sec (M4 Pro) |
 |-------|---------------------|
-| Qwen 2.5 7B Q4 | ~30-40 |
-| Llama 3.2 3B Q4 | ~50-70 |
-| Phi-4 14B Q4 | ~15-25 |
+| Llama 3.2 1B Q4 | TBD (benchmark pending) |
+| Llama 3.2 3B Q4 | TBD (benchmark pending) |
+| Phi 3.1 Mini Q4 | TBD (benchmark pending) |
 
 ## Performance Tuning
 
@@ -50,8 +50,7 @@ Highly dependent on model and hardware:
 AssistSupport checks available memory before loading models:
 ```
 Available = Physical RAM - (System + Other Apps)
-Recommended for 7B model: 8 GB free
-Recommended for 14B model: 16 GB free
+Recommendation: ensure free RAM comfortably exceeds the model file size, and follow app warnings.
 ```
 
 #### Reduce Memory Usage
@@ -156,17 +155,17 @@ invoke('get_database_stats_cmd')
 
 | RAM | Recommended Model |
 |-----|-------------------|
-| 8 GB | Llama 3.2 3B Q4 |
-| 16 GB | Qwen 2.5 7B Q4 |
-| 32 GB+ | Phi-4 14B Q4 or larger |
+| 8 GB | Llama 3.2 1B Q4 |
+| 16 GB | Llama 3.2 3B Q4 |
+| 32 GB+ | Phi 3.1 Mini Q4 |
 
 ### By Use Case
 
 | Use Case | Model | Why |
 |----------|-------|-----|
-| Quick responses | Llama 3.2 3B | Fast generation |
-| Quality responses | Qwen 2.5 7B | Best balance |
-| Complex analysis | Phi-4 14B | Higher capability |
+| Quick responses | Llama 3.2 1B | Lowest latency |
+| Balanced quality | Llama 3.2 3B | Best balance |
+| Reasoning focus | Phi 3.1 Mini | Strong reasoning |
 
 ## Running Benchmarks
 
