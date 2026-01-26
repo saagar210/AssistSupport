@@ -40,7 +40,7 @@ enum JobsCommand {
 #[derive(Debug)]
 enum KbCommand {
     Stats,
-    Index { force: bool },
+    Index { #[allow(dead_code)] force: bool },
 }
 
 fn main() -> ExitCode {

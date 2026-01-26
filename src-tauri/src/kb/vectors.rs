@@ -18,6 +18,7 @@ use lancedb::{connect, Connection, Table};
 
 /// Check if a character is a Unicode confusable for common injection characters.
 /// Includes various Unicode characters that visually resemble quotes, operators, etc.
+#[allow(dead_code)] // Used by sanitize_filter_value; tested in test suite
 fn is_unicode_confusable(c: char) -> bool {
     matches!(
         c,
@@ -61,6 +62,7 @@ fn is_unicode_confusable(c: char) -> bool {
 /// - Preserves original case (avoids Unicode case folding issues like Turkish İ/i)
 /// - Detects both ASCII and Unicode confusable injection patterns
 /// - Returns None if the input appears malicious
+#[allow(dead_code)] // General-purpose sanitizer; callers currently use sanitize_id for namespace IDs
 fn sanitize_filter_value(value: &str) -> Option<String> {
     // Normalize to NFC form for consistent comparison
     let normalized: String = value.nfc().collect();

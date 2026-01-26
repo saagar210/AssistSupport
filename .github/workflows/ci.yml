@@ -52,11 +52,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: pnpm run test
+        run: pnpm test
 
-  lint-backend:
-    name: Lint Backend
-    runs-on: ubuntu-latest
+  check-backend:
+    name: Check & Test Backend
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -70,11 +70,6 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
       - name: Check formatting
         working-directory: src-tauri
         run: cargo fmt --check
@@ -83,25 +78,6 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
 
-  test-backend:
-    name: Test Backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
       - name: Run tests
         working-directory: src-tauri
         run: cargo test
@@ -109,7 +85,7 @@ jobs:
   build:
     name: Build (macOS)
     runs-on: macos-latest
-    needs: [lint-frontend, test-frontend, lint-backend, test-backend]
+    needs: [lint-frontend, test-frontend, check-backend]
     steps:
       - uses: actions/checkout@v4
 
