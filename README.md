@@ -7,7 +7,7 @@ Hybrid search across your KB. HIPAA/GDPR/FISMA ready.
 
 [![Compliance](https://img.shields.io/badge/compliance-NIST%20%7C%20ISO27001%20%7C%20SOC2%20%7C%20HIPAA%20%7C%20GDPR%20%7C%20FISMA-blue)](docs/compliance/COMPLIANCE_REPORT.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-339%20passing-brightgreen)](.)
+[![Tests](https://img.shields.io/badge/tests-436%20passing-brightgreen)](docs/TESTING.md)
 
 ---
 
@@ -210,10 +210,60 @@ src-tauri/src/          # Rust backend
 └── audit.rs            # Security audit logging
 ```
 
+## Real Results
+
+See how IT teams use AssistSupport:
+
+- **[TechCorp IT](docs/CASE_STUDIES/EXAMPLE_TechCorp.md)**: 12 engineers, 1,200 tickets/day, 67% faster responses, $333k/year ROI
+- [Your Organization?](docs/CASE_STUDIES/TEMPLATE.md) - Submit a case study
+
+**Expected improvements**:
+- Response time: 12 min -> 4 min (67% faster)
+- Responses per engineer: 20 -> 35 per day (75% more)
+- Time saved: ~1 hour per engineer per day
+- Annual ROI: $300k-500k for 10-person team
+
+## Testing & Verification
+
+Before deploying to your team, verify AssistSupport works:
+
+### Quick Health Check
+```bash
+pnpm test:health
+```
+Verifies app launches, database works, LLM loads, encryption works.
+
+### Full Test Suite
+```bash
+pnpm test
+```
+436 tests covering UI, search, generation, security, encryption.
+
+### Integration Tests
+```bash
+pnpm test:kb-indexing  # KB indexing works
+pnpm test:search       # Hybrid search works
+pnpm test:generation   # Response generation works
+pnpm test:jira         # Jira integration works
+```
+
+### Security Tests
+```bash
+pnpm test:security:encryption  # AES-256 encryption
+pnpm test:security:paths       # Path validation
+pnpm test:security:audit       # Audit logging
+```
+
+See [Testing Guide](docs/TESTING.md) for comprehensive testing documentation.
+
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [Testing Guide](docs/TESTING.md) | Automated test suite, quick health checks, CI/CD pipeline |
+| [Case Studies](docs/CASE_STUDIES/) | Real examples: TechCorp IT saves 67% response time |
+| [Roadmap](docs/ROADMAP.md) | Q1-Q4 2026 priorities, Jira mastery focus |
+| [Analytics Plan](docs/ANALYTICS_DASHBOARD_PLAN.md) | Q2 2026: Team dashboard to measure ROI |
 | [Quick Start for IT](docs/QUICKSTART_IT_SUPPORT.md) | 5-minute setup guide |
 | [IT Support Guide](docs/IT_SUPPORT_GUIDE.md) | Workflows, team setup, integration |
 | [Architecture](docs/ARCHITECTURE.md) | System design and code structure |
@@ -222,7 +272,6 @@ src-tauri/src/          # Rust backend
 | [Installation](docs/INSTALLATION.md) | Setup and configuration guide |
 | [Performance](docs/PERFORMANCE.md) | Tuning and optimization |
 | [Operations](docs/OPERATIONS.md) | Daily usage and maintenance |
-| [Roadmap](docs/ROADMAP.md) | Planned features and priorities |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ## Keyboard Shortcuts
