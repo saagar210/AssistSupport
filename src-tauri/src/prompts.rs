@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 /// - MAJOR: Breaking changes to prompt structure
 /// - MINOR: New features or significant improvements
 /// - PATCH: Minor tweaks and fixes
-pub const PROMPT_TEMPLATE_VERSION: &str = "5.0.0";
+pub const PROMPT_TEMPLATE_VERSION: &str = "5.1.0";
 
 /// Prompt template metadata for versioning and analytics
 #[derive(Debug, Clone, serde::Serialize)]
@@ -33,7 +33,7 @@ impl Default for PromptMetadata {
     fn default() -> Self {
         Self {
             version: PROMPT_TEMPLATE_VERSION,
-            template_name: "it_support_v3",
+            template_name: "it_support_v3_policy",
             is_experimental: false,
         }
     }
@@ -45,6 +45,24 @@ pub const IT_SUPPORT_SYSTEM_PROMPT: &str = r#"You are helping an IT support engi
 1. Analyze the end user's problem description to understand the issue
 2. Use any provided knowledge base context to inform the draft
 3. Generate a TWO-SECTION response: a clean output for the end user, and instructions for the engineer
+
+## Policy Enforcement (CRITICAL — HIGHEST PRIORITY)
+Before drafting any response, check if the knowledge base context contains a POLICY that applies to the request. Policies override all other considerations.
+
+RULES:
+1. If the KB contains a policy that FORBIDS or DENIES something the user is asking about, you MUST deny the request — no exceptions, no workarounds
+2. If KB says "NOT ALLOWED", "FORBIDDEN", "PROHIBITED", or "DENIED", cite the specific policy and explain why it exists
+3. Always suggest approved alternatives from the KB when denying a request
+4. Never offer workarounds, exceptions, or creative interpretations to bypass a forbidden policy
+5. Be empathetic but firm: acknowledge the user's need, then explain the policy clearly
+6. Emergency situations, executive requests, and temporary needs do NOT override policies
+
+When enforcing a policy, structure the OUTPUT section as:
+- Start with a clear policy statement (what is/isn't allowed)
+- Explain the reasons from the KB (security, compliance, etc.)
+- List approved alternatives from the KB
+- Offer to help the user with an approved alternative
+- Maintain a helpful, professional tone throughout
 
 ## Response Format (MANDATORY)
 
@@ -1164,7 +1182,7 @@ mod tests {
         let mut builder = PromptBuilder::new()
             .with_kb_results(kb_results)
             .with_user_input("Test query")
-            .with_context_window(2000); // Small enough to require truncation
+            .with_context_window(3000); // Small enough to require truncation (accounts for policy enforcement section in system prompt)
 
         let result = builder.build_with_budget_tracking();
 
@@ -1324,6 +1342,131 @@ mod tests {
         assert!(
             prompt.contains("### IT SUPPORT INSTRUCTIONS"),
             "Final instruction should reference IT SUPPORT INSTRUCTIONS section"
+        );
+    }
+
+    // ========================================================================
+    // Policy Enforcement Prompt Tests
+    // ========================================================================
+
+    #[test]
+    fn test_policy_enforcement_section_exists() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("Can I get a flash drive?")
+            .build();
+
+        assert!(
+            prompt.contains("Policy Enforcement"),
+            "System prompt should contain Policy Enforcement section"
+        );
+    }
+
+    #[test]
+    fn test_policy_enforcement_forbid_rule() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("test")
+            .build();
+
+        assert!(
+            prompt.contains("FORBIDS"),
+            "Policy enforcement should mention FORBIDS rule"
+        );
+        assert!(
+            prompt.contains("MUST deny"),
+            "Policy enforcement should require denial of forbidden items"
+        );
+    }
+
+    #[test]
+    fn test_policy_enforcement_no_workarounds() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("test")
+            .build();
+
+        assert!(
+            prompt.contains("Never offer workarounds"),
+            "Policy enforcement should prohibit workarounds"
+        );
+    }
+
+    #[test]
+    fn test_policy_enforcement_alternatives_required() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("test")
+            .build();
+
+        assert!(
+            prompt.contains("approved alternatives"),
+            "Policy enforcement should require suggesting alternatives"
+        );
+    }
+
+    #[test]
+    fn test_policy_enforcement_no_exceptions() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("test")
+            .build();
+
+        assert!(
+            prompt.contains("Emergency situations") && prompt.contains("do NOT override"),
+            "Policy enforcement should explicitly deny exceptions for emergencies and executives"
+        );
+    }
+
+    #[test]
+    fn test_prompt_version_bumped() {
+        assert_eq!(
+            PROMPT_TEMPLATE_VERSION, "5.1.0",
+            "Prompt version should be 5.1.0 for policy enforcement update"
+        );
+    }
+
+    #[test]
+    fn test_prompt_template_name_updated() {
+        let builder = PromptBuilder::new();
+        let metadata = builder.get_metadata();
+        assert!(
+            metadata.template_name.contains("policy"),
+            "Template name should indicate policy enforcement: {}",
+            metadata.template_name
+        );
+    }
+
+    #[test]
+    fn test_policy_context_with_kb_results() {
+        // Simulate a policy KB result being included in the prompt
+        let kb_results = vec![SearchResult {
+            chunk_id: "policy_1".to_string(),
+            document_id: "d_policy".to_string(),
+            file_path: "/knowledge_base/POLICIES/flash_drives_forbidden.md".to_string(),
+            title: Some("Flash Drive Policy".to_string()),
+            heading_path: Some("Policy Statement".to_string()),
+            content: "Flash drives are FORBIDDEN. No exceptions.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: crate::kb::search::SearchSource::Fts5,
+            namespace_id: Some("default".to_string()),
+            source_type: Some("file".to_string()),
+        }];
+
+        let prompt = PromptBuilder::new()
+            .with_kb_results(kb_results)
+            .with_user_input("Can I get a flash drive?")
+            .build();
+
+        // Policy content should be in the prompt context
+        assert!(
+            prompt.contains("Flash Drive Policy"),
+            "Prompt should include policy title"
+        );
+        assert!(
+            prompt.contains("FORBIDDEN"),
+            "Prompt should include policy content about forbidden status"
+        );
+        // Policy enforcement instructions should be present
+        assert!(
+            prompt.contains("Policy Enforcement"),
+            "Policy enforcement section should be present"
         );
     }
 }

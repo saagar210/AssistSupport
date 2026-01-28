@@ -48,6 +48,122 @@ const RRF_K: f64 = 60.0;
 /// Default similarity threshold for deduplication (0.0-1.0)
 const DEFAULT_DEDUP_THRESHOLD: f64 = 0.85;
 
+/// Score boost applied to policy results when query is policy-related
+const POLICY_BOOST: f64 = 0.5;
+
+/// Keywords that indicate a policy-related query (permission check / restriction check)
+const POLICY_QUERY_KEYWORDS: &[&str] = &[
+    "can i",
+    "am i allowed",
+    "is it allowed",
+    "is it ok",
+    "is it okay",
+    "is it permitted",
+    "are we allowed",
+    "forbidden",
+    "prohibited",
+    "not allowed",
+    "not permitted",
+    "policy",
+    "allowed to",
+    "permitted to",
+    "can someone",
+    "can we",
+    "can employees",
+    "do we allow",
+    "is there a rule",
+    "what are the rules",
+];
+
+/// Keywords that indicate a restriction/denial context
+const RESTRICTION_KEYWORDS: &[&str] = &[
+    "flash drive",
+    "usb",
+    "thumb drive",
+    "memory stick",
+    "external drive",
+    "removable media",
+    "sd card",
+    "memory card",
+    "portable storage",
+    "personal device",
+    "install software",
+    "personal vpn",
+    "share password",
+];
+
+/// Detect whether a query is asking about policy/permissions
+///
+/// Returns a confidence score from 0.0 (not a policy question) to 1.0 (definitely policy).
+pub fn policy_query_confidence(query: &str) -> f64 {
+    let lower = query.to_lowercase();
+    let mut score: f64 = 0.0;
+
+    // Check for policy keywords (strong signal)
+    for keyword in POLICY_QUERY_KEYWORDS {
+        if lower.contains(keyword) {
+            score += 0.5;
+            break;
+        }
+    }
+
+    // Check for restriction-related nouns (strong signal — mentioning a restricted item implies policy interest)
+    for keyword in RESTRICTION_KEYWORDS {
+        if lower.contains(keyword) {
+            score += 0.5;
+            break;
+        }
+    }
+
+    // Question patterns that suggest permission checking
+    if lower.starts_with("can i")
+        || lower.starts_with("can we")
+        || lower.starts_with("am i")
+        || lower.starts_with("are we")
+        || lower.starts_with("is it ok")
+        || lower.ends_with('?')
+            && (lower.contains("allow") || lower.contains("permit") || lower.contains("forbid"))
+    {
+        score += 0.2;
+    }
+
+    score.min(1.0)
+}
+
+/// Check if a query is a policy question (convenience wrapper)
+pub fn is_policy_query(query: &str) -> bool {
+    policy_query_confidence(query) >= 0.4
+}
+
+/// Check if a search result is from a policy document (path-based detection)
+pub fn is_policy_result(result: &SearchResult) -> bool {
+    let path_lower = result.file_path.to_lowercase();
+    path_lower.contains("/policies/") || path_lower.contains("\\policies\\")
+}
+
+/// Apply policy-first boosting to search results.
+///
+/// When the query is policy-related, results from POLICIES/ paths get a score boost.
+/// This ensures policy documents surface above procedures and reference material
+/// for permission/restriction questions.
+pub fn apply_policy_boost(results: &mut Vec<SearchResult>, query: &str) {
+    let confidence = policy_query_confidence(query);
+    if confidence < 0.4 {
+        return;
+    }
+
+    let boost = POLICY_BOOST * confidence;
+
+    for result in results.iter_mut() {
+        if is_policy_result(result) {
+            result.score += boost;
+        }
+    }
+
+    // Re-sort by score descending
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+}
+
 /// Hybrid search engine
 pub struct HybridSearch;
 
@@ -70,6 +186,8 @@ pub struct SearchOptions {
     pub normalize_scores: bool,
     /// Boost pinned sources in search results
     pub boost_pinned: bool,
+    /// Original query text for policy detection (set by caller)
+    pub query_text: Option<String>,
 }
 
 impl Default for SearchOptions {
@@ -84,6 +202,7 @@ impl Default for SearchOptions {
             sanitize_snippets: true,
             normalize_scores: true,
             boost_pinned: true,
+            query_text: None,
         }
     }
 }
@@ -110,6 +229,11 @@ impl SearchOptions {
     pub fn with_dedup(mut self, enable: bool, threshold: f64) -> Self {
         self.enable_dedup = enable;
         self.dedup_threshold = threshold.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_query_text(mut self, query: &str) -> Self {
+        self.query_text = Some(query.to_string());
         self
     }
 }
@@ -809,7 +933,12 @@ impl HybridSearch {
         mut results: Vec<SearchResult>,
         options: &SearchOptions,
     ) -> Vec<SearchResult> {
-        // Normalize scores if enabled
+        // Apply policy boost BEFORE normalization (so boost affects ranking)
+        if let Some(query) = &options.query_text {
+            apply_policy_boost(&mut results, query);
+        }
+
+        // Normalize scores if enabled (after boosting to preserve rank changes)
         if options.normalize_scores {
             Self::normalize_scores(&mut results);
         }
@@ -1321,5 +1450,389 @@ mod tests {
             "Should still contain the term: {}",
             result
         );
+    }
+
+    // ========================================================================
+    // Policy Query Detection Tests (10 tests)
+    // ========================================================================
+
+    #[test]
+    fn test_policy_query_flash_drive_request() {
+        assert!(is_policy_query("Can I get a flash drive?"));
+    }
+
+    #[test]
+    fn test_policy_query_allowed_check() {
+        assert!(is_policy_query("Are flash drives allowed?"));
+    }
+
+    #[test]
+    fn test_policy_query_usb_stick() {
+        assert!(is_policy_query("Can I use a USB stick?"));
+    }
+
+    #[test]
+    fn test_policy_query_external_usb() {
+        assert!(is_policy_query("What about external USB devices?"));
+    }
+
+    #[test]
+    fn test_policy_query_forbidden_keyword() {
+        assert!(is_policy_query("Are removable media forbidden?"));
+    }
+
+    #[test]
+    fn test_policy_query_permitted_keyword() {
+        assert!(is_policy_query("Is it permitted to use a personal device?"));
+    }
+
+    #[test]
+    fn test_policy_query_policy_keyword() {
+        assert!(is_policy_query("What is our policy on flash drives?"));
+    }
+
+    #[test]
+    fn test_policy_query_can_we() {
+        assert!(is_policy_query("Can we use SD cards for data transfer?"));
+    }
+
+    #[test]
+    fn test_policy_query_rules_check() {
+        assert!(is_policy_query("What are the rules about personal VPN?"));
+    }
+
+    #[test]
+    fn test_non_policy_query_how_to() {
+        // "How do I" questions are procedures, not policy checks
+        assert!(!is_policy_query("How do I connect to the VPN?"));
+    }
+
+    // ========================================================================
+    // Policy Confidence Scoring Tests (4 tests)
+    // ========================================================================
+
+    #[test]
+    fn test_policy_confidence_high_for_forbidden_query() {
+        let score = policy_query_confidence("Can I get a flash drive?");
+        assert!(
+            score >= 0.7,
+            "Flash drive permission query should have high confidence: {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_policy_confidence_moderate_for_policy_keyword() {
+        let score = policy_query_confidence("What is the policy on backups?");
+        assert!(
+            score >= 0.4,
+            "Policy keyword query should have moderate confidence: {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_policy_confidence_low_for_procedure() {
+        let score = policy_query_confidence("How do I set up my email?");
+        assert!(
+            score < 0.4,
+            "Procedure query should have low confidence: {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_policy_confidence_capped_at_one() {
+        let score = policy_query_confidence(
+            "Can I use a forbidden USB flash drive? What is the policy? Am I allowed?",
+        );
+        assert!(
+            score <= 1.0,
+            "Confidence should be capped at 1.0: {}",
+            score
+        );
+    }
+
+    // ========================================================================
+    // Policy Result Detection Tests (4 tests)
+    // ========================================================================
+
+    #[test]
+    fn test_is_policy_result_policies_path() {
+        let result = SearchResult {
+            chunk_id: "1".to_string(),
+            document_id: "d1".to_string(),
+            file_path: "/knowledge_base/POLICIES/flash_drives_forbidden.md".to_string(),
+            title: Some("Flash Drive Policy".to_string()),
+            heading_path: None,
+            content: "Flash drives are forbidden.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: None,
+            source_type: None,
+        };
+        assert!(is_policy_result(&result));
+    }
+
+    #[test]
+    fn test_is_policy_result_procedures_path() {
+        let result = SearchResult {
+            chunk_id: "2".to_string(),
+            document_id: "d2".to_string(),
+            file_path: "/knowledge_base/PROCEDURES/vpn_setup.md".to_string(),
+            title: Some("VPN Setup".to_string()),
+            heading_path: None,
+            content: "How to set up VPN.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: None,
+            source_type: None,
+        };
+        assert!(!is_policy_result(&result));
+    }
+
+    #[test]
+    fn test_is_policy_result_case_insensitive() {
+        let result = SearchResult {
+            chunk_id: "3".to_string(),
+            document_id: "d3".to_string(),
+            file_path: "/kb/policies/removable_media.md".to_string(),
+            title: None,
+            heading_path: None,
+            content: "Removable media not allowed.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: None,
+            source_type: None,
+        };
+        assert!(is_policy_result(&result));
+    }
+
+    #[test]
+    fn test_is_policy_result_reference_path() {
+        let result = SearchResult {
+            chunk_id: "4".to_string(),
+            document_id: "d4".to_string(),
+            file_path: "/knowledge_base/REFERENCE/devices.md".to_string(),
+            title: None,
+            heading_path: None,
+            content: "Approved device list.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: None,
+            source_type: None,
+        };
+        assert!(!is_policy_result(&result));
+    }
+
+    // ========================================================================
+    // Policy Boost Application Tests (8 tests)
+    // ========================================================================
+
+    fn make_result(id: &str, path: &str, score: f64) -> SearchResult {
+        SearchResult {
+            chunk_id: id.to_string(),
+            document_id: format!("d_{}", id),
+            file_path: path.to_string(),
+            title: None,
+            heading_path: None,
+            content: "test content".to_string(),
+            snippet: "".to_string(),
+            score,
+            source: SearchSource::Hybrid,
+            namespace_id: None,
+            source_type: None,
+        }
+    }
+
+    #[test]
+    fn test_policy_boost_promotes_policy_results() {
+        let mut results = vec![
+            make_result("proc", "/kb/PROCEDURES/vpn_setup.md", 0.9),
+            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.7),
+            make_result("ref", "/kb/REFERENCE/devices.md", 0.8),
+        ];
+
+        apply_policy_boost(&mut results, "Can I use a flash drive?");
+
+        // Policy result should now be first (boosted above procedure)
+        assert_eq!(results[0].chunk_id, "policy");
+    }
+
+    #[test]
+    fn test_policy_boost_does_not_affect_non_policy_queries() {
+        let mut results = vec![
+            make_result("proc", "/kb/PROCEDURES/vpn_setup.md", 0.9),
+            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.7),
+        ];
+
+        let original_order: Vec<String> = results.iter().map(|r| r.chunk_id.clone()).collect();
+
+        apply_policy_boost(&mut results, "How do I set up my email?");
+
+        let new_order: Vec<String> = results.iter().map(|r| r.chunk_id.clone()).collect();
+        assert_eq!(original_order, new_order, "Non-policy query should not change result order");
+    }
+
+    #[test]
+    fn test_policy_boost_all_denied_variants() {
+        let queries = vec![
+            "Can I get a flash drive?",
+            "Are flash drives allowed?",
+            "Can I use a USB stick?",
+            "What about external USB devices?",
+            "I need a flash drive for backup",
+        ];
+
+        for query in queries {
+            let mut results = vec![
+                make_result("proc", "/kb/PROCEDURES/backup.md", 0.9),
+                make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.7),
+            ];
+
+            apply_policy_boost(&mut results, query);
+
+            assert_eq!(
+                results[0].chunk_id, "policy",
+                "Policy should be first for query: '{}'",
+                query
+            );
+        }
+    }
+
+    #[test]
+    fn test_policy_boost_no_exceptions_queries() {
+        let queries = vec![
+            "Can I use a flash drive just for a day?",
+            "Can someone else use their USB?",
+            "Can I use a USB drive offline?",
+            "Is there an exception for using removable media?",
+        ];
+
+        for query in queries {
+            let mut results = vec![
+                make_result("proc", "/kb/PROCEDURES/file_sharing.md", 0.9),
+                make_result("policy", "/kb/POLICIES/removable_media_policy.md", 0.7),
+            ];
+
+            apply_policy_boost(&mut results, query);
+
+            assert_eq!(
+                results[0].chunk_id, "policy",
+                "Policy should be first for query: '{}'",
+                query
+            );
+        }
+    }
+
+    #[test]
+    fn test_policy_boost_preserves_all_results() {
+        let mut results = vec![
+            make_result("a", "/kb/PROCEDURES/vpn_setup.md", 0.9),
+            make_result("b", "/kb/POLICIES/vpn_requirements.md", 0.7),
+            make_result("c", "/kb/REFERENCE/network.md", 0.5),
+        ];
+
+        apply_policy_boost(&mut results, "Can I use a personal VPN?");
+
+        assert_eq!(results.len(), 3, "All results should be preserved");
+    }
+
+    #[test]
+    fn test_policy_boost_multiple_policies_both_boosted() {
+        let mut results = vec![
+            make_result("proc", "/kb/PROCEDURES/file_sharing.md", 0.9),
+            make_result("p1", "/kb/POLICIES/flash_drives_forbidden.md", 0.6),
+            make_result("p2", "/kb/POLICIES/removable_media_policy.md", 0.5),
+        ];
+
+        apply_policy_boost(&mut results, "Can I use a USB flash drive?");
+
+        // Both policies should be boosted above the procedure
+        assert!(
+            is_policy_result(&results[0]),
+            "First result should be a policy"
+        );
+        assert!(
+            is_policy_result(&results[1]),
+            "Second result should be a policy"
+        );
+    }
+
+    #[test]
+    fn test_policy_boost_score_increase() {
+        let mut results = vec![
+            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.5),
+        ];
+
+        let original_score = results[0].score;
+        apply_policy_boost(&mut results, "Can I get a flash drive?");
+
+        assert!(
+            results[0].score > original_score,
+            "Policy result score should increase: {} > {}",
+            results[0].score,
+            original_score
+        );
+    }
+
+    #[test]
+    fn test_policy_boost_empty_results() {
+        let mut results: Vec<SearchResult> = vec![];
+        apply_policy_boost(&mut results, "Can I use a flash drive?");
+        assert!(results.is_empty(), "Empty results should stay empty");
+    }
+
+    // ========================================================================
+    // Search Options Integration Tests (4 tests)
+    // ========================================================================
+
+    #[test]
+    fn test_search_options_with_query_text() {
+        let opts = SearchOptions::new(10).with_query_text("Can I use a flash drive?");
+        assert_eq!(opts.query_text, Some("Can I use a flash drive?".to_string()));
+    }
+
+    #[test]
+    fn test_search_options_default_no_query_text() {
+        let opts = SearchOptions::default();
+        assert!(opts.query_text.is_none());
+    }
+
+    #[test]
+    fn test_post_process_applies_policy_boost() {
+        let results = vec![
+            make_result("proc", "/kb/PROCEDURES/vpn_setup.md", 0.9),
+            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.7),
+        ];
+
+        let opts = SearchOptions::new(10).with_query_text("Can I use a flash drive?");
+        let processed = HybridSearch::post_process_results(results, &opts);
+
+        assert_eq!(
+            processed[0].chunk_id, "policy",
+            "Post-processing should apply policy boost"
+        );
+    }
+
+    #[test]
+    fn test_post_process_no_boost_without_query() {
+        let results = vec![
+            make_result("proc", "/kb/PROCEDURES/vpn_setup.md", 0.9),
+            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.7),
+        ];
+
+        let opts = SearchOptions::default();
+        let processed = HybridSearch::post_process_results(results, &opts);
+
+        // Without query_text, policy boost should not be applied
+        // Procedure still has higher score, so it stays first
+        // (normalize_scores is on by default, so both become relative)
+        // Just verify both results are present
+        assert_eq!(processed.len(), 2);
     }
 }

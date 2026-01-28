@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.3] - 2026-01-28
+
+### Added
+- **Policy-First Search Ranking**: Search results from POLICIES/ documents are automatically boosted when the query is policy-related (permission checks, restriction queries)
+- **Policy Query Detection**: New `is_policy_query()` and `policy_query_confidence()` functions detect permission/restriction questions with confidence scoring
+- **Policy Enforcement in System Prompt**: Updated IT support system prompt (v5.1.0) with strict policy enforcement rules — forbidden items are denied with alternatives, no exceptions
+- **Knowledge Base Structure**: Created `knowledge_base/` directory with POLICIES/ (12 files), PROCEDURES/ (8 files), and REFERENCE/ (6 files) — 26 articles total
+- **38 New Tests**: Policy detection (10), confidence scoring (4), result classification (4), boost application (8), search integration (4), prompt enforcement (8)
+
+### Changed
+- `SearchOptions` now carries `query_text` for policy-aware post-processing
+- `HybridSearch::post_process_results()` applies policy boost before score normalization
+- System prompt template version bumped from 5.0.0 to 5.1.0
+- Template name updated to `it_support_v3_policy`
+- `search_kb_with_options` command now passes query text into search options and applies post-processing
+
+### Technical Details
+- Policy confidence scoring: keywords (0.5) + restricted items (0.5) + question patterns (0.2), capped at 1.0
+- Policy boost: `POLICY_BOOST (0.5) * confidence` added to scores of POLICIES/ results
+- Threshold for policy detection: confidence >= 0.4
+- Policy boost applied before normalization to preserve ranking impact
+
 ## [0.5.0] - 2026-01-28
 
 ### Changed

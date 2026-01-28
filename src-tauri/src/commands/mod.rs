@@ -311,7 +311,9 @@ pub async fn search_kb_with_options(
     let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
 
     // Build search options
-    let mut search_opts = SearchOptions::new(limit).with_namespace(namespace_id.clone());
+    let mut search_opts = SearchOptions::new(limit)
+        .with_namespace(namespace_id.clone())
+        .with_query_text(&query);
 
     if let Some(opts) = options {
         if let (Some(fts_w), Some(vec_w)) = (opts.fts_weight, opts.vector_weight) {
@@ -376,8 +378,14 @@ pub async fn search_kb_with_options(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Fuse results with configurable options (weights, dedup)
-    HybridSearch::fuse_results_with_options(db, fts_results, vector_results, search_opts)
-        .map_err(|e| e.to_string())
+    let mut results =
+        HybridSearch::fuse_results_with_options(db, fts_results, vector_results, search_opts.clone())
+            .map_err(|e| e.to_string())?;
+
+    // Apply post-processing (policy boost, score normalization, snippet sanitization)
+    results = HybridSearch::post_process_results(results, &search_opts);
+
+    Ok(results)
 }
 
 /// Get formatted context for LLM injection from search results
