@@ -33,7 +33,7 @@
 .input:focus {
   outline: none;
   border-color: var(--input-focus);
-  box-shadow: var(--shadow-focus-ring);
+  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
 }
 
 .input:disabled {
@@ -105,7 +105,7 @@
 .textarea:focus {
   outline: none;
   border-color: var(--input-focus);
-  box-shadow: var(--shadow-focus-ring);
+  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
 }
 
 .textarea:disabled {
@@ -143,7 +143,7 @@
 .select:focus {
   outline: none;
   border-color: var(--input-focus);
-  box-shadow: var(--shadow-focus-ring);
+  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
 }
 
 .select:disabled {
@@ -214,8 +214,9 @@
 
 .modal {
   background: var(--bg-elevated);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-2xl);
+  border: 1px solid var(--border-light);
   max-width: var(--container-lg);
   width: 100%;
   max-height: calc(100vh - var(--space-8));
@@ -429,8 +430,8 @@
   padding: var(--space-1);
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   z-index: var(--z-dropdown);
   opacity: 0;
   visibility: hidden;
@@ -911,5 +912,11 @@
 
   .modal {
     animation: none;
+  }
+
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

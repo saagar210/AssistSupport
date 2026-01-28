@@ -151,6 +151,64 @@ html, body, #root {
 }
 
 /* ============================================================================
+   Slide & Fade Animations
+   ============================================================================ */
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideInUp 0.3s var(--ease-out);
+}
+
+.animate-slide-left {
+  animation: slideInLeft 0.2s var(--ease-out);
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s var(--ease-out);
+}
+
+/* ============================================================================
    Error State
    ============================================================================ */
 
@@ -281,12 +339,14 @@ html, body, #root {
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: var(--card-radius);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
-  transition: var(--transition-all);
+  transition: border-color var(--duration-fast) var(--ease-in-out),
+              box-shadow var(--duration-fast) var(--ease-in-out);
 }
 
 .card:hover {
+  border-color: var(--border-strong);
   box-shadow: var(--shadow-md);
 }
 

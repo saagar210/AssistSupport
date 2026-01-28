@@ -8,103 +8,104 @@
 :root {
   /* =========================================================================
      LIGHT THEME (Default)
-     Using Tailwind Slate palette - sophisticated neutral gray with blue undertones
+     ChatGPT-inspired neutral palette with green accent.
+     Clean whites and soft grays for professional, spacious feel.
      ========================================================================= */
 
   /* Backgrounds */
   --bg-primary: #ffffff;            /* White - main content area */
-  --bg-secondary: #f8fafc;          /* Slate-50 - subtle background */
-  --bg-tertiary: #f1f5f9;           /* Slate-100 - emphasized sections */
+  --bg-secondary: #f7f7f8;         /* Soft gray - subtle sections */
+  --bg-tertiary: #ececf1;          /* Light gray - emphasized areas */
   --bg-elevated: #ffffff;           /* Elevated surfaces (cards, modals) */
-  --bg-hover: #e2e8f0;              /* Slate-200 - hover states */
-  --bg-active: #cbd5e1;             /* Slate-300 - pressed/active states */
-  --bg-inverse: #0f172a;            /* Slate-900 - inverse backgrounds */
+  --bg-hover: #e8e8ed;             /* Hover states */
+  --bg-active: #d1d5db;            /* Pressed/active states */
+  --bg-inverse: #0d0d0d;           /* Deep black - inverse backgrounds */
 
   /* Text */
-  --text-primary: #0f172a;          /* Slate-900 - primary text */
-  --text-secondary: #475569;        /* Slate-600 - secondary text */
-  --text-muted: #94a3b8;            /* Slate-400 - muted/placeholder */
-  --text-inverse: #f8fafc;          /* Slate-50 - text on dark bg */
-  --text-link: #2563eb;             /* Blue-600 - link text */
-  --text-link-hover: #1d4ed8;       /* Blue-700 - link hover */
+  --text-primary: #0d0d0d;         /* Near black - primary text */
+  --text-secondary: #565869;       /* Medium gray - secondary text */
+  --text-muted: #8e8ea0;           /* Muted gray - placeholder/hints */
+  --text-inverse: #ececf1;         /* Off-white - text on dark bg */
+  --text-link: #10a37f;            /* Green - link text */
+  --text-link-hover: #0d9466;      /* Dark green - link hover */
 
   /* Borders */
-  --border-light: #f1f5f9;          /* Slate-100 - subtle dividers */
-  --border-color: #e2e8f0;          /* Slate-200 - default borders */
-  --border-strong: #cbd5e1;         /* Slate-300 - emphasized borders */
-  --border-inverse: #334155;        /* Slate-700 */
+  --border-light: #ececf1;         /* Subtle dividers */
+  --border-color: #d9d9e3;         /* Default borders */
+  --border-strong: #c5c5d2;        /* Emphasized borders */
+  --border-inverse: #404040;       /* Inverse borders */
 
-  /* Accent - Primary Blue */
-  --accent-primary: #2563eb;        /* Blue-600 - primary accent */
-  --accent-hover: #1d4ed8;          /* Blue-700 - accent hover */
-  --accent-active: #1e40af;         /* Blue-800 - accent pressed */
-  --accent-light: #dbeafe;          /* Blue-100 - accent backgrounds */
-  --accent-lighter: #eff6ff;        /* Blue-50 - subtle accent bg */
-  --accent-gradient: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  --border-color-hover: #94a3b8;    /* Slate-400 - border hover */
+  /* Accent - ChatGPT Green */
+  --accent-primary: #10a37f;       /* Primary green accent */
+  --accent-hover: #0d9466;         /* Darker green - hover */
+  --accent-active: #0a7d56;        /* Darkest green - pressed */
+  --accent-light: #d1f2eb;         /* Light green tint */
+  --accent-lighter: #edf9f5;       /* Subtle green bg */
+  --accent-gradient: linear-gradient(135deg, #10a37f 0%, #0d9466 100%);
+  --border-color-hover: #8e8ea0;   /* Border hover */
 
   /* Semantic Colors - Success (Green) */
-  --success: #16a34a;               /* Green-600 */
-  --success-hover: #15803d;         /* Green-700 */
-  --success-light: #dcfce7;         /* Green-100 */
-  --success-lighter: #f0fdf4;       /* Green-50 */
+  --success: #10a37f;              /* Same as accent */
+  --success-hover: #0d9466;
+  --success-light: #d1f2eb;
+  --success-lighter: #edf9f5;
 
   /* Semantic Colors - Warning (Amber) */
-  --warning: #d97706;               /* Amber-600 */
-  --warning-hover: #b45309;         /* Amber-700 */
-  --warning-light: #fef3c7;         /* Amber-100 */
-  --warning-lighter: #fffbeb;       /* Amber-50 */
+  --warning: #d97706;
+  --warning-hover: #b45309;
+  --warning-light: #fef3c7;
+  --warning-lighter: #fffbeb;
 
   /* Semantic Colors - Error (Red) */
-  --error: #dc2626;                 /* Red-600 */
-  --error-hover: #b91c1c;           /* Red-700 */
-  --error-light: #fee2e2;           /* Red-100 */
-  --error-lighter: #fef2f2;         /* Red-50 */
+  --error: #ef4444;
+  --error-hover: #dc2626;
+  --error-light: #fee2e2;
+  --error-lighter: #fef2f2;
 
-  /* Semantic Colors - Info (Blue - same as accent) */
-  --info: #2563eb;                  /* Blue-600 */
-  --info-hover: #1d4ed8;            /* Blue-700 */
-  --info-light: #dbeafe;            /* Blue-100 */
-  --info-lighter: #eff6ff;          /* Blue-50 */
+  /* Semantic Colors - Info (Soft blue) */
+  --info: #3b82f6;
+  --info-hover: #2563eb;
+  --info-light: #dbeafe;
+  --info-lighter: #eff6ff;
 
   /* Component-specific tokens */
   --input-bg: #ffffff;
-  --input-border: #cbd5e1;          /* Slate-300 */
-  --input-border-hover: #94a3b8;    /* Slate-400 */
-  --input-focus: #2563eb;           /* Blue-600 */
-  --input-placeholder: #94a3b8;     /* Slate-400 */
+  --input-border: #d9d9e3;
+  --input-border-hover: #8e8ea0;
+  --input-focus: #10a37f;          /* Green focus ring */
+  --input-placeholder: #8e8ea0;
 
   /* Cards */
   --card-bg: #ffffff;
-  --card-border: #e2e8f0;           /* Slate-200 */
-  --card-shadow: rgba(15, 23, 42, 0.08);
+  --card-border: #d9d9e3;
+  --card-shadow: rgba(0, 0, 0, 0.06);
 
   /* Tab bar */
-  --tab-bg: #f8fafc;                /* Slate-50 */
+  --tab-bg: #f7f7f8;
   --tab-active-bg: #ffffff;
-  --tab-text: #64748b;              /* Slate-500 */
-  --tab-active-text: #0f172a;       /* Slate-900 */
-  --tab-indicator: #2563eb;         /* Blue-600 */
+  --tab-text: #8e8ea0;
+  --tab-active-text: #0d0d0d;
+  --tab-indicator: #10a37f;        /* Green indicator */
 
   /* Sidebar */
-  --sidebar-bg: #f8fafc;            /* Slate-50 */
-  --sidebar-border: #e2e8f0;        /* Slate-200 */
-  --sidebar-item-hover: #e2e8f0;    /* Slate-200 */
-  --sidebar-item-active: #dbeafe;   /* Blue-100 */
+  --sidebar-bg: #f7f7f8;
+  --sidebar-border: #ececf1;
+  --sidebar-item-hover: #e8e8ed;
+  --sidebar-item-active: #d1f2eb;  /* Green tint for active */
 
   /* Scrollbar */
-  --scrollbar-track: #f1f5f9;       /* Slate-100 */
-  --scrollbar-thumb: #cbd5e1;       /* Slate-300 */
-  --scrollbar-thumb-hover: #94a3b8; /* Slate-400 */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #d9d9e3;
+  --scrollbar-thumb-hover: #8e8ea0;
 
   /* Overlay */
-  --overlay-bg: rgba(15, 23, 42, 0.4);
-  --backdrop-blur: 4px;
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --backdrop-blur: 8px;
 
   /* Code/Syntax */
-  --code-bg: #f1f5f9;               /* Slate-100 */
-  --code-text: #0f172a;             /* Slate-900 */
-  --code-border: #e2e8f0;           /* Slate-200 */
+  --code-bg: #f7f7f8;
+  --code-text: #0d0d0d;
+  --code-border: #ececf1;
 }
 
 /* ============================================================================
@@ -112,110 +113,116 @@
    ============================================================================ */
 
 :root[data-theme="dark"] {
+  /* =========================================================================
+     DARK THEME
+     Truly dark backgrounds inspired by ChatGPT desktop.
+     Deep blacks with subtle gray hierarchy.
+     ========================================================================= */
+
   /* Backgrounds */
-  --bg-primary: #0f172a;            /* Slate-900 - main content */
-  --bg-secondary: #1e293b;          /* Slate-800 - subtle background */
-  --bg-tertiary: #334155;           /* Slate-700 - emphasized sections */
-  --bg-elevated: #1e293b;           /* Slate-800 - elevated surfaces */
-  --bg-hover: #475569;              /* Slate-600 - hover states */
-  --bg-active: #64748b;             /* Slate-500 - pressed/active */
-  --bg-inverse: #f8fafc;            /* Slate-50 - inverse backgrounds */
+  --bg-primary: #0d0d0d;           /* Deep black - main content */
+  --bg-secondary: #171717;         /* Very dark gray - subtle areas */
+  --bg-tertiary: #262626;          /* Dark gray - emphasized sections */
+  --bg-elevated: #1a1a1a;          /* Elevated surfaces */
+  --bg-hover: #2f2f2f;             /* Hover states */
+  --bg-active: #3f3f3f;            /* Pressed/active */
+  --bg-inverse: #ececf1;           /* Off-white inverse */
 
   /* Text */
-  --text-primary: #f8fafc;          /* Slate-50 - primary text */
-  --text-secondary: #cbd5e1;        /* Slate-300 - secondary text */
-  --text-muted: #7c8ca0;            /* Slate-500 adjusted - WCAG AA compliant */
-  --text-inverse: #0f172a;          /* Slate-900 - text on light bg */
-  --text-link: #60a5fa;             /* Blue-400 - link text */
-  --text-link-hover: #93c5fd;       /* Blue-300 - link hover */
+  --text-primary: #ececf1;         /* Off-white - primary text */
+  --text-secondary: #b4b4b8;       /* Light gray - secondary text */
+  --text-muted: #6e6e80;           /* Medium gray - WCAG AA on #0d0d0d */
+  --text-inverse: #0d0d0d;         /* Near black - text on light bg */
+  --text-link: #2dd4a8;            /* Bright green - links */
+  --text-link-hover: #5eead4;      /* Light green - link hover */
 
   /* Borders */
-  --border-light: #1e293b;          /* Slate-800 - subtle dividers */
-  --border-color: #334155;          /* Slate-700 - default borders */
-  --border-strong: #475569;         /* Slate-600 - emphasized borders */
-  --border-inverse: #e2e8f0;        /* Slate-200 */
+  --border-light: #1e1e1e;         /* Very subtle dividers */
+  --border-color: #2f2f2f;         /* Default borders */
+  --border-strong: #404040;        /* Emphasized borders */
+  --border-inverse: #d9d9e3;       /* Inverse borders */
 
-  /* Accent - Brighter blue for dark mode */
-  --accent-primary: #3b82f6;        /* Blue-500 */
-  --accent-hover: #60a5fa;          /* Blue-400 */
-  --accent-active: #2563eb;         /* Blue-600 */
-  --accent-light: #1e3a5f;          /* Custom dark blue */
-  --accent-lighter: #172554;        /* Blue-950 */
-  --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  --border-color-hover: #64748b;    /* Slate-500 - border hover */
+  /* Accent - Green works in both modes */
+  --accent-primary: #10a37f;       /* Same green */
+  --accent-hover: #2dd4a8;         /* Brighter green for dark bg */
+  --accent-active: #0d9466;        /* Darker green pressed */
+  --accent-light: #1a2f2b;         /* Dark green tint */
+  --accent-lighter: #0d1f1b;       /* Very dark green */
+  --accent-gradient: linear-gradient(135deg, #10a37f 0%, #0d9466 100%);
+  --border-color-hover: #505050;   /* Border hover */
 
   /* Semantic Colors - Success */
-  --success: #22c55e;               /* Green-500 */
-  --success-hover: #4ade80;         /* Green-400 */
-  --success-light: #14532d;         /* Green-900 */
-  --success-lighter: #052e16;       /* Green-950 */
+  --success: #10a37f;
+  --success-hover: #2dd4a8;
+  --success-light: #1a2f2b;
+  --success-lighter: #0d1f1b;
 
   /* Semantic Colors - Warning */
-  --warning: #f59e0b;               /* Amber-500 */
-  --warning-hover: #fbbf24;         /* Amber-400 */
-  --warning-light: #78350f;         /* Amber-900 */
-  --warning-lighter: #451a03;       /* Amber-950 */
+  --warning: #f59e0b;
+  --warning-hover: #fbbf24;
+  --warning-light: #3d2800;
+  --warning-lighter: #261a00;
 
   /* Semantic Colors - Error */
-  --error: #ef4444;                 /* Red-500 */
-  --error-hover: #f87171;           /* Red-400 */
-  --error-light: #7f1d1d;           /* Red-900 */
-  --error-lighter: #450a0a;         /* Red-950 */
+  --error: #ef4444;
+  --error-hover: #f87171;
+  --error-light: #3b1111;
+  --error-lighter: #280c0c;
 
   /* Semantic Colors - Info */
-  --info: #3b82f6;                  /* Blue-500 */
-  --info-hover: #60a5fa;            /* Blue-400 */
-  --info-light: #1e3a5f;            /* Custom */
-  --info-lighter: #172554;          /* Blue-950 */
+  --info: #3b82f6;
+  --info-hover: #60a5fa;
+  --info-light: #1a2740;
+  --info-lighter: #111a2e;
 
   /* Component-specific tokens */
-  --input-bg: #1e293b;              /* Slate-800 */
-  --input-border: #475569;          /* Slate-600 */
-  --input-border-hover: #64748b;    /* Slate-500 */
-  --input-focus: #3b82f6;           /* Blue-500 */
-  --input-placeholder: #64748b;     /* Slate-500 */
+  --input-bg: #171717;
+  --input-border: #2f2f2f;
+  --input-border-hover: #404040;
+  --input-focus: #10a37f;          /* Green focus */
+  --input-placeholder: #6e6e80;
 
   /* Cards */
-  --card-bg: #1e293b;               /* Slate-800 */
-  --card-border: #334155;           /* Slate-700 */
-  --card-shadow: rgba(0, 0, 0, 0.3);
+  --card-bg: #171717;
+  --card-border: #2f2f2f;
+  --card-shadow: rgba(0, 0, 0, 0.4);
 
   /* Tab bar */
-  --tab-bg: #1e293b;                /* Slate-800 */
-  --tab-active-bg: #0f172a;         /* Slate-900 */
-  --tab-text: #94a3b8;              /* Slate-400 */
-  --tab-active-text: #f8fafc;       /* Slate-50 */
-  --tab-indicator: #3b82f6;         /* Blue-500 */
+  --tab-bg: #171717;
+  --tab-active-bg: #0d0d0d;
+  --tab-text: #6e6e80;
+  --tab-active-text: #ececf1;
+  --tab-indicator: #10a37f;        /* Green indicator */
 
   /* Sidebar */
-  --sidebar-bg: #1e293b;            /* Slate-800 */
-  --sidebar-border: #334155;        /* Slate-700 */
-  --sidebar-item-hover: #334155;    /* Slate-700 */
-  --sidebar-item-active: #1e3a5f;   /* Custom dark blue */
+  --sidebar-bg: #171717;
+  --sidebar-border: #1e1e1e;
+  --sidebar-item-hover: #2f2f2f;
+  --sidebar-item-active: #1a2f2b;  /* Dark green tint */
 
   /* Scrollbar */
-  --scrollbar-track: #1e293b;       /* Slate-800 */
-  --scrollbar-thumb: #475569;       /* Slate-600 */
-  --scrollbar-thumb-hover: #64748b; /* Slate-500 */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #2f2f2f;
+  --scrollbar-thumb-hover: #404040;
 
   /* Overlay */
-  --overlay-bg: rgba(0, 0, 0, 0.6);
-  --backdrop-blur: 4px;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  --backdrop-blur: 8px;
 
   /* Code/Syntax */
-  --code-bg: #1e293b;               /* Slate-800 */
-  --code-text: #e2e8f0;             /* Slate-200 */
-  --code-border: #334155;           /* Slate-700 */
+  --code-bg: #1a1a1a;
+  --code-text: #d1d5db;
+  --code-border: #2f2f2f;
 }
 
 /* ============================================================================
    GLOBAL STYLES
    ============================================================================ */
 
-/* Scrollbar styles */
+/* Scrollbar styles - thin, minimal, elegant */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -224,11 +231,22 @@
 
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* Hide scrollbar until hover on containers */
+.sidebar::-webkit-scrollbar-thumb,
+.panel-content::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb,
+.panel-content:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
 }
 
 /* Selection */

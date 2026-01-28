@@ -1109,7 +1109,7 @@ export function SettingsTab() {
           AssistSupport - Local AI-powered support ticket assistant
         </p>
         <div className="about-info">
-          <p>Version 0.4.1</p>
+          <p>Version 0.5.0</p>
           <p>All processing happens locally on your machine.</p>
         </div>
       </section>

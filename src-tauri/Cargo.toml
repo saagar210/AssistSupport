@@ -1,6 +1,6 @@
 [package]
 name = "assistsupport"
-version = "0.4.1"
+version = "0.5.0"
 description = "AI-powered IT Support Assistant"
 authors = ["you"]
 edition = "2021"
