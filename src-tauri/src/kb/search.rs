@@ -114,6 +114,102 @@ impl SearchOptions {
     }
 }
 
+/// Check if a token contains both letters and digits (mixed alphanumeric)
+fn is_mixed_alphanumeric(token: &str) -> bool {
+    let has_alpha = token.chars().any(|c| c.is_alphabetic());
+    let has_digit = token.chars().any(|c| c.is_ascii_digit());
+    has_alpha && has_digit
+}
+
+/// Split a mixed alphanumeric token at digit/letter boundaries
+/// e.g., "6sense" -> ["6", "sense"], "h2o" -> ["h", "2", "o"]
+fn split_mixed_alphanumeric(token: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut last_was_digit: Option<bool> = None;
+
+    for c in token.chars() {
+        let is_digit = c.is_ascii_digit();
+        if let Some(prev) = last_was_digit {
+            if prev != is_digit && !current.is_empty() {
+                parts.push(current.clone());
+                current.clear();
+            }
+        }
+        current.push(c);
+        last_was_digit = Some(is_digit);
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+/// Preprocess a query string for FTS5 MATCH
+///
+/// Handles:
+/// - Mixed alphanumeric tokens: "6sense" → `("6sense" OR 6 sense)`
+/// - Multi-word queries: "vpn connection" → `("vpn connection" OR vpn OR connection)`
+/// - Strips double quotes to prevent FTS5 syntax errors
+/// - Empty queries return empty string
+pub fn preprocess_fts5_query(query: &str) -> String {
+    // Strip double quotes to prevent FTS5 syntax errors
+    let query = query.replace('"', "");
+    let query = query.trim();
+
+    if query.is_empty() {
+        return String::new();
+    }
+
+    let words: Vec<&str> = query.split_whitespace().collect();
+
+    if words.is_empty() {
+        return String::new();
+    }
+
+    // Check if any word is mixed alphanumeric
+    let has_mixed = words.iter().any(|w| is_mixed_alphanumeric(w));
+
+    if words.len() == 1 {
+        let word = words[0];
+        if is_mixed_alphanumeric(word) {
+            let parts = split_mixed_alphanumeric(word);
+            // ("6sense" OR 6 sense)
+            return format!(
+                "(\"{word}\" OR {})",
+                parts.join(" ")
+            );
+        }
+        // Single simple word - return as-is
+        return word.to_string();
+    }
+
+    // Multi-word query
+    let mut alternatives = Vec::new();
+
+    // Full phrase match
+    alternatives.push(format!("\"{}\"", words.join(" ")));
+
+    // Individual words (with mixed alphanumeric expansion)
+    for word in &words {
+        if is_mixed_alphanumeric(word) {
+            let parts = split_mixed_alphanumeric(word);
+            alternatives.push(format!("\"{}\"", word));
+            for part in parts {
+                alternatives.push(part);
+            }
+        } else {
+            alternatives.push(word.to_string());
+        }
+    }
+
+    if has_mixed || words.len() > 1 {
+        format!("({})", alternatives.join(" OR "))
+    } else {
+        alternatives.join(" OR ")
+    }
+}
+
 impl HybridSearch {
     /// Perform FTS5-only search (sync version)
     pub fn search(
@@ -267,6 +363,36 @@ impl HybridSearch {
         namespace_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchResult>, SearchError> {
+        // Preprocess query for better FTS5 matching
+        let preprocessed = preprocess_fts5_query(query);
+        if preprocessed.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Try with preprocessed query first, fall back to simple quoted phrase on error
+        match Self::fts_search_raw(db, &preprocessed, namespace_id, limit) {
+            Ok(results) => Ok(results),
+            Err(_) => {
+                // Fallback: wrap original query as a simple quoted phrase
+                let fallback = format!(
+                    "\"{}\"",
+                    query.replace('"', "").trim()
+                );
+                if fallback == "\"\"" {
+                    return Ok(vec![]);
+                }
+                Self::fts_search_raw(db, &fallback, namespace_id, limit)
+            }
+        }
+    }
+
+    /// Execute a raw FTS5 query (internal helper)
+    fn fts_search_raw(
+        db: &Database,
+        fts_query: &str,
+        namespace_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, SearchError> {
         let conn = db.conn();
 
         let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) =
@@ -293,7 +419,7 @@ impl HybridSearch {
                 "#
                     .to_string(),
                     vec![
-                        Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(fts_query.to_string()) as Box<dyn rusqlite::ToSql>,
                         Box::new(ns.to_string()),
                         Box::new(limit as i64),
                     ],
@@ -321,7 +447,7 @@ impl HybridSearch {
                 "#
                     .to_string(),
                     vec![
-                        Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(fts_query.to_string()) as Box<dyn rusqlite::ToSql>,
                         Box::new(limit as i64),
                     ],
                 )
@@ -1102,5 +1228,72 @@ mod tests {
 
         // All bits different in 4-bit example
         assert_eq!(SimHash::hamming_distance(0b0000, 0b1111), 4);
+    }
+
+    // FTS5 query preprocessing tests
+
+    #[test]
+    fn test_is_mixed_alphanumeric() {
+        assert!(is_mixed_alphanumeric("6sense"));
+        assert!(is_mixed_alphanumeric("h2o"));
+        assert!(is_mixed_alphanumeric("abc123"));
+        assert!(!is_mixed_alphanumeric("hello"));
+        assert!(!is_mixed_alphanumeric("12345"));
+        assert!(!is_mixed_alphanumeric(""));
+    }
+
+    #[test]
+    fn test_split_mixed_alphanumeric_basic() {
+        let parts = split_mixed_alphanumeric("6sense");
+        assert_eq!(parts, vec!["6", "sense"]);
+    }
+
+    #[test]
+    fn test_split_mixed_alphanumeric_multiple() {
+        let parts = split_mixed_alphanumeric("h2o");
+        assert_eq!(parts, vec!["h", "2", "o"]);
+    }
+
+    #[test]
+    fn test_split_mixed_alphanumeric_trailing_digits() {
+        let parts = split_mixed_alphanumeric("abc123");
+        assert_eq!(parts, vec!["abc", "123"]);
+    }
+
+    #[test]
+    fn test_preprocess_empty_query() {
+        assert_eq!(preprocess_fts5_query(""), "");
+        assert_eq!(preprocess_fts5_query("   "), "");
+    }
+
+    #[test]
+    fn test_preprocess_simple_word() {
+        assert_eq!(preprocess_fts5_query("vpn"), "vpn");
+    }
+
+    #[test]
+    fn test_preprocess_mixed_alphanumeric() {
+        let result = preprocess_fts5_query("6sense");
+        assert!(result.contains("\"6sense\""), "Should contain quoted original: {}", result);
+        assert!(result.contains("OR"), "Should contain OR: {}", result);
+        assert!(result.contains("6"), "Should contain digit part: {}", result);
+        assert!(result.contains("sense"), "Should contain alpha part: {}", result);
+    }
+
+    #[test]
+    fn test_preprocess_multi_word() {
+        let result = preprocess_fts5_query("vpn connection");
+        assert!(result.contains("\"vpn connection\""), "Should contain quoted phrase: {}", result);
+        assert!(result.contains("OR"), "Should contain OR: {}", result);
+        assert!(result.contains("vpn"), "Should contain individual word: {}", result);
+        assert!(result.contains("connection"), "Should contain individual word: {}", result);
+    }
+
+    #[test]
+    fn test_preprocess_strips_double_quotes() {
+        let result = preprocess_fts5_query("\"6sense\"");
+        // Should not have unmatched quotes that would cause FTS5 syntax error
+        assert!(!result.contains("\"\""), "Should not have empty quotes: {}", result);
+        assert!(result.contains("6sense"), "Should still contain the term: {}", result);
     }
 }

@@ -1,7 +1,7 @@
 //! Prompt templates and context injection for AssistSupport
 //! Handles system prompts, KB context formatting, and prompt safety
 //!
-//! ## Prompt Architecture (v3.0)
+//! ## Prompt Architecture (v4.0)
 //! - Versioned templates for A/B testing and rollback
 //! - Citation-required policy: no citation, no claim
 //! - Prompt injection defense via UNTRUSTED fencing and sanitization
@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 /// - MAJOR: Breaking changes to prompt structure
 /// - MINOR: New features or significant improvements
 /// - PATCH: Minor tweaks and fixes
-pub const PROMPT_TEMPLATE_VERSION: &str = "3.0.0";
+pub const PROMPT_TEMPLATE_VERSION: &str = "4.0.0";
 
 /// Prompt template metadata for versioning and analytics
 #[derive(Debug, Clone, serde::Serialize)]
@@ -33,21 +33,29 @@ impl Default for PromptMetadata {
     fn default() -> Self {
         Self {
             version: PROMPT_TEMPLATE_VERSION,
-            template_name: "it_support_v2",
+            template_name: "it_support_v3",
             is_experimental: false,
         }
     }
 }
 
 /// Default system prompt for IT support assistant
-pub const IT_SUPPORT_SYSTEM_PROMPT: &str = r#"You are an expert IT Support assistant helping resolve technical issues efficiently. Your role is to:
+pub const IT_SUPPORT_SYSTEM_PROMPT: &str = r#"You are helping an IT support engineer draft a response to send to an end user who has reported a technical issue. Your role is to:
 
-1. Analyze the user's problem description to understand the issue
-2. Use any provided knowledge base context to inform your response
-3. Generate a clear, professional response for the end user
+1. Analyze the end user's problem description to understand the issue
+2. Use any provided knowledge base context to inform the draft
+3. Generate a clear, professional response that the engineer can send to the end user
+
+## Role Boundaries (CRITICAL)
+The knowledge base may contain both end-user steps and admin-only procedures. You MUST distinguish between them:
+- INCLUDE steps the end user can perform themselves (e.g., restart an app, clear cache, check settings)
+- NEVER expose admin-only procedures to the end user (e.g., "assign an Okta group", "run a server-side script", "modify AD attributes")
+- If resolution requires admin action, tell the end user what will happen on their behalf (e.g., "We will update your access on our end") without detailing the internal steps
+- Do not invent steps, tools, or procedures not found in the knowledge base context
 
 Guidelines:
 - Be concise and direct - avoid unnecessary filler
+- Write from the perspective of the IT support engineer speaking to the end user
 - If diagnostic information is provided, reference specific findings
 - Suggest next steps if the issue isn't fully resolved
 - Use professional but friendly tone appropriate for IT support
@@ -533,7 +541,7 @@ impl PromptBuilder {
         }
 
         // Final instruction
-        parts.push("## Your Response\n\nProvide your response to the user:".to_string());
+        parts.push("## Your Response\n\nDraft the response the IT support engineer should send to the end user:".to_string());
 
         parts.join("\n\n")
     }
@@ -807,7 +815,7 @@ mod tests {
             .with_user_input("VPN not connecting")
             .build();
 
-        assert!(prompt.contains("IT Support"));
+        assert!(prompt.contains("IT support"));
         assert!(prompt.contains("VPN not connecting"));
     }
 
@@ -996,7 +1004,7 @@ mod tests {
             "Should have response section"
         );
         assert!(
-            prompt.contains("IT Support"),
+            prompt.contains("IT support"),
             "Should identify as IT support assistant"
         );
     }
@@ -1259,5 +1267,42 @@ mod tests {
         assert!(prompt.contains("Citation Policy"));
         assert!(prompt.contains("MUST cite a source"));
         assert!(prompt.contains("NO CITATION = NO CLAIM"));
+    }
+
+    #[test]
+    fn test_prompt_perspective_framing() {
+        let prompt = PromptBuilder::new()
+            .with_user_input("User needs 6sense access")
+            .build();
+
+        // System prompt should frame the LLM as helping an engineer draft a response
+        assert!(
+            prompt.contains("helping an IT support engineer draft a response"),
+            "Should frame as helping engineer draft a response"
+        );
+        assert!(
+            prompt.contains("send to an end user"),
+            "Should mention sending to end user"
+        );
+
+        // Role boundaries section should be present
+        assert!(
+            prompt.contains("Role Boundaries"),
+            "Should have Role Boundaries section"
+        );
+        assert!(
+            prompt.contains("NEVER expose admin-only procedures"),
+            "Should prohibit exposing admin procedures"
+        );
+        assert!(
+            prompt.contains("Do not invent steps"),
+            "Should prohibit hallucinated steps"
+        );
+
+        // Final instruction should reference engineer-to-user perspective
+        assert!(
+            prompt.contains("Draft the response the IT support engineer should send to the end user"),
+            "Final instruction should use engineer-to-user framing"
+        );
     }
 }
