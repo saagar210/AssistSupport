@@ -3351,7 +3351,7 @@ impl Database {
                 stmt.query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?)))?;
             for row in rows {
                 let (star, count) = row?;
-                if star >= 1 && star <= 5 {
+                if (1..=5).contains(&star) {
                     rating_distribution[(star - 1) as usize] = count;
                 }
             }
