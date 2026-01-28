@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { RatingPanel } from './RatingPanel';
@@ -8,6 +8,37 @@ import type { ContextSource, GenerationMetrics, DocumentChunk } from '../../type
 import './ResponsePanel.css';
 
 type ExportFormat = 'Markdown' | 'PlainText' | 'Html';
+type ResponseSection = 'output' | 'instructions';
+
+interface ParsedResponse {
+  output: string;
+  instructions: string;
+  hasSections: boolean;
+}
+
+/** Parse LLM response into OUTPUT and IT SUPPORT INSTRUCTIONS sections */
+function parseResponseSections(text: string): ParsedResponse {
+  if (!text) return { output: '', instructions: '', hasSections: false };
+
+  // Match "### OUTPUT" and "### IT SUPPORT INSTRUCTIONS" headers (case-insensitive)
+  const outputMatch = text.match(/^###\s+OUTPUT\s*$/im);
+  const instructionsMatch = text.match(/^###\s+IT\s+SUPPORT\s+INSTRUCTIONS\s*$/im);
+
+  if (!outputMatch || !instructionsMatch) {
+    // Legacy response — no section headers found
+    return { output: text, instructions: '', hasSections: false };
+  }
+
+  const outputStart = outputMatch.index! + outputMatch[0].length;
+  const instructionsStart = instructionsMatch.index! + instructionsMatch[0].length;
+
+  // OUTPUT section: from after its header to the start of INSTRUCTIONS header
+  const outputText = text.slice(outputStart, instructionsMatch.index!).trim();
+  // INSTRUCTIONS section: from after its header to end
+  const instructionsText = text.slice(instructionsStart).trim();
+
+  return { output: outputText, instructions: instructionsText, hasSections: true };
+}
 
 interface ResponsePanelProps {
   response: string;
@@ -75,9 +106,13 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
   const [sourcePreviewContent, setSourcePreviewContent] = useState<Record<string, string>>({});
   const [sourcePreviewLoading, setSourcePreviewLoading] = useState<Record<string, boolean>>({});
+  const [activeSection, setActiveSection] = useState<ResponseSection>('output');
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const { success: showSuccess, error: showError } = useToastContext();
   const prevResponseRef = useRef<string>('');
+
+  // Parse response into sections
+  const parsed = useMemo(() => parseResponseSections(response), [response]);
 
   // Auto-show sources when a new response completes with sources available
   useEffect(() => {
@@ -119,13 +154,15 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
   const handleCopy = useCallback(async () => {
     if (!response) return;
     try {
-      await navigator.clipboard.writeText(response);
+      // Copy only the OUTPUT section (or full response if no sections)
+      const textToCopy = parsed.hasSections ? parsed.output : response;
+      await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       showError(`Copy failed: ${err}`);
     }
-  }, [response, showError]);
+  }, [response, parsed, showError]);
 
   const handleSourceToggle = useCallback(async (source: ContextSource) => {
     const chunkId = source.chunk_id;
@@ -159,7 +196,8 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
     }
   }, [expandedSourceId, sourcePreviewContent]);
 
-  const wordCount = response.trim().split(/\s+/).filter(Boolean).length;
+  const outputText = parsed.hasSections ? parsed.output : response;
+  const wordCount = outputText.trim().split(/\s+/).filter(Boolean).length;
 
   // Compute average confidence from sources
   const avgScore = sources.length > 0
@@ -263,13 +301,47 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
           </>
         ) : response ? (
           <>
-            <textarea
-              className="response-textarea"
-              value={response}
-              onChange={(e) => onResponseChange?.(e.target.value)}
-              placeholder="Response will appear here..."
-              readOnly={!onResponseChange}
-            />
+            {parsed.hasSections && (
+              <div className="response-section-tabs">
+                <button
+                  className={`response-section-tab${activeSection === 'output' ? ' active' : ''}`}
+                  onClick={() => setActiveSection('output')}
+                >
+                  Output
+                  <span className="section-tab-hint">Copy &amp; Send</span>
+                </button>
+                <button
+                  className={`response-section-tab${activeSection === 'instructions' ? ' active' : ''}`}
+                  onClick={() => setActiveSection('instructions')}
+                >
+                  IT Support Instructions
+                </button>
+              </div>
+            )}
+
+            {(!parsed.hasSections || activeSection === 'output') && (
+              <textarea
+                className="response-textarea"
+                value={parsed.hasSections ? parsed.output : response}
+                onChange={(e) => {
+                  if (!parsed.hasSections) {
+                    onResponseChange?.(e.target.value);
+                  } else {
+                    // Reconstruct full response with edited output
+                    const newFull = `### OUTPUT\n${e.target.value}\n\n### IT SUPPORT INSTRUCTIONS\n${parsed.instructions}`;
+                    onResponseChange?.(newFull);
+                  }
+                }}
+                placeholder="Response will appear here..."
+                readOnly={!onResponseChange}
+              />
+            )}
+
+            {parsed.hasSections && activeSection === 'instructions' && (
+              <div className="instructions-content">
+                {parsed.instructions}
+              </div>
+            )}
 
             {showSources && sources.length > 0 && (
               <div className="sources-panel">
