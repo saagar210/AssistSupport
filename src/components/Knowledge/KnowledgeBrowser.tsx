@@ -217,6 +217,11 @@ export function KnowledgeBrowser() {
                         <span className="kb-item-title">{doc.title || doc.file_path}</span>
                         <span className="kb-item-meta">
                           {doc.chunk_count} chunks · {formatDate(doc.indexed_at)}
+                          {doc.last_reviewed_at ? (
+                            <span className="review-badge review-badge-reviewed" title={`Reviewed ${formatDate(doc.last_reviewed_at)}`}>Reviewed</span>
+                          ) : (
+                            <span className="review-badge review-badge-never" title="Never reviewed">Unreviewed</span>
+                          )}
                         </span>
                       </div>
                     </div>

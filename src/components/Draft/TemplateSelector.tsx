@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type { ResponseTemplate, TemplateContext } from '../../types';
+import type { ResponseTemplate, TemplateContext, SavedResponseTemplate } from '../../types';
 import { applyTemplate } from '../../utils/templates';
 import { Button } from '../shared/Button';
 import './TemplateSelector.css';
@@ -9,6 +9,8 @@ interface TemplateSelectorProps {
   onSelectTemplate: (content: string) => void;
   templateContext?: TemplateContext;
   customVariables?: Array<{ id: string; name: string; value: string; created_at: string }>;
+  savedResponses?: SavedResponseTemplate[];
+  onSelectSavedResponse?: (content: string, templateId: string) => void;
 }
 
 interface GroupedTemplates {
@@ -20,6 +22,8 @@ export function TemplateSelector({
   onSelectTemplate,
   templateContext,
   customVariables,
+  savedResponses,
+  onSelectSavedResponse,
 }: TemplateSelectorProps) {
   const [open, setOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -110,6 +114,32 @@ export function TemplateSelector({
       {open && (
         <div className="template-dropdown">
           <div className="template-menu">
+            {savedResponses && savedResponses.length > 0 && (
+              <div className="template-category">
+                <div className="template-category-name">Your Saved Responses</div>
+                {savedResponses.slice(0, 10).map(sr => (
+                  <button
+                    key={sr.id}
+                    className={`template-item ${hoveredId === sr.id ? 'active' : ''}`}
+                    onClick={() => {
+                      onSelectSavedResponse?.(sr.content, sr.id);
+                      if (!onSelectSavedResponse) {
+                        onSelectTemplate(sr.content);
+                      }
+                      setOpen(false);
+                      setHoveredId(null);
+                    }}
+                    onMouseEnter={() => setHoveredId(sr.id)}
+                    onFocus={() => setHoveredId(sr.id)}
+                  >
+                    {sr.name}
+                    {sr.use_count > 0 && (
+                      <span className="template-use-count">{sr.use_count}x</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             {categoryNames.map(category => (
               <div key={category} className="template-category">
                 <div className="template-category-name">{category}</div>

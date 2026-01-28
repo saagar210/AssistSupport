@@ -111,3 +111,11 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Use count badge for saved responses */
+.template-use-count {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: 400;
+}

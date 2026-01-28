@@ -124,7 +124,7 @@
   /* Text */
   --text-primary: #f8fafc;          /* Slate-50 - primary text */
   --text-secondary: #cbd5e1;        /* Slate-300 - secondary text */
-  --text-muted: #64748b;            /* Slate-500 - muted/placeholder */
+  --text-muted: #7c8ca0;            /* Slate-500 adjusted - WCAG AA compliant */
   --text-inverse: #0f172a;          /* Slate-900 - text on light bg */
   --text-link: #60a5fa;             /* Blue-400 - link text */
   --text-link-hover: #93c5fd;       /* Blue-300 - link hover */

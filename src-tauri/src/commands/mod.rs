@@ -4920,3 +4920,426 @@ pub async fn export_batch_results(
 
     Ok(true)
 }
+
+// ============================================================================
+// Phase 2 v0.4.0: KB Staleness / Review Commands
+// ============================================================================
+
+/// Mark a KB document as reviewed
+#[tauri::command]
+pub async fn mark_document_reviewed(
+    state: State<'_, AppState>,
+    document_id: String,
+    reviewed_by: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.mark_document_reviewed(&document_id, reviewed_by.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Get documents that need review (stale or never reviewed)
+#[tauri::command]
+pub async fn get_documents_needing_review(
+    state: State<'_, AppState>,
+    stale_days: Option<i64>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::DocumentReviewInfo>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_documents_needing_review(stale_days.unwrap_or(30), limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 2 v0.4.0: Actionable Analytics Commands
+// ============================================================================
+
+/// Get per-article analytics (drafts that used this article, ratings)
+#[tauri::command]
+pub async fn get_analytics_for_article(
+    state: State<'_, AppState>,
+    document_id: String,
+) -> Result<crate::db::ArticleAnalytics, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_analytics_for_article(&document_id)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 2 v0.4.0: Saved Response Templates (Recycling) Commands
+// ============================================================================
+
+/// Save a response as a reusable template
+#[tauri::command]
+pub async fn save_response_as_template(
+    state: State<'_, AppState>,
+    source_draft_id: Option<String>,
+    source_rating: Option<i32>,
+    name: String,
+    category: Option<String>,
+    content: String,
+    variables_json: Option<String>,
+) -> Result<String, String> {
+    validate_non_empty(&name).map_err(|e| e.to_string())?;
+    validate_non_empty(&content).map_err(|e| e.to_string())?;
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let template = crate::db::SavedResponseTemplate {
+        id: uuid::Uuid::new_v4().to_string(),
+        source_draft_id,
+        source_rating,
+        name,
+        category,
+        content,
+        variables_json,
+        use_count: 0,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+
+    db.save_response_as_template(&template)
+        .map_err(|e| e.to_string())
+}
+
+/// List saved response templates
+#[tauri::command]
+pub async fn list_saved_response_templates(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::SavedResponseTemplate>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.list_saved_response_templates(limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
+}
+
+/// Increment usage count for a saved response template
+#[tauri::command]
+pub async fn increment_saved_template_usage(
+    state: State<'_, AppState>,
+    template_id: String,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.increment_saved_template_usage(&template_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Find saved responses similar to current input
+#[tauri::command]
+pub async fn find_similar_saved_responses(
+    state: State<'_, AppState>,
+    input_text: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::SavedResponseTemplate>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.find_similar_saved_responses(&input_text, limit.unwrap_or(5))
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 2 v0.4.0: Response Alternatives Commands
+// ============================================================================
+
+/// Save a response alternative
+#[tauri::command]
+pub async fn save_response_alternative(
+    state: State<'_, AppState>,
+    draft_id: String,
+    original_text: String,
+    alternative_text: String,
+    sources_json: Option<String>,
+    metrics_json: Option<String>,
+    generation_params_json: Option<String>,
+) -> Result<String, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let alt = crate::db::ResponseAlternative {
+        id: uuid::Uuid::new_v4().to_string(),
+        draft_id,
+        original_text,
+        alternative_text,
+        sources_json,
+        metrics_json,
+        generation_params_json,
+        chosen: None,
+        created_at: now,
+    };
+
+    db.save_response_alternative(&alt)
+        .map_err(|e| e.to_string())
+}
+
+/// Get alternatives for a draft
+#[tauri::command]
+pub async fn get_alternatives_for_draft(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<Vec<crate::db::ResponseAlternative>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_alternatives_for_draft(&draft_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Choose an alternative response
+#[tauri::command]
+pub async fn choose_alternative(
+    state: State<'_, AppState>,
+    alternative_id: String,
+    choice: String,
+) -> Result<(), String> {
+    if choice != "original" && choice != "alternative" {
+        return Err("Choice must be 'original' or 'alternative'".to_string());
+    }
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.choose_alternative(&alternative_id, &choice)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 2 v0.4.0: Jira Status Transition Commands
+// ============================================================================
+
+/// Helper: get Jira connection details from settings
+fn get_jira_connection(db: &crate::db::Database) -> Result<(String, String, String), String> {
+    let base_url: String = db
+        .conn()
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_BASE_URL_SETTING],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Jira not configured")?;
+
+    let email: String = db
+        .conn()
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            rusqlite::params![JIRA_EMAIL_SETTING],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Jira not configured")?;
+
+    let token = FileKeyStore::get_token(TOKEN_JIRA)
+        .map_err(|e| e.to_string())?
+        .ok_or("Jira API token not found")?;
+
+    Ok((base_url, email, token))
+}
+
+/// Get available Jira transitions for a ticket
+#[tauri::command]
+pub async fn get_jira_transitions(
+    state: State<'_, AppState>,
+    ticket_key: String,
+) -> Result<Vec<crate::jira::JiraTransition>, String> {
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+
+    let (base_url, email, token) = {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        get_jira_connection(db)?
+    };
+
+    let client = JiraClient::new(&base_url, &email, &token);
+    client
+        .get_transitions(&ticket_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Transition a Jira ticket to a new status
+#[tauri::command]
+pub async fn transition_jira_ticket(
+    state: State<'_, AppState>,
+    ticket_key: String,
+    transition_id: String,
+    draft_id: Option<String>,
+) -> Result<(), String> {
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+
+    let (base_url, email, token) = {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        get_jira_connection(db)?
+    };
+
+    let client = JiraClient::new(&base_url, &email, &token);
+
+    // Get current ticket status before transition
+    let ticket = client
+        .get_ticket(&ticket_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    let old_status = ticket.status.clone();
+
+    // Get the target status name from transitions
+    let transitions = client
+        .get_transitions(&ticket_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    let new_status = transitions
+        .iter()
+        .find(|t| t.id == transition_id)
+        .map(|t| t.to_status.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    // Perform the transition
+    client
+        .transition_ticket(&ticket_key, &transition_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Log the transition
+    let now = chrono::Utc::now().to_rfc3339();
+    let transition_log = crate::db::JiraStatusTransition {
+        id: uuid::Uuid::new_v4().to_string(),
+        draft_id,
+        ticket_key: ticket_key.clone(),
+        old_status: Some(old_status),
+        new_status,
+        comment_id: None,
+        transitioned_at: now,
+    };
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.save_jira_transition(&transition_log)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Post a comment to Jira and optionally transition the ticket
+#[tauri::command]
+pub async fn post_and_transition(
+    state: State<'_, AppState>,
+    ticket_key: String,
+    comment: String,
+    transition_id: Option<String>,
+    draft_id: Option<String>,
+) -> Result<String, String> {
+    validate_ticket_id(&ticket_key).map_err(|e| e.to_string())?;
+    validate_non_empty(&comment).map_err(|e| e.to_string())?;
+
+    let (base_url, email, token) = {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        get_jira_connection(db)?
+    };
+
+    let client = JiraClient::new(&base_url, &email, &token);
+
+    // Post the comment
+    let comment_id = client
+        .add_comment(&ticket_key, &comment, None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Optionally transition the ticket
+    if let Some(tid) = transition_id {
+        let ticket = client
+            .get_ticket(&ticket_key)
+            .await
+            .map_err(|e| e.to_string())?;
+        let old_status = ticket.status.clone();
+
+        let transitions = client
+            .get_transitions(&ticket_key)
+            .await
+            .map_err(|e| e.to_string())?;
+        let new_status = transitions
+            .iter()
+            .find(|t| t.id == tid)
+            .map(|t| t.to_status.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        client
+            .transition_ticket(&ticket_key, &tid)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Log the transition
+        let now = chrono::Utc::now().to_rfc3339();
+        let transition_log = crate::db::JiraStatusTransition {
+            id: uuid::Uuid::new_v4().to_string(),
+            draft_id,
+            ticket_key: ticket_key.clone(),
+            old_status: Some(old_status),
+            new_status,
+            comment_id: Some(comment_id.clone()),
+            transitioned_at: now,
+        };
+
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.save_jira_transition(&transition_log)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(comment_id)
+}

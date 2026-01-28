@@ -260,6 +260,24 @@ pub fn run() {
             commands::batch_generate,
             commands::get_batch_status,
             commands::export_batch_results,
+            // Phase 2 v0.4.0: KB Staleness
+            commands::mark_document_reviewed,
+            commands::get_documents_needing_review,
+            // Phase 2 v0.4.0: Actionable Analytics
+            commands::get_analytics_for_article,
+            // Phase 2 v0.4.0: Saved Response Templates
+            commands::save_response_as_template,
+            commands::list_saved_response_templates,
+            commands::increment_saved_template_usage,
+            commands::find_similar_saved_responses,
+            // Phase 2 v0.4.0: Response Alternatives
+            commands::save_response_alternative,
+            commands::get_alternatives_for_draft,
+            commands::choose_alternative,
+            // Phase 2 v0.4.0: Jira Transitions
+            commands::get_jira_transitions,
+            commands::transition_jira_ticket,
+            commands::post_and_transition,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

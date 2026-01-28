@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 8;
+const CURRENT_SCHEMA_VERSION: i32 = 9;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -220,6 +220,10 @@ impl Database {
 
         if from_version < 8 {
             self.migrate_v8()?;
+        }
+
+        if from_version < 9 {
+            self.migrate_v9()?;
         }
 
         tx.commit()?;
@@ -775,6 +779,81 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at DESC);
             "#,
         )?;
+
+        Ok(())
+    }
+
+    /// Migration to v9: Response alternatives, saved response templates, Jira transitions, KB review
+    fn migrate_v9(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Response alternatives for side-by-side comparison
+            CREATE TABLE IF NOT EXISTS response_alternatives (
+                id TEXT PRIMARY KEY,
+                draft_id TEXT NOT NULL,
+                original_text TEXT NOT NULL,
+                alternative_text TEXT NOT NULL,
+                sources_json TEXT,
+                metrics_json TEXT,
+                generation_params_json TEXT,
+                chosen TEXT CHECK(chosen IN ('original', 'alternative') OR chosen IS NULL),
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_response_alts_draft ON response_alternatives(draft_id);
+
+            -- Saved response templates from high-rated responses
+            CREATE TABLE IF NOT EXISTS saved_response_templates (
+                id TEXT PRIMARY KEY,
+                source_draft_id TEXT,
+                source_rating INTEGER,
+                name TEXT NOT NULL,
+                category TEXT,
+                content TEXT NOT NULL,
+                variables_json TEXT,
+                use_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (source_draft_id) REFERENCES drafts(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_saved_templates_category ON saved_response_templates(category);
+            CREATE INDEX IF NOT EXISTS idx_saved_templates_usage ON saved_response_templates(use_count DESC);
+
+            -- Jira status transitions log
+            CREATE TABLE IF NOT EXISTS jira_status_transitions (
+                id TEXT PRIMARY KEY,
+                draft_id TEXT,
+                ticket_key TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT NOT NULL,
+                comment_id TEXT,
+                transitioned_at TEXT NOT NULL,
+                FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_jira_transitions_draft ON jira_status_transitions(draft_id);
+            CREATE INDEX IF NOT EXISTS idx_jira_transitions_ticket ON jira_status_transitions(ticket_key);
+            "#,
+        )?;
+
+        // Add review columns to kb_documents if not present
+        let has_last_reviewed_at: bool = self
+            .conn
+            .prepare("PRAGMA table_info(kb_documents)")?
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                Ok(name)
+            })?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "last_reviewed_at");
+
+        if !has_last_reviewed_at {
+            self.conn.execute_batch(
+                r#"
+                ALTER TABLE kb_documents ADD COLUMN last_reviewed_at TEXT;
+                ALTER TABLE kb_documents ADD COLUMN last_reviewed_by TEXT;
+                "#,
+            )?;
+        }
 
         Ok(())
     }
@@ -3268,9 +3347,8 @@ impl Database {
                 rating_date_filter
             );
             let mut stmt = self.conn.prepare(&dist_query)?;
-            let rows = stmt.query_map([], |row| {
-                Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?))
-            })?;
+            let rows =
+                stmt.query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?)))?;
             for row in rows {
                 let (star, count) = row?;
                 if star >= 1 && star <= 5 {
@@ -3520,6 +3598,339 @@ impl Database {
         self.create_draft_version(draft_id, Some("Restored from version"))?;
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Phase 2 v0.4.0: KB Staleness / Review
+    // ========================================================================
+
+    /// Mark a KB document as reviewed
+    pub fn mark_document_reviewed(
+        &self,
+        document_id: &str,
+        reviewed_by: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE kb_documents SET last_reviewed_at = ?, last_reviewed_by = ? WHERE id = ?",
+            params![&now, reviewed_by, document_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get documents needing review (not reviewed in N days, or never reviewed)
+    pub fn get_documents_needing_review(
+        &self,
+        stale_days: i64,
+        limit: usize,
+    ) -> Result<Vec<DocumentReviewInfo>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, file_path, title, indexed_at, last_reviewed_at, last_reviewed_by,
+                    namespace_id, source_type
+             FROM kb_documents
+             WHERE last_reviewed_at IS NULL
+                OR last_reviewed_at < datetime('now', '-' || ?1 || ' days')
+             ORDER BY
+                CASE WHEN last_reviewed_at IS NULL THEN 0 ELSE 1 END,
+                last_reviewed_at ASC
+             LIMIT ?2",
+        )?;
+
+        let docs = stmt
+            .query_map(params![stale_days, limit as i64], |row| {
+                Ok(DocumentReviewInfo {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    title: row.get(2)?,
+                    indexed_at: row.get(3)?,
+                    last_reviewed_at: row.get(4)?,
+                    last_reviewed_by: row.get(5)?,
+                    namespace_id: row.get(6)?,
+                    source_type: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(docs)
+    }
+
+    // ========================================================================
+    // Phase 2 v0.4.0: Actionable Analytics
+    // ========================================================================
+
+    /// Get per-article analytics: drafts that used this article, ratings
+    pub fn get_analytics_for_article(
+        &self,
+        document_id: &str,
+    ) -> Result<ArticleAnalytics, DbError> {
+        // Get document info
+        let (title, file_path): (Option<String>, String) = self.conn.query_row(
+            "SELECT title, file_path FROM kb_documents WHERE id = ?",
+            [document_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        // Find drafts that referenced this document's chunks
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT d.id, d.input_text, d.response_text, d.created_at,
+                    r.rating, r.feedback_text
+             FROM drafts d
+             LEFT JOIN response_ratings r ON r.draft_id = d.id
+             WHERE d.kb_sources_json LIKE '%' || ?1 || '%'
+               AND d.is_autosave = 0
+             ORDER BY d.created_at DESC
+             LIMIT 20",
+        )?;
+
+        let draft_refs = stmt
+            .query_map([document_id], |row| {
+                Ok(ArticleDraftReference {
+                    draft_id: row.get(0)?,
+                    input_text: row.get(1)?,
+                    response_text: row.get(2)?,
+                    created_at: row.get(3)?,
+                    rating: row.get(4)?,
+                    feedback_text: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let total_uses = draft_refs.len() as i64;
+        let rated_refs: Vec<&ArticleDraftReference> =
+            draft_refs.iter().filter(|r| r.rating.is_some()).collect();
+        let avg_rating = if rated_refs.is_empty() {
+            None
+        } else {
+            let sum: f64 = rated_refs.iter().map(|r| r.rating.unwrap() as f64).sum();
+            Some(sum / rated_refs.len() as f64)
+        };
+
+        Ok(ArticleAnalytics {
+            document_id: document_id.to_string(),
+            title: title.unwrap_or_else(|| file_path.clone()),
+            file_path,
+            total_uses,
+            average_rating: avg_rating,
+            draft_references: draft_refs,
+        })
+    }
+
+    // ========================================================================
+    // Phase 2 v0.4.0: Saved Response Templates (Recycling)
+    // ========================================================================
+
+    /// Save a response as a reusable template
+    pub fn save_response_as_template(
+        &self,
+        template: &SavedResponseTemplate,
+    ) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT INTO saved_response_templates
+             (id, source_draft_id, source_rating, name, category, content, variables_json, use_count, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &template.id,
+                &template.source_draft_id,
+                template.source_rating,
+                &template.name,
+                &template.category,
+                &template.content,
+                &template.variables_json,
+                template.use_count,
+                &template.created_at,
+                &template.updated_at,
+            ],
+        )?;
+        Ok(template.id.clone())
+    }
+
+    /// List saved response templates
+    pub fn list_saved_response_templates(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<SavedResponseTemplate>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, source_draft_id, source_rating, name, category, content,
+                    variables_json, use_count, created_at, updated_at
+             FROM saved_response_templates
+             ORDER BY use_count DESC, updated_at DESC
+             LIMIT ?",
+        )?;
+
+        let templates = stmt
+            .query_map([limit as i64], |row| {
+                Ok(SavedResponseTemplate {
+                    id: row.get(0)?,
+                    source_draft_id: row.get(1)?,
+                    source_rating: row.get(2)?,
+                    name: row.get(3)?,
+                    category: row.get(4)?,
+                    content: row.get(5)?,
+                    variables_json: row.get(6)?,
+                    use_count: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(templates)
+    }
+
+    /// Increment usage count for a saved response template
+    pub fn increment_saved_template_usage(&self, template_id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE saved_response_templates SET use_count = use_count + 1, updated_at = ? WHERE id = ?",
+            params![&now, template_id],
+        )?;
+        Ok(())
+    }
+
+    /// Find saved responses similar to current input (keyword match)
+    pub fn find_similar_saved_responses(
+        &self,
+        input_text: &str,
+        limit: usize,
+    ) -> Result<Vec<SavedResponseTemplate>, DbError> {
+        // Extract keywords from input (words > 3 chars, skip common stopwords)
+        let keywords: Vec<&str> = input_text
+            .split_whitespace()
+            .filter(|w| w.len() > 3)
+            .take(5)
+            .collect();
+
+        if keywords.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let like_clauses: Vec<String> = keywords
+            .iter()
+            .map(|k| format!("content LIKE '%{}%'", k.replace('\'', "''")))
+            .collect();
+        let where_clause = like_clauses.join(" OR ");
+
+        let query = format!(
+            "SELECT id, source_draft_id, source_rating, name, category, content,
+                    variables_json, use_count, created_at, updated_at
+             FROM saved_response_templates
+             WHERE {}
+             ORDER BY use_count DESC
+             LIMIT ?",
+            where_clause
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let templates = stmt
+            .query_map([limit as i64], |row| {
+                Ok(SavedResponseTemplate {
+                    id: row.get(0)?,
+                    source_draft_id: row.get(1)?,
+                    source_rating: row.get(2)?,
+                    name: row.get(3)?,
+                    category: row.get(4)?,
+                    content: row.get(5)?,
+                    variables_json: row.get(6)?,
+                    use_count: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(templates)
+    }
+
+    // ========================================================================
+    // Phase 2 v0.4.0: Response Alternatives
+    // ========================================================================
+
+    /// Save a response alternative
+    pub fn save_response_alternative(&self, alt: &ResponseAlternative) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT INTO response_alternatives
+             (id, draft_id, original_text, alternative_text, sources_json, metrics_json, generation_params_json, chosen, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &alt.id,
+                &alt.draft_id,
+                &alt.original_text,
+                &alt.alternative_text,
+                &alt.sources_json,
+                &alt.metrics_json,
+                &alt.generation_params_json,
+                &alt.chosen,
+                &alt.created_at,
+            ],
+        )?;
+        Ok(alt.id.clone())
+    }
+
+    /// Get alternatives for a draft
+    pub fn get_alternatives_for_draft(
+        &self,
+        draft_id: &str,
+    ) -> Result<Vec<ResponseAlternative>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, draft_id, original_text, alternative_text, sources_json,
+                    metrics_json, generation_params_json, chosen, created_at
+             FROM response_alternatives
+             WHERE draft_id = ?
+             ORDER BY created_at DESC",
+        )?;
+
+        let alts = stmt
+            .query_map([draft_id], |row| {
+                Ok(ResponseAlternative {
+                    id: row.get(0)?,
+                    draft_id: row.get(1)?,
+                    original_text: row.get(2)?,
+                    alternative_text: row.get(3)?,
+                    sources_json: row.get(4)?,
+                    metrics_json: row.get(5)?,
+                    generation_params_json: row.get(6)?,
+                    chosen: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(alts)
+    }
+
+    /// Choose an alternative (mark as chosen)
+    pub fn choose_alternative(&self, alternative_id: &str, choice: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE response_alternatives SET chosen = ? WHERE id = ?",
+            params![choice, alternative_id],
+        )?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Phase 2 v0.4.0: Jira Status Transitions
+    // ========================================================================
+
+    /// Save a Jira status transition
+    pub fn save_jira_transition(
+        &self,
+        transition: &JiraStatusTransition,
+    ) -> Result<String, DbError> {
+        self.conn.execute(
+            "INSERT INTO jira_status_transitions
+             (id, draft_id, ticket_key, old_status, new_status, comment_id, transitioned_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &transition.id,
+                &transition.draft_id,
+                &transition.ticket_key,
+                &transition.old_status,
+                &transition.new_status,
+                &transition.comment_id,
+                &transition.transitioned_at,
+            ],
+        )?;
+        Ok(transition.id.clone())
     }
 }
 
@@ -3913,6 +4324,82 @@ pub struct NamespaceDistribution {
     pub namespace_name: String,
     pub document_count: i64,
     pub chunk_count: i64,
+}
+
+/// Document review info for KB staleness tracking
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DocumentReviewInfo {
+    pub id: String,
+    pub file_path: String,
+    pub title: Option<String>,
+    pub indexed_at: Option<String>,
+    pub last_reviewed_at: Option<String>,
+    pub last_reviewed_by: Option<String>,
+    pub namespace_id: String,
+    pub source_type: String,
+}
+
+/// Per-article analytics with draft references
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ArticleAnalytics {
+    pub document_id: String,
+    pub title: String,
+    pub file_path: String,
+    pub total_uses: i64,
+    pub average_rating: Option<f64>,
+    pub draft_references: Vec<ArticleDraftReference>,
+}
+
+/// Reference to a draft that used a KB article
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ArticleDraftReference {
+    pub draft_id: String,
+    pub input_text: String,
+    pub response_text: Option<String>,
+    pub created_at: String,
+    pub rating: Option<i32>,
+    pub feedback_text: Option<String>,
+}
+
+/// Saved response template from high-rated responses
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SavedResponseTemplate {
+    pub id: String,
+    pub source_draft_id: Option<String>,
+    pub source_rating: Option<i32>,
+    pub name: String,
+    pub category: Option<String>,
+    pub content: String,
+    pub variables_json: Option<String>,
+    pub use_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Response alternative for side-by-side comparison
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResponseAlternative {
+    pub id: String,
+    pub draft_id: String,
+    pub original_text: String,
+    pub alternative_text: String,
+    pub sources_json: Option<String>,
+    pub metrics_json: Option<String>,
+    pub generation_params_json: Option<String>,
+    pub chosen: Option<String>,
+    pub created_at: String,
+}
+
+/// Jira status transition log entry
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct JiraStatusTransition {
+    pub id: String,
+    pub draft_id: Option<String>,
+    pub ticket_key: String,
+    pub old_status: Option<String>,
+    pub new_status: String,
+    pub comment_id: Option<String>,
+    pub transitioned_at: String,
 }
 
 /// Built-in decision trees: (id, name, category, tree_json)

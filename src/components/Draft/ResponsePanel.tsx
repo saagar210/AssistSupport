@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { RatingPanel } from './RatingPanel';
+import { JiraPostPanel } from './JiraPostPanel';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { ContextSource, GenerationMetrics, DocumentChunk } from '../../types';
 import './ResponsePanel.css';
@@ -22,6 +23,10 @@ interface ResponsePanelProps {
   onResponseChange?: (text: string) => void;
   isEdited?: boolean;
   modelName?: string | null;
+  onGenerateAlternative?: () => void;
+  generatingAlternative?: boolean;
+  ticketKey?: string | null;
+  onSaveAsTemplate?: (rating: number) => void;
 }
 
 function getConfidenceLevel(avgScore: number): { label: string; className: string; explanation: string } {
@@ -63,7 +68,7 @@ function getScoreBarClassName(score: number): string {
   return 'score-fill-low';
 }
 
-export function ResponsePanel({ response, streamingText, isStreaming, sources, generating, metrics, draftId, onSaveDraft, onCancel, hasInput, onResponseChange, isEdited, modelName }: ResponsePanelProps) {
+export function ResponsePanel({ response, streamingText, isStreaming, sources, generating, metrics, draftId, onSaveDraft, onCancel, hasInput, onResponseChange, isEdited, modelName, onGenerateAlternative, generatingAlternative, ticketKey, onSaveAsTemplate }: ResponsePanelProps) {
   const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -167,6 +172,17 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
       <div className="panel-header">
         <h3>Response</h3>
         <div className="response-actions">
+          {onGenerateAlternative && response && !generating && !isStreaming && (
+            <Button
+              variant="ghost"
+              size="small"
+              onClick={onGenerateAlternative}
+              disabled={generatingAlternative}
+              className="btn-hover-scale"
+            >
+              {generatingAlternative ? 'Generating...' : 'Generate Alternative'}
+            </Button>
+          )}
           {sources.length > 0 && (
             <Button
               variant="ghost"
@@ -372,7 +388,16 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
         )}
 
         {response && !generating && !isStreaming && (
-          <RatingPanel draftId={draftId ?? null} />
+          <>
+            <RatingPanel draftId={draftId ?? null} onSaveAsTemplate={onSaveAsTemplate} />
+            {ticketKey && (
+              <JiraPostPanel
+                ticketKey={ticketKey}
+                responseText={response}
+                draftId={draftId ?? null}
+              />
+            )}
+          </>
         )}
       </div>
     </>

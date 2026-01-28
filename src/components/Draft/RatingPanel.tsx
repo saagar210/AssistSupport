@@ -6,6 +6,7 @@ import './RatingPanel.css';
 interface RatingPanelProps {
   draftId: string | null;
   onRated?: () => void;
+  onSaveAsTemplate?: (rating: number) => void;
 }
 
 const FEEDBACK_CATEGORIES = [
@@ -16,7 +17,7 @@ const FEEDBACK_CATEGORIES = [
   { value: 'other', label: 'Other' },
 ];
 
-export function RatingPanel({ draftId, onRated }: RatingPanelProps) {
+export function RatingPanel({ draftId, onRated, onSaveAsTemplate }: RatingPanelProps) {
   const { rateResponse, getDraftRating } = useRatings();
 
   const [rating, setRating] = useState<number>(0);
@@ -73,6 +74,9 @@ export function RatingPanel({ draftId, onRated }: RatingPanelProps) {
       );
       setSubmitted(true);
       onRated?.();
+      if (rating === 5 && onSaveAsTemplate) {
+        onSaveAsTemplate(rating);
+      }
     } catch (err) {
       console.error('Failed to submit rating:', err);
     } finally {

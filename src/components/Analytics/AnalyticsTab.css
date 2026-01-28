@@ -188,6 +188,15 @@
   font-size: var(--text-sm);
 }
 
+.kb-usage-row-clickable {
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 150ms) ease;
+}
+
+.kb-usage-row-clickable:hover {
+  background: var(--bg-hover);
+}
+
 .kb-usage-title {
   color: var(--text-primary);
   white-space: nowrap;

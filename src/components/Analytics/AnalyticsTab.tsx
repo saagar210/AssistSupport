@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAnalytics, AnalyticsSummary, ArticleUsage, LowRatingAnalysis } from '../../hooks/useAnalytics';
+import { ArticleDetailPanel } from './ArticleDetailPanel';
 import './AnalyticsTab.css';
 
 type Period = 7 | 30 | 90 | null; // null = all time
@@ -19,6 +20,7 @@ export function AnalyticsTab() {
   const [lowRatingData, setLowRatingData] = useState<LowRatingAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -95,19 +97,19 @@ export function AnalyticsTab() {
 
       {/* Stat Cards */}
       <div className="stat-cards">
-        <div className="stat-card">
+        <div className="stat-card stat-card-clickable" title="View response details">
           <div className="stat-card-label">Total Responses</div>
           <div className="stat-card-value">{summary.responses_generated}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-clickable" title="View search details">
           <div className="stat-card-label">Searches</div>
           <div className="stat-card-value">{summary.searches_performed}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-clickable" title="View draft details">
           <div className="stat-card-label">Drafts Saved</div>
           <div className="stat-card-value">{summary.drafts_saved}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-clickable" title="View rating details">
           <div className="stat-card-label">Avg Rating</div>
           <div className="stat-card-value">
             {summary.total_ratings > 0
@@ -182,7 +184,15 @@ export function AnalyticsTab() {
       )}
 
       {/* KB Usage Table */}
-      <KbUsageTable articles={kbUsage} />
+      <KbUsageTable articles={kbUsage} onArticleClick={setSelectedArticleId} />
+
+      {/* Article Detail Panel */}
+      {selectedArticleId && (
+        <ArticleDetailPanel
+          documentId={selectedArticleId}
+          onClose={() => setSelectedArticleId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -232,7 +242,7 @@ function RatingDistribution({ summary }: { summary: AnalyticsSummary }) {
   );
 }
 
-function KbUsageTable({ articles }: { articles: ArticleUsage[] }) {
+function KbUsageTable({ articles, onArticleClick }: { articles: ArticleUsage[]; onArticleClick?: (id: string) => void }) {
   if (articles.length === 0) {
     return (
       <div className="kb-usage-table">
@@ -254,7 +264,13 @@ function KbUsageTable({ articles }: { articles: ArticleUsage[] }) {
         <div style={{ textAlign: 'right' }}>Uses</div>
       </div>
       {articles.map((article) => (
-        <div key={article.document_id} className="kb-usage-row">
+        <div
+          key={article.document_id}
+          className={`kb-usage-row ${onArticleClick ? 'kb-usage-row-clickable' : ''}`}
+          onClick={() => onArticleClick?.(article.document_id)}
+          role={onArticleClick ? 'button' : undefined}
+          tabIndex={onArticleClick ? 0 : undefined}
+        >
           <div className="kb-usage-title" title={article.title}>
             {article.title}
           </div>

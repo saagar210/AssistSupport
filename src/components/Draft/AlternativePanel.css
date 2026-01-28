@@ -1,0 +1,60 @@
+.alternative-panel {
+  margin-top: var(--space-4);
+  animation: text-fade-in var(--duration-normal) var(--ease-out);
+}
+
+.alternative-panel-title {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.comparison-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.comparison-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.comparison-chosen-badge {
+  font-size: var(--text-xs);
+  padding: var(--space-0-5) var(--space-2);
+  background: var(--success-light);
+  color: var(--success);
+  border-radius: var(--radius-full);
+  font-weight: var(--weight-medium);
+}
+
+.comparison-text {
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.comparison-actions {
+  margin-top: var(--space-3);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.alternative-history {
+  margin-top: var(--space-3);
+  text-align: center;
+}
+
+.alternative-history-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

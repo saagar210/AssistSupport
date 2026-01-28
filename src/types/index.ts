@@ -424,6 +424,8 @@ export interface KbDocumentInfo {
   namespace_id: string;
   source_type: string;
   source_id?: string | null;
+  last_reviewed_at?: string | null;
+  last_reviewed_by?: string | null;
 }
 
 export interface DocumentChunk {
@@ -497,4 +499,66 @@ export interface QuickHealthResult {
   checks_passed: number;
   checks_total: number;
   issues: string[];
+}
+
+// v0.4.0 Types
+
+export interface DocumentReviewInfo {
+  id: string;
+  file_path: string;
+  title: string | null;
+  indexed_at: string | null;
+  last_reviewed_at: string | null;
+  last_reviewed_by: string | null;
+  namespace_id: string;
+  source_type: string;
+}
+
+export interface ArticleAnalytics {
+  document_id: string;
+  title: string;
+  file_path: string;
+  total_uses: number;
+  average_rating: number | null;
+  draft_references: ArticleDraftReference[];
+}
+
+export interface ArticleDraftReference {
+  draft_id: string;
+  input_text: string;
+  response_text: string | null;
+  created_at: string;
+  rating: number | null;
+  feedback_text: string | null;
+}
+
+export interface SavedResponseTemplate {
+  id: string;
+  source_draft_id: string | null;
+  source_rating: number | null;
+  name: string;
+  category: string | null;
+  content: string;
+  variables_json: string | null;
+  use_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResponseAlternative {
+  id: string;
+  draft_id: string;
+  original_text: string;
+  alternative_text: string;
+  sources_json: string | null;
+  metrics_json: string | null;
+  generation_params_json: string | null;
+  chosen: 'original' | 'alternative' | null;
+  created_at: string;
+}
+
+export interface JiraTransition {
+  id: string;
+  name: string;
+  to_status: string;
 }

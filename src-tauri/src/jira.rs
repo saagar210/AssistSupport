@@ -428,6 +428,91 @@ impl JiraClient {
 
         Err(last_error.unwrap_or(JiraError::Api("Unknown error".to_string())))
     }
+
+    /// Get available status transitions for a ticket
+    pub async fn get_transitions(
+        &self,
+        ticket_key: &str,
+    ) -> Result<Vec<JiraTransition>, JiraError> {
+        validate_ticket_id(ticket_key)
+            .map_err(|e| JiraError::Api(format!("Invalid ticket key: {}", e)))?;
+
+        let url = format!(
+            "{}/rest/api/3/issue/{}/transitions",
+            self.base_url, ticket_key
+        );
+
+        let resp = self
+            .execute_with_retry(|| async {
+                self.client
+                    .get(&url)
+                    .header(header::AUTHORIZATION, self.auth_header.as_str())
+                    .header(header::ACCEPT, "application/json")
+                    .send()
+                    .await
+            })
+            .await?;
+
+        let json: serde_json::Value = resp.json().await?;
+
+        let transitions = json["transitions"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|t| JiraTransition {
+                        id: t["id"].as_str().unwrap_or("").to_string(),
+                        name: t["name"].as_str().unwrap_or("").to_string(),
+                        to_status: t["to"]["name"].as_str().unwrap_or("").to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(transitions)
+    }
+
+    /// Transition a ticket to a new status
+    pub async fn transition_ticket(
+        &self,
+        ticket_key: &str,
+        transition_id: &str,
+    ) -> Result<(), JiraError> {
+        validate_ticket_id(ticket_key)
+            .map_err(|e| JiraError::Api(format!("Invalid ticket key: {}", e)))?;
+
+        let url = format!(
+            "{}/rest/api/3/issue/{}/transitions",
+            self.base_url, ticket_key
+        );
+
+        let body = serde_json::json!({
+            "transition": {
+                "id": transition_id
+            }
+        });
+
+        self.execute_with_retry(|| async {
+            self.client
+                .post(&url)
+                .header(header::AUTHORIZATION, self.auth_header.as_str())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json")
+                .json(&body)
+                .send()
+                .await
+        })
+        .await?;
+
+        Ok(())
+    }
+}
+
+/// Available Jira status transition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JiraTransition {
+    pub id: String,
+    pub name: String,
+    pub to_status: String,
 }
 
 /// KB source citation for Jira comments

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import type { JiraTransition } from '../types';
 
 export interface JiraConfig {
   base_url: string;
@@ -89,6 +90,39 @@ export function useJira() {
     }
   }, []);
 
+  const getTransitions = useCallback(async (ticketKey: string): Promise<JiraTransition[]> => {
+    try {
+      const transitions = await invoke<JiraTransition[]>('get_jira_transitions', { ticketKey });
+      return transitions;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      return [];
+    }
+  }, []);
+
+  const transitionTicket = useCallback(async (
+    ticketKey: string,
+    transitionId: string,
+    draftId?: string,
+  ): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      await invoke('transition_jira_ticket', {
+        ticketKey,
+        transitionId,
+        draftId: draftId ?? null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     configured,
     config,
@@ -98,5 +132,7 @@ export function useJira() {
     configure,
     disconnect,
     getTicket,
+    getTransitions,
+    transitionTicket,
   };
 }

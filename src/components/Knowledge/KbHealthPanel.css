@@ -22,7 +22,7 @@
 
 .kb-health-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 8px;
 }
 
@@ -80,6 +80,55 @@
   cursor: pointer;
   text-decoration: underline;
   margin-left: auto;
+}
+
+.kb-health-review-list {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--warning-lighter, var(--bg-secondary));
+  border: 1px solid var(--warning-light, var(--border-light));
+  border-radius: 4px;
+}
+
+.kb-health-review-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.kb-health-review-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.kb-health-review-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.kb-health-review-btn {
+  border: none;
+  background: none;
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.kb-health-review-btn:hover {
+  background: var(--accent-lighter, var(--bg-hover));
 }
 
 @media (max-width: 600px) {
