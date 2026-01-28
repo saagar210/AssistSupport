@@ -47,7 +47,7 @@ const EMBEDDING_CTX_SIZE: u32 = 512;
 
 /// Internal state for embedding engine
 struct EmbeddingState {
-    backend: LlamaBackend,
+    backend: Arc<LlamaBackend>,
     model: Option<LlamaModel>,
     model_info: Option<EmbeddingModelInfo>,
     /// Cached context params for reuse
@@ -60,11 +60,8 @@ pub struct EmbeddingEngine {
 }
 
 impl EmbeddingEngine {
-    /// Create a new embedding engine
-    pub fn new() -> Result<Self, EmbeddingError> {
-        let backend = LlamaBackend::init()
-            .map_err(|e| EmbeddingError::BackendInit(e.to_string()))?;
-
+    /// Create a new embedding engine with a shared backend
+    pub fn new(backend: Arc<LlamaBackend>) -> Result<Self, EmbeddingError> {
         // Pre-build context params for reuse
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(EMBEDDING_CTX_SIZE))
@@ -266,11 +263,6 @@ impl EmbeddingEngine {
     }
 }
 
-impl Default for EmbeddingEngine {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize embedding engine")
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -278,7 +270,8 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let engine = EmbeddingEngine::new();
+        let backend = Arc::new(LlamaBackend::init().expect("backend init"));
+        let engine = EmbeddingEngine::new(backend);
         assert!(engine.is_ok());
 
         let engine = engine.unwrap();

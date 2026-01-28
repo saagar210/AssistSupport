@@ -387,10 +387,13 @@ pub struct InitResult {
 // LLM Commands
 // ============================================================================
 
-/// Initialize the LLM engine
+/// Initialize the LLM engine (idempotent — skips if already initialized)
 #[tauri::command]
 pub fn init_llm_engine(state: State<'_, AppState>) -> Result<(), String> {
-    let engine = LlmEngine::new().map_err(|e| e.to_string())?;
+    if state.llm.read().is_some() {
+        return Ok(());
+    }
+    let engine = LlmEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
     *state.llm.write() = Some(engine);
     Ok(())
 }
@@ -1802,7 +1805,17 @@ pub async fn download_model(
         e.to_string()
     })?;
 
-    match verify_model_integrity(&result, true) {
+    // Run integrity verification on a blocking thread to avoid stalling the async runtime.
+    // calculate_sha256 reads the entire model file (1-2 GB) synchronously.
+    let verify_path = result.clone();
+    let verify_result = tokio::task::spawn_blocking(move || {
+        verify_model_integrity(&verify_path, true)
+    }).await.map_err(|e| {
+        audit::audit_model_download_failed(&model_id, "integrity_task_failed", &e.to_string());
+        e.to_string()
+    })?;
+
+    match verify_result {
         Ok(verification) => {
             if verification.is_verified() {
                 audit::audit_model_integrity_verified(&model_id, verification.sha256());
@@ -2162,10 +2175,13 @@ pub struct EmbeddingGenerationResult {
 use crate::kb::embeddings::{EmbeddingEngine, EmbeddingModelInfo};
 use crate::kb::ocr::OcrManager;
 
-/// Initialize the embedding engine
+/// Initialize the embedding engine (idempotent — skips if already initialized)
 #[tauri::command]
 pub fn init_embedding_engine(state: State<'_, AppState>) -> Result<(), String> {
-    let engine = EmbeddingEngine::new().map_err(|e| e.to_string())?;
+    if state.embeddings.read().is_some() {
+        return Ok(());
+    }
+    let engine = EmbeddingEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
     *state.embeddings.write() = Some(engine);
     Ok(())
 }

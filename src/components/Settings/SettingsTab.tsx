@@ -33,6 +33,17 @@ const AVAILABLE_MODELS: ModelInfo[] = [
   },
 ];
 
+// Audit event types can be either a plain string (unit variants like "key_generated")
+// or an object (data variants like { custom: "value" }). Normalize for display.
+function formatAuditEvent(event: string | Record<string, string>): string {
+  if (typeof event === 'string') return event;
+  if (typeof event === 'object' && event !== null) {
+    const key = Object.keys(event)[0];
+    return key ? `${key}: ${event[key]}` : JSON.stringify(event);
+  }
+  return String(event);
+}
+
 const CONTEXT_WINDOW_OPTIONS = [
   { value: null, label: 'Model Default' },
   { value: 2048, label: '2K (2,048 tokens)' },
@@ -118,9 +129,9 @@ export function SettingsTab() {
   }, [showError]);
 
   useEffect(() => {
-    loadInitialState();
-    loadVariables();
-    loadAuditEntries();
+    Promise.resolve(loadInitialState()).catch(err => console.error('Settings init failed:', err));
+    Promise.resolve(loadVariables()).catch(err => console.error('Variables load failed:', err));
+    Promise.resolve(loadAuditEntries()).catch(err => console.error('Audit load failed:', err));
   }, [loadVariables, loadAuditEntries]);
 
   async function loadInitialState() {
@@ -316,18 +327,20 @@ export function SettingsTab() {
   async function handleLoadEmbeddingModel() {
     setError(null);
     try {
-      // Initialize engine if needed
+      // Engine is initialized at startup; this is idempotent
       await initEmbeddingEngine();
       // Get model path
       const path = await getEmbeddingModelPath('nomic-embed-text');
       if (!path) {
-        setError('Embedding model not found');
+        showError('Embedding model file not found. Try re-downloading.');
         return;
       }
       await loadEmbeddingModel(path);
       showSuccess('Embedding model loaded');
     } catch (err) {
-      setError(`Failed to load embedding model: ${err}`);
+      const msg = `Failed to load embedding model: ${err}`;
+      showError(msg);
+      setError(msg);
     }
   }
 
@@ -1039,7 +1052,7 @@ export function SettingsTab() {
               .map((entry, index) => (
                 <div className="audit-row" key={`${entry.timestamp}-${index}`}>
                   <span className={`audit-severity ${entry.severity}`}>{entry.severity}</span>
-                  <span className="audit-event">{entry.event}</span>
+                  <span className="audit-event">{formatAuditEvent(entry.event)}</span>
                   <span className="audit-message">{entry.message}</span>
                   <span className="audit-time">{new Date(entry.timestamp).toLocaleString()}</span>
                 </div>

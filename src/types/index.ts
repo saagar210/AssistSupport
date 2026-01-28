@@ -354,7 +354,9 @@ export interface TemplateContext {
 
 export interface AuditEntry {
   timestamp: string;
-  event: string;
+  // Serde serializes unit variants as strings ("key_generated") but
+  // data variants like Custom(String) as objects ({"custom": "value"})
+  event: string | Record<string, string>;
   severity: 'info' | 'warning' | 'error' | 'critical';
   message: string;
   context?: Record<string, unknown> | null;

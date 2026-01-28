@@ -96,7 +96,7 @@ pub enum GenerationEvent {
 
 /// LLM Engine state
 pub struct LlmState {
-    backend: LlamaBackend,
+    backend: Arc<LlamaBackend>,
     model: Option<LlamaModel>,
     model_info: Option<ModelInfo>,
 }
@@ -107,12 +107,8 @@ pub struct LlmEngine {
 }
 
 impl LlmEngine {
-    /// Create a new LLM engine
-    pub fn new() -> Result<Self, LlmError> {
-        // Initialize the llama backend
-        let backend = LlamaBackend::init()
-            .map_err(|e| LlmError::BackendInit(e.to_string()))?;
-
+    /// Create a new LLM engine with a shared backend
+    pub fn new(backend: Arc<LlamaBackend>) -> Result<Self, LlmError> {
         let state = LlmState {
             backend,
             model: None,
@@ -453,7 +449,7 @@ impl LlmEngine {
 // NOTE: We intentionally do NOT implement Default for LlmEngine.
 // Initialization can fail (missing Metal support, memory issues, etc.)
 // and we want to handle that gracefully with Result, not panic.
-// Callers should use LlmEngine::new() and handle the Result appropriately.
+// Callers should use LlmEngine::new(backend) and handle the Result appropriately.
 
 #[cfg(test)]
 mod tests {
@@ -461,7 +457,8 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let engine = LlmEngine::new();
+        let backend = Arc::new(LlamaBackend::init().expect("backend init"));
+        let engine = LlmEngine::new(backend);
         assert!(engine.is_ok(), "Engine should initialize");
 
         let engine = engine.unwrap();
@@ -488,7 +485,8 @@ mod tests {
         }
 
         // Create engine
-        let engine = LlmEngine::new().expect("Failed to create engine");
+        let backend = Arc::new(LlamaBackend::init().expect("backend init"));
+        let engine = LlmEngine::new(backend).expect("Failed to create engine");
         assert!(!engine.is_model_loaded());
 
         // Load model with GPU offload

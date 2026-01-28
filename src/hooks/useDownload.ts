@@ -26,7 +26,9 @@ export function useDownload() {
 
   // Listen for download progress events
   useEffect(() => {
-    const unlisten = listen<DownloadProgressEvent>('download-progress', (event) => {
+    let unlistenFn: (() => void) | null = null;
+
+    listen<DownloadProgressEvent>('download-progress', (event) => {
       const payload = event.payload;
       const modelId = currentModelIdRef.current ?? 'unknown';
 
@@ -100,10 +102,14 @@ export function useDownload() {
           isDownloading: false,
         }));
       }
+    }).then(fn => {
+      unlistenFn = fn;
+    }).catch(err => {
+      console.warn('Failed to listen for download progress:', err);
     });
 
     return () => {
-      unlisten.then(fn => fn());
+      if (unlistenFn) unlistenFn();
     };
   }, []);
 

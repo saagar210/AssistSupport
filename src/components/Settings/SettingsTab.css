@@ -5,6 +5,9 @@
   padding: 24px;
   max-width: 800px;
   margin: 0 auto;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .settings-error {

@@ -7,30 +7,18 @@ import "./styles/design-tokens.css";
 import "./styles/themes.css";
 import "./styles/components.css";
 
-// Global error handler - logs to console, shows safe message to user
+// Global error handler - logs to console without destroying the React app.
+// Destroying document.body kills the entire React tree and prevents recovery.
+// Instead, let React's ErrorBoundary components handle UI errors gracefully.
 window.onerror = (message, _source, _lineno, _colno, error) => {
-  // Log full details to console for debugging
   console.error('JavaScript Error:', { message, error });
-
-  // Show safe message without exposing internals
-  const errorDiv = document.createElement('div');
-  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
-  errorDiv.innerHTML = '<h1>Application Error</h1><p>An unexpected error occurred. Please restart the application.</p><p>Check the developer console for details.</p>';
-  document.body.innerHTML = '';
-  document.body.appendChild(errorDiv);
-  return true;
+  // Return false to let the error propagate to React's error boundaries
+  return false;
 };
 
 window.onunhandledrejection = (event) => {
-  // Log full details to console for debugging
   console.error('Unhandled Promise Rejection:', event.reason);
-
-  // Show safe message without exposing internals
-  const errorDiv = document.createElement('div');
-  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
-  errorDiv.innerHTML = '<h1>Application Error</h1><p>An unexpected error occurred. Please restart the application.</p><p>Check the developer console for details.</p>';
-  document.body.innerHTML = '';
-  document.body.appendChild(errorDiv);
+  // Don't destroy the page — let React error boundaries and try-catch handle recovery
 };
 
 try {

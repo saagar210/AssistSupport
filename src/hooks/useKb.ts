@@ -93,6 +93,8 @@ export function useKb() {
       }
     }).then(fn => {
       unlisten = fn;
+    }).catch(err => {
+      console.warn('Failed to listen for indexing progress:', err);
     });
 
     return () => {
