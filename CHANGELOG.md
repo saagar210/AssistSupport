@@ -7,14 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.6.0-pilot] - 2026-01-28
 
 ### Added
-- **Pilot Verification Checklist**: Pre-deployment checklist covering build, database, core features, UI/UX, and deployment readiness
-- **Feedback Template**: Structured feedback form for all 20 validation queries plus own queries, accuracy, latency, helpfulness, KB gaps, and suggestions
-- **Feedback Aggregation Sheet**: Per-query tracking across all participants with pass rates and issue tracking
-- **Daily Log**: Day-by-day pilot activity tracker for 2-week pilot period
-- **Analysis Template**: Structured template for post-pilot accuracy, performance, sentiment, and KB gap analysis
-- **Go/No-Go Decision Template**: Production readiness decision document with metrics, rationale, and sign-off
-- **v0.6.1 Implementation Plan**: Template for post-pilot fixes and KB additions
-- **Week 4 Brief**: Handoff document for implementing pilot-identified fixes
+- **Feedback Logger Module**: `src-tauri/src/feedback/mod.rs` — SQLite-backed query logging, feedback submission (accuracy/clarity/helpfulness 1-5), pilot stats aggregation with per-category breakdown
+- **DB Schema v11**: `pilot_query_logs` and `pilot_feedback` tables with foreign keys, CHECK constraints, and indexes
+- **5 Tauri Commands**: `log_pilot_query`, `submit_pilot_feedback`, `get_pilot_stats`, `get_pilot_query_logs`, `export_pilot_data`
+- **CSV Export**: `feedback/export.rs` — export query logs and feedback to CSV file
+- **Pilot Tab**: New app tab with query tester (search + auto-log + rate) and real-time dashboard (stats grid, per-category table, query log viewer)
+- **FeedbackForm Component**: Star-rating UI for accuracy, clarity, helpfulness with optional comment
+- **PilotDashboard Component**: Live stats (total queries, feedback count, accuracy %, clarity avg, helpfulness avg), category breakdown table, expandable query log
+- **PilotQueryTester Component**: Search KB, view results, rate response — all in one flow
+- **8 Backend Tests**: Query logging, feedback submission, validation, rating clamping, category detection, pilot stats, CSV export
+- **Pilot Documentation**: Deploy checklist, feedback template, aggregation sheet, daily log, analysis template, go/no-go decision, v0.6.1 plan, Week 4 brief, pilot results template
 
 ## [0.6.0] - 2026-01-28
 

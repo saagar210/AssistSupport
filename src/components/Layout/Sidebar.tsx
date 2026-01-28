@@ -65,13 +65,20 @@ const navItems: NavItem[] = [
     shortcut: '6',
     description: 'View usage analytics and statistics'
   },
+  {
+    id: 'pilot',
+    label: 'Pilot',
+    icon: 'list',
+    shortcut: '7',
+    description: 'View pilot feedback dashboard'
+  },
 ];
 
 const settingsItem: NavItem = {
   id: 'settings',
   label: 'Settings',
   icon: 'settings',
-  shortcut: '7',
+  shortcut: '8',
   description: 'Configure app and model settings'
 };
 

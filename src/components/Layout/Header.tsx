@@ -52,6 +52,11 @@ const tabInfo: Record<Tab, TabInfo> = {
     description: 'Usage analytics and statistics',
     icon: 'sparkles'
   },
+  pilot: {
+    title: 'Pilot',
+    description: 'Feedback dashboard',
+    icon: 'list'
+  },
   settings: {
     title: 'Settings',
     description: 'App configuration',

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 10;
+const CURRENT_SCHEMA_VERSION: i32 = 11;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -228,6 +228,10 @@ impl Database {
 
         if from_version < 10 {
             self.migrate_v10()?;
+        }
+
+        if from_version < 11 {
+            self.migrate_v11()?;
         }
 
         tx.commit()?;
@@ -896,6 +900,43 @@ impl Database {
                 last_activity TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_session_tokens_expires ON session_tokens(expires_at);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    /// Migration to v11: Pilot feedback tables
+    fn migrate_v11(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Pilot query logs: tracks every query + response during pilot
+            CREATE TABLE IF NOT EXISTS pilot_query_logs (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                response TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'unknown',
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pilot_query_logs_user ON pilot_query_logs(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pilot_query_logs_category ON pilot_query_logs(category);
+            CREATE INDEX IF NOT EXISTS idx_pilot_query_logs_created ON pilot_query_logs(created_at DESC);
+
+            -- Pilot feedback: user ratings on query responses
+            CREATE TABLE IF NOT EXISTS pilot_feedback (
+                id TEXT PRIMARY KEY,
+                query_log_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                accuracy INTEGER NOT NULL CHECK(accuracy BETWEEN 1 AND 5),
+                clarity INTEGER NOT NULL CHECK(clarity BETWEEN 1 AND 5),
+                helpfulness INTEGER NOT NULL CHECK(helpfulness BETWEEN 1 AND 5),
+                comment TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (query_log_id) REFERENCES pilot_query_logs(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pilot_feedback_log ON pilot_feedback(query_log_id);
+            CREATE INDEX IF NOT EXISTS idx_pilot_feedback_user ON pilot_feedback(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pilot_feedback_created ON pilot_feedback(created_at DESC);
             "#,
         )?;
         Ok(())

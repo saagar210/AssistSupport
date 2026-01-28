@@ -5658,3 +5658,74 @@ fn get_device_identifier() -> String {
     let hash = hex::encode(&hasher.finalize()[..8]);
     format!("{}@{}", username, hash)
 }
+
+// ── Pilot Feedback commands ─────────────────────────────────────────────
+
+/// Log a query and its response for pilot tracking
+#[tauri::command]
+pub fn log_pilot_query(
+    state: State<'_, AppState>,
+    query: String,
+    response: String,
+    user_id: String,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    crate::feedback::log_query(db, &query, &response, &user_id)
+}
+
+/// Submit user feedback on a pilot query response
+#[tauri::command]
+pub fn submit_pilot_feedback(
+    state: State<'_, AppState>,
+    query_log_id: String,
+    user_id: String,
+    accuracy: i32,
+    clarity: i32,
+    helpfulness: i32,
+    comment: Option<String>,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    crate::feedback::submit_feedback(
+        db,
+        &query_log_id,
+        &user_id,
+        accuracy,
+        clarity,
+        helpfulness,
+        comment.as_deref(),
+    )
+}
+
+/// Get pilot dashboard summary stats
+#[tauri::command]
+pub fn get_pilot_stats(
+    state: State<'_, AppState>,
+) -> Result<crate::feedback::PilotStats, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    crate::feedback::get_pilot_stats(db)
+}
+
+/// Get all pilot query logs
+#[tauri::command]
+pub fn get_pilot_query_logs(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::feedback::QueryLog>, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    crate::feedback::get_query_logs(db)
+}
+
+/// Export pilot data to CSV
+#[tauri::command]
+pub fn export_pilot_data(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<usize, String> {
+    use std::path::Path;
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    crate::feedback::export::export_to_csv(db, Path::new(&path))
+}

@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod downloads;
 pub mod error;
 pub mod exports;
+pub mod feedback;
 pub mod jira;
 pub mod jobs;
 pub mod kb;
@@ -287,6 +288,12 @@ pub fn run() {
             commands::validate_session_token,
             commands::clear_session_token,
             commands::lock_app,
+            // v0.6.0: Pilot Feedback
+            commands::log_pilot_query,
+            commands::submit_pilot_feedback,
+            commands::get_pilot_stats,
+            commands::get_pilot_query_logs,
+            commands::export_pilot_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
