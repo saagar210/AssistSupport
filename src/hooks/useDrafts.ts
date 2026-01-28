@@ -1,11 +1,14 @@
 import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useAnalytics } from './useAnalytics';
 import type { SavedDraft, ResponseTemplate } from '../types';
 
 const AUTOSAVE_DEBOUNCE_MS = 5000;
 const AUTOSAVE_KEEP_COUNT = 10;
 
 export function useDrafts() {
+  const { logEvent } = useAnalytics();
+
   const [drafts, setDrafts] = useState<SavedDraft[]>([]);
   const [autosaves, setAutosaves] = useState<SavedDraft[]>([]);
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
@@ -77,12 +80,13 @@ export function useDrafts() {
       };
       const id = await invoke<string>('save_draft', { draft: fullDraft });
       await loadDrafts();
+      logEvent('draft_saved', { has_response: !!draft.response_text });
       return id;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return null;
     }
-  }, [loadDrafts]);
+  }, [loadDrafts, logEvent]);
 
   const updateDraft = useCallback(async (draft: SavedDraft): Promise<string | null> => {
     try {
@@ -179,6 +183,33 @@ export function useDrafts() {
   }, []);
 
   /**
+   * Restore a specific draft version by ID
+   */
+  const restoreDraftVersion = useCallback(async (draftId: string, versionId: string): Promise<boolean> => {
+    try {
+      await invoke('restore_draft_version', { draftId, versionId });
+      await loadDrafts();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }, [loadDrafts]);
+
+  /**
+   * Create a new version snapshot for a draft
+   */
+  const createDraftVersion = useCallback(async (draftId: string, changeReason?: string): Promise<boolean> => {
+    try {
+      await invoke('create_draft_version', { draftId, changeReason: changeReason || null });
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }, []);
+
+  /**
    * Compute SHA256 hash of input text (first 16 chars)
    * Used to match autosave versions
    */
@@ -261,6 +292,8 @@ export function useDrafts() {
     cancelAutosave,
     cleanupAutosaves,
     getDraftVersions,
+    restoreDraftVersion,
+    createDraftVersion,
     computeInputHash,
     getTemplate,
     saveTemplate,

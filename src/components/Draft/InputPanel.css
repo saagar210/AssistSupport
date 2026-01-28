@@ -425,3 +425,27 @@
 .first-response-textarea::placeholder {
   color: var(--text-muted);
 }
+
+/* Batch Toggle */
+.batch-toggle {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.batch-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.batch-toggle.active {
+  background: var(--accent-light);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}

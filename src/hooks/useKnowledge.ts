@@ -203,6 +203,27 @@ export function useKnowledge() {
     }
   }, []);
 
+  // Update a chunk's content
+  const updateChunkContent = useCallback(async (chunkId: string, content: string): Promise<void> => {
+    try {
+      await invoke('update_chunk_content', { chunkId, content });
+      invalidateCache();
+    } catch (e) {
+      setState(prev => ({ ...prev, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
+  // Get KB health statistics
+  const getKbHealthStats = useCallback(async () => {
+    try {
+      return await invoke('get_kb_health_stats');
+    } catch (e) {
+      setState(prev => ({ ...prev, error: String(e) }));
+      throw e;
+    }
+  }, []);
+
   // Clear all knowledge data
   const clearAll = useCallback(async (namespaceId?: string): Promise<void> => {
     try {
@@ -237,8 +258,10 @@ export function useKnowledge() {
     deleteNamespace,
     deleteSource,
     deleteDocument,
+    updateChunkContent,
+    getKbHealthStats,
     clearAll,
-  }), [loadNamespaces, selectNamespace, selectDocument, deleteNamespace, deleteSource, deleteDocument, clearAll]);
+  }), [loadNamespaces, selectNamespace, selectDocument, deleteNamespace, deleteSource, deleteDocument, updateChunkContent, getKbHealthStats, clearAll]);
 
   return {
     ...state,

@@ -3,14 +3,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { InputPanel } from './InputPanel';
 import { DiagnosisPanel, TreeResult } from './DiagnosisPanel';
 import { ResponsePanel } from './ResponsePanel';
+import { ConversationThread, ConversationEntry } from './ConversationThread';
+import { ConversationInput } from './ConversationInput';
 import { useLlm } from '../../hooks/useLlm';
 import { useDrafts } from '../../hooks/useDrafts';
 import { useKb } from '../../hooks/useKb';
+import { useAnalytics } from '../../hooks/useAnalytics';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { JiraTicket } from '../../hooks/useJira';
 import type {
   ContextSource,
+  GenerationMetrics,
   ResponseLength,
   SavedDraft,
   ChecklistItem,
@@ -47,8 +51,9 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     updateChecklist,
     generateWithContextParams,
   } = useLlm();
-  const { saveDraft, triggerAutosave, cancelAutosave } = useDrafts();
+  const { saveDraft, triggerAutosave, cancelAutosave, templates, loadTemplates } = useDrafts();
   const { search: searchKb } = useKb();
+  const { logEvent } = useAnalytics();
   const appStatus = useAppStatus();
 
   // Use centralized model status from AppStatusContext
@@ -76,6 +81,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [response, setResponse] = useState('');
   const [sources, setSources] = useState<ContextSource[]>([]);
+  const [metrics, setMetrics] = useState<GenerationMetrics | null>(null);
   const [responseLength, setResponseLength] = useState<ResponseLength>('Medium');
   const [diagnosisCollapsed, setDiagnosisCollapsed] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -83,6 +89,11 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [currentTicket, setCurrentTicket] = useState<JiraTicket | null>(null);
   const [originalResponse, setOriginalResponse] = useState<string>('');
   const [isResponseEdited, setIsResponseEdited] = useState(false);
+  const [savedDraftId, setSavedDraftId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'panels' | 'conversation'>(() => {
+    return (localStorage.getItem('draft-view-mode') as 'panels' | 'conversation') || 'panels';
+  });
+  const [conversationEntries, setConversationEntries] = useState<ConversationEntry[]>([]);
 
   const handleGenerate = useCallback(async () => {
     if (!input.trim() || generating) return;
@@ -113,13 +124,20 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setOriginalResponse(result.text);
       setIsResponseEdited(false);
       setSources(result.sources);
+      setMetrics(result.metrics ?? null);
+      logEvent('response_generated', {
+        response_length: responseLength,
+        tokens_generated: result.tokens_generated,
+        duration_ms: result.duration_ms,
+        sources_count: result.sources.length,
+      });
     } catch (e) {
       console.error('Generation failed:', e);
       showError(`Generation failed: ${e}`);
     } finally {
       setGenerating(false);
     }
-  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError]);
+  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError, logEvent]);
 
   const handleGenerateFirstResponse = useCallback(async () => {
     if (firstResponseGenerating) return;
@@ -332,6 +350,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     }
   }, [approvalQuery, modelLoaded, generateWithContextParams, showError]);
 
+  const handleApplyTemplate = useCallback((content: string) => {
+    setResponse(content);
+  }, []);
+
   const handleClear = useCallback(() => {
     setInput('');
     setOcrText(null);
@@ -356,8 +378,11 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setOriginalResponse('');
     setIsResponseEdited(false);
     setSources([]);
+    setMetrics(null);
     setCurrentTicketId(null);
     setCurrentTicket(null);
+    setSavedDraftId(null);
+    setConversationEntries([]);
   }, []);
 
   const handleResponseChange = useCallback((text: string) => {
@@ -372,6 +397,56 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const handleTreeClear = useCallback(() => {
     setTreeResult(null);
   }, []);
+
+  const handleViewModeChange = useCallback((mode: 'panels' | 'conversation') => {
+    setViewMode(mode);
+    localStorage.setItem('draft-view-mode', mode);
+  }, []);
+
+  const handleConversationSubmit = useCallback(async (text: string) => {
+    if (!modelLoaded) return;
+
+    // Add input entry
+    const inputEntry: ConversationEntry = {
+      id: crypto.randomUUID(),
+      type: 'input',
+      timestamp: new Date().toISOString(),
+      content: text,
+    };
+    setConversationEntries(prev => [...prev, inputEntry]);
+    setInput(text);
+
+    // Generate
+    setGenerating(true);
+    setResponse('');
+    clearStreamingText();
+    try {
+      const result = await generateStreaming(text, responseLength, {});
+      setResponse(result.text);
+      setOriginalResponse(result.text);
+      setIsResponseEdited(false);
+      setSources(result.sources);
+
+      // Add response entry
+      const responseEntry: ConversationEntry = {
+        id: crypto.randomUUID(),
+        type: 'response',
+        timestamp: new Date().toISOString(),
+        content: result.text,
+        sources: result.sources,
+        metrics: result.metrics ? {
+          tokens_per_second: result.metrics.tokens_per_second,
+          sources_used: result.metrics.sources_used,
+          word_count: result.metrics.word_count,
+        } : undefined,
+      };
+      setConversationEntries(prev => [...prev, responseEntry]);
+    } catch (e) {
+      console.error('Generation failed:', e);
+    } finally {
+      setGenerating(false);
+    }
+  }, [modelLoaded, responseLength, generateStreaming, clearStreamingText]);
 
   const handleCancel = useCallback(async () => {
     await cancelGeneration();
@@ -390,6 +465,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setResponse(loadedResponse);
     setOriginalResponse(loadedResponse);
     setIsResponseEdited(false);
+    setSavedDraftId(draft.id);
     if (draft.diagnosis_json) {
       try {
         const diagData = JSON.parse(draft.diagnosis_json);
@@ -535,9 +611,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     });
 
     if (draftId) {
+      setSavedDraftId(draftId);
       showSuccess('Draft saved');
     }
-  }, [input, buildDiagnosisJson, response, currentTicketId, sources, saveDraft, showError, showSuccess]);
+  }, [input, buildDiagnosisJson, response, currentTicketId, sources, saveDraft, showError, showSuccess, loadedModelName]);
 
   // Load initial draft if provided
   useEffect(() => {
@@ -545,6 +622,11 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       handleLoadDraft(initialDraft);
     }
   }, [initialDraft, handleLoadDraft]);
+
+  // Load templates on mount
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
 
   useEffect(() => {
     if (!approvalQuery.trim()) {
@@ -614,84 +696,123 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     clearDraft: handleClear,
   }), [handleGenerate, handleLoadDraft, handleSaveDraft, handleCopyResponse, handleCancel, handleExportResponse, handleClear]);
 
-  return (
-    <div className={`draft-tab ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
-      <div className="draft-panel input-panel">
-        <InputPanel
-          value={input}
-          onChange={setInput}
-          ocrText={ocrText}
-          onOcrTextChange={setOcrText}
-          onGenerate={handleGenerate}
-          onClear={handleClear}
+  const isConversation = viewMode === 'conversation';
+
+  const viewToggle = (
+    <div className="draft-view-header">
+      <div className="view-toggle">
+        <button className={`view-btn ${!isConversation ? 'active' : ''}`} onClick={() => handleViewModeChange('panels')}>Panels</button>
+        <button className={`view-btn ${isConversation ? 'active' : ''}`} onClick={() => handleViewModeChange('conversation')}>Conversation</button>
+      </div>
+    </div>
+  );
+
+  if (isConversation) {
+    return (
+      <div className="draft-tab conversation-mode">
+        {viewToggle}
+        <ConversationThread
+          entries={conversationEntries}
+          streamingText={streamingText}
+          isStreaming={isStreaming}
+        />
+        <ConversationInput
+          onSubmit={handleConversationSubmit}
           generating={generating}
           modelLoaded={modelLoaded}
           responseLength={responseLength}
           onResponseLengthChange={setResponseLength}
-          ticketId={currentTicketId}
-          onTicketIdChange={setCurrentTicketId}
-          ticket={currentTicket}
-          onTicketChange={setCurrentTicket}
-          firstResponse={firstResponse}
-          onFirstResponseChange={setFirstResponse}
-          firstResponseTone={firstResponseTone}
-          onFirstResponseToneChange={setFirstResponseTone}
-          onGenerateFirstResponse={handleGenerateFirstResponse}
-          onCopyFirstResponse={handleCopyFirstResponse}
-          onClearFirstResponse={handleClearFirstResponse}
-          firstResponseGenerating={firstResponseGenerating}
-        />
-      </div>
-
-      <div className={`draft-panel diagnosis-panel ${diagnosisCollapsed ? 'collapsed' : ''}`}>
-        <DiagnosisPanel
-          input={input}
-          ocrText={ocrText}
-          notes={diagnosticNotes}
-          onNotesChange={setDiagnosticNotes}
-          treeResult={treeResult}
-          onTreeComplete={handleTreeComplete}
-          onTreeClear={handleTreeClear}
-          checklistItems={checklistItems}
-          checklistCompleted={checklistCompleted}
-          checklistGenerating={checklistGenerating}
-          checklistUpdating={checklistUpdating}
-          checklistError={checklistError}
-          onChecklistToggle={handleChecklistToggle}
-          onChecklistGenerate={handleChecklistGenerate}
-          onChecklistUpdate={handleChecklistUpdate}
-          onChecklistClear={handleChecklistClear}
-          approvalQuery={approvalQuery}
-          onApprovalQueryChange={setApprovalQuery}
-          approvalResults={approvalResults}
-          approvalSearching={approvalSearching}
-          approvalSummary={approvalSummary}
-          approvalSummarizing={approvalSummarizing}
-          approvalSources={approvalSources}
-          onApprovalSearch={handleApprovalSearch}
-          onApprovalSummarize={handleApprovalSummarize}
-          approvalError={approvalError}
-          modelLoaded={modelLoaded}
-          hasTicket={!!currentTicket}
-          collapsed={diagnosisCollapsed}
-          onToggleCollapse={() => setDiagnosisCollapsed(!diagnosisCollapsed)}
-        />
-      </div>
-
-      <div className="draft-panel response-panel">
-        <ResponsePanel
-          response={response}
-          streamingText={streamingText}
-          isStreaming={isStreaming}
-          sources={sources}
-          generating={generating}
-          onSaveDraft={handleSaveDraft}
           onCancel={handleCancel}
-          hasInput={!!input.trim()}
-          onResponseChange={handleResponseChange}
-          isEdited={isResponseEdited}
-          modelName={loadedModelName}
         />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`draft-tab ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
+      {viewToggle}
+      <div className="draft-panels-container">
+        <div className="draft-panel input-panel">
+          <InputPanel
+            value={input}
+            onChange={setInput}
+            ocrText={ocrText}
+            onOcrTextChange={setOcrText}
+            onGenerate={handleGenerate}
+            onClear={handleClear}
+            generating={generating}
+            modelLoaded={modelLoaded}
+            responseLength={responseLength}
+            onResponseLengthChange={setResponseLength}
+            ticketId={currentTicketId}
+            onTicketIdChange={setCurrentTicketId}
+            ticket={currentTicket}
+            onTicketChange={setCurrentTicket}
+            firstResponse={firstResponse}
+            onFirstResponseChange={setFirstResponse}
+            firstResponseTone={firstResponseTone}
+            onFirstResponseToneChange={setFirstResponseTone}
+            onGenerateFirstResponse={handleGenerateFirstResponse}
+            onCopyFirstResponse={handleCopyFirstResponse}
+            onClearFirstResponse={handleClearFirstResponse}
+            firstResponseGenerating={firstResponseGenerating}
+            templates={templates}
+            onApplyTemplate={handleApplyTemplate}
+          />
+        </div>
+
+        <div className={`draft-panel diagnosis-panel ${diagnosisCollapsed ? 'collapsed' : ''}`}>
+          <DiagnosisPanel
+            input={input}
+            ocrText={ocrText}
+            notes={diagnosticNotes}
+            onNotesChange={setDiagnosticNotes}
+            treeResult={treeResult}
+            onTreeComplete={handleTreeComplete}
+            onTreeClear={handleTreeClear}
+            checklistItems={checklistItems}
+            checklistCompleted={checklistCompleted}
+            checklistGenerating={checklistGenerating}
+            checklistUpdating={checklistUpdating}
+            checklistError={checklistError}
+            onChecklistToggle={handleChecklistToggle}
+            onChecklistGenerate={handleChecklistGenerate}
+            onChecklistUpdate={handleChecklistUpdate}
+            onChecklistClear={handleChecklistClear}
+            approvalQuery={approvalQuery}
+            onApprovalQueryChange={setApprovalQuery}
+            approvalResults={approvalResults}
+            approvalSearching={approvalSearching}
+            approvalSummary={approvalSummary}
+            approvalSummarizing={approvalSummarizing}
+            approvalSources={approvalSources}
+            onApprovalSearch={handleApprovalSearch}
+            onApprovalSummarize={handleApprovalSummarize}
+            approvalError={approvalError}
+            modelLoaded={modelLoaded}
+            hasTicket={!!currentTicket}
+            collapsed={diagnosisCollapsed}
+            onToggleCollapse={() => setDiagnosisCollapsed(!diagnosisCollapsed)}
+          />
+        </div>
+
+        <div className="draft-panel response-panel">
+          <ResponsePanel
+            response={response}
+            streamingText={streamingText}
+            isStreaming={isStreaming}
+            sources={sources}
+            generating={generating}
+            metrics={metrics}
+            draftId={savedDraftId}
+            onSaveDraft={handleSaveDraft}
+            onCancel={handleCancel}
+            hasInput={!!input.trim()}
+            onResponseChange={handleResponseChange}
+            isEdited={isResponseEdited}
+            modelName={loadedModelName}
+          />
+        </div>
       </div>
     </div>
   );

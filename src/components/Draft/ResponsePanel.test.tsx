@@ -20,6 +20,7 @@ describe('ResponsePanel', () => {
     isStreaming: false,
     sources: [],
     generating: false,
+    metrics: null,
     hasInput: true,
   };
 
@@ -59,7 +60,7 @@ describe('ResponsePanel', () => {
     expect(screen.getByText('Generating response...')).toBeInTheDocument();
   });
 
-  it('shows sources button when sources are provided', () => {
+  it('auto-shows sources panel when response completes with sources', () => {
     const sources = [
       {
         chunk_id: 'c1',
@@ -73,7 +74,9 @@ describe('ResponsePanel', () => {
     renderWithProviders(
       <ResponsePanel {...defaultProps} response="Response" sources={sources} />
     );
-    expect(screen.getByText('Sources (1)')).toBeInTheDocument();
+    // Sources auto-show when response completes with sources
+    expect(screen.getByText('Hide Sources')).toBeInTheDocument();
+    expect(screen.getByText('Knowledge Base Sources')).toBeInTheDocument();
   });
 
   it('toggles sources panel visibility', () => {
@@ -91,16 +94,16 @@ describe('ResponsePanel', () => {
       <ResponsePanel {...defaultProps} response="Response" sources={sources} />
     );
 
-    // Initially hidden
-    expect(screen.queryByText('Knowledge Base Sources')).not.toBeInTheDocument();
-
-    // Click to show
-    fireEvent.click(screen.getByText('Sources (1)'));
+    // Auto-shown initially
     expect(screen.getByText('Knowledge Base Sources')).toBeInTheDocument();
 
     // Click to hide
     fireEvent.click(screen.getByText('Hide Sources'));
     expect(screen.queryByText('Knowledge Base Sources')).not.toBeInTheDocument();
+
+    // Click to show again
+    fireEvent.click(screen.getByText('Sources (1)'));
+    expect(screen.getByText('Knowledge Base Sources')).toBeInTheDocument();
   });
 
   it('copy button copies to clipboard', async () => {

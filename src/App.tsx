@@ -6,6 +6,7 @@ import { SourcesTab } from './components/Sources/SourcesTab';
 import { IngestTab } from './components/Ingest/IngestTab';
 import { KnowledgeBrowser } from './components/Knowledge';
 import { SettingsTab } from './components/Settings/SettingsTab';
+import { AnalyticsTab } from './components/Analytics/AnalyticsTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Button } from './components/shared/Button';
@@ -19,7 +20,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
 import './App.css';
 
-type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'settings';
+type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'settings';
 
 function AppContent() {
   const { initResult, loading, error } = useInitialize();
@@ -88,8 +89,8 @@ function AppContent() {
     onCancelGeneration: handleCancelGeneration,
     onExport: handleExport,
     onSwitchTab: (n) => {
-      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'settings'];
-      if (n >= 1 && n <= 6) setActiveTab(tabs[n - 1]);
+      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'settings'];
+      if (n >= 1 && n <= 7) setActiveTab(tabs[n - 1]);
     },
   });
 
@@ -180,11 +181,20 @@ function AppContent() {
       action: () => setActiveTab('knowledge'),
     },
     {
+      id: 'nav-analytics',
+      label: 'Go to Analytics',
+      description: 'View usage analytics and statistics',
+      icon: 'sparkles',
+      shortcut: 'Cmd+6',
+      category: 'navigation',
+      action: () => setActiveTab('analytics'),
+    },
+    {
       id: 'nav-settings',
       label: 'Go to Settings',
       description: 'Configure app preferences',
       icon: 'settings',
-      shortcut: 'Cmd+6',
+      shortcut: 'Cmd+7',
       category: 'navigation',
       action: () => setActiveTab('settings'),
     },
@@ -340,6 +350,12 @@ function AppContent() {
         return (
           <ErrorBoundary fallbackTitle="Knowledge tab encountered an error">
             <KnowledgeBrowser />
+          </ErrorBoundary>
+        );
+      case 'analytics':
+        return (
+          <ErrorBoundary fallbackTitle="Analytics tab encountered an error">
+            <AnalyticsTab />
           </ErrorBoundary>
         );
       case 'settings':

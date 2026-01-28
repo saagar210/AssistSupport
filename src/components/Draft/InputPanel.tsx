@@ -2,7 +2,11 @@ import { useState, useCallback, useRef, useEffect, KeyboardEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { useJira, JiraTicket } from '../../hooks/useJira';
-import type { ResponseLength, OcrResult, FirstResponseTone } from '../../types';
+import { AutoSuggest } from './AutoSuggest';
+import { VoiceInput } from './VoiceInput';
+import { TemplateSelector } from './TemplateSelector';
+import { BatchPanel } from '../Batch/BatchPanel';
+import type { ResponseLength, OcrResult, FirstResponseTone, ResponseTemplate } from '../../types';
 import './InputPanel.css';
 
 interface InputPanelProps {
@@ -28,6 +32,8 @@ interface InputPanelProps {
   onCopyFirstResponse: () => void;
   onClearFirstResponse: () => void;
   firstResponseGenerating: boolean;
+  templates?: ResponseTemplate[];
+  onApplyTemplate?: (content: string) => void;
 }
 
 export function InputPanel({
@@ -53,9 +59,12 @@ export function InputPanel({
   onCopyFirstResponse,
   onClearFirstResponse,
   firstResponseGenerating,
+  templates,
+  onApplyTemplate,
 }: InputPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { checkConfiguration, getTicket, configured } = useJira();
+  const [batchMode, setBatchMode] = useState(false);
   const [ticketInputValue, setTicketInputValue] = useState(ticketId || '');
   const [ticketFetching, setTicketFetching] = useState(false);
   const [ticketError, setTicketError] = useState<string | null>(null);
@@ -178,6 +187,11 @@ export function InputPanel({
     }
   }, [onOcrTextChange]);
 
+  const handleVoiceTranscript = useCallback((text: string) => {
+    const separator = value && !value.endsWith(' ') ? ' ' : '';
+    onChange(value + separator + text);
+  }, [value, onChange]);
+
   const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
   const hasFirstResponseInput = Boolean(value.trim() || ticket || ocrText);
 
@@ -186,6 +200,19 @@ export function InputPanel({
       <div className="panel-header">
         <h3>Input</h3>
         <div className="input-actions">
+          <button
+            className={`batch-toggle ${batchMode ? 'active' : ''}`}
+            onClick={() => setBatchMode(!batchMode)}
+            title="Toggle batch mode"
+          >
+            Batch
+          </button>
+          {templates && templates.length > 0 && onApplyTemplate && (
+            <TemplateSelector
+              templates={templates}
+              onSelectTemplate={onApplyTemplate}
+            />
+          )}
           <select
             className="response-length-select"
             value={responseLength}
@@ -203,6 +230,10 @@ export function InputPanel({
           >
             Clear
           </Button>
+          <VoiceInput
+            onTranscript={handleVoiceTranscript}
+            disabled={generating}
+          />
           <Button
             variant="primary"
             size="small"
@@ -215,146 +246,152 @@ export function InputPanel({
         </div>
       </div>
 
-      <div className="panel-content input-content">
-        <textarea
-          ref={textareaRef}
-          className="input-textarea"
-          placeholder="Paste ticket content or describe the issue..."
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-        />
+      {batchMode ? (
+        <BatchPanel responseLength={responseLength} modelLoaded={modelLoaded} />
+      ) : (
+        <div className="panel-content input-content">
+          <textarea
+            ref={textareaRef}
+            className="input-textarea"
+            placeholder="Paste ticket content or describe the issue..."
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+          />
 
-        {ocrText && (
-          <div className="ocr-preview">
-            <div className="ocr-header">
-              <span>Screenshot Text (OCR)</span>
-              <button
-                className="ocr-remove"
-                onClick={() => onOcrTextChange(null)}
-                aria-label="Remove OCR text"
-              >
-                &times;
-              </button>
-            </div>
-            <pre className="ocr-text">{ocrText}</pre>
-          </div>
-        )}
+          <AutoSuggest query={value} />
 
-        {/* Jira Ticket Section */}
-        {configured && (
-          <div className="ticket-section">
-            <div className="ticket-input-row">
-              <label htmlFor="ticket-id">Ticket:</label>
-              <input
-                id="ticket-id"
-                type="text"
-                className="ticket-input"
-                placeholder="PROJ-123"
-                value={ticketInputValue}
-                onChange={e => handleTicketInputChange(e.target.value)}
-              />
-              {ticketInputValue && (
+          {ocrText && (
+            <div className="ocr-preview">
+              <div className="ocr-header">
+                <span>Screenshot Text (OCR)</span>
                 <button
-                  className="ticket-clear"
-                  onClick={handleClearTicket}
-                  aria-label="Clear ticket"
+                  className="ocr-remove"
+                  onClick={() => onOcrTextChange(null)}
+                  aria-label="Remove OCR text"
                 >
                   &times;
                 </button>
-              )}
-              {ticketFetching && <span className="ticket-loading">Loading...</span>}
+              </div>
+              <pre className="ocr-text">{ocrText}</pre>
             </div>
+          )}
 
-            {ticketError && (
-              <div className="ticket-error">{ticketError}</div>
-            )}
-
-            {ticket && !ticketError && (
-              <div className="ticket-preview">
-                <div className="ticket-header">
-                  <span className="ticket-key">{ticket.key}</span>
-                  <span className={`ticket-status status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                    {ticket.status}
-                  </span>
-                  {ticket.priority && (
-                    <span className={`ticket-priority priority-${ticket.priority.toLowerCase()}`}>
-                      {ticket.priority}
-                    </span>
-                  )}
-                </div>
-                <div className="ticket-summary">{ticket.summary}</div>
-                {ticket.description && (
+          {/* Jira Ticket Section */}
+          {configured && (
+            <div className="ticket-section">
+              <div className="ticket-input-row">
+                <label htmlFor="ticket-id">Ticket:</label>
+                <input
+                  id="ticket-id"
+                  type="text"
+                  className="ticket-input"
+                  placeholder="PROJ-123"
+                  value={ticketInputValue}
+                  onChange={e => handleTicketInputChange(e.target.value)}
+                />
+                {ticketInputValue && (
                   <button
-                    className="ticket-description-toggle"
-                    onClick={() => setShowDescription(!showDescription)}
+                    className="ticket-clear"
+                    onClick={handleClearTicket}
+                    aria-label="Clear ticket"
                   >
-                    {showDescription ? '▼ Hide description' : '▶ Show description'}
+                    &times;
                   </button>
                 )}
-                {showDescription && ticket.description && (
-                  <div className="ticket-description">{ticket.description}</div>
-                )}
+                {ticketFetching && <span className="ticket-loading">Loading...</span>}
               </div>
-            )}
-          </div>
-        )}
 
-        <div className="first-response-section">
-          <div className="first-response-header">
-            <h4>First Response</h4>
-            <div className="first-response-actions">
-              <select
-                className="first-response-tone"
-                value={firstResponseTone}
-                onChange={e => onFirstResponseToneChange(e.target.value as FirstResponseTone)}
-              >
-                <option value="slack">Slack (friendly)</option>
-                <option value="jira">Jira (concise)</option>
-              </select>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={onGenerateFirstResponse}
-                loading={firstResponseGenerating}
-                disabled={!modelLoaded || !hasFirstResponseInput}
-              >
-                Draft Reply
-              </Button>
-              <Button
-                variant="secondary"
-                size="small"
-                onClick={onCopyFirstResponse}
-                disabled={!firstResponse.trim()}
-              >
-                Copy
-              </Button>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={onClearFirstResponse}
-                disabled={!firstResponse.trim()}
-              >
-                Clear Reply
-              </Button>
+              {ticketError && (
+                <div className="ticket-error">{ticketError}</div>
+              )}
+
+              {ticket && !ticketError && (
+                <div className="ticket-preview">
+                  <div className="ticket-header">
+                    <span className="ticket-key">{ticket.key}</span>
+                    <span className={`ticket-status status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                      {ticket.status}
+                    </span>
+                    {ticket.priority && (
+                      <span className={`ticket-priority priority-${ticket.priority.toLowerCase()}`}>
+                        {ticket.priority}
+                      </span>
+                    )}
+                  </div>
+                  <div className="ticket-summary">{ticket.summary}</div>
+                  {ticket.description && (
+                    <button
+                      className="ticket-description-toggle"
+                      onClick={() => setShowDescription(!showDescription)}
+                    >
+                      {showDescription ? '▼ Hide description' : '▶ Show description'}
+                    </button>
+                  )}
+                  {showDescription && ticket.description && (
+                    <div className="ticket-description">{ticket.description}</div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-          <textarea
-            className="first-response-textarea"
-            placeholder="Drafted first response will appear here..."
-            value={firstResponse}
-            onChange={e => onFirstResponseChange(e.target.value)}
-          />
-        </div>
+          )}
 
-        <div className="input-footer">
-          <span className="word-count">{wordCount} words</span>
-          <span className={`model-status ${modelLoaded ? 'model-ready' : 'model-warning'}`}>
-            {modelLoaded ? '● Model ready' : '○ No model loaded'}
-          </span>
+          <div className="first-response-section">
+            <div className="first-response-header">
+              <h4>First Response</h4>
+              <div className="first-response-actions">
+                <select
+                  className="first-response-tone"
+                  value={firstResponseTone}
+                  onChange={e => onFirstResponseToneChange(e.target.value as FirstResponseTone)}
+                >
+                  <option value="slack">Slack (friendly)</option>
+                  <option value="jira">Jira (concise)</option>
+                </select>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={onGenerateFirstResponse}
+                  loading={firstResponseGenerating}
+                  disabled={!modelLoaded || !hasFirstResponseInput}
+                >
+                  Draft Reply
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={onCopyFirstResponse}
+                  disabled={!firstResponse.trim()}
+                >
+                  Copy
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={onClearFirstResponse}
+                  disabled={!firstResponse.trim()}
+                >
+                  Clear Reply
+                </Button>
+              </div>
+            </div>
+            <textarea
+              className="first-response-textarea"
+              placeholder="Drafted first response will appear here..."
+              value={firstResponse}
+              onChange={e => onFirstResponseChange(e.target.value)}
+            />
+          </div>
+
+          <div className="input-footer">
+            <span className="word-count">{wordCount} words</span>
+            <span className={`model-status ${modelLoaded ? 'model-ready' : 'model-warning'}`}>
+              {modelLoaded ? '● Model ready' : '○ No model loaded'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
     </>
   );

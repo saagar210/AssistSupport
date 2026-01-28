@@ -242,6 +242,23 @@ pub fn run() {
             commands::diagnostics::get_llm_resource_limits,
             commands::diagnostics::set_llm_resource_limits,
             commands::diagnostics::get_vector_maintenance_info_cmd,
+            // Phase 4: Response Rating commands
+            commands::rate_response,
+            commands::get_draft_rating,
+            commands::get_rating_stats,
+            // Phase 2: Analytics commands
+            commands::log_analytics_event,
+            commands::get_analytics_summary,
+            commands::get_kb_usage_stats,
+            // Phase 10: KB Management commands
+            commands::update_chunk_content,
+            commands::get_kb_health_stats,
+            // Phase 6: Draft Version Restore
+            commands::restore_draft_version,
+            // Phase 9: Batch Processing commands
+            commands::batch_generate,
+            commands::get_batch_status,
+            commands::export_batch_results,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

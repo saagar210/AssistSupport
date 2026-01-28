@@ -3,6 +3,8 @@ import { useDrafts } from '../../hooks/useDrafts';
 import { useCustomVariables } from '../../hooks/useCustomVariables';
 import { Button } from '../shared/Button';
 import { Skeleton } from '../shared/Skeleton';
+import { VersionTimeline } from './VersionTimeline';
+import { DiffViewer } from './DiffViewer';
 import type { SavedDraft, ResponseTemplate, TemplateContext } from '../../types';
 import {
   applyTemplate,
@@ -29,11 +31,11 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     searchDrafts,
     loadTemplates,
     deleteDraft,
-    updateDraft,
     saveTemplate,
     updateTemplate,
     deleteTemplate,
     getDraftVersions,
+    restoreDraftVersion,
     computeInputHash,
   } = useDrafts();
 
@@ -62,6 +64,9 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
   const [expandedVersions, setExpandedVersions] = useState<string | null>(null);
   const [versionData, setVersionData] = useState<Record<string, SavedDraft[]>>({});
   const [loadingVersions, setLoadingVersions] = useState<string | null>(null);
+
+  // Diff comparison state
+  const [diffState, setDiffState] = useState<{ a: SavedDraft; b: SavedDraft } | null>(null);
 
   useEffect(() => {
     loadDrafts();
@@ -190,19 +195,19 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
     }
   }, [expandedVersions, computeInputHash, getDraftVersions]);
 
-  // Restore a version by updating the current draft
-  const handleRestoreVersion = useCallback(async (currentDraft: SavedDraft, version: SavedDraft) => {
-    const updatedDraft: SavedDraft = {
-      ...currentDraft,
-      response_text: version.response_text,
-      summary_text: version.summary_text,
-      diagnosis_json: version.diagnosis_json,
-      kb_sources_json: version.kb_sources_json,
-      model_name: version.model_name,
-    };
-    await updateDraft(updatedDraft);
-    setExpandedVersions(null);
-  }, [updateDraft]);
+  // Restore a version using the backend command
+  const handleRestoreVersion = useCallback(async (version: SavedDraft) => {
+    if (!expandedVersions) return;
+    const success = await restoreDraftVersion(expandedVersions, version.id);
+    if (success) {
+      setExpandedVersions(null);
+    }
+  }, [expandedVersions, restoreDraftVersion]);
+
+  // Compare two versions in the diff viewer
+  const handleCompareVersions = useCallback((versionA: SavedDraft, versionB: SavedDraft) => {
+    setDiffState({ a: versionA, b: versionB });
+  }, []);
 
   const handleUseTemplate = useCallback((template: ResponseTemplate) => {
     // Apply template variable replacement
@@ -431,36 +436,15 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
               </Button>
             </div>
 
-            {/* Version History */}
+            {/* Version History Timeline */}
             {expandedVersions === draft.id && (
-              <div className="version-history">
-                <h4>Version History</h4>
-                {loadingVersions === draft.id ? (
-                  <div className="version-loading">Loading versions...</div>
-                ) : versionData[draft.id]?.length === 0 ? (
-                  <div className="version-empty">No previous versions found.</div>
-                ) : (
-                  <div className="version-list">
-                    {versionData[draft.id]?.map((version) => (
-                      <div key={version.id} className="version-item">
-                        <div className="version-info">
-                          <span className="version-date">{formatDate(version.created_at)}</span>
-                          <span className="version-preview">
-                            {truncateText(version.response_text || 'No response', 80)}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="small"
-                          onClick={() => handleRestoreVersion(draft, version)}
-                        >
-                          Restore
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <VersionTimeline
+                versions={versionData[draft.id] || []}
+                currentDraft={draft}
+                onRestore={handleRestoreVersion}
+                onCompare={handleCompareVersions}
+                loading={loadingVersions === draft.id}
+              />
             )}
           </div>
             ))}
@@ -695,6 +679,17 @@ export function FollowUpsTab({ onLoadDraft, onUseTemplate, templateContext = {} 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Diff Viewer Modal */}
+      {diffState && (
+        <DiffViewer
+          textA={diffState.a.response_text || ''}
+          textB={diffState.b.response_text || ''}
+          labelA={`Current (${new Date(diffState.a.created_at).toLocaleDateString()})`}
+          labelB={`Version (${new Date(diffState.b.created_at).toLocaleDateString()})`}
+          onClose={() => setDiffState(null)}
+        />
       )}
     </div>
   );

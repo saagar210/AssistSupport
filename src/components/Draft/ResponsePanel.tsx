@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
+import { RatingPanel } from './RatingPanel';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { ContextSource } from '../../types';
+import type { ContextSource, GenerationMetrics, DocumentChunk } from '../../types';
 import './ResponsePanel.css';
 
 type ExportFormat = 'Markdown' | 'PlainText' | 'Html';
@@ -13,6 +14,8 @@ interface ResponsePanelProps {
   isStreaming: boolean;
   sources: ContextSource[];
   generating: boolean;
+  metrics: GenerationMetrics | null;
+  draftId?: string | null;
   onSaveDraft?: () => void;
   onCancel?: () => void;
   hasInput?: boolean;
@@ -21,12 +24,42 @@ interface ResponsePanelProps {
   modelName?: string | null;
 }
 
-export function ResponsePanel({ response, streamingText, isStreaming, sources, generating, onSaveDraft, onCancel, hasInput, onResponseChange, isEdited, modelName }: ResponsePanelProps) {
+function getConfidenceLevel(avgScore: number): { label: string; className: string } {
+  const pct = avgScore * 100;
+  if (pct > 80) {
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-high' };
+  } else if (pct >= 50) {
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-medium' };
+  } else {
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-low' };
+  }
+}
+
+function getScoreBarClassName(score: number): string {
+  const pct = score * 100;
+  if (pct > 80) return 'score-fill-high';
+  if (pct >= 50) return 'score-fill-medium';
+  return 'score-fill-low';
+}
+
+export function ResponsePanel({ response, streamingText, isStreaming, sources, generating, metrics, draftId, onSaveDraft, onCancel, hasInput, onResponseChange, isEdited, modelName }: ResponsePanelProps) {
   const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
+  const [sourcePreviewContent, setSourcePreviewContent] = useState<Record<string, string>>({});
+  const [sourcePreviewLoading, setSourcePreviewLoading] = useState<Record<string, boolean>>({});
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const { success: showSuccess, error: showError } = useToastContext();
+  const prevResponseRef = useRef<string>('');
+
+  // Auto-show sources when a new response completes with sources available
+  useEffect(() => {
+    if (response && response !== prevResponseRef.current && sources.length > 0 && !generating && !isStreaming) {
+      setShowSources(true);
+    }
+    prevResponseRef.current = response;
+  }, [response, sources.length, generating, isStreaming]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -68,7 +101,45 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
     }
   }, [response, showError]);
 
+  const handleSourceToggle = useCallback(async (source: ContextSource) => {
+    const chunkId = source.chunk_id;
+
+    if (expandedSourceId === chunkId) {
+      setExpandedSourceId(null);
+      return;
+    }
+
+    setExpandedSourceId(chunkId);
+
+    // Fetch preview content if not already cached
+    if (!sourcePreviewContent[chunkId]) {
+      setSourcePreviewLoading(prev => ({ ...prev, [chunkId]: true }));
+      try {
+        const chunks = await invoke<DocumentChunk[]>('get_document_chunks', {
+          documentId: source.document_id,
+        });
+        // Find the matching chunk by id, or fall back to first chunk
+        const matchingChunk = chunks.find(c => c.id === chunkId) ?? chunks[0];
+        const content = matchingChunk?.content ?? 'No content available.';
+        setSourcePreviewContent(prev => ({ ...prev, [chunkId]: content }));
+      } catch {
+        setSourcePreviewContent(prev => ({
+          ...prev,
+          [chunkId]: 'Failed to load content preview.',
+        }));
+      } finally {
+        setSourcePreviewLoading(prev => ({ ...prev, [chunkId]: false }));
+      }
+    }
+  }, [expandedSourceId, sourcePreviewContent]);
+
   const wordCount = response.trim().split(/\s+/).filter(Boolean).length;
+
+  // Compute average confidence from sources
+  const avgScore = sources.length > 0
+    ? sources.reduce((sum, s) => sum + s.score, 0) / sources.length
+    : 0;
+  const confidence = sources.length > 0 ? getConfidenceLevel(avgScore) : null;
 
   return (
     <>
@@ -165,27 +236,79 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
 
             {showSources && sources.length > 0 && (
               <div className="sources-panel">
-                <h4>Knowledge Base Sources</h4>
+                <div className="sources-panel-header">
+                  <h4>Knowledge Base Sources</h4>
+                  {confidence && (
+                    <span className={`confidence-badge ${confidence.className}`}>
+                      {confidence.label}
+                    </span>
+                  )}
+                </div>
                 <ul className="sources-list">
-                  {sources.map((source, i) => (
-                    <li key={source.chunk_id} className="source-item">
-                      <span className="source-number">[{i + 1}]</span>
-                      <div className="source-info">
-                        <span className="source-title">
-                          {source.title || source.file_path}
-                        </span>
-                        {source.heading_path && (
-                          <span className="source-heading">
-                            &rsaquo; {source.heading_path}
+                  {sources.map((source, i) => {
+                    const isExpanded = expandedSourceId === source.chunk_id;
+                    const isLoading = sourcePreviewLoading[source.chunk_id] ?? false;
+                    const preview = sourcePreviewContent[source.chunk_id];
+                    const scorePct = (source.score * 100).toFixed(0);
+
+                    return (
+                      <li key={source.chunk_id} className="source-item-expandable">
+                        <button
+                          className="source-expand-toggle"
+                          onClick={() => handleSourceToggle(source)}
+                          aria-expanded={isExpanded}
+                          title={isExpanded ? 'Collapse preview' : 'Expand preview'}
+                        >
+                          <span className="source-expand-icon">
+                            {isExpanded ? '\u25BE' : '\u25B8'}
                           </span>
+                          <span className="source-number">[{i + 1}]</span>
+                          <div className="source-info">
+                            <span className="source-title">
+                              {source.title || source.file_path}
+                            </span>
+                            {source.heading_path && (
+                              <span className="source-heading">
+                                &rsaquo; {source.heading_path}
+                              </span>
+                            )}
+                          </div>
+                          <div className="source-score-bar" title={`Relevance: ${scorePct}%`}>
+                            <div className="source-score-bar-track">
+                              <div
+                                className={`source-score-bar-fill ${getScoreBarClassName(source.score)}`}
+                                style={{ width: `${scorePct}%` }}
+                              />
+                            </div>
+                            <span className="source-score-label">{scorePct}%</span>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="source-preview">
+                            {isLoading ? (
+                              <div className="source-preview-loading">Loading preview...</div>
+                            ) : (
+                              <pre className="source-preview-content">{preview}</pre>
+                            )}
+                          </div>
                         )}
-                        <span className="source-score">
-                          Score: {(source.score * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
+                {metrics && (
+                  <div className="sources-metrics">
+                    <span className="metrics-item" title="Tokens generated per second">
+                      {metrics.tokens_per_second.toFixed(1)} tok/s
+                    </span>
+                    <span className="metrics-item" title="Number of KB sources used">
+                      {metrics.sources_used} sources
+                    </span>
+                    <span className="metrics-item" title="Context window utilization">
+                      {(metrics.context_utilization * 100).toFixed(0)}% ctx
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -209,6 +332,10 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
               </div>
             )}
           </div>
+        )}
+
+        {response && !generating && !isStreaming && (
+          <RatingPanel draftId={draftId ?? null} />
         )}
       </div>
     </>

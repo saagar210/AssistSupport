@@ -58,13 +58,20 @@ const navItems: NavItem[] = [
     shortcut: '5',
     description: 'Search and explore knowledge base'
   },
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    icon: 'sparkles',
+    shortcut: '6',
+    description: 'View usage analytics and statistics'
+  },
 ];
 
 const settingsItem: NavItem = {
   id: 'settings',
   label: 'Settings',
   icon: 'settings',
-  shortcut: '6',
+  shortcut: '7',
   description: 'Configure app and model settings'
 };
 

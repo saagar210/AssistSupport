@@ -244,7 +244,7 @@ export interface OcrResult {
 }
 
 // UI State types
-export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'settings';
+export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 

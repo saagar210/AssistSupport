@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { useAnalytics } from './useAnalytics';
 import type {
   KbDocument,
   IndexStats,
@@ -44,6 +45,8 @@ interface IndexProgressError {
 type IndexProgressEvent = IndexProgressStarted | IndexProgressProcessing | IndexProgressCompleted | IndexProgressError;
 
 export function useKb() {
+  const { logEvent } = useAnalytics();
+
   const [state, setState] = useState<KbState>({
     folderPath: null,
     stats: null,
@@ -238,6 +241,10 @@ export function useKb() {
             namespaceId: namespaceId ?? null,
           });
       setState(prev => ({ ...prev, searching: false }));
+      logEvent('search_performed', {
+        results_count: results.length,
+        has_options: !!options,
+      });
       return results;
     } catch (e) {
       setState(prev => ({
@@ -247,7 +254,7 @@ export function useKb() {
       }));
       throw e;
     }
-  }, []);
+  }, [logEvent]);
 
   const getSearchContext = useCallback(async (
     query: string,

@@ -4362,3 +4362,540 @@ pub fn list_namespace_rules(
 }
 
 // Diagnostics commands moved to commands/diagnostics.rs
+
+// ============================================================================
+// Phase 4: Response Rating Commands
+// ============================================================================
+
+/// Rate a response (1-5) with optional feedback
+#[tauri::command]
+pub async fn rate_response(
+    state: State<'_, AppState>,
+    id: String,
+    draft_id: String,
+    rating: i32,
+    feedback_text: Option<String>,
+    feedback_category: Option<String>,
+) -> Result<(), String> {
+    if !(1..=5).contains(&rating) {
+        return Err("Rating must be between 1 and 5".to_string());
+    }
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.save_response_rating(
+        &id,
+        &draft_id,
+        rating,
+        feedback_text.as_deref(),
+        feedback_category.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Get the rating for a specific draft
+#[tauri::command]
+pub async fn get_draft_rating(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<Option<crate::db::ResponseRating>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_draft_rating(&draft_id).map_err(|e| e.to_string())
+}
+
+/// Get aggregate rating statistics
+#[tauri::command]
+pub async fn get_rating_stats(
+    state: State<'_, AppState>,
+) -> Result<crate::db::RatingStats, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_rating_stats().map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 2: Analytics Commands
+// ============================================================================
+
+/// Log an analytics event
+#[tauri::command]
+pub async fn log_analytics_event(
+    state: State<'_, AppState>,
+    id: String,
+    event_type: String,
+    event_data_json: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.log_analytics_event(&id, &event_type, event_data_json.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Get analytics summary for a time period
+#[tauri::command]
+pub async fn get_analytics_summary(
+    state: State<'_, AppState>,
+    period_days: Option<i64>,
+) -> Result<crate::db::AnalyticsSummary, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_analytics_summary(period_days)
+        .map_err(|e| e.to_string())
+}
+
+/// Get KB article usage statistics
+#[tauri::command]
+pub async fn get_kb_usage_stats(
+    state: State<'_, AppState>,
+    period_days: Option<i64>,
+) -> Result<Vec<crate::db::ArticleUsage>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_kb_usage_stats(period_days)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 10: KB Management Commands
+// ============================================================================
+
+/// Update the content of a KB chunk
+#[tauri::command]
+pub async fn update_chunk_content(
+    state: State<'_, AppState>,
+    chunk_id: String,
+    content: String,
+) -> Result<(), String> {
+    validate_non_empty(&content).map_err(|e| e.to_string())?;
+    validate_text_size(&content, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.update_chunk_content(&chunk_id, &content)
+        .map_err(|e| e.to_string())
+}
+
+/// Get KB health statistics
+#[tauri::command]
+pub async fn get_kb_health_stats(
+    state: State<'_, AppState>,
+) -> Result<crate::db::KbHealthStats, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_kb_health_stats().map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 6: Draft Version Restore Command
+// ============================================================================
+
+/// Restore a draft to a previous version
+#[tauri::command]
+pub async fn restore_draft_version(
+    state: State<'_, AppState>,
+    draft_id: String,
+    version_id: String,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.restore_draft_version(&draft_id, &version_id)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Phase 9: Batch Processing Commands
+// ============================================================================
+
+/// Batch input item
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchInput {
+    pub text: String,
+}
+
+/// Batch result for a single input
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchResult {
+    pub input: String,
+    pub response: String,
+    pub sources: Vec<BatchSource>,
+    pub duration_ms: u64,
+}
+
+/// Source reference in batch results
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchSource {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub title: Option<String>,
+    pub score: f64,
+}
+
+/// Batch processing job status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchStatus {
+    pub job_id: String,
+    pub status: String,
+    pub total: usize,
+    pub completed: usize,
+    pub results: Vec<BatchResult>,
+    pub error: Option<String>,
+}
+
+/// Start a batch generation job, returns the job_id immediately
+#[tauri::command]
+pub async fn batch_generate(
+    state: State<'_, AppState>,
+    inputs: Vec<String>,
+    response_length: String,
+) -> Result<String, String> {
+    use crate::jobs::{Job, JobStatus, JobType};
+
+    if inputs.is_empty() {
+        return Err("Inputs list cannot be empty".to_string());
+    }
+
+    for input in &inputs {
+        validate_non_empty(input).map_err(|e| e.to_string())?;
+    }
+
+    // Create a job in the database
+    let job =
+        Job::new(JobType::Custom("batch_generate".to_string())).with_metadata(serde_json::json!({
+            "input_count": inputs.len(),
+            "response_length": response_length,
+            "batch_results": [],
+            "completed": 0,
+        }));
+
+    let job_id = job.id.clone();
+
+    {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.create_job(&job).map_err(|e| e.to_string())?;
+    }
+
+    // Register for cancellation
+    let cancel_token = state.jobs.register_job(&job_id);
+
+    // Clone Arcs for use in the processing loop
+    let llm_arc = state.llm.clone();
+    let jobs_arc = state.jobs.clone();
+    let total = inputs.len();
+
+    // Get the LLM engine state (clone Arc, don't hold lock across awaits)
+    let engine_state = {
+        let llm_guard = llm_arc.read();
+        match llm_guard.as_ref() {
+            Some(engine) => {
+                if !engine.is_model_loaded() {
+                    // Mark job as failed and return
+                    let db_guard = state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("DB lock error: {}", e))?;
+                    if let Some(db) = db_guard.as_ref() {
+                        let _ = db.update_job_status(
+                            &job_id,
+                            JobStatus::Failed,
+                            Some("No model loaded"),
+                        );
+                    }
+                    jobs_arc.unregister_job(&job_id);
+                    return Err("No model loaded".to_string());
+                }
+                Some(engine.state.clone())
+            }
+            None => None,
+        }
+    };
+
+    // Mark job as running
+    {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.update_job_status(&job_id, JobStatus::Running, None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let mut results: Vec<BatchResult> = Vec::new();
+
+    for (i, input_text) in inputs.iter().enumerate() {
+        // Check cancellation
+        if cancel_token.is_cancelled() {
+            let db_guard = state
+                .db
+                .lock()
+                .map_err(|e| format!("DB lock error: {}", e))?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            db.update_job_status(&job_id, JobStatus::Cancelled, Some("Cancelled by user"))
+                .map_err(|e| e.to_string())?;
+            jobs_arc.unregister_job(&job_id);
+            return Ok(job_id);
+        }
+
+        let start = std::time::Instant::now();
+
+        // Search KB for context
+        let sources = {
+            let db_guard = state
+                .db
+                .lock()
+                .map_err(|e| format!("DB lock error: {}", e))?;
+            if let Some(db) = db_guard.as_ref() {
+                crate::kb::search::HybridSearch::search(db, input_text, 3)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|r| BatchSource {
+                        chunk_id: r.chunk_id.clone(),
+                        document_id: r.document_id.clone(),
+                        title: r.title.clone(),
+                        score: r.score,
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                vec![]
+            }
+        };
+
+        // Generate response using LLM
+        let response_text = if let Some(ref es) = engine_state {
+            let max_tokens: u32 = match response_length.as_str() {
+                "short" => 150,
+                "long" => 600,
+                _ => 300, // medium default
+            };
+
+            let gen_params = crate::llm::GenerationParams {
+                max_tokens,
+                ..Default::default()
+            };
+
+            let prompt = format!(
+                "You are a helpful IT support assistant. Respond to the following support request:\n\n{}\n\nProvide a clear, professional response.",
+                input_text
+            );
+
+            // Use the async generate method via a temp engine
+            let temp_engine = crate::llm::LlmEngine { state: es.clone() };
+            match temp_engine.generate(&prompt, gen_params).await {
+                Ok(text) => text,
+                Err(e) => format!("Error generating response: {}", e),
+            }
+        } else {
+            "LLM engine not loaded".to_string()
+        };
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        results.push(BatchResult {
+            input: input_text.clone(),
+            response: response_text,
+            sources,
+            duration_ms,
+        });
+
+        // Update job progress
+        {
+            let db_guard = state
+                .db
+                .lock()
+                .map_err(|e| format!("DB lock error: {}", e))?;
+            if let Some(db) = db_guard.as_ref() {
+                let progress = ((i + 1) as f32 / total as f32) * 100.0;
+                let _ = db.update_job_progress(
+                    &job_id,
+                    progress,
+                    Some(&format!("Processed {}/{}", i + 1, total)),
+                );
+
+                // Store intermediate results in job metadata
+                let metadata = serde_json::json!({
+                    "input_count": total,
+                    "response_length": response_length,
+                    "batch_results": &results,
+                    "completed": i + 1,
+                });
+                let metadata_str = serde_json::to_string(&metadata).unwrap_or_default();
+                let _ = db.execute(
+                    "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+                    &[&metadata_str as &dyn rusqlite::ToSql, &job_id],
+                );
+            }
+        }
+    }
+
+    // Mark job as succeeded
+    {
+        let db_guard = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        if let Some(db) = db_guard.as_ref() {
+            let final_metadata = serde_json::json!({
+                "input_count": total,
+                "response_length": response_length,
+                "batch_results": &results,
+                "completed": total,
+            });
+            let metadata_str = serde_json::to_string(&final_metadata).unwrap_or_default();
+            let _ = db.execute(
+                "UPDATE jobs SET metadata_json = ? WHERE id = ?",
+                &[&metadata_str as &dyn rusqlite::ToSql, &job_id],
+            );
+            let _ = db.update_job_status(&job_id, JobStatus::Succeeded, None);
+        }
+    }
+
+    jobs_arc.unregister_job(&job_id);
+
+    Ok(job_id)
+}
+
+/// Get the status of a batch processing job
+#[tauri::command]
+pub async fn get_batch_status(
+    state: State<'_, AppState>,
+    job_id: String,
+) -> Result<BatchStatus, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let job = db
+        .get_job(&job_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Job not found: {}", job_id))?;
+
+    let (results, completed, total) = if let Some(metadata) = &job.metadata {
+        let batch_results: Vec<BatchResult> = metadata
+            .get("batch_results")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let completed = metadata
+            .get("completed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let total = metadata
+            .get("input_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        (batch_results, completed, total)
+    } else {
+        (vec![], 0, 0)
+    };
+
+    Ok(BatchStatus {
+        job_id: job.id,
+        status: job.status.to_string(),
+        total,
+        completed,
+        results,
+        error: job.error,
+    })
+}
+
+/// Export batch results in a given format (csv or json)
+#[tauri::command]
+pub async fn export_batch_results(
+    state: State<'_, AppState>,
+    job_id: String,
+    format: String,
+) -> Result<bool, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let job = db
+        .get_job(&job_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Job not found: {}", job_id))?;
+
+    let results: Vec<BatchResult> = job
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("batch_results"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    if results.is_empty() {
+        return Err("No results to export".to_string());
+    }
+
+    let export_dir = crate::db::get_app_data_dir().join("exports");
+    std::fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
+
+    match format.as_str() {
+        "json" => {
+            let path = export_dir.join(format!("batch_{}.json", job_id));
+            let json = serde_json::to_string_pretty(&results).map_err(|e| e.to_string())?;
+            std::fs::write(&path, json).map_err(|e| e.to_string())?;
+        }
+        "csv" => {
+            let path = export_dir.join(format!("batch_{}.csv", job_id));
+            let mut csv_content = String::from("Input,Response,Duration(ms),Sources\n");
+            for r in &results {
+                let sources_str: Vec<String> =
+                    r.sources.iter().map(|s| s.chunk_id.clone()).collect();
+                csv_content.push_str(&format!(
+                    "\"{}\",\"{}\",{},\"{}\"\n",
+                    r.input.replace('"', "\"\""),
+                    r.response.replace('"', "\"\""),
+                    r.duration_ms,
+                    sources_str.join("; ")
+                ));
+            }
+            std::fs::write(&path, csv_content).map_err(|e| e.to_string())?;
+        }
+        _ => return Err(format!("Unsupported export format: {}", format)),
+    }
+
+    Ok(true)
+}

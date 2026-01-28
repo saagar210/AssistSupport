@@ -46,6 +46,11 @@ const tabInfo: Record<Tab, TabInfo> = {
     description: 'Search and explore',
     icon: 'knowledge'
   },
+  analytics: {
+    title: 'Analytics',
+    description: 'Usage analytics and statistics',
+    icon: 'sparkles'
+  },
   settings: {
     title: 'Settings',
     description: 'App configuration',

@@ -66,8 +66,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       return;
     }
 
-    // Cmd/Ctrl + 1-6 - Switch tabs
-    if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '6') {
+    // Cmd/Ctrl + 1-7 - Switch tabs
+    if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '7') {
       e.preventDefault();
       handlers.onSwitchTab?.(parseInt(e.key));
       return;

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 7;
+const CURRENT_SCHEMA_VERSION: i32 = 8;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -216,6 +216,10 @@ impl Database {
 
         if from_version < 7 {
             self.migrate_v7()?;
+        }
+
+        if from_version < 8 {
+            self.migrate_v8()?;
         }
 
         tx.commit()?;
@@ -737,6 +741,38 @@ impl Database {
                 ('clarify_default', 'Request Clarification', 'clarify', '{"prompt": "To help resolve this issue, could you please provide:\n\n1. When did this issue first occur?\n2. Have you tried any troubleshooting steps?\n3. Are other users affected?"}', 'intake', 1, datetime('now'), datetime('now')),
                 ('request_logs', 'Request Logs', 'request_logs', '{"prompt": "To investigate further, please share:\n\n- Screenshots of any error messages\n- Relevant log files\n- Steps to reproduce the issue"}', 'intake', 2, datetime('now'), datetime('now')),
                 ('summarize_steps', 'Summarize Resolution', 'summarize', '{"prompt": "Resolution Summary\n\nIssue: [Brief description]\n\nRoot Cause: [What caused it]\n\nResolution: [Steps taken]\n\nPrevention: [How to avoid in future]"}', 'resolution', 3, datetime('now'), datetime('now'));
+            "#,
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration to v8: Response ratings and analytics events
+    fn migrate_v8(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Phase 4: Response ratings
+            CREATE TABLE IF NOT EXISTS response_ratings (
+                id TEXT PRIMARY KEY,
+                draft_id TEXT NOT NULL,
+                rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+                feedback_text TEXT,
+                feedback_category TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_response_ratings_draft ON response_ratings(draft_id);
+            CREATE INDEX IF NOT EXISTS idx_response_ratings_created ON response_ratings(created_at DESC);
+
+            -- Phase 2: Analytics events
+            CREATE TABLE IF NOT EXISTS analytics_events (
+                id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                event_data_json TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at DESC);
             "#,
         )?;
 
@@ -3029,6 +3065,361 @@ impl Database {
 
         Ok(counts)
     }
+
+    // ========================================================================
+    // Phase 4: Response Ratings
+    // ========================================================================
+
+    /// Save or update a response rating for a draft
+    pub fn save_response_rating(
+        &self,
+        id: &str,
+        draft_id: &str,
+        rating: i32,
+        feedback_text: Option<&str>,
+        feedback_category: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO response_ratings (id, draft_id, rating, feedback_text, feedback_category, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![id, draft_id, rating, feedback_text, feedback_category, &now],
+        )?;
+        Ok(())
+    }
+
+    /// Get the rating for a specific draft
+    pub fn get_draft_rating(&self, draft_id: &str) -> Result<Option<ResponseRating>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT id, draft_id, rating, feedback_text, feedback_category, created_at
+             FROM response_ratings WHERE draft_id = ? LIMIT 1",
+            [draft_id],
+            |row| {
+                Ok(ResponseRating {
+                    id: row.get(0)?,
+                    draft_id: row.get(1)?,
+                    rating: row.get(2)?,
+                    feedback_text: row.get(3)?,
+                    feedback_category: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            },
+        );
+
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    /// Get aggregate rating statistics
+    pub fn get_rating_stats(&self) -> Result<RatingStats, DbError> {
+        let total_ratings: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM response_ratings", [], |row| {
+                    row.get(0)
+                })?;
+
+        let average_rating: f64 = if total_ratings > 0 {
+            self.conn.query_row(
+                "SELECT AVG(CAST(rating AS REAL)) FROM response_ratings",
+                [],
+                |row| row.get(0),
+            )?
+        } else {
+            0.0
+        };
+
+        let mut distribution = vec![0i64; 5];
+        let mut stmt = self.conn.prepare(
+            "SELECT rating, COUNT(*) FROM response_ratings GROUP BY rating ORDER BY rating",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?)))?;
+
+        for row in rows {
+            let (rating, count) = row?;
+            if (1..=5).contains(&rating) {
+                distribution[(rating - 1) as usize] = count;
+            }
+        }
+
+        Ok(RatingStats {
+            total_ratings,
+            average_rating,
+            distribution,
+        })
+    }
+
+    // ========================================================================
+    // Phase 2: Analytics Events
+    // ========================================================================
+
+    /// Log an analytics event
+    pub fn log_analytics_event(
+        &self,
+        id: &str,
+        event_type: &str,
+        event_data_json: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO analytics_events (id, event_type, event_data_json, created_at)
+             VALUES (?, ?, ?, ?)",
+            params![id, event_type, event_data_json, &now],
+        )?;
+        Ok(())
+    }
+
+    /// Get analytics summary for a given period (None = all time)
+    pub fn get_analytics_summary(
+        &self,
+        period_days: Option<i64>,
+    ) -> Result<AnalyticsSummary, DbError> {
+        let date_filter = period_days
+            .map(|d| format!("AND created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+
+        let total_events: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE 1=1 {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let responses_generated: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'response_generated' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let searches_performed: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'search_performed' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let drafts_saved: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'draft_saved' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        // Daily counts for the period
+        let daily_query = format!(
+            "SELECT DATE(created_at) as day, COUNT(*) FROM analytics_events
+             WHERE 1=1 {}
+             GROUP BY day ORDER BY day DESC LIMIT 30",
+            date_filter
+        );
+        let mut stmt = self.conn.prepare(&daily_query)?;
+        let daily_counts = stmt
+            .query_map([], |row| {
+                Ok(DailyCount {
+                    date: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Rating stats for the period
+        let rating_date_filter = period_days
+            .map(|d| format!("WHERE created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+
+        let total_ratings: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM response_ratings {}",
+                rating_date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let average_rating: f64 = if total_ratings > 0 {
+            self.conn.query_row(
+                &format!(
+                    "SELECT AVG(CAST(rating AS REAL)) FROM response_ratings {}",
+                    rating_date_filter
+                ),
+                [],
+                |row| row.get(0),
+            )?
+        } else {
+            0.0
+        };
+
+        Ok(AnalyticsSummary {
+            total_events,
+            responses_generated,
+            searches_performed,
+            drafts_saved,
+            daily_counts,
+            average_rating,
+            total_ratings,
+        })
+    }
+
+    /// Get KB article usage stats from analytics events
+    pub fn get_kb_usage_stats(
+        &self,
+        period_days: Option<i64>,
+    ) -> Result<Vec<ArticleUsage>, DbError> {
+        let date_filter = period_days
+            .map(|d| format!("AND ae.created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+
+        // Parse event_data_json to extract document_id from kb_article_used events
+        let query = format!(
+            "SELECT
+                json_extract(ae.event_data_json, '$.document_id') as doc_id,
+                COALESCE(json_extract(ae.event_data_json, '$.title'), 'Unknown') as title,
+                COUNT(*) as usage_count
+             FROM analytics_events ae
+             WHERE ae.event_type = 'kb_article_used'
+               AND json_extract(ae.event_data_json, '$.document_id') IS NOT NULL
+               {}
+             GROUP BY doc_id
+             ORDER BY usage_count DESC
+             LIMIT 50",
+            date_filter
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(ArticleUsage {
+                    document_id: row.get(0)?,
+                    title: row.get(1)?,
+                    usage_count: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+
+    // ========================================================================
+    // Phase 10: KB Management
+    // ========================================================================
+
+    /// Update the content of a KB chunk
+    pub fn update_chunk_content(&self, chunk_id: &str, content: &str) -> Result<(), DbError> {
+        let word_count = content.split_whitespace().count() as i32;
+        let rows = self.conn.execute(
+            "UPDATE kb_chunks SET content = ?, word_count = ? WHERE id = ?",
+            params![content, word_count, chunk_id],
+        )?;
+        if rows == 0 {
+            return Err(DbError::Migration(format!("Chunk not found: {}", chunk_id)));
+        }
+        Ok(())
+    }
+
+    /// Get KB health statistics
+    pub fn get_kb_health_stats(&self) -> Result<KbHealthStats, DbError> {
+        let total_documents: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM kb_documents", [], |row| row.get(0))?;
+
+        let total_chunks: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM kb_chunks", [], |row| row.get(0))?;
+
+        let stale_documents: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM kb_documents
+             WHERE indexed_at < datetime('now', '-30 days')
+                OR indexed_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT n.id, n.name,
+                    COUNT(DISTINCT d.id) as doc_count,
+                    COUNT(c.id) as chunk_count
+             FROM namespaces n
+             LEFT JOIN kb_documents d ON d.namespace_id = n.id
+             LEFT JOIN kb_chunks c ON c.document_id = d.id
+             GROUP BY n.id
+             ORDER BY n.name",
+        )?;
+
+        let namespace_distribution = stmt
+            .query_map([], |row| {
+                Ok(NamespaceDistribution {
+                    namespace_id: row.get(0)?,
+                    namespace_name: row.get(1)?,
+                    document_count: row.get(2)?,
+                    chunk_count: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(KbHealthStats {
+            total_documents,
+            total_chunks,
+            stale_documents,
+            namespace_distribution,
+        })
+    }
+
+    // ========================================================================
+    // Phase 6: Draft Version Restore
+    // ========================================================================
+
+    /// Restore a draft to a previous version
+    pub fn restore_draft_version(&self, draft_id: &str, version_id: &str) -> Result<(), DbError> {
+        // First, create a snapshot of the current state before restoring
+        self.create_draft_version(draft_id, Some("Pre-restore snapshot"))?;
+
+        // Get the version data to restore
+        let version = self.conn.query_row(
+            "SELECT input_text, summary_text, response_text, case_intake_json, kb_sources_json
+             FROM draft_versions WHERE id = ? AND draft_id = ?",
+            params![version_id, draft_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            },
+        )?;
+
+        let now = Utc::now().to_rfc3339();
+
+        // Update the draft with the version's data
+        self.conn.execute(
+            "UPDATE drafts SET
+                input_text = COALESCE(?, input_text),
+                summary_text = ?,
+                response_text = ?,
+                case_intake_json = ?,
+                kb_sources_json = ?,
+                updated_at = ?
+             WHERE id = ?",
+            params![version.0, version.1, version.2, version.3, version.4, &now, draft_id,],
+        )?;
+
+        // Create a new version snapshot after restoring
+        self.create_draft_version(draft_id, Some("Restored from version"))?;
+
+        Ok(())
+    }
 }
 
 /// FTS5 search result
@@ -3330,6 +3721,70 @@ pub struct KbDocument {
     pub namespace_id: String,
     pub source_type: String,
     pub source_id: Option<String>,
+}
+
+/// Response rating for a draft
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResponseRating {
+    pub id: String,
+    pub draft_id: String,
+    pub rating: i32,
+    pub feedback_text: Option<String>,
+    pub feedback_category: Option<String>,
+    pub created_at: String,
+}
+
+/// Aggregate rating statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RatingStats {
+    pub total_ratings: i64,
+    pub average_rating: f64,
+    pub distribution: Vec<i64>,
+}
+
+/// Analytics summary for a time period
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AnalyticsSummary {
+    pub total_events: i64,
+    pub responses_generated: i64,
+    pub searches_performed: i64,
+    pub drafts_saved: i64,
+    pub daily_counts: Vec<DailyCount>,
+    pub average_rating: f64,
+    pub total_ratings: i64,
+}
+
+/// Daily event count
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DailyCount {
+    pub date: String,
+    pub count: i64,
+}
+
+/// KB article usage statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ArticleUsage {
+    pub document_id: String,
+    pub title: String,
+    pub usage_count: i64,
+}
+
+/// KB health statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KbHealthStats {
+    pub total_documents: i64,
+    pub total_chunks: i64,
+    pub stale_documents: i64,
+    pub namespace_distribution: Vec<NamespaceDistribution>,
+}
+
+/// Namespace distribution in KB health
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NamespaceDistribution {
+    pub namespace_id: String,
+    pub namespace_name: String,
+    pub document_count: i64,
+    pub chunk_count: i64,
 }
 
 /// Built-in decision trees: (id, name, category, tree_json)
