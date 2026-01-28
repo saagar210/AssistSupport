@@ -28,6 +28,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('draft');
   const [pendingDraft, setPendingDraft] = useState<SavedDraft | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sourceSearchQuery, setSourceSearchQuery] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const draftRef = useRef<DraftTabHandle>(null);
   const commandPalette = useCommandPalette();
@@ -62,6 +63,11 @@ function AppContent() {
       draftRef.current?.exportResponse();
     }
   }, [activeTab]);
+
+  const handleNavigateToSource = useCallback((searchQuery: string) => {
+    setSourceSearchQuery(searchQuery);
+    setActiveTab('sources');
+  }, []);
 
   const handleLoadDraft = useCallback((draft: SavedDraft) => {
     // If already on draft tab, load directly via ref
@@ -350,7 +356,7 @@ function AppContent() {
       case 'draft':
         return (
           <ErrorBoundary fallbackTitle="Draft tab encountered an error">
-            <DraftTab ref={draftRef} />
+            <DraftTab ref={draftRef} onNavigateToSource={handleNavigateToSource} />
           </ErrorBoundary>
         );
       case 'followups':
@@ -362,7 +368,10 @@ function AppContent() {
       case 'sources':
         return (
           <ErrorBoundary fallbackTitle="Sources tab encountered an error">
-            <SourcesTab />
+            <SourcesTab
+              initialSearchQuery={sourceSearchQuery}
+              onSearchQueryConsumed={() => setSourceSearchQuery(null)}
+            />
           </ErrorBoundary>
         );
       case 'ingest':

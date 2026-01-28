@@ -9,7 +9,12 @@ import './SourcesTab.css';
 
 type SearchMode = 'files' | 'content';
 
-export function SourcesTab() {
+interface SourcesTabProps {
+  initialSearchQuery?: string | null;
+  onSearchQueryConsumed?: () => void;
+}
+
+export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: SourcesTabProps = {}) {
   const { getKbFolder, listFiles, rebuildIndex, getIndexStats, search, removeDocument } = useKb();
   const { success: showSuccess, error: showError } = useToastContext();
 
@@ -53,6 +58,20 @@ export function SourcesTab() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Handle navigation from KB suggestion chips
+  const [highlightResults, setHighlightResults] = useState(false);
+  useEffect(() => {
+    if (initialSearchQuery) {
+      setSearchQuery(initialSearchQuery);
+      setSearchMode('content');
+      setHighlightResults(true);
+      onSearchQueryConsumed?.();
+      // Clear highlight after animation
+      const timer = setTimeout(() => setHighlightResults(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [initialSearchQuery, onSearchQueryConsumed]);
 
   async function handleRebuild() {
     setRebuilding(true);
@@ -255,8 +274,8 @@ export function SourcesTab() {
           <div className="sources-empty-list">No content matches your search.</div>
         ) : (
           <div className="content-results">
-            {contentResults.map(result => (
-              <div key={result.chunk_id} className="content-result-item">
+            {contentResults.map((result, index) => (
+              <div key={result.chunk_id} className={`content-result-item${highlightResults && index === 0 ? ' highlighted' : ''}`}>
                 <div className="result-header">
                   <span className="result-title">{result.title || formatPath(result.file_path)}</span>
                   <div className="result-header-right">

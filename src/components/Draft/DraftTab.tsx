@@ -41,9 +41,10 @@ export interface DraftTabHandle {
 
 interface DraftTabProps {
   initialDraft?: SavedDraft | null;
+  onNavigateToSource?: (searchQuery: string) => void;
 }
 
-export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft }, ref) {
+export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft, onNavigateToSource }, ref) {
   const { error: showError, success: showSuccess } = useToastContext();
   const {
     generateStreaming,
@@ -878,6 +879,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
             firstResponseGenerating={firstResponseGenerating}
             templates={templates}
             onApplyTemplate={handleApplyTemplate}
+            onNavigateToSource={onNavigateToSource}
           />
         </div>
 

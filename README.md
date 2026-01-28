@@ -2,7 +2,7 @@
 
 > **Local-first, fully offline AI assistant for IT support engineers**
 
-![Version](https://img.shields.io/badge/version-0.5.0-10a37f)
+![Version](https://img.shields.io/badge/version-0.5.1-10a37f)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
@@ -127,8 +127,10 @@ pnpm tauri build
 - **Audit logging** for security events
 - **Compliance validated** against [HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, NIST SP 800-53](docs/compliance/COMPLIANCE_REPORT.md)
 
-### Design (v0.5.0)
+### Design (v0.5.1)
 - ChatGPT-inspired dark-first UI with green accent
+- Clickable KB suggestion chips — navigate directly to matching sources
+- Fully responsive layout at any window size (no clipped buttons or hidden content)
 - Smooth animations with `prefers-reduced-motion` support
 - Full keyboard navigation and WCAG AA contrast
 - System font stack for instant rendering
@@ -299,7 +301,12 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 
 ## Roadmap
 
-### v0.5.0 (Current)
+### v0.5.1 (Current)
+- [x] Interactive KB suggestion chips — click to navigate to Sources tab
+- [x] Responsive layout fixes — all content visible at any window size
+- [x] Button wrapping and overflow handling across all panels
+
+### v0.5.0
 - [x] ChatGPT-inspired UI redesign (dark-first, green accent)
 - [x] Fast startup with background model loading (2-3 seconds)
 - [x] Session tokens (24h auto-unlock)

@@ -102,6 +102,11 @@
   background: var(--accent-light);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.auto-suggest-chip:active {
+  transform: translateY(0);
 }
 
 .auto-suggest-chip:focus {

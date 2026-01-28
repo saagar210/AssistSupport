@@ -34,6 +34,7 @@ interface InputPanelProps {
   firstResponseGenerating: boolean;
   templates?: ResponseTemplate[];
   onApplyTemplate?: (content: string) => void;
+  onNavigateToSource?: (searchQuery: string) => void;
 }
 
 export function InputPanel({
@@ -61,6 +62,7 @@ export function InputPanel({
   firstResponseGenerating,
   templates,
   onApplyTemplate,
+  onNavigateToSource,
 }: InputPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { checkConfiguration, getTicket, configured } = useJira();
@@ -260,7 +262,10 @@ export function InputPanel({
             onPaste={handlePaste}
           />
 
-          <AutoSuggest query={value} />
+          <AutoSuggest
+            query={value}
+            onSelectSuggestion={onNavigateToSource ? (title) => onNavigateToSource(title) : undefined}
+          />
 
           {ocrText && (
             <div className="ocr-preview">
