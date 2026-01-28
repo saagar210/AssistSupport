@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { PilotDashboard } from './PilotDashboard';
 import { PilotQueryTester } from './PilotQueryTester';
+import './Pilot.css';
 
 export function PilotTab() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -10,7 +11,7 @@ export function PilotTab() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 900, padding: '1.5rem' }}>
+    <div className="pilot-tab-scroll">
       <PilotQueryTester onQueryLogged={handleQueryLogged} />
       <PilotDashboard key={refreshKey} />
     </div>

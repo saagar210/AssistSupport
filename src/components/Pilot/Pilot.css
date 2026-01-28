@@ -1,6 +1,14 @@
+/* Pilot Tab scroll container */
+.pilot-tab-scroll {
+  max-width: 900px;
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 /* Pilot Dashboard */
 .pilot-dashboard {
-  padding: 1.5rem;
   max-width: 900px;
 }
 
