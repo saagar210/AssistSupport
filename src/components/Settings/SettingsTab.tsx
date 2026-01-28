@@ -9,7 +9,7 @@ import { useEmbedding } from '../../hooks/useEmbedding';
 import { useCustomVariables } from '../../hooks/useCustomVariables';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { ModelInfo, CustomVariable, AuditEntry } from '../../types';
+import type { ModelInfo, CustomVariable, AuditEntry, StartupMetricsResult } from '../../types';
 import './SettingsTab.css';
 
 const AVAILABLE_MODELS: ModelInfo[] = [
@@ -110,6 +110,10 @@ export function SettingsTab() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditExporting, setAuditExporting] = useState(false);
 
+  // Startup metrics and session state
+  const [startupMetrics, setStartupMetrics] = useState<StartupMetricsResult | null>(null);
+  const [lockingApp, setLockingApp] = useState(false);
+
   // Custom variables state
   const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
   const [variableForm, setVariableForm] = useState({ name: '', value: '' });
@@ -132,6 +136,9 @@ export function SettingsTab() {
     Promise.resolve(loadInitialState()).catch(err => console.error('Settings init failed:', err));
     Promise.resolve(loadVariables()).catch(err => console.error('Variables load failed:', err));
     Promise.resolve(loadAuditEntries()).catch(err => console.error('Audit load failed:', err));
+    invoke<StartupMetricsResult>('get_startup_metrics')
+      .then(m => setStartupMetrics(m))
+      .catch(() => {});
   }, [loadVariables, loadAuditEntries]);
 
   async function loadInitialState() {
@@ -1062,12 +1069,47 @@ export function SettingsTab() {
       </section>
 
       <section className="settings-section">
+        <h2>Security &amp; Session</h2>
+        <p className="settings-description">
+          Your session auto-unlocks for 24 hours. Lock the app to require re-authentication.
+        </p>
+        <div className="settings-row">
+          <Button
+            variant="secondary"
+            size="small"
+            disabled={lockingApp}
+            onClick={async () => {
+              setLockingApp(true);
+              try {
+                await invoke('lock_app');
+                localStorage.removeItem('assistsupport_session_token');
+                showSuccess('App locked. You will need to re-authenticate on next launch.');
+              } catch (e) {
+                showError(`Failed to lock app: ${e}`);
+              } finally {
+                setLockingApp(false);
+              }
+            }}
+          >
+            {lockingApp ? 'Locking...' : 'Lock App (Require Password)'}
+          </Button>
+        </div>
+        {startupMetrics && (
+          <div className="startup-metrics">
+            <p className="text-sm text-secondary">
+              Last startup: {startupMetrics.init_app_ms}ms
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="settings-section">
         <h2>About</h2>
         <p className="settings-description">
           AssistSupport - Local AI-powered support ticket assistant
         </p>
         <div className="about-info">
-          <p>Version 0.1.0</p>
+          <p>Version 0.4.1</p>
           <p>All processing happens locally on your machine.</p>
         </div>
       </section>

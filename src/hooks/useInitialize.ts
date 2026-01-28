@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { InitResult, VectorConsent } from '../types';
+import type { InitResult, VectorConsent, ModelStateResult } from '../types';
 
 export interface AppInitState {
   initialized: boolean;
@@ -13,6 +13,9 @@ export interface AppInitState {
 
 // Timeout for optional initialization operations (5 seconds)
 const INIT_TIMEOUT = 5000;
+
+// Session token key in localStorage
+const SESSION_TOKEN_KEY = 'assistsupport_session_token';
 
 // Helper to create a timeout promise
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -53,6 +56,35 @@ export function useInitialize() {
       ]);
 
       setState(prev => ({ ...prev, enginesReady: true }));
+
+      // Auto-load last-used models in background (non-blocking)
+      try {
+        const modelState = await invoke<ModelStateResult>('get_model_state');
+        const autoLoadPromises: Promise<unknown>[] = [];
+
+        if (modelState.llm_model_id && !modelState.llm_loaded) {
+          autoLoadPromises.push(
+            invoke('load_model', { modelId: modelState.llm_model_id })
+              .then(() => console.log('Auto-loaded LLM model:', modelState.llm_model_id))
+              .catch(e => console.warn('Auto-load LLM failed (non-fatal):', e))
+          );
+        }
+
+        if (modelState.embeddings_model_path && !modelState.embeddings_loaded) {
+          autoLoadPromises.push(
+            invoke('load_embedding_model', { path: modelState.embeddings_model_path })
+              .then(() => console.log('Auto-loaded embedding model'))
+              .catch(e => console.warn('Auto-load embeddings failed (non-fatal):', e))
+          );
+        }
+
+        if (autoLoadPromises.length > 0) {
+          await Promise.allSettled(autoLoadPromises);
+        }
+      } catch (e) {
+        // Non-fatal - user can load models manually
+        console.warn('Model auto-load check failed:', e);
+      }
     } catch (e) {
       // Non-fatal - engines will init on first use
       console.warn('Background engine init completed with warnings:', e);
@@ -79,6 +111,25 @@ export function useInitialize() {
         } catch (e) {
           console.warn('Vector consent check failed (using defaults):', e);
           consent = { enabled: false, consented_at: null, encryption_supported: false };
+        }
+
+        // Create or validate session token for auto-unlock
+        try {
+          const savedToken = localStorage.getItem(SESSION_TOKEN_KEY);
+          if (savedToken) {
+            const isValid = await invoke<boolean>('validate_session_token', { sessionId: savedToken });
+            if (!isValid) {
+              localStorage.removeItem(SESSION_TOKEN_KEY);
+              const newToken = await invoke<string>('create_session_token');
+              localStorage.setItem(SESSION_TOKEN_KEY, newToken);
+            }
+          } else {
+            const newToken = await invoke<string>('create_session_token');
+            localStorage.setItem(SESSION_TOKEN_KEY, newToken);
+          }
+        } catch (e) {
+          // Session token is a convenience feature, don't block on failure
+          console.warn('Session token setup failed (non-fatal):', e);
         }
 
         // Mark as initialized - UI can render now

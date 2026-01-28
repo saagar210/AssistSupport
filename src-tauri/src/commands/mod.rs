@@ -65,6 +65,8 @@ fn normalize_github_host(host: &str) -> Result<String, String> {
 /// Initialize the application
 #[tauri::command]
 pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, String> {
+    let init_start = std::time::Instant::now();
+
     // Run data migration from old path (com.d.assistsupport -> AssistSupport)
     // This must happen BEFORE any other operations to ensure data is in the right place
     match crate::migration::migrate_data_directories() {
@@ -189,6 +191,22 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
     } else {
         false
     };
+
+    // Record startup metrics
+    let init_app_ms = init_start.elapsed().as_millis() as i64;
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.record_startup_metric(
+                &chrono::Utc::now().to_rfc3339(),
+                None,
+                Some(init_app_ms),
+                Some(init_app_ms),
+                false,
+            );
+        }
+    }
+    tracing::info!("App initialized in {}ms", init_app_ms);
 
     Ok(InitResult {
         is_first_run,
@@ -412,6 +430,8 @@ pub fn load_model(
     model_id: String,
     n_gpu_layers: Option<u32>,
 ) -> Result<ModelInfo, String> {
+    let load_start = std::time::Instant::now();
+
     // Get filename from model ID
     let (_, filename) = get_model_source(&model_id)?;
 
@@ -431,9 +451,25 @@ pub fn load_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine
-        .load_model(&path, layers, model_id)
-        .map_err(|e| e.to_string())
+    let info = engine
+        .load_model(&path, layers, model_id.clone())
+        .map_err(|e| e.to_string())?;
+
+    // Record model state for auto-load on next startup
+    let load_time_ms = load_start.elapsed().as_millis() as i64;
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.save_model_state(
+                "llm",
+                path.to_str().unwrap_or(""),
+                Some(&model_id),
+                Some(load_time_ms),
+            );
+        }
+    }
+    tracing::info!("LLM model '{}' loaded in {}ms", model_id, load_time_ms);
+
+    Ok(info)
 }
 
 /// Load a custom GGUF model from a file path
@@ -574,6 +610,12 @@ pub fn unload_model(state: State<'_, AppState>) -> Result<(), String> {
     let llm_guard = state.llm.read();
     let engine = llm_guard.as_ref().ok_or("LLM engine not initialized")?;
     engine.unload_model();
+    // Clear model state
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.clear_model_state("llm");
+        }
+    }
     Ok(())
 }
 
@@ -2349,11 +2391,28 @@ pub fn load_embedding_model(
         return Err("Embedding model path is not a file".into());
     }
 
+    let load_start = std::time::Instant::now();
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine
+    let info = engine
         .load_model(&validated_path, layers)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Record embedding model state for auto-load
+    let load_time_ms = load_start.elapsed().as_millis() as i64;
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.save_model_state(
+                "embeddings",
+                validated_path.to_str().unwrap_or(""),
+                None,
+                Some(load_time_ms),
+            );
+        }
+    }
+    tracing::info!("Embedding model loaded in {}ms", load_time_ms);
+
+    Ok(info)
 }
 
 /// Unload the current embedding model
@@ -2364,6 +2423,12 @@ pub fn unload_embedding_model(state: State<'_, AppState>) -> Result<(), String> 
         .as_ref()
         .ok_or("Embedding engine not initialized")?;
     engine.unload_model();
+    // Clear embedding model state
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.clear_model_state("embeddings");
+        }
+    }
     Ok(())
 }
 
@@ -5342,4 +5407,178 @@ pub async fn post_and_transition(
     }
 
     Ok(comment_id)
+}
+
+// ============================================================================
+// Startup & Model State Commands (v0.4.1)
+// ============================================================================
+
+/// Get the last-used model state (for auto-load on startup)
+#[tauri::command]
+pub fn get_model_state(
+    state: State<'_, AppState>,
+) -> Result<ModelStateResult, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let llm = db.get_model_state("llm").map_err(|e| e.to_string())?;
+    let embeddings = db
+        .get_model_state("embeddings")
+        .map_err(|e| e.to_string())?;
+
+    // Check if models are currently loaded in memory
+    let llm_loaded = state
+        .llm
+        .read()
+        .as_ref()
+        .map(|e| e.model_info().is_some())
+        .unwrap_or(false);
+
+    let embeddings_loaded = state
+        .embeddings
+        .read()
+        .as_ref()
+        .map(|e| e.model_info().is_some())
+        .unwrap_or(false);
+
+    Ok(ModelStateResult {
+        llm_model_id: llm.as_ref().and_then(|(_, id)| id.clone()),
+        llm_model_path: llm.map(|(p, _)| p),
+        llm_loaded,
+        embeddings_model_path: embeddings.map(|(p, _)| p),
+        embeddings_loaded,
+    })
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct ModelStateResult {
+    pub llm_model_id: Option<String>,
+    pub llm_model_path: Option<String>,
+    pub llm_loaded: bool,
+    pub embeddings_model_path: Option<String>,
+    pub embeddings_loaded: bool,
+}
+
+/// Get the last startup metrics
+#[tauri::command]
+pub fn get_startup_metrics(
+    state: State<'_, AppState>,
+) -> Result<StartupMetricsResult, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let metrics = db.get_last_startup_metric().map_err(|e| e.to_string())?;
+
+    match metrics {
+        Some((total_ms, init_app_ms, models_cached)) => Ok(StartupMetricsResult {
+            total_ms,
+            init_app_ms,
+            models_cached,
+        }),
+        None => Ok(StartupMetricsResult {
+            total_ms: 0,
+            init_app_ms: 0,
+            models_cached: false,
+        }),
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct StartupMetricsResult {
+    pub total_ms: i64,
+    pub init_app_ms: i64,
+    pub models_cached: bool,
+}
+
+// ============================================================================
+// Session Token Commands (v0.4.1)
+// ============================================================================
+
+/// Create a session token (auto-unlock for 24 hours)
+#[tauri::command]
+pub fn create_session_token(
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Clean up expired tokens first
+    let _ = db.cleanup_expired_sessions();
+
+    // Generate a secure session ID
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    // Hash the session ID for storage (using HMAC-like approach with master key)
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(session_id.as_bytes());
+    hasher.update(b"assistsupport-session-salt");
+    let token_hash = hasher.finalize().to_vec();
+
+    // 24-hour expiry
+    let expires_at = (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339();
+
+    // Device identifier (hostname + username)
+    let device_id = get_device_identifier();
+
+    db.store_session_token(&session_id, &token_hash, &expires_at, &device_id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(session_id)
+}
+
+/// Validate a session token
+#[tauri::command]
+pub fn validate_session_token(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<bool, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    let device_id = get_device_identifier();
+    db.validate_session_token(&session_id, &device_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Clear (revoke) a session token
+#[tauri::command]
+pub fn clear_session_token(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.delete_session_token(&session_id)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Clear all session tokens (lock the app)
+#[tauri::command]
+pub fn lock_app(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    // Delete all sessions for this device
+    db.conn()
+        .execute("DELETE FROM session_tokens WHERE device_id = ?1", rusqlite::params![get_device_identifier()])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Get a stable device identifier (username + home dir hash)
+fn get_device_identifier() -> String {
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(home.as_bytes());
+    let hash = hex::encode(&hasher.finalize()[..8]);
+    format!("{}@{}", username, hash)
 }

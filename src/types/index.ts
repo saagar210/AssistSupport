@@ -6,6 +6,20 @@ export interface InitResult {
   vector_store_ready: boolean;
 }
 
+export interface ModelStateResult {
+  llm_model_id: string | null;
+  llm_model_path: string | null;
+  llm_loaded: boolean;
+  embeddings_model_path: string | null;
+  embeddings_loaded: boolean;
+}
+
+export interface StartupMetricsResult {
+  total_ms: number;
+  init_app_ms: number;
+  models_cached: boolean;
+}
+
 export interface VectorConsent {
   enabled: boolean;
   consented_at: string | null;

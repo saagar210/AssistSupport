@@ -278,6 +278,14 @@ pub fn run() {
             commands::get_jira_transitions,
             commands::transition_jira_ticket,
             commands::post_and_transition,
+            // v0.4.1: Startup & Model State
+            commands::get_model_state,
+            commands::get_startup_metrics,
+            // v0.4.1: Session Tokens
+            commands::create_session_token,
+            commands::validate_session_token,
+            commands::clear_session_token,
+            commands::lock_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

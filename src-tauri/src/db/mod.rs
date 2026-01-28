@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 9;
+const CURRENT_SCHEMA_VERSION: i32 = 10;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -224,6 +224,10 @@ impl Database {
 
         if from_version < 9 {
             self.migrate_v9()?;
+        }
+
+        if from_version < 10 {
+            self.migrate_v10()?;
         }
 
         tx.commit()?;
@@ -856,6 +860,211 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    /// Migration to v10: Model state, startup metrics, and session tokens
+    fn migrate_v10(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Track which models were last loaded (for auto-load on startup)
+            CREATE TABLE IF NOT EXISTS model_state (
+                model_type TEXT PRIMARY KEY,
+                model_path TEXT NOT NULL,
+                model_id TEXT,
+                loaded_at TEXT NOT NULL,
+                load_time_ms INTEGER
+            );
+
+            -- Track startup performance metrics
+            CREATE TABLE IF NOT EXISTS startup_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL,
+                ui_ready_at TEXT,
+                total_ms INTEGER,
+                init_app_ms INTEGER,
+                models_cached INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            -- Session tokens for auto-unlock (24h expiry)
+            CREATE TABLE IF NOT EXISTS session_tokens (
+                session_id TEXT PRIMARY KEY,
+                token_hash BLOB NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                last_activity TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_tokens_expires ON session_tokens(expires_at);
+            "#,
+        )?;
+        Ok(())
+    }
+
+    // -- Model state helpers --
+
+    /// Record that a model was loaded (for auto-load on next startup)
+    pub fn save_model_state(
+        &self,
+        model_type: &str,
+        model_path: &str,
+        model_id: Option<&str>,
+        load_time_ms: Option<i64>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO model_state (model_type, model_path, model_id, loaded_at, load_time_ms)
+             VALUES (?1, ?2, ?3, datetime('now'), ?4)",
+            params![model_type, model_path, model_id, load_time_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Clear model state (when model is unloaded)
+    pub fn clear_model_state(&self, model_type: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM model_state WHERE model_type = ?1",
+            params![model_type],
+        )?;
+        Ok(())
+    }
+
+    /// Get last loaded model info for a given type
+    pub fn get_model_state(
+        &self,
+        model_type: &str,
+    ) -> Result<Option<(String, Option<String>)>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT model_path, model_id FROM model_state WHERE model_type = ?1",
+            params![model_type],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        );
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    // -- Startup metrics helpers --
+
+    /// Record a startup metric
+    pub fn record_startup_metric(
+        &self,
+        started_at: &str,
+        ui_ready_at: Option<&str>,
+        total_ms: Option<i64>,
+        init_app_ms: Option<i64>,
+        models_cached: bool,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO startup_metrics (started_at, ui_ready_at, total_ms, init_app_ms, models_cached)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![started_at, ui_ready_at, total_ms, init_app_ms, models_cached as i32],
+        )?;
+        // Keep only last 50 metrics
+        self.conn.execute(
+            "DELETE FROM startup_metrics WHERE id NOT IN (SELECT id FROM startup_metrics ORDER BY id DESC LIMIT 50)",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Get last startup metric
+    pub fn get_last_startup_metric(
+        &self,
+    ) -> Result<Option<(i64, i64, bool)>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT total_ms, init_app_ms, models_cached FROM startup_metrics ORDER BY id DESC LIMIT 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0).unwrap_or(0),
+                    row.get::<_, i64>(1).unwrap_or(0),
+                    row.get::<_, i32>(2).unwrap_or(0) != 0,
+                ))
+            },
+        );
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    // -- Session token helpers --
+
+    /// Store a session token
+    pub fn store_session_token(
+        &self,
+        session_id: &str,
+        token_hash: &[u8],
+        expires_at: &str,
+        device_id: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO session_tokens (session_id, token_hash, created_at, expires_at, device_id, last_activity)
+             VALUES (?1, ?2, datetime('now'), ?3, ?4, datetime('now'))",
+            params![session_id, token_hash, expires_at, device_id],
+        )?;
+        Ok(())
+    }
+
+    /// Validate a session token (check exists, not expired, correct device)
+    pub fn validate_session_token(
+        &self,
+        session_id: &str,
+        device_id: &str,
+    ) -> Result<bool, DbError> {
+        let result = self.conn.query_row(
+            "SELECT 1 FROM session_tokens
+             WHERE session_id = ?1 AND device_id = ?2 AND expires_at > datetime('now')",
+            params![session_id, device_id],
+            |_| Ok(()),
+        );
+        match result {
+            Ok(()) => {
+                // Update last activity
+                let _ = self.conn.execute(
+                    "UPDATE session_tokens SET last_activity = datetime('now') WHERE session_id = ?1",
+                    params![session_id],
+                );
+                Ok(true)
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    /// Delete a session token
+    pub fn delete_session_token(&self, session_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM session_tokens WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete all expired session tokens
+    pub fn cleanup_expired_sessions(&self) -> Result<usize, DbError> {
+        let deleted = self.conn.execute(
+            "DELETE FROM session_tokens WHERE expires_at <= datetime('now')",
+            [],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Get the token hash for a session (for verification)
+    pub fn get_session_token_hash(&self, session_id: &str) -> Result<Option<Vec<u8>>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT token_hash FROM session_tokens WHERE session_id = ?1 AND expires_at > datetime('now')",
+            params![session_id],
+            |row| row.get::<_, Vec<u8>>(0),
+        );
+        match result {
+            Ok(hash) => Ok(Some(hash)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
     }
 
     /// Create backup of database

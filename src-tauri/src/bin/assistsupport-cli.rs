@@ -19,6 +19,8 @@ use std::process::ExitCode;
 // Re-use types from the library
 use assistsupport_lib::db::Database;
 use assistsupport_lib::jobs::JobStatus;
+use assistsupport_lib::kb::indexer::KbIndexer;
+use assistsupport_lib::kb::search::HybridSearch;
 
 /// CLI command structure
 #[derive(Debug)]
@@ -43,6 +45,10 @@ enum KbCommand {
     Index {
         #[allow(dead_code)]
         force: bool,
+    },
+    Search {
+        query: String,
+        limit: usize,
     },
 }
 
@@ -121,6 +127,15 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                         .unwrap_or(false);
                     Ok(Command::Kb(KbCommand::Index { force }))
                 }
+                "search" => {
+                    let query = args.get(3).ok_or("Missing search query")?.clone();
+                    let limit = args
+                        .get(4)
+                        .and_then(|a| if a == "--limit" || a == "-n" { args.get(5) } else { None })
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(5);
+                    Ok(Command::Kb(KbCommand::Search { query, limit }))
+                }
                 _ => Err(format!("Unknown kb subcommand: {}", args[2])),
             }
         }
@@ -167,6 +182,9 @@ COMMANDS:
 
     kb index            Trigger KB indexing
         --force, -f     Force re-index all documents
+
+    kb search <QUERY>   Search the knowledge base
+        --limit, -n     Number of results (default: 5)
 
     help                Show this help message
     version             Show version information
@@ -347,10 +365,95 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
             Ok(())
         }
         KbCommand::Index { force: _ } => {
-            // For indexing, we would need to trigger the actual indexing process
-            // This requires more infrastructure (file watcher, etc.)
-            println!("Note: Full indexing should be triggered from the app.");
-            println!("Use the app's Settings > Knowledge Base > Re-index option.");
+            let folder_path: String = db
+                .conn()
+                .query_row(
+                    "SELECT value FROM settings WHERE key = 'kb_folder'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|_| "KB folder not configured. Set it in the app first (Settings > Knowledge Base).")?;
+
+            let path = std::path::Path::new(&folder_path);
+            if !path.exists() {
+                return Err(format!("KB folder does not exist: {}", folder_path));
+            }
+
+            println!("Indexing KB folder: {}", folder_path);
+
+            let indexer = KbIndexer::new();
+            let result = indexer
+                .index_folder(&db, path, |progress| {
+                    use assistsupport_lib::kb::indexer::IndexProgress;
+                    match progress {
+                        IndexProgress::Started { total_files } => {
+                            println!("Found {} files to index", total_files);
+                        }
+                        IndexProgress::Processing {
+                            current,
+                            total,
+                            file_name,
+                        } => {
+                            println!("[{}/{}] {}", current, total, file_name);
+                        }
+                        IndexProgress::Completed {
+                            indexed,
+                            skipped,
+                            errors,
+                        } => {
+                            println!("\nIndexing complete:");
+                            println!("  Indexed: {}", indexed);
+                            println!("  Skipped: {}", skipped);
+                            println!("  Errors:  {}", errors);
+                        }
+                        IndexProgress::Error {
+                            file_name,
+                            message,
+                        } => {
+                            eprintln!("  Error in {}: {}", file_name, message);
+                        }
+                    }
+                })
+                .map_err(|e| format!("Indexing failed: {}", e))?;
+
+            println!(
+                "\nDone. {} files indexed, {} skipped, {} errors.",
+                result.indexed, result.skipped, result.errors
+            );
+            Ok(())
+        }
+        KbCommand::Search { query, limit } => {
+            println!("Query: \"{}\"", query);
+            println!("{}", "-".repeat(60));
+
+            let results = HybridSearch::search(&db, &query, limit)
+                .map_err(|e| format!("Search failed: {}", e))?;
+
+            if results.is_empty() {
+                println!("No results found.");
+            } else {
+                for (i, r) in results.iter().enumerate() {
+                    let filename = std::path::Path::new(&r.file_path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&r.file_path);
+                    let heading = r.heading_path.as_deref().unwrap_or("");
+                    println!(
+                        "  {}. [score: {:.4}] {}",
+                        i + 1,
+                        r.score,
+                        filename
+                    );
+                    if !heading.is_empty() {
+                        println!("     heading: {}", heading);
+                    }
+                    // Show first 120 chars of content
+                    let preview: String = r.content.chars().take(120).collect();
+                    let preview = preview.replace('\n', " ");
+                    println!("     {}...", preview.trim());
+                    println!();
+                }
+            }
             Ok(())
         }
     }
