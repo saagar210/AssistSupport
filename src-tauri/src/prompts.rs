@@ -1301,7 +1301,8 @@ mod tests {
 
         // Final instruction should reference engineer-to-user perspective
         assert!(
-            prompt.contains("Draft the response the IT support engineer should send to the end user"),
+            prompt
+                .contains("Draft the response the IT support engineer should send to the end user"),
             "Final instruction should use engineer-to-user framing"
         );
     }

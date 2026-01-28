@@ -175,10 +175,7 @@ pub fn preprocess_fts5_query(query: &str) -> String {
         if is_mixed_alphanumeric(word) {
             let parts = split_mixed_alphanumeric(word);
             // ("6sense" OR 6 sense)
-            return format!(
-                "(\"{word}\" OR {})",
-                parts.join(" ")
-            );
+            return format!("(\"{word}\" OR {})", parts.join(" "));
         }
         // Single simple word - return as-is
         return word.to_string();
@@ -374,10 +371,7 @@ impl HybridSearch {
             Ok(results) => Ok(results),
             Err(_) => {
                 // Fallback: wrap original query as a simple quoted phrase
-                let fallback = format!(
-                    "\"{}\"",
-                    query.replace('"', "").trim()
-                );
+                let fallback = format!("\"{}\"", query.replace('"', "").trim());
                 if fallback == "\"\"" {
                     return Ok(vec![]);
                 }
@@ -1274,26 +1268,58 @@ mod tests {
     #[test]
     fn test_preprocess_mixed_alphanumeric() {
         let result = preprocess_fts5_query("6sense");
-        assert!(result.contains("\"6sense\""), "Should contain quoted original: {}", result);
+        assert!(
+            result.contains("\"6sense\""),
+            "Should contain quoted original: {}",
+            result
+        );
         assert!(result.contains("OR"), "Should contain OR: {}", result);
-        assert!(result.contains("6"), "Should contain digit part: {}", result);
-        assert!(result.contains("sense"), "Should contain alpha part: {}", result);
+        assert!(
+            result.contains("6"),
+            "Should contain digit part: {}",
+            result
+        );
+        assert!(
+            result.contains("sense"),
+            "Should contain alpha part: {}",
+            result
+        );
     }
 
     #[test]
     fn test_preprocess_multi_word() {
         let result = preprocess_fts5_query("vpn connection");
-        assert!(result.contains("\"vpn connection\""), "Should contain quoted phrase: {}", result);
+        assert!(
+            result.contains("\"vpn connection\""),
+            "Should contain quoted phrase: {}",
+            result
+        );
         assert!(result.contains("OR"), "Should contain OR: {}", result);
-        assert!(result.contains("vpn"), "Should contain individual word: {}", result);
-        assert!(result.contains("connection"), "Should contain individual word: {}", result);
+        assert!(
+            result.contains("vpn"),
+            "Should contain individual word: {}",
+            result
+        );
+        assert!(
+            result.contains("connection"),
+            "Should contain individual word: {}",
+            result
+        );
     }
 
     #[test]
     fn test_preprocess_strips_double_quotes() {
         let result = preprocess_fts5_query("\"6sense\"");
         // Should not have unmatched quotes that would cause FTS5 syntax error
-        assert!(!result.contains("\"\""), "Should not have empty quotes: {}", result);
-        assert!(result.contains("6sense"), "Should still contain the term: {}", result);
+        assert!(
+            !result.contains("\"\""),
+            "Should not have empty quotes: {}",
+            result
+        );
+        assert!(
+            result.contains("6sense"),
+            "Should still contain the term: {}",
+            result
+        );
     }
 }
