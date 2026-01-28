@@ -43,7 +43,7 @@ pub struct GitHubIngestConfig {
 impl Default for GitHubIngestConfig {
     fn default() -> Self {
         let app_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::env::temp_dir())
+            .unwrap_or_else(std::env::temp_dir)
             .join("AssistSupport");
         Self {
             allowed_roots: vec![dirs::home_dir().unwrap_or_default()],
@@ -406,7 +406,7 @@ impl GitHubIngester {
     }
 
     fn ensure_cache_root(&self) -> IngestResult<()> {
-        create_secure_dir(&self.config.cache_root).map_err(|e| IngestError::Io(e.into()))
+        create_secure_dir(&self.config.cache_root).map_err(IngestError::Io)
     }
 
     fn cache_dir_for(&self, remote: &GitHubRemoteRepo) -> PathBuf {
@@ -595,7 +595,7 @@ impl GitHubIngester {
         }
 
         if let Some(parent) = repo_dir.parent() {
-            create_secure_dir(parent).map_err(|e| IngestError::Io(e.into()))?;
+            create_secure_dir(parent).map_err(IngestError::Io)?;
         }
 
         let url = remote.clone_url();
@@ -622,6 +622,7 @@ impl GitHubIngester {
         Ok(repo_dir)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ingest_repo_internal(
         &self,
         db: &Database,

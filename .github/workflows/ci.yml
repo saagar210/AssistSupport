@@ -60,6 +60,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: brew install protobuf
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,6 +72,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      - name: Create frontend dist stub
+        run: mkdir -p dist && echo '<html></html>' > dist/index.html
 
       - name: Check formatting
         working-directory: src-tauri
@@ -88,6 +94,9 @@ jobs:
     needs: [lint-frontend, test-frontend, check-backend]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: brew install protobuf
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

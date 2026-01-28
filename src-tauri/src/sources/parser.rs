@@ -90,11 +90,11 @@ impl SourceFile {
     /// Parse a YAML source file from a path
     pub fn from_path(path: &Path) -> Result<Self, ParseError> {
         let content = std::fs::read_to_string(path)?;
-        Self::from_str(&content)
+        Self::parse(content.as_str())
     }
 
     /// Parse a YAML source file from a string
-    pub fn from_str(yaml: &str) -> Result<Self, ParseError> {
+    pub fn parse(yaml: &str) -> Result<Self, ParseError> {
         let source_file: SourceFile = serde_yaml::from_str(yaml)?;
         source_file.validate()?;
         Ok(source_file)
@@ -224,7 +224,7 @@ sources:
     enabled: false
 "#;
 
-        let source_file = SourceFile::from_str(yaml).unwrap();
+        let source_file = SourceFile::parse(yaml).unwrap();
         assert_eq!(source_file.namespace, "it-support");
         assert_eq!(source_file.sources.len(), 3);
         assert_eq!(source_file.enabled_sources().count(), 2);
@@ -240,7 +240,7 @@ sources:
     uri: https://example.com
 "#;
 
-        let source_file = SourceFile::from_str(yaml).unwrap();
+        let source_file = SourceFile::parse(yaml).unwrap();
         assert_eq!(source_file.namespace, "default");
         assert_eq!(source_file.sources.len(), 1);
         assert!(source_file.sources[0].enabled); // default true
@@ -257,7 +257,7 @@ sources:
     uri: https://example.com
 "#;
 
-        let result = SourceFile::from_str(yaml);
+        let result = SourceFile::parse(yaml);
         assert!(result.is_err());
     }
 
@@ -271,7 +271,7 @@ sources:
     uri: not-a-url
 "#;
 
-        let result = SourceFile::from_str(yaml);
+        let result = SourceFile::parse(yaml);
         assert!(result.is_err());
     }
 

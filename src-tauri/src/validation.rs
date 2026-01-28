@@ -56,15 +56,7 @@ pub fn normalize_namespace_id(input: &str) -> String {
     let normalized: String = input
         .to_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else if c == ' ' || c == '_' {
-                '-'
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
 
     // Collapse multiple hyphens and trim leading/trailing hyphens

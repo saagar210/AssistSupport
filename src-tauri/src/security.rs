@@ -72,19 +72,14 @@ pub fn ensure_secure_data_dir(path: &Path) -> std::io::Result<&Path> {
 }
 
 /// Key storage mode for master key
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KeyStorageMode {
     /// Store master key in macOS Keychain (default, most secure)
+    #[default]
     Keychain,
     /// Store master key wrapped with user passphrase
     Passphrase,
-}
-
-impl Default for KeyStorageMode {
-    fn default() -> Self {
-        Self::Keychain
-    }
 }
 
 impl std::fmt::Display for KeyStorageMode {

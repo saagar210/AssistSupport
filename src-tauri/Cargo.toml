@@ -55,7 +55,7 @@ arrow-schema = "53"
 # KB Processing
 pulldown-cmark = "0.12"
 pdfium-render = "0.8"
-tesseract = "0.13"
+tesseract = { version = "0.13", optional = true }
 encoding_rs = "0.8"
 docx-rs = "0.4"
 calamine = "0.26"
@@ -92,7 +92,7 @@ zip = "2"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-tesseract = [] # Optional Tesseract OCR backend (not used, Vision is default)
+tesseract = ["dep:tesseract"] # Optional Tesseract OCR backend (not used, Vision is default)
 
 [dev-dependencies]
 criterion = { version = "0.6", features = ["html_reports"] }
