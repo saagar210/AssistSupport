@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-01-28
+
+### Changed
+- **UI Redesign**: ChatGPT-inspired visual overhaul — green accent (#10a37f), gradient buttons, truly dark backgrounds (#0d0d0d)
+- **Typography**: Switched to system font stack (replaces Google Fonts) for instant rendering
+- **Sidebar**: Polished 260px sidebar with green glow brand icon, rounded nav items
+- **Animations**: Smooth slide-in/fade transitions with `prefers-reduced-motion` support
+- **Components**: Lift-on-hover buttons with glow shadows, thinner hide-on-idle scrollbars, larger card border radii
+- **Accessibility**: WCAG AA contrast ratios maintained throughout redesign
+
+## [0.4.1] - 2026-01-28
+
+### Added
+- **Fast Startup**: Background model auto-loading with startup metrics tracking (2-3 second launches)
+- **Session Tokens**: 24h auto-unlock tokens — no password friction on every launch, with Lock App button in Settings
+- **Model Persistence**: Save/restore last-used models across app restarts
+- **CLI Search**: Real KB indexing and hybrid search in CLI (replaces stubs)
+- 6 new Tauri commands: `get_model_state`, `get_startup_metrics`, `create_session_token`, `validate_session_token`, `clear_session_token`, `lock_app`
+
+### Fixed
+- Draft panel cutoff — added `min-height: 0` to flex/grid children
+
+## [0.4.0] - 2026-01-27
+
+### Added
+- **Analytics Dashboard**: Response quality tracking with ratings, trends, and article-level drill-down
+- **Response Ratings**: 1-5 star rating system with analytics instrumentation
+- **Response Alternatives**: Side-by-side comparison of multiple generated responses (AlternativePanel)
+- **Template Recycling**: Save top-rated responses as reusable templates (SaveAsTemplateModal, SavedResponsesSuggestion)
+- **Jira Transitions**: Post responses and transition tickets to new status in one workflow (JiraPostPanel)
+- **KB Staleness Monitoring**: Staleness indicators in KbHealthPanel and KnowledgeBrowser with article review tracking
+- **Article Analytics**: Per-article drill-down showing citation frequency and search hits (ArticleDetailPanel)
+- **Conversation Input**: Threaded conversation-style input with context threading
+- **Batch Processing**: Generate responses for multiple similar tickets (BatchPanel)
+- **Auto-Suggest**: Automatic suggestions based on ticket content
+- **Draft Versioning**: Version history with diff viewer for drafts
+- **KB Management**: Chunk editing and health monitoring from the UI
+- **Source Transparency**: KB article citations shown alongside generated responses
+- DB schema v8 and v9 migrations (response_ratings, analytics_events, response_alternatives, saved_response_templates, jira_status_transitions tables)
+- 27+ new Tauri commands for ratings, analytics, batch processing, KB health, alternatives, templates, and Jira transitions
+
+### Fixed
+- WCAG AA contrast issues in dark mode
+- FTS5 query preprocessing for improved search relevance
+- Prompt perspective framing for better response quality
+
 ## [0.3.2] - 2026-01-26
 
 ### Changed
