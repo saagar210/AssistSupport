@@ -184,6 +184,7 @@ pub fn run() {
             commands::backup::preview_backup_import,
             commands::backup::import_backup,
             // Ingestion commands
+            commands::ingest_kb_from_disk,
             commands::ingest_url,
             commands::ingest_youtube,
             commands::ingest_github,

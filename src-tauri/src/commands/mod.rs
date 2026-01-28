@@ -3505,6 +3505,74 @@ pub struct FailedSource {
     pub error: String,
 }
 
+/// Result of a disk folder ingestion
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DiskIngestResultResponse {
+    pub total_files: usize,
+    pub ingested: usize,
+    pub skipped: usize,
+    pub errors: usize,
+    pub documents: Vec<IngestResult>,
+}
+
+/// Ingest a folder of documents from disk with source tracking
+/// Creates ingest_sources and ingest_runs entries so disk-indexed
+/// articles appear in the source management UI
+#[tauri::command]
+pub fn ingest_kb_from_disk(
+    state: State<'_, AppState>,
+    folder_path: String,
+    namespace_id: String,
+) -> Result<DiskIngestResultResponse, String> {
+    use crate::kb::ingest::disk::DiskIngester;
+    use std::path::Path;
+
+    // Validate and normalize namespace ID
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
+
+    // Validate path is within home directory
+    let validated_path = validate_within_home(Path::new(&folder_path)).map_err(|e| match e {
+        ValidationError::PathTraversal => {
+            "Folder must be within your home directory".to_string()
+        }
+        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
+            "This directory cannot be used as it contains sensitive data".to_string()
+        }
+        _ => format!("Invalid folder path: {}", e),
+    })?;
+
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+
+    // Ensure namespace exists
+    db.ensure_namespace_exists(&namespace_id)
+        .map_err(|e| e.to_string())?;
+
+    let ingester = DiskIngester::new();
+    let result = ingester
+        .ingest_folder(db, &validated_path, &namespace_id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(DiskIngestResultResponse {
+        total_files: result.total_files,
+        ingested: result.ingested,
+        skipped: result.skipped,
+        errors: result.errors,
+        documents: result
+            .documents
+            .into_iter()
+            .map(|d| IngestResult {
+                document_id: d.id,
+                title: d.title,
+                source_uri: d.source_uri,
+                chunk_count: d.chunk_count,
+                word_count: d.word_count,
+            })
+            .collect(),
+    })
+}
+
 /// Ingest a web page URL
 /// Uses block_in_place to run async operations while holding DB lock
 #[tauri::command]

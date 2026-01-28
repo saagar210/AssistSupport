@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0-pilot] - 2026-01-28
+
+### Added
+- **Pilot Verification Checklist**: Pre-deployment checklist covering build, database, core features, UI/UX, and deployment readiness
+- **Feedback Template**: Structured feedback form for all 20 validation queries plus own queries, accuracy, latency, helpfulness, KB gaps, and suggestions
+- **Feedback Aggregation Sheet**: Per-query tracking across all participants with pass rates and issue tracking
+- **Daily Log**: Day-by-day pilot activity tracker for 2-week pilot period
+- **Analysis Template**: Structured template for post-pilot accuracy, performance, sentiment, and KB gap analysis
+- **Go/No-Go Decision Template**: Production readiness decision document with metrics, rationale, and sign-off
+- **v0.6.1 Implementation Plan**: Template for post-pilot fixes and KB additions
+- **Week 4 Brief**: Handoff document for implementing pilot-identified fixes
+
+## [0.6.0] - 2026-01-28
+
+### Added
+- **Disk Ingestion Pipeline**: New `DiskIngester` module wraps `KbIndexer` with `IngestSource`/`IngestRun` tracking so disk-indexed articles appear in the source management UI
+- **`ingest_kb_from_disk` Command**: New Tauri command for ingesting a folder with path validation, namespace support, and full source tracking
+- **Incremental Re-ingestion**: File hash (SHA-256) comparison skips unchanged files automatically on re-ingest
+- **6 Integration Tests**: End-to-end tests for disk ingestion, search ranking, policy boost, incremental re-index, and full pipeline verification
+- **Pilot Documentation**: 20 structured test queries (`TEAM_PILOT_VALIDATION.md`), quick start guide (`PILOT_QUICK_START.md`), and week 2 summary (`WEEK2_SUMMARY.md`)
+
+### Technical Details
+- `DiskIngester` creates `ingest_sources` (source_type="file") and `ingest_runs` per file
+- Documents and chunks get `namespace_id`, `source_type`, and `source_id` fields set
+- Follows the same source/run tracking pattern as `WebIngester`
+- Path validation ensures folder is within home directory (reuses `validate_within_home`)
+
 ## [0.5.3] - 2026-01-28
 
 ### Added

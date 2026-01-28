@@ -2,6 +2,7 @@
 //! Handles web pages, YouTube videos, GitHub repos, and batch processing
 
 pub mod batch;
+pub mod disk;
 pub mod github;
 pub mod web;
 pub mod youtube;
