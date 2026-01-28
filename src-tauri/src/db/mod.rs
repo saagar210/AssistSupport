@@ -9,7 +9,7 @@ use crate::jobs::{Job, JobLog, JobStatus, JobType, LogLevel};
 use crate::security::{MasterKey, SecurityError};
 use crate::validation::{normalize_and_validate_namespace_id, ValidationError};
 use chrono::Utc;
-use rusqlite::{Connection, Result as SqliteResult, params};
+use rusqlite::{params, Connection, Result as SqliteResult};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
@@ -137,7 +137,9 @@ impl Database {
 
     /// Check database integrity
     pub fn check_integrity(&self) -> Result<(), DbError> {
-        let result: String = self.conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
 
         if result != "ok" {
             return Err(DbError::Corruption);
@@ -164,7 +166,9 @@ impl Database {
         );
 
         match version {
-            Ok(v) => v.parse().map_err(|_| DbError::Migration("Invalid schema version".into())),
+            Ok(v) => v
+                .parse()
+                .map_err(|_| DbError::Migration("Invalid schema version".into())),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
             Err(e) => Err(DbError::Sqlite(e)),
         }
@@ -746,7 +750,8 @@ impl Database {
 
         // For SQLCipher, the standard backup API doesn't work with encrypted databases
         // We'll use a file copy approach instead (database must be checkpointed first)
-        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
 
         // Copy the database file
         std::fs::copy(&self.path, &backup_path)?;
@@ -821,7 +826,11 @@ impl Database {
     }
 
     /// Set vector consent
-    pub fn set_vector_consent(&self, enabled: bool, encryption_supported: bool) -> Result<(), DbError> {
+    pub fn set_vector_consent(
+        &self,
+        enabled: bool,
+        encryption_supported: bool,
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE vector_consent SET enabled = ?, consented_at = ?, encryption_supported = ? WHERE id = 1",
@@ -834,20 +843,22 @@ impl Database {
     pub fn list_decision_trees(&self) -> Result<Vec<DecisionTree>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, category, tree_json, source, created_at, updated_at
-             FROM decision_trees ORDER BY name"
+             FROM decision_trees ORDER BY name",
         )?;
 
-        let trees = stmt.query_map([], |row| {
-            Ok(DecisionTree {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                tree_json: row.get(3)?,
-                source: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let trees = stmt
+            .query_map([], |row| {
+                Ok(DecisionTree {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    tree_json: row.get(3)?,
+                    source: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(trees)
     }
@@ -858,15 +869,17 @@ impl Database {
             "SELECT id, name, category, tree_json, source, created_at, updated_at
              FROM decision_trees WHERE id = ?",
             [tree_id],
-            |row| Ok(DecisionTree {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                tree_json: row.get(3)?,
-                source: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
+            |row| {
+                Ok(DecisionTree {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    tree_json: row.get(3)?,
+                    source: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            },
         )?;
         Ok(tree)
     }
@@ -919,31 +932,34 @@ impl Database {
                     case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts
              ORDER BY updated_at DESC
-             LIMIT ?"
+             LIMIT ?",
         )?;
 
-        let drafts = stmt.query_map([limit as i64], |row| {
-            Ok(SavedDraft {
-                id: row.get(0)?,
-                input_text: row.get(1)?,
-                summary_text: row.get(2)?,
-                diagnosis_json: row.get(3)?,
-                response_text: row.get(4)?,
-                ticket_id: row.get(5)?,
-                kb_sources_json: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                is_autosave: row.get::<_, i32>(9)? != 0,
-                model_name: row.get(10)?,
-                case_intake_json: row.get(11)?,
-                status: row.get::<_, Option<String>>(12)?
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_default(),
-                handoff_summary: row.get(13)?,
-                finalized_at: row.get(14)?,
-                finalized_by: row.get(15)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let drafts = stmt
+            .query_map([limit as i64], |row| {
+                Ok(SavedDraft {
+                    id: row.get(0)?,
+                    input_text: row.get(1)?,
+                    summary_text: row.get(2)?,
+                    diagnosis_json: row.get(3)?,
+                    response_text: row.get(4)?,
+                    ticket_id: row.get(5)?,
+                    kb_sources_json: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                    is_autosave: row.get::<_, i32>(9)? != 0,
+                    model_name: row.get(10)?,
+                    case_intake_json: row.get(11)?,
+                    status: row
+                        .get::<_, Option<String>>(12)?
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_default(),
+                    handoff_summary: row.get(13)?,
+                    finalized_at: row.get(14)?,
+                    finalized_by: row.get(15)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(drafts)
     }
@@ -959,31 +975,34 @@ impl Database {
              WHERE is_autosave = 0
                AND (input_text LIKE ?1 OR response_text LIKE ?1 OR ticket_id LIKE ?1)
              ORDER BY updated_at DESC
-             LIMIT ?2"
+             LIMIT ?2",
         )?;
 
-        let drafts = stmt.query_map(params![pattern, limit as i64], |row| {
-            Ok(SavedDraft {
-                id: row.get(0)?,
-                input_text: row.get(1)?,
-                summary_text: row.get(2)?,
-                diagnosis_json: row.get(3)?,
-                response_text: row.get(4)?,
-                ticket_id: row.get(5)?,
-                kb_sources_json: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                is_autosave: row.get::<_, i32>(9)? != 0,
-                model_name: row.get(10)?,
-                case_intake_json: row.get(11)?,
-                status: row.get::<_, Option<String>>(12)?
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_default(),
-                handoff_summary: row.get(13)?,
-                finalized_at: row.get(14)?,
-                finalized_by: row.get(15)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let drafts = stmt
+            .query_map(params![pattern, limit as i64], |row| {
+                Ok(SavedDraft {
+                    id: row.get(0)?,
+                    input_text: row.get(1)?,
+                    summary_text: row.get(2)?,
+                    diagnosis_json: row.get(3)?,
+                    response_text: row.get(4)?,
+                    ticket_id: row.get(5)?,
+                    kb_sources_json: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                    is_autosave: row.get::<_, i32>(9)? != 0,
+                    model_name: row.get(10)?,
+                    case_intake_json: row.get(11)?,
+                    status: row
+                        .get::<_, Option<String>>(12)?
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_default(),
+                    handoff_summary: row.get(13)?,
+                    finalized_at: row.get(14)?,
+                    finalized_by: row.get(15)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(drafts)
     }
@@ -996,26 +1015,29 @@ impl Database {
                     case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts WHERE id = ?",
             [draft_id],
-            |row| Ok(SavedDraft {
-                id: row.get(0)?,
-                input_text: row.get(1)?,
-                summary_text: row.get(2)?,
-                diagnosis_json: row.get(3)?,
-                response_text: row.get(4)?,
-                ticket_id: row.get(5)?,
-                kb_sources_json: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                is_autosave: row.get::<_, i32>(9)? != 0,
-                model_name: row.get(10)?,
-                case_intake_json: row.get(11)?,
-                status: row.get::<_, Option<String>>(12)?
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_default(),
-                handoff_summary: row.get(13)?,
-                finalized_at: row.get(14)?,
-                finalized_by: row.get(15)?,
-            })
+            |row| {
+                Ok(SavedDraft {
+                    id: row.get(0)?,
+                    input_text: row.get(1)?,
+                    summary_text: row.get(2)?,
+                    diagnosis_json: row.get(3)?,
+                    response_text: row.get(4)?,
+                    ticket_id: row.get(5)?,
+                    kb_sources_json: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                    is_autosave: row.get::<_, i32>(9)? != 0,
+                    model_name: row.get(10)?,
+                    case_intake_json: row.get(11)?,
+                    status: row
+                        .get::<_, Option<String>>(12)?
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_default(),
+                    handoff_summary: row.get(13)?,
+                    finalized_at: row.get(14)?,
+                    finalized_by: row.get(15)?,
+                })
+            },
         )?;
         Ok(draft)
     }
@@ -1052,7 +1074,8 @@ impl Database {
 
     /// Delete a draft
     pub fn delete_draft(&self, draft_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM drafts WHERE id = ?", [draft_id])?;
+        self.conn
+            .execute("DELETE FROM drafts WHERE id = ?", [draft_id])?;
         Ok(())
     }
 
@@ -1078,31 +1101,34 @@ impl Database {
              FROM drafts
              WHERE is_autosave = 1
              ORDER BY created_at DESC
-             LIMIT ?"
+             LIMIT ?",
         )?;
 
-        let drafts = stmt.query_map([limit], |row| {
-            Ok(SavedDraft {
-                id: row.get(0)?,
-                input_text: row.get(1)?,
-                summary_text: row.get(2)?,
-                diagnosis_json: row.get(3)?,
-                response_text: row.get(4)?,
-                ticket_id: row.get(5)?,
-                kb_sources_json: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                is_autosave: row.get::<_, i32>(9)? != 0,
-                model_name: row.get(10)?,
-                case_intake_json: row.get(11)?,
-                status: row.get::<_, Option<String>>(12)?
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or_default(),
-                handoff_summary: row.get(13)?,
-                finalized_at: row.get(14)?,
-                finalized_by: row.get(15)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let drafts = stmt
+            .query_map([limit], |row| {
+                Ok(SavedDraft {
+                    id: row.get(0)?,
+                    input_text: row.get(1)?,
+                    summary_text: row.get(2)?,
+                    diagnosis_json: row.get(3)?,
+                    response_text: row.get(4)?,
+                    ticket_id: row.get(5)?,
+                    kb_sources_json: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                    is_autosave: row.get::<_, i32>(9)? != 0,
+                    model_name: row.get(10)?,
+                    case_intake_json: row.get(11)?,
+                    status: row
+                        .get::<_, Option<String>>(12)?
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_default(),
+                    handoff_summary: row.get(13)?,
+                    finalized_at: row.get(14)?,
+                    finalized_by: row.get(15)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(drafts)
     }
@@ -1110,7 +1136,7 @@ impl Database {
     /// Get draft versions by input hash (autosaves with matching input_text hash)
     /// The hash is computed as SHA256(input_text)[0:16]
     pub fn get_draft_versions(&self, input_hash: &str) -> Result<Vec<SavedDraft>, DbError> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         // Get all autosaves and filter by input hash
         let all_autosaves = self.list_autosaves(100)?; // Get more to search through
@@ -1133,7 +1159,11 @@ impl Database {
     // ============================================================================
 
     /// Create a draft version snapshot
-    pub fn create_draft_version(&self, draft_id: &str, change_reason: Option<&str>) -> Result<String, DbError> {
+    pub fn create_draft_version(
+        &self,
+        draft_id: &str,
+        change_reason: Option<&str>,
+    ) -> Result<String, DbError> {
         // Get current draft state
         let draft = self.get_draft(draft_id)?;
 
@@ -1176,29 +1206,35 @@ impl Database {
                     case_intake_json, kb_sources_json, created_at, change_reason
              FROM draft_versions
              WHERE draft_id = ?
-             ORDER BY version_number DESC"
+             ORDER BY version_number DESC",
         )?;
 
-        let versions = stmt.query_map([draft_id], |row| {
-            Ok(DraftVersion {
-                id: row.get(0)?,
-                draft_id: row.get(1)?,
-                version_number: row.get(2)?,
-                input_text: row.get(3)?,
-                summary_text: row.get(4)?,
-                response_text: row.get(5)?,
-                case_intake_json: row.get(6)?,
-                kb_sources_json: row.get(7)?,
-                created_at: row.get(8)?,
-                change_reason: row.get(9)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let versions = stmt
+            .query_map([draft_id], |row| {
+                Ok(DraftVersion {
+                    id: row.get(0)?,
+                    draft_id: row.get(1)?,
+                    version_number: row.get(2)?,
+                    input_text: row.get(3)?,
+                    summary_text: row.get(4)?,
+                    response_text: row.get(5)?,
+                    case_intake_json: row.get(6)?,
+                    kb_sources_json: row.get(7)?,
+                    created_at: row.get(8)?,
+                    change_reason: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(versions)
     }
 
     /// Finalize a draft (lock it and mark as read-only)
-    pub fn finalize_draft(&self, draft_id: &str, finalized_by: Option<&str>) -> Result<(), DbError> {
+    pub fn finalize_draft(
+        &self,
+        draft_id: &str,
+        finalized_by: Option<&str>,
+    ) -> Result<(), DbError> {
         // Create a version snapshot before finalizing
         self.create_draft_version(draft_id, Some("Pre-finalization snapshot"))?;
 
@@ -1222,7 +1258,11 @@ impl Database {
     }
 
     /// Update draft handoff summary
-    pub fn update_draft_handoff(&self, draft_id: &str, handoff_summary: &str) -> Result<(), DbError> {
+    pub fn update_draft_handoff(
+        &self,
+        draft_id: &str,
+        handoff_summary: &str,
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE drafts SET handoff_summary = ?, updated_at = ? WHERE id = ?",
@@ -1251,7 +1291,8 @@ impl Database {
             stmt.query_map([cat], Self::row_to_playbook)?
         } else {
             stmt.query_map([], Self::row_to_playbook)?
-        }.collect::<Result<Vec<_>, _>>()?;
+        }
+        .collect::<Result<Vec<_>, _>>()?;
 
         Ok(playbooks)
     }
@@ -1321,7 +1362,8 @@ impl Database {
 
     /// Delete a playbook
     pub fn delete_playbook(&self, playbook_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM playbooks WHERE id = ?", [playbook_id])?;
+        self.conn
+            .execute("DELETE FROM playbooks WHERE id = ?", [playbook_id])?;
         Ok(())
     }
 
@@ -1330,7 +1372,10 @@ impl Database {
     // ============================================================================
 
     /// List all active action shortcuts
-    pub fn list_action_shortcuts(&self, category: Option<&str>) -> Result<Vec<ActionShortcut>, DbError> {
+    pub fn list_action_shortcuts(
+        &self,
+        category: Option<&str>,
+    ) -> Result<Vec<ActionShortcut>, DbError> {
         let query = match category {
             Some(_) => "SELECT id, name, shortcut_key, action_type, action_data_json,
                                category, sort_order, is_active, created_at, updated_at
@@ -1345,7 +1390,8 @@ impl Database {
             stmt.query_map([cat], Self::row_to_action_shortcut)?
         } else {
             stmt.query_map([], Self::row_to_action_shortcut)?
-        }.collect::<Result<Vec<_>, _>>()?;
+        }
+        .collect::<Result<Vec<_>, _>>()?;
 
         Ok(shortcuts)
     }
@@ -1402,7 +1448,8 @@ impl Database {
 
     /// Delete an action shortcut
     pub fn delete_action_shortcut(&self, shortcut_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM action_shortcuts WHERE id = ?", [shortcut_id])?;
+        self.conn
+            .execute("DELETE FROM action_shortcuts WHERE id = ?", [shortcut_id])?;
         Ok(())
     }
 
@@ -1415,19 +1462,21 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, category, content, created_at, updated_at
              FROM response_templates
-             ORDER BY name"
+             ORDER BY name",
         )?;
 
-        let templates = stmt.query_map([], |row| {
-            Ok(ResponseTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let templates = stmt
+            .query_map([], |row| {
+                Ok(ResponseTemplate {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(templates)
     }
@@ -1438,14 +1487,16 @@ impl Database {
             "SELECT id, name, category, content, created_at, updated_at
              FROM response_templates WHERE id = ?",
             [template_id],
-            |row| Ok(ResponseTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
+            |row| {
+                Ok(ResponseTemplate {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            },
         )?;
         Ok(template)
     }
@@ -1470,7 +1521,8 @@ impl Database {
 
     /// Delete a template
     pub fn delete_template(&self, template_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM response_templates WHERE id = ?", [template_id])?;
+        self.conn
+            .execute("DELETE FROM response_templates WHERE id = ?", [template_id])?;
         Ok(())
     }
 
@@ -1500,17 +1552,19 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, value, created_at
              FROM custom_variables
-             ORDER BY name"
+             ORDER BY name",
         )?;
 
-        let variables = stmt.query_map([], |row| {
-            Ok(CustomVariable {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                value: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let variables = stmt
+            .query_map([], |row| {
+                Ok(CustomVariable {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    value: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(variables)
     }
@@ -1521,12 +1575,14 @@ impl Database {
             "SELECT id, name, value, created_at
              FROM custom_variables WHERE id = ?",
             [variable_id],
-            |row| Ok(CustomVariable {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                value: row.get(2)?,
-                created_at: row.get(3)?,
-            })
+            |row| {
+                Ok(CustomVariable {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    value: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            },
         )?;
         Ok(variable)
     }
@@ -1554,7 +1610,8 @@ impl Database {
 
     /// Delete a custom variable
     pub fn delete_custom_variable(&self, variable_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM custom_variables WHERE id = ?", [variable_id])?;
+        self.conn
+            .execute("DELETE FROM custom_variables WHERE id = ?", [variable_id])?;
         Ok(())
     }
 
@@ -1564,7 +1621,7 @@ impl Database {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM decision_trees WHERE source = 'builtin'",
             [],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
 
         if count > 0 {
@@ -1587,24 +1644,28 @@ impl Database {
 
     /// Get all chunk IDs and content for embedding generation
     pub fn get_all_chunks_for_embedding(&self) -> Result<Vec<(String, String)>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, content FROM kb_chunks ORDER BY document_id, chunk_index"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, content FROM kb_chunks ORDER BY document_id, chunk_index")?;
 
-        let chunks = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let chunks = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(chunks)
     }
 
     /// Get chunk content by ID
     pub fn get_chunk_content(&self, chunk_id: &str) -> Result<String, DbError> {
-        self.conn.query_row(
-            "SELECT content FROM kb_chunks WHERE id = ?",
-            [chunk_id],
-            |row| row.get(0),
-        ).map_err(DbError::Sqlite)
+        self.conn
+            .query_row(
+                "SELECT content FROM kb_chunks WHERE id = ?",
+                [chunk_id],
+                |row| row.get(0),
+            )
+            .map_err(DbError::Sqlite)
     }
 
     // ============================================================================
@@ -1615,19 +1676,21 @@ impl Database {
     pub fn list_namespaces(&self) -> Result<Vec<Namespace>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, color, created_at, updated_at
-             FROM namespaces ORDER BY name"
+             FROM namespaces ORDER BY name",
         )?;
 
-        let namespaces = stmt.query_map([], |row| {
-            Ok(Namespace {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let namespaces = stmt
+            .query_map([], |row| {
+                Ok(Namespace {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    color: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(namespaces)
     }
@@ -1650,40 +1713,46 @@ impl Database {
                  FROM ingest_sources
                  GROUP BY namespace_id
              ) s ON s.namespace_id = n.id
-             ORDER BY n.name"
+             ORDER BY n.name",
         )?;
 
-        let namespaces = stmt.query_map([], |row| {
-            Ok(NamespaceWithCounts {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-                document_count: row.get(6)?,
-                source_count: row.get(7)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let namespaces = stmt
+            .query_map([], |row| {
+                Ok(NamespaceWithCounts {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    color: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                    document_count: row.get(6)?,
+                    source_count: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(namespaces)
     }
 
     /// Get a namespace by ID
     pub fn get_namespace(&self, namespace_id: &str) -> Result<Namespace, DbError> {
-        self.conn.query_row(
-            "SELECT id, name, description, color, created_at, updated_at
+        self.conn
+            .query_row(
+                "SELECT id, name, description, color, created_at, updated_at
              FROM namespaces WHERE id = ?",
-            [namespace_id],
-            |row| Ok(Namespace {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                color: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        ).map_err(DbError::Sqlite)
+                [namespace_id],
+                |row| {
+                    Ok(Namespace {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        description: row.get(2)?,
+                        color: row.get(3)?,
+                        created_at: row.get(4)?,
+                        updated_at: row.get(5)?,
+                    })
+                },
+            )
+            .map_err(DbError::Sqlite)
     }
 
     /// Create or update a namespace
@@ -1715,11 +1784,18 @@ impl Database {
         }
         // Cascade delete: documents -> chunks are handled by ON DELETE CASCADE
         // Delete documents first
-        self.conn.execute("DELETE FROM kb_documents WHERE namespace_id = ?", [namespace_id])?;
+        self.conn.execute(
+            "DELETE FROM kb_documents WHERE namespace_id = ?",
+            [namespace_id],
+        )?;
         // Delete ingest sources
-        self.conn.execute("DELETE FROM ingest_sources WHERE namespace_id = ?", [namespace_id])?;
+        self.conn.execute(
+            "DELETE FROM ingest_sources WHERE namespace_id = ?",
+            [namespace_id],
+        )?;
         // Delete namespace
-        self.conn.execute("DELETE FROM namespaces WHERE id = ?", [namespace_id])?;
+        self.conn
+            .execute("DELETE FROM namespaces WHERE id = ?", [namespace_id])?;
         Ok(())
     }
 
@@ -1843,10 +1919,7 @@ impl Database {
 
             // Skip if canonical is empty (shouldn't happen, but be safe)
             if canonical_id.is_empty() {
-                tracing::warn!(
-                    "Skipping namespace '{}' - normalized ID is empty",
-                    old_id
-                );
+                tracing::warn!("Skipping namespace '{}' - normalized ID is empty", old_id);
                 continue;
             }
 
@@ -1892,11 +1965,7 @@ impl Database {
                 params![canonical_id, old_id],
             )?;
 
-            tracing::info!(
-                "Migrated namespace ID '{}' -> '{}'",
-                old_id,
-                canonical_id
-            );
+            tracing::info!("Migrated namespace ID '{}' -> '{}'", old_id, canonical_id);
             migrated.push((old_id, canonical_id));
         }
 
@@ -1908,7 +1977,10 @@ impl Database {
     // ============================================================================
 
     /// List ingest sources, optionally filtered by namespace
-    pub fn list_ingest_sources(&self, namespace_id: Option<&str>) -> Result<Vec<IngestSource>, DbError> {
+    pub fn list_ingest_sources(
+        &self,
+        namespace_id: Option<&str>,
+    ) -> Result<Vec<IngestSource>, DbError> {
         let map_row = |row: &rusqlite::Row| -> rusqlite::Result<IngestSource> {
             Ok(IngestSource {
                 id: row.get(0)?,
@@ -1934,9 +2006,11 @@ impl Database {
                     "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
                             content_hash, last_ingested_at, status, error_message, metadata_json,
                             created_at, updated_at
-                     FROM ingest_sources WHERE namespace_id = ? ORDER BY created_at DESC"
+                     FROM ingest_sources WHERE namespace_id = ? ORDER BY created_at DESC",
                 )?;
-                let result: Vec<IngestSource> = stmt.query_map([ns], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                let result: Vec<IngestSource> = stmt
+                    .query_map([ns], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
                 result
             }
             None => {
@@ -1944,9 +2018,11 @@ impl Database {
                     "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
                             content_hash, last_ingested_at, status, error_message, metadata_json,
                             created_at, updated_at
-                     FROM ingest_sources ORDER BY created_at DESC"
+                     FROM ingest_sources ORDER BY created_at DESC",
                 )?;
-                let result: Vec<IngestSource> = stmt.query_map([], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                let result: Vec<IngestSource> = stmt
+                    .query_map([], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
                 result
             }
         };
@@ -1956,55 +2032,66 @@ impl Database {
 
     /// Get an ingest source by ID
     pub fn get_ingest_source(&self, source_id: &str) -> Result<IngestSource, DbError> {
-        self.conn.query_row(
-            "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
+        self.conn
+            .query_row(
+                "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
                     content_hash, last_ingested_at, status, error_message, metadata_json,
                     created_at, updated_at
              FROM ingest_sources WHERE id = ?",
-            [source_id],
-            |row| Ok(IngestSource {
-                id: row.get(0)?,
-                source_type: row.get(1)?,
-                source_uri: row.get(2)?,
-                namespace_id: row.get(3)?,
-                title: row.get(4)?,
-                etag: row.get(5)?,
-                last_modified: row.get(6)?,
-                content_hash: row.get(7)?,
-                last_ingested_at: row.get(8)?,
-                status: row.get(9)?,
-                error_message: row.get(10)?,
-                metadata_json: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
-            })
-        ).map_err(DbError::Sqlite)
+                [source_id],
+                |row| {
+                    Ok(IngestSource {
+                        id: row.get(0)?,
+                        source_type: row.get(1)?,
+                        source_uri: row.get(2)?,
+                        namespace_id: row.get(3)?,
+                        title: row.get(4)?,
+                        etag: row.get(5)?,
+                        last_modified: row.get(6)?,
+                        content_hash: row.get(7)?,
+                        last_ingested_at: row.get(8)?,
+                        status: row.get(9)?,
+                        error_message: row.get(10)?,
+                        metadata_json: row.get(11)?,
+                        created_at: row.get(12)?,
+                        updated_at: row.get(13)?,
+                    })
+                },
+            )
+            .map_err(DbError::Sqlite)
     }
 
     /// Find an ingest source by URI and namespace
-    pub fn find_ingest_source(&self, source_type: &str, source_uri: &str, namespace_id: &str) -> Result<Option<IngestSource>, DbError> {
+    pub fn find_ingest_source(
+        &self,
+        source_type: &str,
+        source_uri: &str,
+        namespace_id: &str,
+    ) -> Result<Option<IngestSource>, DbError> {
         match self.conn.query_row(
             "SELECT id, source_type, source_uri, namespace_id, title, etag, last_modified,
                     content_hash, last_ingested_at, status, error_message, metadata_json,
                     created_at, updated_at
              FROM ingest_sources WHERE source_type = ? AND source_uri = ? AND namespace_id = ?",
             params![source_type, source_uri, namespace_id],
-            |row| Ok(IngestSource {
-                id: row.get(0)?,
-                source_type: row.get(1)?,
-                source_uri: row.get(2)?,
-                namespace_id: row.get(3)?,
-                title: row.get(4)?,
-                etag: row.get(5)?,
-                last_modified: row.get(6)?,
-                content_hash: row.get(7)?,
-                last_ingested_at: row.get(8)?,
-                status: row.get(9)?,
-                error_message: row.get(10)?,
-                metadata_json: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
-            })
+            |row| {
+                Ok(IngestSource {
+                    id: row.get(0)?,
+                    source_type: row.get(1)?,
+                    source_uri: row.get(2)?,
+                    namespace_id: row.get(3)?,
+                    title: row.get(4)?,
+                    etag: row.get(5)?,
+                    last_modified: row.get(6)?,
+                    content_hash: row.get(7)?,
+                    last_ingested_at: row.get(8)?,
+                    status: row.get(9)?,
+                    error_message: row.get(10)?,
+                    metadata_json: row.get(11)?,
+                    created_at: row.get(12)?,
+                    updated_at: row.get(13)?,
+                })
+            },
         ) {
             Ok(source) => Ok(Some(source)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -2051,12 +2138,18 @@ impl Database {
 
     /// Delete an ingest source
     pub fn delete_ingest_source(&self, source_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM ingest_sources WHERE id = ?", [source_id])?;
+        self.conn
+            .execute("DELETE FROM ingest_sources WHERE id = ?", [source_id])?;
         Ok(())
     }
 
     /// Update ingest source status
-    pub fn update_ingest_source_status(&self, source_id: &str, status: &str, error_message: Option<&str>) -> Result<(), DbError> {
+    pub fn update_ingest_source_status(
+        &self,
+        source_id: &str,
+        status: &str,
+        error_message: Option<&str>,
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE ingest_sources SET status = ?, error_message = ?, updated_at = ? WHERE id = ?",
@@ -2094,27 +2187,33 @@ impl Database {
     }
 
     /// Get recent ingest runs for a source
-    pub fn get_ingest_runs(&self, source_id: &str, limit: usize) -> Result<Vec<IngestRun>, DbError> {
+    pub fn get_ingest_runs(
+        &self,
+        source_id: &str,
+        limit: usize,
+    ) -> Result<Vec<IngestRun>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, source_id, started_at, completed_at, status, documents_added,
                     documents_updated, documents_removed, chunks_added, error_message
-             FROM ingest_runs WHERE source_id = ? ORDER BY started_at DESC LIMIT ?"
+             FROM ingest_runs WHERE source_id = ? ORDER BY started_at DESC LIMIT ?",
         )?;
 
-        let runs = stmt.query_map(params![source_id, limit as i64], |row| {
-            Ok(IngestRun {
-                id: row.get(0)?,
-                source_id: row.get(1)?,
-                started_at: row.get(2)?,
-                completed_at: row.get(3)?,
-                status: row.get(4)?,
-                documents_added: row.get(5)?,
-                documents_updated: row.get(6)?,
-                documents_removed: row.get(7)?,
-                chunks_added: row.get(8)?,
-                error_message: row.get(9)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let runs = stmt
+            .query_map(params![source_id, limit as i64], |row| {
+                Ok(IngestRun {
+                    id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    started_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    status: row.get(4)?,
+                    documents_added: row.get(5)?,
+                    documents_updated: row.get(6)?,
+                    documents_removed: row.get(7)?,
+                    chunks_added: row.get(8)?,
+                    error_message: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(runs)
     }
@@ -2124,7 +2223,12 @@ impl Database {
     // ============================================================================
 
     /// FTS5 search for KB chunks with namespace filtering
-    pub fn fts_search_in_namespace(&self, query: &str, namespace_id: Option<&str>, limit: usize) -> Result<Vec<FtsSearchResult>, DbError> {
+    pub fn fts_search_in_namespace(
+        &self,
+        query: &str,
+        namespace_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<FtsSearchResult>, DbError> {
         let map_row = |row: &rusqlite::Row| -> rusqlite::Result<FtsSearchResult> {
             Ok(FtsSearchResult {
                 chunk_id: row.get(0)?,
@@ -2150,9 +2254,10 @@ impl Database {
                     WHERE kb_fts MATCH ?1 AND kb_chunks.namespace_id = ?2
                     ORDER BY rank
                     LIMIT ?3
-                    "#
+                    "#,
                 )?;
-                let result: Vec<FtsSearchResult> = stmt.query_map(params![query, ns, limit as i64], map_row)?
+                let result: Vec<FtsSearchResult> = stmt
+                    .query_map(params![query, ns, limit as i64], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2170,9 +2275,10 @@ impl Database {
                     WHERE kb_fts MATCH ?1
                     ORDER BY rank
                     LIMIT ?2
-                    "#
+                    "#,
                 )?;
-                let result: Vec<FtsSearchResult> = stmt.query_map(params![query, limit as i64], map_row)?
+                let result: Vec<FtsSearchResult> = stmt
+                    .query_map(params![query, limit as i64], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2222,14 +2328,16 @@ impl Database {
             "SELECT id, host_pattern, reason, created_at FROM network_allowlist ORDER BY created_at"
         )?;
 
-        let entries = stmt.query_map([], |row| {
-            Ok(AllowlistEntry {
-                id: row.get(0)?,
-                host_pattern: row.get(1)?,
-                reason: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let entries = stmt
+            .query_map([], |row| {
+                Ok(AllowlistEntry {
+                    id: row.get(0)?,
+                    host_pattern: row.get(1)?,
+                    reason: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(entries)
     }
@@ -2274,7 +2382,10 @@ impl Database {
                 let metadata_json: Option<String> = row.get(10)?;
                 Ok(Job {
                     id: row.get(0)?,
-                    job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap_or(JobType::Custom("unknown".into())),
+                    job_type: row
+                        .get::<_, String>(1)?
+                        .parse::<JobType>()
+                        .unwrap_or(JobType::Custom("unknown".into())),
                     status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                     created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                         .map(|t| t.with_timezone(&Utc))
@@ -2282,10 +2393,12 @@ impl Database {
                     updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                         .map(|t| t.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    started_at: row.get::<_, Option<String>>(5)?
+                    started_at: row
+                        .get::<_, Option<String>>(5)?
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|t| t.with_timezone(&Utc)),
-                    completed_at: row.get::<_, Option<String>>(6)?
+                    completed_at: row
+                        .get::<_, Option<String>>(6)?
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|t| t.with_timezone(&Utc)),
                     progress: row.get(7)?,
@@ -2308,7 +2421,10 @@ impl Database {
             let metadata_json: Option<String> = row.get(10)?;
             Ok(Job {
                 id: row.get(0)?,
-                job_type: row.get::<_, String>(1)?.parse::<JobType>().unwrap_or(JobType::Custom("unknown".into())),
+                job_type: row
+                    .get::<_, String>(1)?
+                    .parse::<JobType>()
+                    .unwrap_or(JobType::Custom("unknown".into())),
                 status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                     .map(|t| t.with_timezone(&Utc))
@@ -2316,10 +2432,12 @@ impl Database {
                 updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                     .map(|t| t.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
-                started_at: row.get::<_, Option<String>>(5)?
+                started_at: row
+                    .get::<_, Option<String>>(5)?
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                     .map(|t| t.with_timezone(&Utc)),
-                completed_at: row.get::<_, Option<String>>(6)?
+                completed_at: row
+                    .get::<_, Option<String>>(6)?
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                     .map(|t| t.with_timezone(&Utc)),
                 progress: row.get(7)?,
@@ -2334,9 +2452,10 @@ impl Database {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
                             progress, progress_message, error, metadata_json
-                     FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?"
+                     FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?",
                 )?;
-                let result: Vec<Job> = stmt.query_map(params![s.to_string(), limit as i64], map_row)?
+                let result: Vec<Job> = stmt
+                    .query_map(params![s.to_string(), limit as i64], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2344,9 +2463,10 @@ impl Database {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
                             progress, progress_message, error, metadata_json
-                     FROM jobs ORDER BY created_at DESC LIMIT ?"
+                     FROM jobs ORDER BY created_at DESC LIMIT ?",
                 )?;
-                let result: Vec<Job> = stmt.query_map(params![limit as i64], map_row)?
+                let result: Vec<Job> = stmt
+                    .query_map(params![limit as i64], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2378,7 +2498,14 @@ impl Database {
             "UPDATE jobs SET status = ?, updated_at = ?, started_at = COALESCE(?, started_at),
                     completed_at = COALESCE(?, completed_at), error = COALESCE(?, error)
              WHERE id = ?",
-            params![status.to_string(), now, started_at, completed_at, error, job_id],
+            params![
+                status.to_string(),
+                now,
+                started_at,
+                completed_at,
+                error,
+                job_id
+            ],
         )?;
         Ok(())
     }
@@ -2399,7 +2526,12 @@ impl Database {
     }
 
     /// Add a log entry for a job
-    pub fn add_job_log(&self, job_id: &str, level: LogLevel, message: &str) -> Result<i64, DbError> {
+    pub fn add_job_log(
+        &self,
+        job_id: &str,
+        level: LogLevel,
+        message: &str,
+    ) -> Result<i64, DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO job_logs (job_id, timestamp, level, message) VALUES (?, ?, ?, ?)",
@@ -2412,28 +2544,30 @@ impl Database {
     pub fn get_job_logs(&self, job_id: &str, limit: usize) -> Result<Vec<JobLog>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, job_id, timestamp, level, message
-             FROM job_logs WHERE job_id = ? ORDER BY timestamp DESC LIMIT ?"
+             FROM job_logs WHERE job_id = ? ORDER BY timestamp DESC LIMIT ?",
         )?;
 
-        let logs = stmt.query_map(params![job_id, limit as i64], |row| {
-            let level_str: String = row.get(3)?;
-            let level = match level_str.as_str() {
-                "debug" => LogLevel::Debug,
-                "info" => LogLevel::Info,
-                "warning" => LogLevel::Warning,
-                "error" => LogLevel::Error,
-                _ => LogLevel::Info,
-            };
-            Ok(JobLog {
-                id: row.get(0)?,
-                job_id: row.get(1)?,
-                timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                    .map(|t| t.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
-                level,
-                message: row.get(4)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let logs = stmt
+            .query_map(params![job_id, limit as i64], |row| {
+                let level_str: String = row.get(3)?;
+                let level = match level_str.as_str() {
+                    "debug" => LogLevel::Debug,
+                    "info" => LogLevel::Info,
+                    "warning" => LogLevel::Warning,
+                    "error" => LogLevel::Error,
+                    _ => LogLevel::Info,
+                };
+                Ok(JobLog {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                        .map(|t| t.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    level,
+                    message: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(logs)
     }
@@ -2451,13 +2585,15 @@ impl Database {
 
     /// Get count of jobs by status
     pub fn get_job_counts(&self) -> Result<Vec<(String, i64)>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT status, COUNT(*) FROM jobs GROUP BY status"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT status, COUNT(*) FROM jobs GROUP BY status")?;
 
-        let counts = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let counts = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(counts)
     }
@@ -2473,7 +2609,7 @@ impl Database {
         change_reason: Option<&str>,
     ) -> Result<String, DbError> {
         // Get current document state
-        let (file_hash, ): (String,) = self.conn.query_row(
+        let (file_hash,): (String,) = self.conn.query_row(
             "SELECT file_hash FROM kb_documents WHERE id = ?",
             [document_id],
             |row| Ok((row.get(0)?,)),
@@ -2482,7 +2618,7 @@ impl Database {
         // Get current chunks as JSON
         let mut stmt = self.conn.prepare(
             "SELECT id, chunk_index, heading_path, content, word_count
-             FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index"
+             FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index",
         )?;
 
         let chunks: Vec<serde_json::Value> = stmt
@@ -2523,22 +2659,27 @@ impl Database {
     }
 
     /// List versions of a document
-    pub fn list_document_versions(&self, document_id: &str) -> Result<Vec<DocumentVersion>, DbError> {
+    pub fn list_document_versions(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<DocumentVersion>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, document_id, version_number, file_hash, created_at, change_reason
-             FROM document_versions WHERE document_id = ? ORDER BY version_number DESC"
+             FROM document_versions WHERE document_id = ? ORDER BY version_number DESC",
         )?;
 
-        let versions = stmt.query_map([document_id], |row| {
-            Ok(DocumentVersion {
-                id: row.get(0)?,
-                document_id: row.get(1)?,
-                version_number: row.get(2)?,
-                file_hash: row.get(3)?,
-                created_at: row.get(4)?,
-                change_reason: row.get(5)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let versions = stmt
+            .query_map([document_id], |row| {
+                Ok(DocumentVersion {
+                    id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    version_number: row.get(2)?,
+                    file_hash: row.get(3)?,
+                    created_at: row.get(4)?,
+                    change_reason: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(versions)
     }
@@ -2556,7 +2697,8 @@ impl Database {
         let _ = self.create_document_version(document_id, Some("Pre-rollback snapshot"));
 
         // Delete current chunks
-        self.conn.execute("DELETE FROM kb_chunks WHERE document_id = ?", [document_id])?;
+        self.conn
+            .execute("DELETE FROM kb_chunks WHERE document_id = ?", [document_id])?;
 
         // Parse and restore chunks
         let chunks: Vec<serde_json::Value> = serde_json::from_str(&chunks_json)
@@ -2645,7 +2787,10 @@ impl Database {
     }
 
     /// Get stale sources for review
-    pub fn get_stale_sources(&self, namespace_id: Option<&str>) -> Result<Vec<IngestSource>, DbError> {
+    pub fn get_stale_sources(
+        &self,
+        namespace_id: Option<&str>,
+    ) -> Result<Vec<IngestSource>, DbError> {
         let map_row = |row: &rusqlite::Row| -> rusqlite::Result<IngestSource> {
             Ok(IngestSource {
                 id: row.get(0)?,
@@ -2672,7 +2817,9 @@ impl Database {
                             content_hash, last_ingested_at, status, error_message, metadata_json, created_at, updated_at
                      FROM ingest_sources WHERE status = 'stale' AND namespace_id = ? ORDER BY stale_at"
                 )?;
-                let result: Vec<IngestSource> = stmt.query_map([ns], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                let result: Vec<IngestSource> = stmt
+                    .query_map([ns], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
                 result
             }
             None => {
@@ -2681,7 +2828,9 @@ impl Database {
                             content_hash, last_ingested_at, status, error_message, metadata_json, created_at, updated_at
                      FROM ingest_sources WHERE status = 'stale' ORDER BY stale_at"
                 )?;
-                let result: Vec<IngestSource> = stmt.query_map([], map_row)?.collect::<Result<Vec<_>, _>>()?;
+                let result: Vec<IngestSource> = stmt
+                    .query_map([], map_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
                 result
             }
         };
@@ -2716,7 +2865,8 @@ impl Database {
 
     /// Delete a namespace rule
     pub fn delete_namespace_rule(&self, rule_id: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM namespace_rules WHERE id = ?", [rule_id])?;
+        self.conn
+            .execute("DELETE FROM namespace_rules WHERE id = ?", [rule_id])?;
         Ok(())
     }
 
@@ -2724,33 +2874,42 @@ impl Database {
     pub fn list_namespace_rules(&self, namespace_id: &str) -> Result<Vec<NamespaceRule>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, namespace_id, rule_type, pattern_type, pattern, reason, created_at
-             FROM namespace_rules WHERE namespace_id = ? ORDER BY created_at"
+             FROM namespace_rules WHERE namespace_id = ? ORDER BY created_at",
         )?;
 
-        let rules = stmt.query_map([namespace_id], |row| {
-            Ok(NamespaceRule {
-                id: row.get(0)?,
-                namespace_id: row.get(1)?,
-                rule_type: row.get(2)?,
-                pattern_type: row.get(3)?,
-                pattern: row.get(4)?,
-                reason: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rules = stmt
+            .query_map([namespace_id], |row| {
+                Ok(NamespaceRule {
+                    id: row.get(0)?,
+                    namespace_id: row.get(1)?,
+                    rule_type: row.get(2)?,
+                    pattern_type: row.get(3)?,
+                    pattern: row.get(4)?,
+                    reason: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(rules)
     }
 
     /// Check if a URL/path is allowed by namespace rules
-    pub fn check_namespace_rules(&self, namespace_id: &str, url_or_path: &str) -> Result<bool, DbError> {
+    pub fn check_namespace_rules(
+        &self,
+        namespace_id: &str,
+        url_or_path: &str,
+    ) -> Result<bool, DbError> {
         let rules = self.list_namespace_rules(namespace_id)?;
 
         for rule in rules {
             let matches = match rule.pattern_type.as_str() {
                 "domain" => {
                     if let Ok(parsed) = url::Url::parse(url_or_path) {
-                        parsed.host_str().map(|h| h.contains(&rule.pattern)).unwrap_or(false)
+                        parsed
+                            .host_str()
+                            .map(|h| h.contains(&rule.pattern))
+                            .unwrap_or(false)
                     } else {
                         false
                     }
@@ -2805,7 +2964,8 @@ impl Database {
                             partial_index, namespace_id, source_type, source_id
                      FROM kb_documents WHERE namespace_id = ? AND source_id = ? ORDER BY indexed_at DESC"
                 )?;
-                let result: Vec<KbDocument> = stmt.query_map(params![ns, src], map_row)?
+                let result: Vec<KbDocument> = stmt
+                    .query_map(params![ns, src], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2813,9 +2973,10 @@ impl Database {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
                             partial_index, namespace_id, source_type, source_id
-                     FROM kb_documents WHERE namespace_id = ? ORDER BY indexed_at DESC"
+                     FROM kb_documents WHERE namespace_id = ? ORDER BY indexed_at DESC",
                 )?;
-                let result: Vec<KbDocument> = stmt.query_map(params![ns], map_row)?
+                let result: Vec<KbDocument> = stmt
+                    .query_map(params![ns], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2823,9 +2984,10 @@ impl Database {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
                             partial_index, namespace_id, source_type, source_id
-                     FROM kb_documents WHERE source_id = ? ORDER BY indexed_at DESC"
+                     FROM kb_documents WHERE source_id = ? ORDER BY indexed_at DESC",
                 )?;
-                let result: Vec<KbDocument> = stmt.query_map(params![src], map_row)?
+                let result: Vec<KbDocument> = stmt
+                    .query_map(params![src], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2833,9 +2995,10 @@ impl Database {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, file_path, file_hash, title, indexed_at, chunk_count, ocr_quality,
                             partial_index, namespace_id, source_type, source_id
-                     FROM kb_documents ORDER BY indexed_at DESC"
+                     FROM kb_documents ORDER BY indexed_at DESC",
                 )?;
-                let result: Vec<KbDocument> = stmt.query_map([], map_row)?
+                let result: Vec<KbDocument> = stmt
+                    .query_map([], map_row)?
                     .collect::<Result<Vec<_>, _>>()?;
                 result
             }
@@ -2846,22 +3009,23 @@ impl Database {
 
     /// Delete all documents for a source
     pub fn delete_documents_for_source(&self, source_id: &str) -> Result<usize, DbError> {
-        let deleted = self.conn.execute(
-            "DELETE FROM kb_documents WHERE source_id = ?",
-            [source_id],
-        )?;
+        let deleted = self
+            .conn
+            .execute("DELETE FROM kb_documents WHERE source_id = ?", [source_id])?;
         Ok(deleted)
     }
 
     /// Get document count by namespace
     pub fn get_document_count_by_namespace(&self) -> Result<Vec<(String, i64)>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT namespace_id, COUNT(*) FROM kb_documents GROUP BY namespace_id"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT namespace_id, COUNT(*) FROM kb_documents GROUP BY namespace_id")?;
 
-        let counts = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let counts = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(counts)
     }
@@ -3170,10 +3334,30 @@ pub struct KbDocument {
 
 /// Built-in decision trees: (id, name, category, tree_json)
 const BUILTIN_TREES: &[(&str, &str, &str, &str)] = &[
-    ("auth-issues", "Authentication Issues", "Security", include_str!("../trees/auth.json")),
-    ("vpn-connectivity", "VPN Connectivity", "Network", include_str!("../trees/vpn.json")),
-    ("email-calendar", "Email & Calendar", "Productivity", include_str!("../trees/email.json")),
-    ("password-reset", "Password Reset", "Security", include_str!("../trees/password.json")),
+    (
+        "auth-issues",
+        "Authentication Issues",
+        "Security",
+        include_str!("../trees/auth.json"),
+    ),
+    (
+        "vpn-connectivity",
+        "VPN Connectivity",
+        "Network",
+        include_str!("../trees/vpn.json"),
+    ),
+    (
+        "email-calendar",
+        "Email & Calendar",
+        "Productivity",
+        include_str!("../trees/email.json"),
+    ),
+    (
+        "password-reset",
+        "Password Reset",
+        "Security",
+        include_str!("../trees/password.json"),
+    ),
 ];
 
 /// Get the application data directory
@@ -3416,19 +3600,22 @@ mod tests {
         assert_eq!(retrieved.status, JobStatus::Queued);
 
         // Update status to running
-        db.update_job_status(&job_id, JobStatus::Running, None).unwrap();
+        db.update_job_status(&job_id, JobStatus::Running, None)
+            .unwrap();
         let retrieved = db.get_job(&job_id).unwrap().unwrap();
         assert_eq!(retrieved.status, JobStatus::Running);
         assert!(retrieved.started_at.is_some());
 
         // Update progress
-        db.update_job_progress(&job_id, 0.5, Some("Halfway done")).unwrap();
+        db.update_job_progress(&job_id, 0.5, Some("Halfway done"))
+            .unwrap();
         let retrieved = db.get_job(&job_id).unwrap().unwrap();
         assert_eq!(retrieved.progress, 0.5);
         assert_eq!(retrieved.progress_message, Some("Halfway done".to_string()));
 
         // Complete the job
-        db.update_job_status(&job_id, JobStatus::Succeeded, None).unwrap();
+        db.update_job_status(&job_id, JobStatus::Succeeded, None)
+            .unwrap();
         let retrieved = db.get_job(&job_id).unwrap().unwrap();
         assert_eq!(retrieved.status, JobStatus::Succeeded);
         assert!(retrieved.completed_at.is_some());
@@ -3444,10 +3631,14 @@ mod tests {
         db.create_job(&job).unwrap();
 
         // Add logs
-        db.add_job_log(&job_id, LogLevel::Info, "Starting ingestion").unwrap();
-        db.add_job_log(&job_id, LogLevel::Debug, "Fetching content").unwrap();
-        db.add_job_log(&job_id, LogLevel::Warning, "Content is large").unwrap();
-        db.add_job_log(&job_id, LogLevel::Info, "Completed").unwrap();
+        db.add_job_log(&job_id, LogLevel::Info, "Starting ingestion")
+            .unwrap();
+        db.add_job_log(&job_id, LogLevel::Debug, "Fetching content")
+            .unwrap();
+        db.add_job_log(&job_id, LogLevel::Warning, "Content is large")
+            .unwrap();
+        db.add_job_log(&job_id, LogLevel::Info, "Completed")
+            .unwrap();
 
         // Get logs
         let logs = db.get_job_logs(&job_id, 10).unwrap();
@@ -3472,8 +3663,10 @@ mod tests {
         db.create_job(&job3).unwrap();
 
         // Update statuses
-        db.update_job_status(&job1.id, JobStatus::Running, None).unwrap();
-        db.update_job_status(&job2.id, JobStatus::Succeeded, None).unwrap();
+        db.update_job_status(&job1.id, JobStatus::Running, None)
+            .unwrap();
+        db.update_job_status(&job2.id, JobStatus::Succeeded, None)
+            .unwrap();
 
         // List all jobs
         let all_jobs = db.list_jobs(None, 10).unwrap();
@@ -3505,8 +3698,10 @@ mod tests {
         db.create_job(&job2).unwrap();
         db.create_job(&job3).unwrap();
 
-        db.update_job_status(&job1.id, JobStatus::Succeeded, None).unwrap();
-        db.update_job_status(&job2.id, JobStatus::Failed, Some("Test error")).unwrap();
+        db.update_job_status(&job1.id, JobStatus::Succeeded, None)
+            .unwrap();
+        db.update_job_status(&job2.id, JobStatus::Failed, Some("Test error"))
+            .unwrap();
 
         // Get counts
         let counts = db.get_job_counts().unwrap();

@@ -86,7 +86,10 @@ fn test_database_encrypted_on_disk() {
 
         // Insert some test data
         db.conn()
-            .execute("INSERT INTO settings (key, value) VALUES (?, ?)", ["test_key", "test_value"])
+            .execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ["test_key", "test_value"],
+            )
             .expect("Failed to insert");
     }
 
@@ -122,10 +125,7 @@ fn test_database_wrong_key_fails() {
 
     // Try to open with wrong key - should fail
     let result = Database::open(&db_path, &wrong_key);
-    assert!(
-        result.is_err(),
-        "Opening with wrong key should fail"
-    );
+    assert!(result.is_err(), "Opening with wrong key should fail");
 }
 
 #[test]
@@ -135,11 +135,16 @@ fn test_database_integrity_check() {
     // Insert some data
     ctx.db
         .conn()
-        .execute("INSERT INTO settings (key, value) VALUES (?, ?)", ["test", "value"])
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ["test", "value"],
+        )
         .expect("Failed to insert");
 
     // Check integrity - returns Ok(()) if successful
-    ctx.db.check_integrity().expect("Database integrity check should pass");
+    ctx.db
+        .check_integrity()
+        .expect("Database integrity check should pass");
 }
 
 // ============================================================================
@@ -193,10 +198,7 @@ fn test_encryption_with_wrong_key_fails() {
 
     // Decrypt with wrong key should fail
     let result = Crypto::decrypt(key2.as_bytes(), &encrypted);
-    assert!(
-        result.is_err(),
-        "Decryption with wrong key should fail"
-    );
+    assert!(result.is_err(), "Decryption with wrong key should fail");
 }
 
 #[test]
@@ -207,7 +209,10 @@ fn test_encryption_empty_plaintext() {
     let encrypted = Crypto::encrypt(key.as_bytes(), plaintext).expect("Encryption failed");
     let decrypted = Crypto::decrypt(key.as_bytes(), &encrypted).expect("Decryption failed");
 
-    assert!(decrypted.is_empty(), "Empty plaintext should decrypt to empty");
+    assert!(
+        decrypted.is_empty(),
+        "Empty plaintext should decrypt to empty"
+    );
 }
 
 #[test]
@@ -290,8 +295,8 @@ fn test_export_crypto_roundtrip() {
     let (ciphertext, salt, nonce) =
         ExportCrypto::encrypt_for_export(data, password).expect("Export encryption failed");
 
-    let decrypted =
-        ExportCrypto::decrypt_export(&ciphertext, &salt, &nonce, password).expect("Decryption failed");
+    let decrypted = ExportCrypto::decrypt_export(&ciphertext, &salt, &nonce, password)
+        .expect("Decryption failed");
 
     assert_eq!(
         data.as_slice(),
@@ -303,8 +308,8 @@ fn test_export_crypto_roundtrip() {
 #[test]
 fn test_export_crypto_wrong_password_fails() {
     let data = b"Secret export data";
-    let (ciphertext, salt, nonce) =
-        ExportCrypto::encrypt_for_export(data, "correct-password").expect("Export encryption failed");
+    let (ciphertext, salt, nonce) = ExportCrypto::encrypt_for_export(data, "correct-password")
+        .expect("Export encryption failed");
 
     let result = ExportCrypto::decrypt_export(&ciphertext, &salt, &nonce, "wrong-password");
     assert!(
@@ -423,8 +428,14 @@ fn test_audit_event_types() {
     assert_eq!(AuditEventType::TokenCleared.to_string(), "token_cleared");
 
     // Test Jira events
-    assert_eq!(AuditEventType::JiraConfigured.to_string(), "jira_configured");
-    assert_eq!(AuditEventType::JiraHttpOptIn.to_string(), "jira_http_opt_in");
+    assert_eq!(
+        AuditEventType::JiraConfigured.to_string(),
+        "jira_configured"
+    );
+    assert_eq!(
+        AuditEventType::JiraHttpOptIn.to_string(),
+        "jira_http_opt_in"
+    );
 
     // Test custom events
     assert_eq!(
@@ -439,7 +450,7 @@ fn test_audit_event_types() {
 
 #[test]
 fn test_validate_https_url() {
-    use assistsupport_lib::validation::{validate_https_url, is_http_url};
+    use assistsupport_lib::validation::{is_http_url, validate_https_url};
 
     // HTTPS should pass
     assert!(validate_https_url("https://example.com").is_ok());
@@ -485,7 +496,10 @@ fn test_key_wrapping_passphrase_change_simulation() {
 
     // Old passphrase should no longer work for new wrap
     let result = Crypto::unwrap_key(&wrapped_new, old_passphrase);
-    assert!(result.is_err(), "Old passphrase should not work for new wrapped key");
+    assert!(
+        result.is_err(),
+        "Old passphrase should not work for new wrapped key"
+    );
 }
 
 #[test]
@@ -503,15 +517,20 @@ fn test_token_encryption_with_different_keys() {
     assert_eq!(token.as_slice(), decrypted.as_slice());
 
     // Re-encrypt with new key (simulates rotation)
-    let re_encrypted = Crypto::encrypt(new_key.as_bytes(), &decrypted).expect("Re-encryption failed");
+    let re_encrypted =
+        Crypto::encrypt(new_key.as_bytes(), &decrypted).expect("Re-encryption failed");
 
     // Verify new key works
-    let final_decrypted = Crypto::decrypt(new_key.as_bytes(), &re_encrypted).expect("Final decryption failed");
+    let final_decrypted =
+        Crypto::decrypt(new_key.as_bytes(), &re_encrypted).expect("Final decryption failed");
     assert_eq!(token.as_slice(), final_decrypted.as_slice());
 
     // Old key should not decrypt new ciphertext
     let result = Crypto::decrypt(old_key.as_bytes(), &re_encrypted);
-    assert!(result.is_err(), "Old key should not decrypt re-encrypted data");
+    assert!(
+        result.is_err(),
+        "Old key should not decrypt re-encrypted data"
+    );
 }
 
 #[test]
@@ -523,13 +542,26 @@ fn test_wrapped_key_components() {
 
     // Verify components have expected sizes
     assert_eq!(wrapped.salt.len(), 32, "Salt should be 32 bytes");
-    assert_eq!(wrapped.encrypted_key.nonce.len(), 12, "Nonce should be 12 bytes");
-    assert!(!wrapped.encrypted_key.ciphertext.is_empty(), "Ciphertext should not be empty");
+    assert_eq!(
+        wrapped.encrypted_key.nonce.len(),
+        12,
+        "Nonce should be 12 bytes"
+    );
+    assert!(
+        !wrapped.encrypted_key.ciphertext.is_empty(),
+        "Ciphertext should not be empty"
+    );
 
     // Verify Argon2 parameters are set
-    assert_eq!(wrapped.argon2_memory, 65536, "Argon2 memory should be 64 MiB");
+    assert_eq!(
+        wrapped.argon2_memory, 65536,
+        "Argon2 memory should be 64 MiB"
+    );
     assert_eq!(wrapped.argon2_time, 3, "Argon2 time should be 3 iterations");
-    assert_eq!(wrapped.argon2_parallelism, 4, "Argon2 parallelism should be 4");
+    assert_eq!(
+        wrapped.argon2_parallelism, 4,
+        "Argon2 parallelism should be 4"
+    );
 }
 
 // ============================================================================

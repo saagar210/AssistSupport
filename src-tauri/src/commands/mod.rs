@@ -20,22 +20,27 @@ pub use diagnostics::{
 };
 
 use crate::audit::{self, AuditLogger};
-use crate::db::{Database, get_db_path, get_app_data_dir, get_vectors_dir};
+use crate::db::{get_app_data_dir, get_db_path, get_vectors_dir, Database};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
-use crate::llm::{LlmEngine, GenerationParams, ModelInfo};
+use crate::llm::{GenerationParams, LlmEngine, ModelInfo};
 use crate::model_integrity::{verify_model_integrity, ModelAllowlist};
 use crate::security::{FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA};
-use crate::validation::{validate_text_size, validate_non_empty, validate_url, is_http_url, validate_ticket_id, validate_within_home, normalize_and_validate_namespace_id, MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES, ValidationError};
+use crate::validation::{
+    is_http_url, normalize_and_validate_namespace_id, validate_non_empty, validate_text_size,
+    validate_ticket_id, validate_url, validate_within_home, ValidationError, MAX_QUERY_BYTES,
+    MAX_TEXT_INPUT_BYTES,
+};
 use crate::AppState;
+use once_cell::sync::Lazy;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::State;
 use tokio::sync::mpsc;
-use once_cell::sync::Lazy;
 
 /// Global cancel flag for generation - shared between generate and cancel commands
-static GENERATION_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+static GENERATION_CANCEL_FLAG: Lazy<Arc<AtomicBool>> =
+    Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 const GITHUB_TOKEN_PREFIX: &str = "github_token:";
 
@@ -48,8 +53,8 @@ fn normalize_github_host(host: &str) -> Result<String, String> {
         return Err("GitHub host must be a hostname (no scheme or path)".to_string());
     }
 
-    let re = regex_lite::Regex::new(r"^[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
-        .map_err(|e| e.to_string())?;
+    let re =
+        regex_lite::Regex::new(r"^[A-Za-z0-9.-]+(:[0-9]{1,5})?$").map_err(|e| e.to_string())?;
     if !re.is_match(trimmed) {
         return Err("GitHub host contains invalid characters".to_string());
     }
@@ -146,9 +151,7 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
     }
 
     // Check vector consent from database
-    let vector_enabled = db.get_vector_consent()
-        .map(|c| c.enabled)
-        .unwrap_or(false);
+    let vector_enabled = db.get_vector_consent().map(|c| c.enabled).unwrap_or(false);
 
     // Store in app state - use scope to ensure lock is dropped before async operations
     {
@@ -176,7 +179,10 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
                 true
             }
             Err(e) => {
-                eprintln!("Vector store init failed (continuing without vectors): {}", e);
+                eprintln!(
+                    "Vector store init failed (continuing without vectors): {}",
+                    e
+                );
                 false
             }
         }
@@ -227,7 +233,8 @@ pub fn set_vector_consent(
 ) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.set_vector_consent(enabled, encryption_supported).map_err(|e| e.to_string())
+    db.set_vector_consent(enabled, encryption_supported)
+        .map_err(|e| e.to_string())
 }
 
 /// Check if credential storage is available
@@ -286,8 +293,7 @@ pub async fn search_kb_with_options(
     let limit = limit.unwrap_or(10).min(100); // Cap limit at 100
 
     // Build search options
-    let mut search_opts = SearchOptions::new(limit)
-        .with_namespace(namespace_id.clone());
+    let mut search_opts = SearchOptions::new(limit).with_namespace(namespace_id.clone());
 
     if let Some(opts) = options {
         if let (Some(fts_w), Some(vec_w)) = (opts.fts_weight, opts.vector_weight) {
@@ -307,7 +313,8 @@ pub async fn search_kb_with_options(
         let vectors_lock = state.vectors.read().await;
         let embeddings_lock = state.embeddings.read();
 
-        if let (Some(vectors), Some(embeddings)) = (vectors_lock.as_ref(), embeddings_lock.as_ref()) {
+        if let (Some(vectors), Some(embeddings)) = (vectors_lock.as_ref(), embeddings_lock.as_ref())
+        {
             if vectors.is_enabled() && embeddings.is_model_loaded() {
                 embeddings.embed(&query).ok()
             } else {
@@ -413,7 +420,10 @@ pub fn load_model(
     let path = models_dir.join(filename);
 
     if !path.exists() {
-        return Err(format!("Model file not found: {}. Please download the model first.", filename));
+        return Err(format!(
+            "Model file not found: {}. Please download the model first.",
+            filename
+        ));
     }
 
     let llm_guard = state.llm.read();
@@ -421,7 +431,9 @@ pub fn load_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(&path, layers, model_id).map_err(|e| e.to_string())
+    engine
+        .load_model(&path, layers, model_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Load a custom GGUF model from a file path
@@ -441,7 +453,9 @@ pub fn load_custom_model(
     }
 
     let validated_path = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Model file must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Model file must be within your home directory".to_string()
+        }
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This path is blocked because it contains sensitive data".to_string()
         }
@@ -453,7 +467,10 @@ pub fn load_custom_model(
     }
 
     // Validate GGUF extension
-    let ext = validated_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = validated_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
     if ext.to_lowercase() != "gguf" {
         return Err("Invalid file type. Only .gguf files are supported.".into());
     }
@@ -475,14 +492,16 @@ pub fn load_custom_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(&validated_path, layers, model_id).map_err(|e| e.to_string())
+    engine
+        .load_model(&validated_path, layers, model_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Validate a GGUF file without loading it (returns model metadata)
 #[tauri::command]
 pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
-    use std::path::Path;
     use std::fs;
+    use std::path::Path;
 
     let path = Path::new(&model_path);
 
@@ -491,7 +510,9 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
     }
 
     let validated_path = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Model file must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Model file must be within your home directory".to_string()
+        }
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This path is blocked because it contains sensitive data".to_string()
         }
@@ -502,13 +523,17 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
         return Err("Model path is not a file".into());
     }
 
-    let ext = validated_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = validated_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
     if ext.to_lowercase() != "gguf" {
         return Err("Invalid file type. Only .gguf files are supported.".into());
     }
 
     let metadata = fs::metadata(&validated_path).map_err(|e| e.to_string())?;
-    let filename = validated_path.file_name()
+    let filename = validated_path
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
@@ -584,11 +609,21 @@ pub struct GenerateParams {
 impl From<GenerateParams> for GenerationParams {
     fn from(p: GenerateParams) -> Self {
         let mut params = GenerationParams::default();
-        if let Some(v) = p.max_tokens { params.max_tokens = v; }
-        if let Some(v) = p.temperature { params.temperature = v; }
-        if let Some(v) = p.top_p { params.top_p = v; }
-        if let Some(v) = p.top_k { params.top_k = v; }
-        if let Some(v) = p.repeat_penalty { params.repeat_penalty = v; }
+        if let Some(v) = p.max_tokens {
+            params.max_tokens = v;
+        }
+        if let Some(v) = p.temperature {
+            params.temperature = v;
+        }
+        if let Some(v) = p.top_p {
+            params.top_p = v;
+        }
+        if let Some(v) = p.top_k {
+            params.top_k = v;
+        }
+        if let Some(v) = p.repeat_penalty {
+            params.repeat_penalty = v;
+        }
         params.context_window = p.context_window;
         params
     }
@@ -637,8 +672,12 @@ pub async fn generate_text(
     let tx_clone = tx.clone();
 
     tokio::spawn(async move {
-        let temp_engine = LlmEngine { state: engine_state };
-        let _ = temp_engine.generate_streaming(&prompt_clone, gen_params, tx_clone, cancel_clone).await;
+        let temp_engine = LlmEngine {
+            state: engine_state,
+        };
+        let _ = temp_engine
+            .generate_streaming(&prompt_clone, gen_params, tx_clone, cancel_clone)
+            .await;
     });
 
     // Collect output
@@ -649,7 +688,10 @@ pub async fn generate_text(
     while let Some(event) = rx.recv().await {
         match event {
             crate::llm::GenerationEvent::Token(t) => text.push_str(&t),
-            crate::llm::GenerationEvent::Done { tokens_generated: t, duration_ms: d } => {
+            crate::llm::GenerationEvent::Done {
+                tokens_generated: t,
+                duration_ms: d,
+            } => {
                 tokens_generated = t;
                 duration_ms = d;
                 break;
@@ -808,7 +850,13 @@ fn extract_json_block(text: &str) -> Option<&str> {
     let first_bracket = trimmed.find('[');
 
     let (start_idx, open_char, close_char) = match (first_brace, first_bracket) {
-        (Some(b), Some(a)) => if b < a { (b, '{', '}') } else { (a, '[', ']') },
+        (Some(b), Some(a)) => {
+            if b < a {
+                (b, '{', '}')
+            } else {
+                (a, '[', ']')
+            }
+        }
         (Some(b), None) => (b, '{', '}'),
         (None, Some(a)) => (a, '[', ']'),
         (None, None) => return None,
@@ -884,7 +932,10 @@ fn normalize_checklist_items(mut items: Vec<ChecklistItem>) -> Vec<ChecklistItem
             text: normalized_text,
             category: normalize_category(item.category),
             priority: normalize_priority(item.priority),
-            details: item.details.map(|d| d.trim().to_string()).filter(|d| !d.is_empty()),
+            details: item
+                .details
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty()),
         });
 
         if normalized.len() >= MAX_ITEMS {
@@ -936,8 +987,7 @@ pub async fn generate_with_context(
         if let Some(db) = db_lock.as_ref() {
             let query = params.kb_query.as_ref().unwrap_or(&params.user_input);
             let limit = params.kb_limit.unwrap_or(3);
-            crate::kb::search::HybridSearch::search(db, query, limit)
-                .unwrap_or_default()
+            crate::kb::search::HybridSearch::search(db, query, limit).unwrap_or_default()
         } else {
             vec![]
         }
@@ -989,18 +1039,16 @@ pub async fn generate_with_context(
     validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
     // Generate using the built prompt
-    let gen_result = generate_text(
-        state,
-        prompt,
-        params.gen_params,
-    ).await?;
+    let gen_result = generate_text(state, prompt, params.gen_params).await?;
 
     // Calculate quality metrics
     let word_count = gen_result.text.split_whitespace().count() as u32;
     let target_words = response_length.target_words() as u32;
     let length_target_met = match response_length {
         crate::prompts::ResponseLength::Short => word_count <= target_words + 40,
-        crate::prompts::ResponseLength::Medium => word_count >= target_words / 2 && word_count <= target_words * 2,
+        crate::prompts::ResponseLength::Medium => {
+            word_count >= target_words / 2 && word_count <= target_words * 2
+        }
         crate::prompts::ResponseLength::Long => word_count >= target_words / 2,
     };
 
@@ -1013,7 +1061,8 @@ pub async fn generate_with_context(
     // Estimate context utilization (prompt tokens / typical 4096 context window)
     let estimated_prompt_tokens = prompt_length / 4;
     let context_window = 4096; // Default, could be read from model
-    let context_utilization = (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+    let context_utilization =
+        (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
 
     let metrics = GenerationMetrics {
         tokens_per_second,
@@ -1068,8 +1117,7 @@ pub async fn generate_streaming(
         if let Some(db) = db_lock.as_ref() {
             let query = params.kb_query.as_ref().unwrap_or(&params.user_input);
             let limit = params.kb_limit.unwrap_or(3);
-            crate::kb::search::HybridSearch::search(db, query, limit)
-                .unwrap_or_default()
+            crate::kb::search::HybridSearch::search(db, query, limit).unwrap_or_default()
         } else {
             vec![]
         }
@@ -1145,8 +1193,12 @@ pub async fn generate_streaming(
     let tx_clone = tx.clone();
 
     tokio::spawn(async move {
-        let temp_engine = LlmEngine { state: engine_state };
-        let _ = temp_engine.generate_streaming(&prompt_clone, gen_params, tx_clone, cancel_clone).await;
+        let temp_engine = LlmEngine {
+            state: engine_state,
+        };
+        let _ = temp_engine
+            .generate_streaming(&prompt_clone, gen_params, tx_clone, cancel_clone)
+            .await;
     });
 
     // Forward tokens to frontend as events and collect output
@@ -1158,27 +1210,39 @@ pub async fn generate_streaming(
         match event {
             crate::llm::GenerationEvent::Token(t) => {
                 // Emit token to frontend
-                let _ = window.emit("llm-token", StreamToken {
-                    token: t.clone(),
-                    done: false,
-                });
+                let _ = window.emit(
+                    "llm-token",
+                    StreamToken {
+                        token: t.clone(),
+                        done: false,
+                    },
+                );
                 text.push_str(&t);
             }
-            crate::llm::GenerationEvent::Done { tokens_generated: t, duration_ms: d } => {
+            crate::llm::GenerationEvent::Done {
+                tokens_generated: t,
+                duration_ms: d,
+            } => {
                 tokens_generated = t;
                 duration_ms = d;
                 // Emit done signal
-                let _ = window.emit("llm-token", StreamToken {
-                    token: String::new(),
-                    done: true,
-                });
+                let _ = window.emit(
+                    "llm-token",
+                    StreamToken {
+                        token: String::new(),
+                        done: true,
+                    },
+                );
                 break;
             }
             crate::llm::GenerationEvent::Error(e) => {
-                let _ = window.emit("llm-token", StreamToken {
-                    token: String::new(),
-                    done: true,
-                });
+                let _ = window.emit(
+                    "llm-token",
+                    StreamToken {
+                        token: String::new(),
+                        done: true,
+                    },
+                );
                 return Err(e);
             }
         }
@@ -1189,7 +1253,9 @@ pub async fn generate_streaming(
     let target_words = response_length.target_words() as u32;
     let length_target_met = match response_length {
         crate::prompts::ResponseLength::Short => word_count <= target_words + 40,
-        crate::prompts::ResponseLength::Medium => word_count >= target_words / 2 && word_count <= target_words * 2,
+        crate::prompts::ResponseLength::Medium => {
+            word_count >= target_words / 2 && word_count <= target_words * 2
+        }
         crate::prompts::ResponseLength::Long => word_count >= target_words / 2,
     };
 
@@ -1202,7 +1268,8 @@ pub async fn generate_streaming(
     // Estimate context utilization (prompt tokens / typical 4096 context window)
     let estimated_prompt_tokens = prompt_length / 4;
     let context_window = 4096; // Default, could be read from model
-    let context_utilization = (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+    let context_utilization =
+        (estimated_prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
 
     let metrics = GenerationMetrics {
         tokens_per_second,
@@ -1230,7 +1297,7 @@ pub async fn generate_first_response(
     params: FirstResponseParams,
 ) -> Result<FirstResponseResult, String> {
     use crate::prompts::{
-        PromptBuilder, FIRST_RESPONSE_JIRA_PROMPT, FIRST_RESPONSE_SLACK_PROMPT, ResponseLength,
+        PromptBuilder, ResponseLength, FIRST_RESPONSE_JIRA_PROMPT, FIRST_RESPONSE_SLACK_PROMPT,
     };
 
     validate_non_empty(&params.user_input).map_err(|e| e.to_string())?;
@@ -1271,7 +1338,8 @@ pub async fn generate_first_response(
             repeat_penalty: Some(1.05),
             context_window: None,
         }),
-    ).await?;
+    )
+    .await?;
 
     Ok(FirstResponseResult {
         text: gen_result.text.trim().to_string(),
@@ -1286,7 +1354,7 @@ pub async fn generate_troubleshooting_checklist(
     state: State<'_, AppState>,
     params: ChecklistGenerateParams,
 ) -> Result<ChecklistResult, String> {
-    use crate::prompts::{PromptBuilder, CHECKLIST_SYSTEM_PROMPT, ResponseLength};
+    use crate::prompts::{PromptBuilder, ResponseLength, CHECKLIST_SYSTEM_PROMPT};
 
     validate_non_empty(&params.user_input).map_err(|e| e.to_string())?;
     validate_text_size(&params.user_input, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
@@ -1332,7 +1400,8 @@ pub async fn generate_troubleshooting_checklist(
             repeat_penalty: Some(1.05),
             context_window: None,
         }),
-    ).await?;
+    )
+    .await?;
 
     let items = parse_checklist_output(&gen_result.text)?;
     Ok(ChecklistResult { items })
@@ -1344,7 +1413,7 @@ pub async fn update_troubleshooting_checklist(
     state: State<'_, AppState>,
     params: ChecklistUpdateParams,
 ) -> Result<ChecklistResult, String> {
-    use crate::prompts::{PromptBuilder, CHECKLIST_UPDATE_SYSTEM_PROMPT, ResponseLength};
+    use crate::prompts::{PromptBuilder, ResponseLength, CHECKLIST_UPDATE_SYSTEM_PROMPT};
     use std::collections::HashSet;
 
     validate_non_empty(&params.user_input).map_err(|e| e.to_string())?;
@@ -1382,8 +1451,7 @@ pub async fn update_troubleshooting_checklist(
 
     let update_context = format!(
         "Current checklist JSON:\n{}\n\nCompleted item IDs: {}",
-        checklist_json,
-        completed_label
+        checklist_json, completed_label
     );
 
     let mut builder = PromptBuilder::new()
@@ -1422,7 +1490,8 @@ pub async fn update_troubleshooting_checklist(
             repeat_penalty: Some(1.05),
             context_window: None,
         }),
-    ).await?;
+    )
+    .await?;
 
     let items = parse_checklist_output(&gen_result.text)?;
     Ok(ChecklistResult { items })
@@ -1442,7 +1511,8 @@ pub async fn test_model(state: State<'_, AppState>) -> Result<TestModelResult, S
             repeat_penalty: None,
             context_window: None,
         }),
-    ).await?;
+    )
+    .await?;
 
     let tokens_per_sec = if result.duration_ms > 0 {
         (result.tokens_generated as f64 / result.duration_ms as f64) * 1000.0
@@ -1500,10 +1570,7 @@ pub fn get_context_window(state: State<'_, AppState>) -> Result<Option<u32>, Str
 
 /// Set the context window size (2048-32768, or None for model default)
 #[tauri::command]
-pub fn set_context_window(
-    state: State<'_, AppState>,
-    size: Option<u32>,
-) -> Result<(), String> {
+pub fn set_context_window(state: State<'_, AppState>, size: Option<u32>) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -1513,17 +1580,21 @@ pub fn set_context_window(
             if !(2048..=32768).contains(&s) {
                 return Err("Context window must be between 2048 and 32768".to_string());
             }
-            db.conn().execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                rusqlite::params![CONTEXT_WINDOW_SETTING, s.to_string()],
-            ).map_err(|e| e.to_string())?;
+            db.conn()
+                .execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    rusqlite::params![CONTEXT_WINDOW_SETTING, s.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
         }
         None => {
             // Remove setting to use model default
-            db.conn().execute(
-                "DELETE FROM settings WHERE key = ?",
-                rusqlite::params![CONTEXT_WINDOW_SETTING],
-            ).map_err(|e| e.to_string())?;
+            db.conn()
+                .execute(
+                    "DELETE FROM settings WHERE key = ?",
+                    rusqlite::params![CONTEXT_WINDOW_SETTING],
+                )
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -1534,7 +1605,7 @@ pub fn set_context_window(
 // Download Commands
 // ============================================================================
 
-use crate::downloads::{DownloadManager, ModelSource, recommended_models};
+use crate::downloads::{recommended_models, DownloadManager, ModelSource};
 
 /// Get recommended models list
 #[tauri::command]
@@ -1551,14 +1622,17 @@ pub fn list_downloaded_models() -> Result<Vec<String>, String> {
     let models = manager.list_models().map_err(|e| e.to_string())?;
 
     // Map filenames back to model IDs
-    let model_ids: Vec<String> = models.into_iter()
+    let model_ids: Vec<String> = models
+        .into_iter()
         .filter_map(|p| {
             let filename = p.file_name()?.to_str()?;
             // Reverse lookup: filename -> model_id
             match filename {
                 "Llama-3.2-1B-Instruct-Q4_K_M.gguf" => Some("llama-3.2-1b-instruct".to_string()),
                 "Llama-3.2-3B-Instruct-Q4_K_M.gguf" => Some("llama-3.2-3b-instruct".to_string()),
-                "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf" => Some("phi-3-mini-4k-instruct".to_string()),
+                "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf" => {
+                    Some("phi-3-mini-4k-instruct".to_string())
+                }
                 _ => None, // Unknown model files are ignored
             }
         })
@@ -1587,7 +1661,9 @@ pub fn get_embedding_model_path(model_id: String) -> Result<Option<String>, Stri
 #[tauri::command]
 pub fn is_embedding_model_downloaded() -> Result<bool, String> {
     let app_dir = get_app_data_dir();
-    let model_path = app_dir.join("models").join("nomic-embed-text-v1.5.Q5_K_M.gguf");
+    let model_path = app_dir
+        .join("models")
+        .join("nomic-embed-text-v1.5.Q5_K_M.gguf");
     Ok(model_path.exists())
 }
 
@@ -1607,8 +1683,8 @@ pub fn delete_downloaded_model(filename: String) -> Result<(), String> {
 
     let path = Path::new(&filename);
     let mut components = path.components();
-    let is_single_filename = matches!(components.next(), Some(Component::Normal(_)))
-        && components.next().is_none();
+    let is_single_filename =
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
     if path.is_absolute() || !is_single_filename {
         return Err("Invalid model filename".into());
     }
@@ -1680,7 +1756,9 @@ pub fn clear_github_token(host: String) -> Result<(), String> {
 pub fn has_github_token(host: String) -> Result<bool, String> {
     let host = normalize_github_host(&host)?;
     let key = format!("{}{}", GITHUB_TOKEN_PREFIX, host);
-    Ok(FileKeyStore::get_token(&key).map_err(|e| e.to_string())?.is_some())
+    Ok(FileKeyStore::get_token(&key)
+        .map_err(|e| e.to_string())?
+        .is_some())
 }
 
 /// Read audit log entries (most recent first if limit is set)
@@ -1696,7 +1774,9 @@ pub fn export_audit_log(export_path: String) -> Result<String, String> {
 
     let path = Path::new(&export_path);
     let validated = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Export path must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Export path must be within your home directory".to_string()
+        }
         _ => format!("Invalid export path: {}", e),
     })?;
 
@@ -1713,10 +1793,22 @@ use tauri::Emitter;
 /// Map model ID to HuggingFace repo and filename
 fn get_model_source(model_id: &str) -> Result<(&'static str, &'static str), String> {
     match model_id {
-        "llama-3.2-1b-instruct" => Ok(("bartowski/Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q4_K_M.gguf")),
-        "llama-3.2-3b-instruct" => Ok(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
-        "phi-3-mini-4k-instruct" => Ok(("bartowski/Phi-3.1-mini-4k-instruct-GGUF", "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf")),
-        "nomic-embed-text" => Ok(("nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text-v1.5.Q5_K_M.gguf")),
+        "llama-3.2-1b-instruct" => Ok((
+            "bartowski/Llama-3.2-1B-Instruct-GGUF",
+            "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        )),
+        "llama-3.2-3b-instruct" => Ok((
+            "bartowski/Llama-3.2-3B-Instruct-GGUF",
+            "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        )),
+        "phi-3-mini-4k-instruct" => Ok((
+            "bartowski/Phi-3.1-mini-4k-instruct-GGUF",
+            "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf",
+        )),
+        "nomic-embed-text" => Ok((
+            "nomic-ai/nomic-embed-text-v1.5-GGUF",
+            "nomic-embed-text-v1.5.Q5_K_M.gguf",
+        )),
         _ => Err(format!("Unknown model ID: {}", model_id)),
     }
 }
@@ -1731,10 +1823,7 @@ fn get_embedding_model_filename(model_id: &str) -> Option<&'static str> {
 
 /// Download a model from HuggingFace with progress events
 #[tauri::command]
-pub async fn download_model(
-    window: tauri::Window,
-    model_id: String,
-) -> Result<String, String> {
+pub async fn download_model(window: tauri::Window, model_id: String) -> Result<String, String> {
     let (repo, filename) = get_model_source(&model_id)?;
     audit::audit_model_download_started(&model_id, repo, filename);
 
@@ -1744,17 +1833,17 @@ pub async fn download_model(
 
     // Fetch file info (size and SHA256) from HuggingFace API for verification
     let mut source = ModelSource::huggingface(repo, filename);
-    let (size, sha256) = crate::downloads::fetch_hf_file_info(repo, filename).await
+    let (size, sha256) = crate::downloads::fetch_hf_file_info(repo, filename)
+        .await
         .map_err(|e| {
             audit::audit_model_download_failed(&model_id, "metadata_fetch_failed", &e.to_string());
             format!("Failed to fetch checksum metadata: {}", e)
         })?;
     let allowlist = ModelAllowlist::new();
-    let allowed = allowlist.get_allowed_model(filename)
-        .ok_or_else(|| {
-            audit::audit_model_download_failed(&model_id, "allowlist_missing", filename);
-            "Model is not in the allowlist".to_string()
-        })?;
+    let allowed = allowlist.get_allowed_model(filename).ok_or_else(|| {
+        audit::audit_model_download_failed(&model_id, "allowlist_missing", filename);
+        "Model is not in the allowlist".to_string()
+    })?;
 
     if allowed.repo != repo {
         audit::audit_model_download_failed(&model_id, "allowlist_repo_mismatch", repo);
@@ -1777,9 +1866,7 @@ pub async fn download_model(
     // Spawn download task
     let download_handle = {
         let cancel = cancel_flag.clone();
-        tokio::spawn(async move {
-            manager.download(&source, tx, cancel).await
-        })
+        tokio::spawn(async move { manager.download(&source, tx, cancel).await })
     };
 
     // Forward progress events to frontend
@@ -1791,11 +1878,10 @@ pub async fn download_model(
     });
 
     // Wait for download to complete
-    let download_result = download_handle.await
-        .map_err(|e| {
-            audit::audit_model_download_failed(&model_id, "download_task_failed", &e.to_string());
-            e.to_string()
-        })?;
+    let download_result = download_handle.await.map_err(|e| {
+        audit::audit_model_download_failed(&model_id, "download_task_failed", &e.to_string());
+        e.to_string()
+    })?;
 
     // Wait for event forwarding to finish
     let _ = event_handle.await;
@@ -1808,12 +1894,17 @@ pub async fn download_model(
     // Run integrity verification on a blocking thread to avoid stalling the async runtime.
     // calculate_sha256 reads the entire model file (1-2 GB) synchronously.
     let verify_path = result.clone();
-    let verify_result = tokio::task::spawn_blocking(move || {
-        verify_model_integrity(&verify_path, true)
-    }).await.map_err(|e| {
-        audit::audit_model_download_failed(&model_id, "integrity_task_failed", &e.to_string());
-        e.to_string()
-    })?;
+    let verify_result =
+        tokio::task::spawn_blocking(move || verify_model_integrity(&verify_path, true))
+            .await
+            .map_err(|e| {
+                audit::audit_model_download_failed(
+                    &model_id,
+                    "integrity_task_failed",
+                    &e.to_string(),
+                );
+                e.to_string()
+            })?;
 
     match verify_result {
         Ok(verification) => {
@@ -1844,7 +1935,7 @@ pub fn cancel_download() -> Result<(), String> {
 // KB Indexer Commands
 // ============================================================================
 
-use crate::kb::indexer::{KbIndexer, IndexResult, IndexStats};
+use crate::kb::indexer::{IndexResult, IndexStats, KbIndexer};
 
 /// KB folder setting key
 const KB_FOLDER_SETTING: &str = "kb_folder";
@@ -1915,7 +2006,8 @@ pub async fn index_kb(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Get KB folder
-    let folder_path: String = db.conn()
+    let folder_path: String = db
+        .conn()
         .query_row(
             "SELECT value FROM settings WHERE key = ?",
             rusqlite::params![KB_FOLDER_SETTING],
@@ -1930,10 +2022,12 @@ pub async fn index_kb(
 
     // Run indexing with progress events
     let indexer = KbIndexer::new();
-    let result = indexer.index_folder(db, path, |progress| {
-        // Emit progress event to frontend
-        let _ = window.emit("kb:indexing:progress", &progress);
-    }).map_err(|e| e.to_string())?;
+    let result = indexer
+        .index_folder(db, path, |progress| {
+            // Emit progress event to frontend
+            let _ = window.emit("kb:indexing:progress", &progress);
+        })
+        .map_err(|e| e.to_string())?;
 
     Ok(result)
 }
@@ -1964,19 +2058,23 @@ pub fn list_kb_documents(
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    let docs = db.list_kb_documents(namespace_id.as_deref(), source_id.as_deref())
+    let docs = db
+        .list_kb_documents(namespace_id.as_deref(), source_id.as_deref())
         .map_err(|e| e.to_string())?;
 
-    Ok(docs.into_iter().map(|d| KbDocumentInfo {
-        id: d.id,
-        file_path: d.file_path,
-        title: d.title,
-        indexed_at: d.indexed_at,
-        chunk_count: d.chunk_count.map(|c| c as i64),
-        namespace_id: d.namespace_id,
-        source_type: d.source_type,
-        source_id: d.source_id,
-    }).collect())
+    Ok(docs
+        .into_iter()
+        .map(|d| KbDocumentInfo {
+            id: d.id,
+            file_path: d.file_path,
+            title: d.title,
+            indexed_at: d.indexed_at,
+            chunk_count: d.chunk_count.map(|c| c as i64),
+            namespace_id: d.namespace_id,
+            source_type: d.source_type,
+            source_id: d.source_id,
+        })
+        .collect())
 }
 
 /// KB document info for API responses
@@ -1999,7 +2097,9 @@ pub fn remove_kb_document(file_path: String, state: State<'_, AppState>) -> Resu
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     let indexer = KbIndexer::new();
-    indexer.remove_document(db, &file_path).map_err(|e| e.to_string())
+    indexer
+        .remove_document(db, &file_path)
+        .map_err(|e| e.to_string())
 }
 
 // ============================================================================
@@ -2086,12 +2186,16 @@ pub async fn generate_kb_embeddings(
         let vectors_lock = state.vectors.read().await;
         let embeddings_lock = state.embeddings.read();
 
-        let vectors = vectors_lock.as_ref().ok_or("Vector store not initialized")?;
+        let vectors = vectors_lock
+            .as_ref()
+            .ok_or("Vector store not initialized")?;
         if !vectors.is_enabled() {
             return Err("Vector search is disabled".into());
         }
 
-        let embeddings = embeddings_lock.as_ref().ok_or("Embedding engine not initialized")?;
+        let embeddings = embeddings_lock
+            .as_ref()
+            .ok_or("Embedding engine not initialized")?;
         if !embeddings.is_model_loaded() {
             return Err("Embedding model not loaded".into());
         }
@@ -2101,7 +2205,8 @@ pub async fn generate_kb_embeddings(
     let chunks: Vec<(String, String)> = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        db.get_all_chunks_for_embedding().map_err(|e| e.to_string())?
+        db.get_all_chunks_for_embedding()
+            .map_err(|e| e.to_string())?
     };
 
     if chunks.is_empty() {
@@ -2116,9 +2221,12 @@ pub async fn generate_kb_embeddings(
     let mut vectors_created = 0;
 
     // Emit start event
-    let _ = app_handle.emit("kb:embeddings:start", serde_json::json!({
-        "total_chunks": total_chunks
-    }));
+    let _ = app_handle.emit(
+        "kb:embeddings:start",
+        serde_json::json!({
+            "total_chunks": total_chunks
+        }),
+    );
 
     // Process chunks in batches
     for (batch_idx, batch) in chunks.chunks(batch_size).enumerate() {
@@ -2128,32 +2236,45 @@ pub async fn generate_kb_embeddings(
         // Generate embeddings (sync operation)
         let embeddings: Vec<Vec<f32>> = {
             let embeddings_lock = state.embeddings.read();
-            let engine = embeddings_lock.as_ref().ok_or("Embedding engine not available")?;
-            engine.embed_batch(&chunk_texts).map_err(|e| e.to_string())?
+            let engine = embeddings_lock
+                .as_ref()
+                .ok_or("Embedding engine not available")?;
+            engine
+                .embed_batch(&chunk_texts)
+                .map_err(|e| e.to_string())?
         };
 
         // Store in vector store (async operation)
         {
             let vectors_lock = state.vectors.read().await;
             let vectors = vectors_lock.as_ref().ok_or("Vector store not available")?;
-            vectors.insert_embeddings(&chunk_ids, &embeddings).await.map_err(|e| e.to_string())?;
+            vectors
+                .insert_embeddings(&chunk_ids, &embeddings)
+                .await
+                .map_err(|e| e.to_string())?;
         }
 
         vectors_created += embeddings.len();
 
         // Emit progress event
         let progress = ((batch_idx + 1) * batch_size).min(total_chunks);
-        let _ = app_handle.emit("kb:embeddings:progress", serde_json::json!({
-            "processed": progress,
-            "total": total_chunks,
-            "percentage": (progress * 100) / total_chunks
-        }));
+        let _ = app_handle.emit(
+            "kb:embeddings:progress",
+            serde_json::json!({
+                "processed": progress,
+                "total": total_chunks,
+                "percentage": (progress * 100) / total_chunks
+            }),
+        );
     }
 
     // Emit complete event
-    let _ = app_handle.emit("kb:embeddings:complete", serde_json::json!({
-        "vectors_created": vectors_created
-    }));
+    let _ = app_handle.emit(
+        "kb:embeddings:complete",
+        serde_json::json!({
+            "vectors_created": vectors_created
+        }),
+    );
 
     Ok(EmbeddingGenerationResult {
         chunks_processed: total_chunks,
@@ -2196,15 +2317,22 @@ pub fn load_embedding_model(
     use std::path::Path;
 
     let emb_guard = state.embeddings.read();
-    let engine = emb_guard.as_ref().ok_or("Embedding engine not initialized")?;
+    let engine = emb_guard
+        .as_ref()
+        .ok_or("Embedding engine not initialized")?;
 
     let path = Path::new(&path);
     if !path.exists() {
-        return Err(format!("Embedding model file not found: {}", path.display()));
+        return Err(format!(
+            "Embedding model file not found: {}",
+            path.display()
+        ));
     }
 
     let validated_path = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Embedding model file must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Embedding model file must be within your home directory".to_string()
+        }
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This path is blocked because it contains sensitive data".to_string()
         }
@@ -2217,23 +2345,31 @@ pub fn load_embedding_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine.load_model(&validated_path, layers).map_err(|e| e.to_string())
+    engine
+        .load_model(&validated_path, layers)
+        .map_err(|e| e.to_string())
 }
 
 /// Unload the current embedding model
 #[tauri::command]
 pub fn unload_embedding_model(state: State<'_, AppState>) -> Result<(), String> {
     let emb_guard = state.embeddings.read();
-    let engine = emb_guard.as_ref().ok_or("Embedding engine not initialized")?;
+    let engine = emb_guard
+        .as_ref()
+        .ok_or("Embedding engine not initialized")?;
     engine.unload_model();
     Ok(())
 }
 
 /// Get current embedding model info
 #[tauri::command]
-pub fn get_embedding_model_info(state: State<'_, AppState>) -> Result<Option<EmbeddingModelInfo>, String> {
+pub fn get_embedding_model_info(
+    state: State<'_, AppState>,
+) -> Result<Option<EmbeddingModelInfo>, String> {
     let emb_guard = state.embeddings.read();
-    let engine = emb_guard.as_ref().ok_or("Embedding engine not initialized")?;
+    let engine = emb_guard
+        .as_ref()
+        .ok_or("Embedding engine not initialized")?;
     Ok(engine.model_info())
 }
 
@@ -2260,7 +2396,8 @@ pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String>
     // Get embedding dimension from loaded model, or use default
     let embedding_dim = {
         let emb_guard = state.embeddings.read();
-        emb_guard.as_ref()
+        emb_guard
+            .as_ref()
             .and_then(|e| e.embedding_dim())
             .unwrap_or(768)
     };
@@ -2279,9 +2416,7 @@ pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String>
     let consented = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         if let Some(db) = db_lock.as_ref() {
-            db.get_vector_consent()
-                .map(|c| c.enabled)
-                .unwrap_or(false)
+            db.get_vector_consent().map(|c| c.enabled).unwrap_or(false)
         } else {
             false
         }
@@ -2298,12 +2433,11 @@ pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String>
 
 /// Enable or disable vector search
 #[tauri::command]
-pub async fn set_vector_enabled(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
+pub async fn set_vector_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     let mut vectors_lock = state.vectors.write().await;
-    let store = vectors_lock.as_mut().ok_or("Vector store not initialized")?;
+    let store = vectors_lock
+        .as_mut()
+        .ok_or("Vector store not initialized")?;
 
     if enabled {
         store.enable(true).map_err(|e| e.to_string())?;
@@ -2318,14 +2452,19 @@ pub async fn set_vector_enabled(
 #[tauri::command]
 pub async fn is_vector_enabled(state: State<'_, AppState>) -> Result<bool, String> {
     let vectors_lock = state.vectors.read().await;
-    Ok(vectors_lock.as_ref().map(|s| s.is_enabled()).unwrap_or(false))
+    Ok(vectors_lock
+        .as_ref()
+        .map(|s| s.is_enabled())
+        .unwrap_or(false))
 }
 
 /// Get vector store statistics
 #[tauri::command]
 pub async fn get_vector_stats(state: State<'_, AppState>) -> Result<VectorStats, String> {
     let vectors_lock = state.vectors.read().await;
-    let store = vectors_lock.as_ref().ok_or("Vector store not initialized")?;
+    let store = vectors_lock
+        .as_ref()
+        .ok_or("Vector store not initialized")?;
 
     let count = store.count().await.map_err(|e| e.to_string())?;
 
@@ -2368,7 +2507,9 @@ pub fn process_ocr(image_path: String) -> Result<OcrResult, String> {
     }
 
     let validated_path = validate_within_home(&path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Image file must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Image file must be within your home directory".to_string()
+        }
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This path is blocked because it contains sensitive data".to_string()
         }
@@ -2393,7 +2534,7 @@ const MAX_OCR_BASE64_BYTES: usize = 10 * 1024 * 1024;
 /// Process OCR from base64-encoded image data (for clipboard paste)
 #[tauri::command]
 pub fn process_ocr_bytes(image_base64: String) -> Result<OcrResult, String> {
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
 
     // Validate payload size before processing to prevent memory spikes
     if image_base64.len() > MAX_OCR_BASE64_BYTES {
@@ -2443,7 +2584,9 @@ pub fn is_ocr_available() -> bool {
 
 /// List all decision trees
 #[tauri::command]
-pub fn list_decision_trees(state: State<'_, AppState>) -> Result<Vec<crate::db::DecisionTree>, String> {
+pub fn list_decision_trees(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::DecisionTree>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.list_decision_trees().map_err(|e| e.to_string())
@@ -2534,7 +2677,8 @@ pub async fn configure_jira(
             return Err(
                 "HTTPS is required for Jira connections. HTTP connections expose credentials \
                  in transit. If you must use HTTP (e.g., local testing), enable the \
-                 'allow_http' option explicitly.".to_string()
+                 'allow_http' option explicitly."
+                    .to_string(),
             );
         }
         // Log security warning for HTTP opt-in
@@ -2555,28 +2699,36 @@ pub async fn configure_jira(
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    db.conn().execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        rusqlite::params![JIRA_BASE_URL_SETTING, &base_url],
-    ).map_err(|e| e.to_string())?;
+    db.conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            rusqlite::params![JIRA_BASE_URL_SETTING, &base_url],
+        )
+        .map_err(|e| e.to_string())?;
 
-    db.conn().execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        rusqlite::params![JIRA_EMAIL_SETTING, &email],
-    ).map_err(|e| e.to_string())?;
+    db.conn()
+        .execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            rusqlite::params![JIRA_EMAIL_SETTING, &email],
+        )
+        .map_err(|e| e.to_string())?;
 
     // Store HTTP opt-in preference if used
     if using_http {
-        db.conn().execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            rusqlite::params!["jira_http_opt_in", "true"],
-        ).map_err(|e| e.to_string())?;
+        db.conn()
+            .execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                rusqlite::params!["jira_http_opt_in", "true"],
+            )
+            .map_err(|e| e.to_string())?;
     } else {
         // Clear HTTP opt-in if switching to HTTPS
-        db.conn().execute(
-            "DELETE FROM settings WHERE key = ?",
-            rusqlite::params!["jira_http_opt_in"],
-        ).map_err(|e| e.to_string())?;
+        db.conn()
+            .execute(
+                "DELETE FROM settings WHERE key = ?",
+                rusqlite::params!["jira_http_opt_in"],
+            )
+            .map_err(|e| e.to_string())?;
     }
 
     // Audit log successful configuration
@@ -2596,10 +2748,12 @@ pub fn clear_jira_config(state: State<'_, AppState>) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    db.conn().execute(
-        "DELETE FROM settings WHERE key IN (?, ?)",
-        rusqlite::params![JIRA_BASE_URL_SETTING, JIRA_EMAIL_SETTING],
-    ).map_err(|e| e.to_string())?;
+    db.conn()
+        .execute(
+            "DELETE FROM settings WHERE key IN (?, ?)",
+            rusqlite::params![JIRA_BASE_URL_SETTING, JIRA_EMAIL_SETTING],
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -2618,17 +2772,23 @@ pub async fn get_jira_ticket(
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-        let base_url: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_BASE_URL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let base_url: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_BASE_URL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
-        let email: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_EMAIL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let email: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_EMAIL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
         (base_url, email)
     };
@@ -2640,7 +2800,10 @@ pub async fn get_jira_ticket(
 
     // Fetch ticket
     let client = JiraClient::new(&base_url, &email, &token);
-    client.get_ticket(&ticket_key).await.map_err(|e| e.to_string())
+    client
+        .get_ticket(&ticket_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Add a comment to a Jira ticket (Phase 18)
@@ -2661,17 +2824,23 @@ pub async fn add_jira_comment(
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-        let base_url: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_BASE_URL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let base_url: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_BASE_URL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
-        let email: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_EMAIL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let email: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_EMAIL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
         (base_url, email)
     };
@@ -2692,7 +2861,8 @@ pub async fn add_jira_comment(
 
     // Post comment
     let client = JiraClient::new(&base_url, &email, &token);
-    client.add_comment(&ticket_key, &comment_body, vis)
+    client
+        .add_comment(&ticket_key, &comment_body, vis)
         .await
         .map_err(|e| e.to_string())
 }
@@ -2724,11 +2894,14 @@ pub async fn push_draft_to_jira(
     let citations: Vec<KbCitation> = sources_json
         .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
         .map(|sources| {
-            sources.iter().map(|s| KbCitation {
-                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
-                url: s["url"].as_str().map(|u| u.to_string()),
-                chunk_id: s["chunk_id"].as_str().map(|c| c.to_string()),
-            }).collect()
+            sources
+                .iter()
+                .map(|s| KbCitation {
+                    title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                    url: s["url"].as_str().map(|u| u.to_string()),
+                    chunk_id: s["chunk_id"].as_str().map(|c| c.to_string()),
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -2737,17 +2910,23 @@ pub async fn push_draft_to_jira(
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-        let base_url: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_BASE_URL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let base_url: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_BASE_URL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
-        let email: String = db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![JIRA_EMAIL_SETTING],
-            |row| row.get(0),
-        ).map_err(|_| "Jira not configured")?;
+        let email: String = db
+            .conn()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                rusqlite::params![JIRA_EMAIL_SETTING],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Jira not configured")?;
 
         (base_url, email)
     };
@@ -2768,7 +2947,8 @@ pub async fn push_draft_to_jira(
 
     // Post comment with citations
     let client = JiraClient::new(&base_url, &email, &token);
-    client.add_comment_with_citations(&ticket_key, &response_text, &citations, vis)
+    client
+        .add_comment_with_citations(&ticket_key, &response_text, &citations, vis)
         .await
         .map_err(|e| e.to_string())
 }
@@ -2778,8 +2958,8 @@ pub async fn push_draft_to_jira(
 // ============================================================================
 
 use crate::exports::{
-    ExportFormat as DraftExportFormat,
-    SafeExportOptions, ExportedSource, format_draft, format_for_clipboard
+    format_draft, format_for_clipboard, ExportFormat as DraftExportFormat, ExportedSource,
+    SafeExportOptions,
 };
 
 /// Export a draft in various formats
@@ -2797,14 +2977,18 @@ pub fn export_draft_formatted(
     let response_text = draft.response_text.as_deref().unwrap_or("");
 
     // Parse KB sources
-    let sources: Vec<ExportedSource> = draft.kb_sources_json
+    let sources: Vec<ExportedSource> = draft
+        .kb_sources_json
         .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
         .map(|sources| {
-            sources.iter().map(|s| ExportedSource {
-                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
-                path: s["file_path"].as_str().map(|p| p.to_string()),
-                url: s["url"].as_str().map(|u| u.to_string()),
-            }).collect()
+            sources
+                .iter()
+                .map(|s| ExportedSource {
+                    title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                    path: s["file_path"].as_str().map(|p| p.to_string()),
+                    url: s["url"].as_str().map(|u| u.to_string()),
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -2838,25 +3022,33 @@ pub fn format_draft_for_clipboard(
     let response_text = draft.response_text.as_deref().unwrap_or("");
 
     // Parse KB sources
-    let sources: Vec<ExportedSource> = draft.kb_sources_json
+    let sources: Vec<ExportedSource> = draft
+        .kb_sources_json
         .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
         .map(|sources| {
-            sources.iter().map(|s| ExportedSource {
-                title: s["title"].as_str().unwrap_or("Unknown").to_string(),
-                path: s["file_path"].as_str().map(|p| p.to_string()),
-                url: s["url"].as_str().map(|u| u.to_string()),
-            }).collect()
+            sources
+                .iter()
+                .map(|s| ExportedSource {
+                    title: s["title"].as_str().unwrap_or("Unknown").to_string(),
+                    path: s["file_path"].as_str().map(|p| p.to_string()),
+                    url: s["url"].as_str().map(|u| u.to_string()),
+                })
+                .collect()
         })
         .unwrap_or_default();
 
-    Ok(format_for_clipboard(response_text, &sources, include_sources))
+    Ok(format_for_clipboard(
+        response_text,
+        &sources,
+        include_sources,
+    ))
 }
 
 // ============================================================================
 // Draft & Template Commands
 // ============================================================================
 
-use crate::db::{SavedDraft, ResponseTemplate};
+use crate::db::{ResponseTemplate, SavedDraft};
 
 /// List saved drafts (most recent first)
 #[tauri::command]
@@ -2866,7 +3058,8 @@ pub fn list_drafts(
 ) -> Result<Vec<SavedDraft>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_drafts(limit.unwrap_or(50)).map_err(|e| e.to_string())
+    db.list_drafts(limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
 }
 
 /// Search drafts by text content
@@ -2878,15 +3071,13 @@ pub fn search_drafts(
 ) -> Result<Vec<SavedDraft>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.search_drafts(&query, limit.unwrap_or(50)).map_err(|e| e.to_string())
+    db.search_drafts(&query, limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
 }
 
 /// Get a single draft by ID
 #[tauri::command]
-pub fn get_draft(
-    state: State<'_, AppState>,
-    draft_id: String,
-) -> Result<SavedDraft, String> {
+pub fn get_draft(state: State<'_, AppState>, draft_id: String) -> Result<SavedDraft, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.get_draft(&draft_id).map_err(|e| e.to_string())
@@ -2894,10 +3085,7 @@ pub fn get_draft(
 
 /// Save a draft (insert or update)
 #[tauri::command]
-pub fn save_draft(
-    state: State<'_, AppState>,
-    draft: SavedDraft,
-) -> Result<String, String> {
+pub fn save_draft(state: State<'_, AppState>, draft: SavedDraft) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.save_draft(&draft).map_err(|e| e.to_string())
@@ -2905,10 +3093,7 @@ pub fn save_draft(
 
 /// Delete a draft by ID
 #[tauri::command]
-pub fn delete_draft(
-    state: State<'_, AppState>,
-    draft_id: String,
-) -> Result<(), String> {
+pub fn delete_draft(state: State<'_, AppState>, draft_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_draft(&draft_id).map_err(|e| e.to_string())
@@ -2922,7 +3107,8 @@ pub fn list_autosaves(
 ) -> Result<Vec<SavedDraft>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_autosaves(limit.unwrap_or(10)).map_err(|e| e.to_string())
+    db.list_autosaves(limit.unwrap_or(10))
+        .map_err(|e| e.to_string())
 }
 
 /// Cleanup old autosaves, keeping only the most recent ones
@@ -2933,7 +3119,8 @@ pub fn cleanup_autosaves(
 ) -> Result<usize, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.cleanup_autosaves(keep_count.unwrap_or(10)).map_err(|e| e.to_string())
+    db.cleanup_autosaves(keep_count.unwrap_or(10))
+        .map_err(|e| e.to_string())
 }
 
 /// Get draft versions by input hash (autosaves with matching input_text hash)
@@ -2945,7 +3132,8 @@ pub fn get_draft_versions(
 ) -> Result<Vec<SavedDraft>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.get_draft_versions(&input_hash).map_err(|e| e.to_string())
+    db.get_draft_versions(&input_hash)
+        .map_err(|e| e.to_string())
 }
 
 // ============================================================================
@@ -2991,10 +3179,7 @@ pub fn finalize_draft(
 
 /// Archive a draft
 #[tauri::command]
-pub fn archive_draft(
-    state: State<'_, AppState>,
-    draft_id: String,
-) -> Result<(), String> {
+pub fn archive_draft(state: State<'_, AppState>, draft_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.archive_draft(&draft_id).map_err(|e| e.to_string())
@@ -3025,7 +3210,8 @@ pub fn list_playbooks(
 ) -> Result<Vec<crate::db::Playbook>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_playbooks(category.as_deref()).map_err(|e| e.to_string())
+    db.list_playbooks(category.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// Get a playbook by ID
@@ -3052,21 +3238,16 @@ pub fn save_playbook(
 
 /// Record playbook usage
 #[tauri::command]
-pub fn use_playbook(
-    state: State<'_, AppState>,
-    playbook_id: String,
-) -> Result<(), String> {
+pub fn use_playbook(state: State<'_, AppState>, playbook_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.increment_playbook_usage(&playbook_id).map_err(|e| e.to_string())
+    db.increment_playbook_usage(&playbook_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a playbook
 #[tauri::command]
-pub fn delete_playbook(
-    state: State<'_, AppState>,
-    playbook_id: String,
-) -> Result<(), String> {
+pub fn delete_playbook(state: State<'_, AppState>, playbook_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_playbook(&playbook_id).map_err(|e| e.to_string())
@@ -3084,7 +3265,8 @@ pub fn list_action_shortcuts(
 ) -> Result<Vec<crate::db::ActionShortcut>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_action_shortcuts(category.as_deref()).map_err(|e| e.to_string())
+    db.list_action_shortcuts(category.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// Get an action shortcut by ID
@@ -3095,7 +3277,8 @@ pub fn get_action_shortcut(
 ) -> Result<crate::db::ActionShortcut, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.get_action_shortcut(&shortcut_id).map_err(|e| e.to_string())
+    db.get_action_shortcut(&shortcut_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Save an action shortcut (insert or update)
@@ -3106,7 +3289,8 @@ pub fn save_action_shortcut(
 ) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.save_action_shortcut(&shortcut).map_err(|e| e.to_string())
+    db.save_action_shortcut(&shortcut)
+        .map_err(|e| e.to_string())
 }
 
 /// Delete an action shortcut
@@ -3117,7 +3301,8 @@ pub fn delete_action_shortcut(
 ) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.delete_action_shortcut(&shortcut_id).map_err(|e| e.to_string())
+    db.delete_action_shortcut(&shortcut_id)
+        .map_err(|e| e.to_string())
 }
 
 /// List all response templates
@@ -3154,10 +3339,7 @@ pub fn save_template(
 
 /// Delete a template by ID
 #[tauri::command]
-pub fn delete_template(
-    state: State<'_, AppState>,
-    template_id: String,
-) -> Result<(), String> {
+pub fn delete_template(state: State<'_, AppState>, template_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_template(&template_id).map_err(|e| e.to_string())
@@ -3185,7 +3367,8 @@ pub fn get_custom_variable(
 ) -> Result<crate::db::CustomVariable, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.get_custom_variable(&variable_id).map_err(|e| e.to_string())
+    db.get_custom_variable(&variable_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Save a custom variable (create or update)
@@ -3196,7 +3379,8 @@ pub fn save_custom_variable(
 ) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.save_custom_variable(&variable).map_err(|e| e.to_string())
+    db.save_custom_variable(&variable)
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a custom variable by ID
@@ -3207,7 +3391,8 @@ pub fn delete_custom_variable(
 ) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.delete_custom_variable(&variable_id).map_err(|e| e.to_string())
+    db.delete_custom_variable(&variable_id)
+        .map_err(|e| e.to_string())
 }
 
 // Export and Backup commands moved to commands/backup.rs
@@ -3249,18 +3434,19 @@ pub fn ingest_url(
     url: String,
     namespace_id: String,
 ) -> Result<IngestResult, String> {
-    use crate::kb::ingest::web::{WebIngester, WebIngestConfig};
+    use crate::kb::ingest::web::{WebIngestConfig, WebIngester};
     use crate::kb::ingest::CancellationToken;
 
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Ensure namespace exists
-    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+    db.ensure_namespace_exists(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     let config = WebIngestConfig::default();
     let cancel_token = CancellationToken::new();
@@ -3294,18 +3480,19 @@ pub fn ingest_youtube(
     url: String,
     namespace_id: String,
 ) -> Result<IngestResult, String> {
-    use crate::kb::ingest::youtube::{YouTubeIngester, YouTubeIngestConfig};
+    use crate::kb::ingest::youtube::{YouTubeIngestConfig, YouTubeIngester};
     use crate::kb::ingest::CancellationToken;
 
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Ensure namespace exists
-    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+    db.ensure_namespace_exists(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     let config = YouTubeIngestConfig::default();
     let ingester = YouTubeIngester::new(config);
@@ -3344,13 +3531,13 @@ pub fn ingest_github(
     repo_path: String,
     namespace_id: String,
 ) -> Result<Vec<IngestResult>, String> {
-    use crate::kb::ingest::github::{GitHubIngester, GitHubIngestConfig};
+    use crate::kb::ingest::github::{GitHubIngestConfig, GitHubIngester};
     use crate::kb::ingest::CancellationToken;
     use std::path::Path;
 
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     // Validate path is within home directory
     let validated_path = validate_within_home(Path::new(&repo_path)).map_err(|e| match e {
@@ -3367,7 +3554,8 @@ pub fn ingest_github(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Ensure namespace exists
-    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+    db.ensure_namespace_exists(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     let config = GitHubIngestConfig::default();
     let ingester = GitHubIngester::new(config);
@@ -3396,12 +3584,12 @@ pub fn ingest_github_remote(
     repo_url: String,
     namespace_id: String,
 ) -> Result<Vec<IngestResult>, String> {
-    use crate::kb::ingest::github::{GitHubIngester, GitHubIngestConfig, parse_https_repo_url};
+    use crate::kb::ingest::github::{parse_https_repo_url, GitHubIngestConfig, GitHubIngester};
     use crate::kb::ingest::CancellationToken;
 
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     // Parse and validate repo URL
     let remote = parse_https_repo_url(&repo_url).map_err(|e| e.to_string())?;
@@ -3413,7 +3601,8 @@ pub fn ingest_github_remote(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Ensure namespace exists
-    db.ensure_namespace_exists(&namespace_id).map_err(|e| e.to_string())?;
+    db.ensure_namespace_exists(&namespace_id)
+        .map_err(|e| e.to_string())?;
 
     let config = GitHubIngestConfig::default();
     let ingester = GitHubIngester::new(config);
@@ -3449,9 +3638,9 @@ pub fn process_source_file(
     state: State<'_, AppState>,
     file_path: String,
 ) -> Result<BatchIngestResult, String> {
-    use crate::sources::SourceFile;
-    use crate::kb::ingest::batch::{BatchIngester, BatchIngestConfig};
+    use crate::kb::ingest::batch::{BatchIngestConfig, BatchIngester};
     use crate::kb::ingest::CancellationToken;
+    use crate::sources::SourceFile;
     use std::path::Path;
 
     let path = Path::new(&file_path);
@@ -3460,7 +3649,9 @@ pub fn process_source_file(
     }
 
     let validated_path = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => "Source file must be within your home directory".to_string(),
+        ValidationError::PathTraversal => {
+            "Source file must be within your home directory".to_string()
+        }
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This path is blocked because it contains sensitive data".to_string()
         }
@@ -3475,11 +3666,11 @@ pub fn process_source_file(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Parse the source file
-    let source_file = SourceFile::from_path(&validated_path)
-        .map_err(|e| e.to_string())?;
+    let source_file = SourceFile::from_path(&validated_path).map_err(|e| e.to_string())?;
 
     // Ensure namespace exists
-    db.ensure_namespace_exists(&source_file.namespace).map_err(|e| e.to_string())?;
+    db.ensure_namespace_exists(&source_file.namespace)
+        .map_err(|e| e.to_string())?;
 
     // Convert to batch sources
     let sources: Vec<String> = source_file
@@ -3495,11 +3686,13 @@ pub fn process_source_file(
     // The batch ingester now requires async initialization for DNS resolver
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
-            let ingester = BatchIngester::new(config).await.map_err(|e| e.to_string())?;
+            let ingester = BatchIngester::new(config)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok::<_, String>(
                 ingester
                     .ingest_from_strings(db, &sources, &namespace, &cancel_token, None)
-                    .await
+                    .await,
             )
         })
     })?;
@@ -3538,7 +3731,9 @@ pub fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<crate::db::Name
 
 /// List all namespaces with document and source counts (optimized single query)
 #[tauri::command]
-pub fn list_namespaces_with_counts(state: State<'_, AppState>) -> Result<Vec<crate::db::NamespaceWithCounts>, String> {
+pub fn list_namespaces_with_counts(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::NamespaceWithCounts>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.list_namespaces_with_counts().map_err(|e| e.to_string())
@@ -3567,7 +3762,8 @@ pub fn rename_namespace(
 ) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.rename_namespace(&old_name, &new_name).map_err(|e| e.to_string())
+    db.rename_namespace(&old_name, &new_name)
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a namespace and all its content
@@ -3592,7 +3788,8 @@ pub fn list_ingest_sources(
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_ingest_sources(namespace_id.as_deref()).map_err(|e| e.to_string())
+    db.list_ingest_sources(namespace_id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// Delete an ingestion source and its documents
@@ -3600,7 +3797,8 @@ pub fn list_ingest_sources(
 pub fn delete_ingest_source(state: State<'_, AppState>, source_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.delete_ingest_source(&source_id).map_err(|e| e.to_string())
+    db.delete_ingest_source(&source_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Get source health summary for a namespace
@@ -3665,19 +3863,21 @@ pub fn get_source_health(
     "#;
 
     let mut stmt = db.conn().prepare(sql).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([namespace_id], |row| {
-        Ok(SourceHealth {
-            id: row.get(0)?,
-            source_type: row.get(1)?,
-            source_uri: row.get(2)?,
-            title: row.get(3)?,
-            status: row.get(4)?,
-            error_message: row.get(5)?,
-            last_ingested_at: row.get(6)?,
-            document_count: row.get::<_, i64>(7)? as u32,
-            days_since_refresh: row.get(8)?,
+    let rows = stmt
+        .query_map([namespace_id], |row| {
+            Ok(SourceHealth {
+                id: row.get(0)?,
+                source_type: row.get(1)?,
+                source_uri: row.get(2)?,
+                title: row.get(3)?,
+                status: row.get(4)?,
+                error_message: row.get(5)?,
+                last_ingested_at: row.get(6)?,
+                document_count: row.get::<_, i64>(7)? as u32,
+                days_since_refresh: row.get(8)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let sources: Vec<SourceHealth> = rows.filter_map(|r| r.ok()).collect();
 
@@ -3705,15 +3905,13 @@ pub fn get_source_health(
 
 /// Retry a failed or stale source
 #[tauri::command]
-pub fn retry_source(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> Result<IngestResult, String> {
+pub fn retry_source(state: State<'_, AppState>, source_id: String) -> Result<IngestResult, String> {
     // Get source details
     let source = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        db.get_ingest_source(&source_id).map_err(|e| e.to_string())?
+        db.get_ingest_source(&source_id)
+            .map_err(|e| e.to_string())?
     };
 
     // Mark as pending
@@ -3726,14 +3924,11 @@ pub fn retry_source(
 
     // Re-ingest based on source type
     match source.source_type.as_str() {
-        "web" => {
-            ingest_url(state, source.source_uri, source.namespace_id)
-        }
-        "youtube" => {
-            ingest_youtube(state, source.source_uri, source.namespace_id)
-        }
+        "web" => ingest_url(state, source.source_uri, source.namespace_id),
+        "youtube" => ingest_youtube(state, source.source_uri, source.namespace_id),
         "github" => {
-            let results: Vec<IngestResult> = ingest_github(state, source.source_uri.clone(), source.namespace_id)?;
+            let results: Vec<IngestResult> =
+                ingest_github(state, source.source_uri.clone(), source.namespace_id)?;
             // Return summary for multi-file results
             Ok(IngestResult {
                 document_id: source_id,
@@ -3766,9 +3961,7 @@ pub fn mark_stale_sources(
         AND julianday('now') - julianday(last_ingested_at) > ?
     "#;
 
-    let count = db.conn()
-        .execute(sql, [days])
-        .map_err(|e| e.to_string())?;
+    let count = db.conn().execute(sql, [days]).map_err(|e| e.to_string())?;
 
     Ok(count as u32)
 }
@@ -3929,7 +4122,8 @@ pub fn create_job(
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    let job_type_enum: JobType = job_type.parse()
+    let job_type_enum: JobType = job_type
+        .parse()
         .map_err(|_| format!("Invalid job type: {}", job_type))?;
     let mut job = Job::new(job_type_enum);
     if let Some(meta) = metadata {
@@ -4124,22 +4318,25 @@ pub fn add_namespace_rule(
     reason: Option<String>,
 ) -> Result<String, String> {
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
-    db.add_namespace_rule(&namespace_id, &rule_type, &pattern_type, &pattern, reason.as_deref())
-        .map_err(|e| e.to_string())
+    db.add_namespace_rule(
+        &namespace_id,
+        &rule_type,
+        &pattern_type,
+        &pattern,
+        reason.as_deref(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Delete a namespace rule
 #[tauri::command]
-pub fn delete_namespace_rule(
-    state: State<'_, AppState>,
-    rule_id: String,
-) -> Result<(), String> {
+pub fn delete_namespace_rule(state: State<'_, AppState>, rule_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -4154,8 +4351,8 @@ pub fn list_namespace_rules(
     namespace_id: String,
 ) -> Result<Vec<crate::db::NamespaceRule>, String> {
     // Validate and normalize namespace ID
-    let namespace_id = normalize_and_validate_namespace_id(&namespace_id)
-        .map_err(|e| e.to_string())?;
+    let namespace_id =
+        normalize_and_validate_namespace_id(&namespace_id).map_err(|e| e.to_string())?;
 
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;

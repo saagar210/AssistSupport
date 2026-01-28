@@ -38,7 +38,7 @@ fn is_unicode_confusable(c: char) -> bool {
         '\u{FF0D}' | // FULLWIDTH HYPHEN-MINUS
         // Semicolon lookalikes
         '\u{037E}' | // GREEK QUESTION MARK (looks like ;)
-        '\u{FF1B}'   // FULLWIDTH SEMICOLON
+        '\u{FF1B}' // FULLWIDTH SEMICOLON
     )
 }
 
@@ -60,9 +60,7 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
         .collect();
 
     // SQL keywords to block (with word-boundary awareness)
-    let sql_keywords = [
-        "select", "insert", "update", "delete", "drop", "union",
-    ];
+    let sql_keywords = ["select", "insert", "update", "delete", "drop", "union"];
 
     let has_boundary_before = |pos: usize| -> bool {
         pos == 0
@@ -94,9 +92,7 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
 
     // Other patterns to block (non-word-boundary)
     let patterns = [
-        " or ", " and ", " not ",
-        "--", "/*", "*/",
-        "';", "\";", "1=1", "1 = 1",
+        " or ", " and ", " not ", "--", "/*", "*/", "';", "\";", "1=1", "1 = 1",
     ];
 
     for pattern in &patterns {
@@ -124,7 +120,10 @@ fn sanitize_id(id: &str) -> Option<String> {
     }
 
     // Only allow ASCII alphanumeric, hyphen, underscore
-    if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         Some(id.to_string())
     } else {
         None
@@ -298,7 +297,7 @@ fn test_handles_partial_keywords() {
     assert!(sanitize_filter_value("'; SELECT * --").is_none());
 
     // " or " and " and " require space boundaries
-    assert!(sanitize_filter_value("forest").is_some());  // contains "or" but not " or "
+    assert!(sanitize_filter_value("forest").is_some()); // contains "or" but not " or "
     assert!(sanitize_filter_value("android").is_some()); // contains "and" but not " and "
 }
 

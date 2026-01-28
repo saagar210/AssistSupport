@@ -1,10 +1,10 @@
 //! Embedding Engine for AssistSupport
 //! Generates vector embeddings using llama-cpp-2
 
+use parking_lot::RwLock;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::num::NonZeroU32;
-use parking_lot::RwLock;
 use thiserror::Error;
 
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -81,7 +81,8 @@ impl EmbeddingEngine {
 
     /// Check if an embedding model is loaded
     pub fn is_model_loaded(&self) -> bool {
-        self.state.read()
+        self.state
+            .read()
             .as_ref()
             .map(|s| s.model.is_some())
             .unwrap_or(false)
@@ -89,7 +90,8 @@ impl EmbeddingEngine {
 
     /// Get current model info
     pub fn model_info(&self) -> Option<EmbeddingModelInfo> {
-        self.state.read()
+        self.state
+            .read()
             .as_ref()
             .and_then(|s| s.model_info.clone())
     }
@@ -100,7 +102,11 @@ impl EmbeddingEngine {
     }
 
     /// Load an embedding model
-    pub fn load_model(&self, path: &Path, n_gpu_layers: u32) -> Result<EmbeddingModelInfo, EmbeddingError> {
+    pub fn load_model(
+        &self,
+        path: &Path,
+        n_gpu_layers: u32,
+    ) -> Result<EmbeddingModelInfo, EmbeddingError> {
         if !path.exists() {
             return Err(EmbeddingError::ModelNotFound(path.display().to_string()));
         }
@@ -108,21 +114,22 @@ impl EmbeddingEngine {
         let metadata = std::fs::metadata(path)?;
         let size_bytes = metadata.len();
 
-        let file_name = path.file_name()
+        let file_name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
         let mut state_guard = self.state.write();
-        let state = state_guard.as_mut()
-            .ok_or(EmbeddingError::BackendInit("Backend not initialized".into()))?;
+        let state = state_guard.as_mut().ok_or(EmbeddingError::BackendInit(
+            "Backend not initialized".into(),
+        ))?;
 
         // Unload existing model
         state.model = None;
         state.model_info = None;
 
         // Configure model parameters
-        let model_params = LlamaModelParams::default()
-            .with_n_gpu_layers(n_gpu_layers);
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
         // Load model
         let model = LlamaModel::load_from_file(&state.backend, path, &model_params)
@@ -155,7 +162,9 @@ impl EmbeddingEngine {
     /// Generate embedding for a single text
     pub fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         let embeddings = self.embed_batch(&[text.to_string()])?;
-        embeddings.into_iter().next()
+        embeddings
+            .into_iter()
+            .next()
             .ok_or(EmbeddingError::Generate("No embedding generated".into()))
     }
 
@@ -179,7 +188,8 @@ impl EmbeddingEngine {
         });
 
         // Create a single context for the entire batch (reuse across texts)
-        let mut ctx = model.new_context(&state.backend, ctx_params)
+        let mut ctx = model
+            .new_context(&state.backend, ctx_params)
             .map_err(|e| EmbeddingError::ContextCreate(e.to_string()))?;
 
         let embedding_dim = model.n_embd() as usize;
@@ -190,7 +200,8 @@ impl EmbeddingEngine {
 
         for text in texts {
             // Tokenize
-            let tokens = model.str_to_token(text, AddBos::Always)
+            let tokens = model
+                .str_to_token(text, AddBos::Always)
                 .map_err(|e| EmbeddingError::Generate(format!("Tokenization failed: {}", e)))?;
 
             if tokens.is_empty() {
@@ -215,7 +226,8 @@ impl EmbeddingEngine {
             batch.clear();
 
             for (i, token) in tokens.iter().enumerate() {
-                batch.add(*token, i as i32, &[0], i == tokens.len() - 1)
+                batch
+                    .add(*token, i as i32, &[0], i == tokens.len() - 1)
                     .map_err(|e| EmbeddingError::Generate(format!("Batch add error: {}", e)))?;
             }
 
@@ -224,7 +236,8 @@ impl EmbeddingEngine {
                 .map_err(|e| EmbeddingError::Generate(format!("Decode error: {}", e)))?;
 
             // Get embeddings - use sequence embeddings (averaged)
-            let embeddings = ctx.embeddings_seq_ith(0)
+            let embeddings = ctx
+                .embeddings_seq_ith(0)
                 .map_err(|e| EmbeddingError::Generate(format!("Get embeddings error: {}", e)))?;
 
             // Normalize the embedding
@@ -262,7 +275,6 @@ impl EmbeddingEngine {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

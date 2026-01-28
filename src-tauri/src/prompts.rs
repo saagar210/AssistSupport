@@ -132,7 +132,8 @@ Rules:
 Return only valid JSON."#;
 
 /// Short response system prompt
-pub const SHORT_RESPONSE_PROMPT: &str = r#"Provide a brief, focused response. Target 80-100 words maximum. Get straight to the point."#;
+pub const SHORT_RESPONSE_PROMPT: &str =
+    r#"Provide a brief, focused response. Target 80-100 words maximum. Get straight to the point."#;
 
 /// Medium response system prompt
 pub const MEDIUM_RESPONSE_PROMPT: &str = r#"Provide a clear, helpful response. Target 150-200 words. Include relevant details but stay focused."#;
@@ -164,7 +165,6 @@ impl ResponseLength {
     }
 }
 
-
 /// Decision tree path result
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct TreeDecisions {
@@ -177,7 +177,9 @@ pub struct TreeDecisions {
 /// Prompt budget error
 #[derive(Debug, thiserror::Error)]
 pub enum PromptBudgetError {
-    #[error("Prompt exceeds context window: {estimated_tokens} tokens > {context_window} token limit")]
+    #[error(
+        "Prompt exceeds context window: {estimated_tokens} tokens > {context_window} token limit"
+    )]
     ExceedsContextWindow {
         estimated_tokens: usize,
         context_window: usize,
@@ -414,10 +416,7 @@ impl PromptBuilder {
     fn format_diagnostic_context(&self) -> String {
         match &self.context.diagnostic_notes {
             Some(notes) if !notes.trim().is_empty() => {
-                format!(
-                    "## Diagnostic Notes\n\n{}\n\n",
-                    notes.trim()
-                )
+                format!("## Diagnostic Notes\n\n{}\n\n", notes.trim())
             }
             _ => String::new(),
         }
@@ -465,7 +464,9 @@ impl PromptBuilder {
                     }
                 }
 
-                parts.push(String::from("\nAddress this specific ticket when crafting your response.\n"));
+                parts.push(String::from(
+                    "\nAddress this specific ticket when crafting your response.\n",
+                ));
 
                 parts.join("\n")
             }
@@ -572,7 +573,10 @@ impl PromptBuilder {
 
         // Track original state for metrics
         let original_kb_count = self.context.kb_results.len();
-        let original_chunk_ids: Vec<String> = self.context.kb_results.iter()
+        let original_chunk_ids: Vec<String> = self
+            .context
+            .kb_results
+            .iter()
             .map(|r| r.chunk_id.clone())
             .collect();
 
@@ -599,7 +603,10 @@ impl PromptBuilder {
 
         // If it fits, we're done
         if estimated_tokens <= max_prompt_tokens {
-            let final_chunk_ids: Vec<String> = self.context.kb_results.iter()
+            let final_chunk_ids: Vec<String> = self
+                .context
+                .kb_results
+                .iter()
                 .map(|r| r.chunk_id.clone())
                 .collect();
 
@@ -653,7 +660,10 @@ impl PromptBuilder {
             });
         }
 
-        let final_chunk_ids: Vec<String> = self.context.kb_results.iter()
+        let final_chunk_ids: Vec<String> = self
+            .context
+            .kb_results
+            .iter()
             .map(|r| r.chunk_id.clone())
             .collect();
 
@@ -676,7 +686,9 @@ impl PromptBuilder {
     /// Sort KB results by priority score (highest first)
     fn sort_kb_results_by_priority(&mut self) {
         // Create paired indices with priority scores
-        let mut indexed_scores: Vec<(usize, f64)> = self.context.kb_results
+        let mut indexed_scores: Vec<(usize, f64)> = self
+            .context
+            .kb_results
             .iter()
             .enumerate()
             .map(|(i, result)| {
@@ -692,12 +704,14 @@ impl PromptBuilder {
         indexed_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Reorder kb_results and kb_timestamps
-        let new_results: Vec<SearchResult> = indexed_scores.iter()
+        let new_results: Vec<SearchResult> = indexed_scores
+            .iter()
             .map(|(i, _)| self.context.kb_results[*i].clone())
             .collect();
 
         let new_timestamps: Vec<Option<DateTime<Utc>>> = if !self.context.kb_timestamps.is_empty() {
-            indexed_scores.iter()
+            indexed_scores
+                .iter()
                 .map(|(i, _)| self.context.kb_timestamps.get(*i).cloned().flatten())
                 .collect()
         } else {
@@ -727,7 +741,7 @@ pub fn sanitize_for_context(text: &str) -> String {
         .replace("[[", &format!("[{}[", ZWS))
         .replace("]]", &format!("]{}]", ZWS))
         .replace("{{", &format!("{{{{{}{{", ZWS))
-        .replace("}}", &format!("}}{}}}",  ZWS))
+        .replace("}}", &format!("}}{}}}", ZWS))
         // Break role tokens (case-insensitive patterns)
         .replace("SYSTEM:", &format!("SYSTEM{}:", ZWS))
         .replace("System:", &format!("System{}:", ZWS))
@@ -931,11 +945,18 @@ mod tests {
     fn test_prompt_versioning() {
         // Verify version format is semver-like
         let parts: Vec<&str> = PROMPT_TEMPLATE_VERSION.split('.').collect();
-        assert_eq!(parts.len(), 3, "Version should be in MAJOR.MINOR.PATCH format");
+        assert_eq!(
+            parts.len(),
+            3,
+            "Version should be in MAJOR.MINOR.PATCH format"
+        );
 
         // All parts should be numeric
         for part in parts {
-            assert!(part.parse::<u32>().is_ok(), "Version components should be numeric");
+            assert!(
+                part.parse::<u32>().is_ok(),
+                "Version components should be numeric"
+            );
         }
     }
 
@@ -966,9 +987,18 @@ mod tests {
             .build();
 
         // Verify essential sections exist
-        assert!(prompt.contains("## User's Request"), "Should have user request section");
-        assert!(prompt.contains("## Your Response"), "Should have response section");
-        assert!(prompt.contains("IT Support"), "Should identify as IT support assistant");
+        assert!(
+            prompt.contains("## User's Request"),
+            "Should have user request section"
+        );
+        assert!(
+            prompt.contains("## Your Response"),
+            "Should have response section"
+        );
+        assert!(
+            prompt.contains("IT Support"),
+            "Should identify as IT support assistant"
+        );
     }
 
     #[test]
@@ -1000,8 +1030,14 @@ mod tests {
         // Verify injection pattern in KB content is sanitized (has zero-width space)
         // Note: The system prompt itself may contain "SYSTEM:" but KB content should be sanitized
         let sanitized = sanitize_for_context("SYSTEM: test");
-        assert!(sanitized.contains("\u{200B}"), "Sanitized content should contain zero-width space");
-        assert_ne!(sanitized, "SYSTEM: test", "Sanitized content should differ from original");
+        assert!(
+            sanitized.contains("\u{200B}"),
+            "Sanitized content should contain zero-width space"
+        );
+        assert_ne!(
+            sanitized, "SYSTEM: test",
+            "Sanitized content should differ from original"
+        );
     }
 
     #[test]
@@ -1070,7 +1106,10 @@ mod tests {
             Ok(prompt) => {
                 // If it succeeded, prompt should be within budget
                 let estimated_tokens = prompt.len() / 4;
-                assert!(estimated_tokens <= 750, "Prompt should fit within 75% of context window");
+                assert!(
+                    estimated_tokens <= 750,
+                    "Prompt should fit within 75% of context window"
+                );
             }
             Err(PromptBudgetError::ExceedsContextWindow { .. }) => {
                 // This is acceptable if even the minimum prompt exceeds budget
@@ -1166,14 +1205,23 @@ mod tests {
         let recent_score = calculate_priority_score(0.5, Some(&recent), false);
         let old_score = calculate_priority_score(0.5, Some(&old), false);
 
-        assert!(recent_score > old_score, "Recent doc should have higher priority");
+        assert!(
+            recent_score > old_score,
+            "Recent doc should have higher priority"
+        );
 
         // Pinned should get a significant boost
         let pinned_score = calculate_priority_score(0.5, None, true);
         let unpinned_score = calculate_priority_score(0.5, None, false);
 
-        assert!(pinned_score > unpinned_score, "Pinned doc should have higher priority");
-        assert!((pinned_score - unpinned_score - 0.5).abs() < 0.01, "Pinned boost should be 0.5");
+        assert!(
+            pinned_score > unpinned_score,
+            "Pinned doc should have higher priority"
+        );
+        assert!(
+            (pinned_score - unpinned_score - 0.5).abs() < 0.01,
+            "Pinned boost should be 0.5"
+        );
     }
 
     #[test]
@@ -1205,9 +1253,7 @@ mod tests {
 
     #[test]
     fn test_citation_policy_in_prompt() {
-        let prompt = PromptBuilder::new()
-            .with_user_input("Help me")
-            .build();
+        let prompt = PromptBuilder::new().with_user_input("Help me").build();
 
         // Verify citation policy is present
         assert!(prompt.contains("Citation Policy"));

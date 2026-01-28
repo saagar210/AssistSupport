@@ -1,10 +1,10 @@
 //! Content ingestion modules for AssistSupport
 //! Handles web pages, YouTube videos, GitHub repos, and batch processing
 
+pub mod batch;
+pub mod github;
 pub mod web;
 pub mod youtube;
-pub mod github;
-pub mod batch;
 
 use thiserror::Error;
 
@@ -88,7 +88,8 @@ impl CancellationToken {
     }
 
     pub fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn is_cancelled(&self) -> bool {

@@ -57,8 +57,12 @@ fn is_private_ip(ip: IpAddr) -> bool {
 fn is_ipv4_mapped_private(v6: &Ipv6Addr) -> bool {
     // IPv4-mapped format: ::ffff:x.x.x.x
     let segments = v6.segments();
-    if segments[0] == 0 && segments[1] == 0 && segments[2] == 0
-        && segments[3] == 0 && segments[4] == 0 && segments[5] == 0xffff
+    if segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0xffff
     {
         // Extract the IPv4 address
         let v4_high = segments[6];
@@ -137,7 +141,9 @@ fn test_blocks_localhost_v6() {
 #[test]
 fn test_blocks_unique_local_v6() {
     assert!(is_private_ip(PRIVATE_V6));
-    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(
+        0xfc00, 0, 0, 0, 0, 0, 0, 1
+    ))));
 }
 
 #[test]
@@ -231,7 +237,7 @@ fn test_dns_returns_mixed_ips() {
     // DNS might return multiple IPs (some public, some private)
     let mixed_ips = vec![
         PUBLIC_IP,
-        LOCALHOST_V4,  // Attacker injects this
+        LOCALHOST_V4, // Attacker injects this
     ];
 
     // Should reject if ANY IP is private
@@ -246,7 +252,9 @@ fn test_dns_returns_mixed_ips() {
 #[test]
 fn test_blocks_zero_address() {
     assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))));
-    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0))));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(
+        0, 0, 0, 0, 0, 0, 0, 0
+    ))));
 }
 
 #[test]
@@ -263,12 +271,14 @@ fn test_blocks_multicast() {
 #[test]
 fn test_blocks_documentation_ranges() {
     // IPv4 documentation ranges
-    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))));   // 192.0.2.0/24
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)))); // 192.0.2.0/24
     assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)))); // 198.51.100.0/24
-    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));  // 203.0.113.0/24
+    assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1)))); // 203.0.113.0/24
 
     // IPv6 documentation range
-    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))));
+    assert!(is_private_ip(IpAddr::V6(Ipv6Addr::new(
+        0x2001, 0xdb8, 0, 0, 0, 0, 0, 1
+    ))));
 }
 
 #[test]
@@ -298,6 +308,8 @@ fn test_private_network_boundaries() {
     // 192.168.0.0/16 boundaries
     assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0))));
     assert!(is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 255, 255))));
-    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 167, 255, 255))));
+    assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(
+        192, 167, 255, 255
+    ))));
     assert!(!is_private_ip(IpAddr::V4(Ipv4Addr::new(192, 169, 0, 0))));
 }

@@ -25,8 +25,8 @@ use crate::kb::embeddings::EmbeddingEngine;
 use crate::kb::vectors::VectorStore;
 use crate::llm::LlmEngine;
 use llama_cpp_2::llama_backend::LlamaBackend;
-use std::sync::{Arc, Mutex};
 use parking_lot::RwLock;
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock as TokioRwLock;
 
 /// Application state
@@ -42,9 +42,7 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let backend = Arc::new(
-            LlamaBackend::init().expect("Failed to initialize llama backend")
-        );
+        let backend = Arc::new(LlamaBackend::init().expect("Failed to initialize llama backend"));
         Self {
             backend,
             db: Mutex::new(None),

@@ -105,8 +105,12 @@ fn get_ipv4_from_mapped(ipv6: &Ipv6Addr) -> Option<Ipv4Addr> {
     let segments = ipv6.segments();
     // IPv4-mapped format: ::ffff:x.x.x.x
     // segments[0..5] should be 0, segment[5] should be 0xffff
-    if segments[0] == 0 && segments[1] == 0 && segments[2] == 0
-        && segments[3] == 0 && segments[4] == 0 && segments[5] == 0xffff
+    if segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0xffff
     {
         let high = segments[6];
         let low = segments[7];
@@ -119,8 +123,12 @@ fn get_ipv4_from_mapped(ipv6: &Ipv6Addr) -> Option<Ipv4Addr> {
     }
 
     // IPv4-compatible format (deprecated but still checked): ::x.x.x.x
-    if segments[0] == 0 && segments[1] == 0 && segments[2] == 0
-        && segments[3] == 0 && segments[4] == 0 && segments[5] == 0
+    if segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && segments[5] == 0
         && (segments[6] != 0 || segments[7] != 0)
     {
         let high = segments[6];
@@ -169,7 +177,8 @@ pub fn is_ip_blocked(ip: &IpAddr, config: &SsrfConfig) -> Option<String> {
             }
             // Block AWS IMDSv2 IPv6 metadata endpoint (fd00:ec2::254)
             let segments = ipv6.segments();
-            if segments[0] == 0xfd00 && segments[1] == 0x0ec2
+            if segments[0] == 0xfd00
+                && segments[1] == 0x0ec2
                 && segments[2..7] == [0, 0, 0, 0, 0]
                 && segments[7] == 0x0254
             {
@@ -210,8 +219,10 @@ fn check_ipv4_blocked(ipv4: &Ipv4Addr, config: &SsrfConfig) -> Option<String> {
         return Some("this-network address blocked".into());
     }
     // Block AWS/cloud metadata endpoints (169.254.169.254)
-    if ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254
-        && ipv4.octets()[2] == 169 && ipv4.octets()[3] == 254
+    if ipv4.octets()[0] == 169
+        && ipv4.octets()[1] == 254
+        && ipv4.octets()[2] == 169
+        && ipv4.octets()[3] == 254
     {
         return Some("cloud metadata endpoint blocked".into());
     }
@@ -247,11 +258,13 @@ fn is_host_in_allowlist(host: &str, allowlist: &[String]) -> bool {
 /// 3. Resolves DNS and checks all resulting IPs against blocked ranges
 ///
 /// Returns Ok(()) if the URL is safe to access, Err otherwise.
-#[deprecated(since = "0.3.1", note = "Use validate_url_for_ssrf_with_pinning to prevent DNS rebinding")]
+#[deprecated(
+    since = "0.3.1",
+    note = "Use validate_url_for_ssrf_with_pinning to prevent DNS rebinding"
+)]
 pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, NetworkError> {
     // Parse URL
-    let url = Url::parse(url_str)
-        .map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
+    let url = Url::parse(url_str).map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
 
     // Only allow http and https schemes
     match url.scheme() {
@@ -265,7 +278,8 @@ pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, 
     }
 
     // Get host
-    let host = url.host_str()
+    let host = url
+        .host_str()
         .ok_or_else(|| NetworkError::InvalidUrl("URL has no host".into()))?;
 
     // Check allowlist first (explicit user opt-in bypasses other checks)
@@ -274,7 +288,8 @@ pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, 
     }
 
     // Get port (default to 80/443)
-    let port = url.port_or_known_default()
+    let port = url
+        .port_or_known_default()
         .ok_or_else(|| NetworkError::InvalidUrl("Cannot determine port".into()))?;
 
     // Resolve DNS and check all resulting IPs
@@ -286,7 +301,7 @@ pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, 
 
     if addrs.is_empty() {
         return Err(NetworkError::DnsResolutionFailed(
-            "DNS resolution returned no addresses".into()
+            "DNS resolution returned no addresses".into(),
         ));
     }
 
@@ -295,7 +310,9 @@ pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, 
         if let Some(reason) = is_ip_blocked(&addr.ip(), config) {
             return Err(NetworkError::SsrfBlocked(format!(
                 "Host '{}' resolves to blocked IP {}: {}",
-                host, addr.ip(), reason
+                host,
+                addr.ip(),
+                reason
             )));
         }
     }
@@ -322,8 +339,7 @@ pub async fn validate_url_for_ssrf_with_pinning(
     resolver: &PinnedDnsResolver,
 ) -> Result<ValidatedUrl, NetworkError> {
     // Parse URL
-    let url = Url::parse(url_str)
-        .map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
+    let url = Url::parse(url_str).map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
 
     // Only allow http and https schemes
     match url.scheme() {
@@ -337,7 +353,8 @@ pub async fn validate_url_for_ssrf_with_pinning(
     }
 
     // Get host for allowlist check
-    let host = url.host_str()
+    let host = url
+        .host_str()
         .ok_or_else(|| NetworkError::InvalidUrl("URL has no host".into()))?;
 
     // Check allowlist first (explicit user opt-in bypasses DNS validation)
@@ -353,17 +370,21 @@ pub async fn validate_url_for_ssrf_with_pinning(
     }
 
     // Use pinned resolver to validate and get IPs
-    resolver.resolve_and_validate(&url).await.map_err(|e| match e {
-        DnsError::ResolutionFailed(msg) => NetworkError::DnsResolutionFailed(msg),
-        DnsError::NoAddresses(host) => NetworkError::DnsResolutionFailed(
-            format!("DNS resolution returned no addresses for {}", host)
-        ),
-        DnsError::AllBlocked(msg) => NetworkError::SsrfBlocked(msg),
-        DnsError::NotValidated(host) => NetworkError::SsrfBlocked(
-            format!("Host '{}' was not pre-validated", host)
-        ),
-        DnsError::ResolverError(msg) => NetworkError::DnsResolutionFailed(msg),
-    })
+    resolver
+        .resolve_and_validate(&url)
+        .await
+        .map_err(|e| match e {
+            DnsError::ResolutionFailed(msg) => NetworkError::DnsResolutionFailed(msg),
+            DnsError::NoAddresses(host) => NetworkError::DnsResolutionFailed(format!(
+                "DNS resolution returned no addresses for {}",
+                host
+            )),
+            DnsError::AllBlocked(msg) => NetworkError::SsrfBlocked(msg),
+            DnsError::NotValidated(host) => {
+                NetworkError::SsrfBlocked(format!("Host '{}' was not pre-validated", host))
+            }
+            DnsError::ResolverError(msg) => NetworkError::DnsResolutionFailed(msg),
+        })
 }
 
 /// Validate a redirect target URL with DNS pinning
@@ -387,8 +408,7 @@ pub async fn validate_redirect_with_pinning(
 
 /// Canonicalize a URL (normalize for deduplication)
 pub fn canonicalize_url(url_str: &str) -> Result<String, NetworkError> {
-    let mut url = Url::parse(url_str)
-        .map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
+    let mut url = Url::parse(url_str).map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
 
     // Lowercase scheme and host
     // URL crate already does this, but be explicit
@@ -421,11 +441,23 @@ pub fn is_login_page(url: &Url, content: Option<&str>) -> bool {
 
     // Check URL patterns
     let login_patterns = [
-        "/login", "/signin", "/sign-in", "/sso", "/oauth",
-        "/auth", "/authenticate", "/saml", "/adfs",
-        "/accounts/login", "/user/login", "/session/new",
-        "login.microsoftonline.com", "accounts.google.com",
-        "login.salesforce.com", "sso.", "auth.",
+        "/login",
+        "/signin",
+        "/sign-in",
+        "/sso",
+        "/oauth",
+        "/auth",
+        "/authenticate",
+        "/saml",
+        "/adfs",
+        "/accounts/login",
+        "/user/login",
+        "/session/new",
+        "login.microsoftonline.com",
+        "accounts.google.com",
+        "login.salesforce.com",
+        "sso.",
+        "auth.",
     ];
 
     for pattern in &login_patterns {
@@ -560,12 +592,18 @@ mod tests {
         // IPv6-mapped cloud metadata (::ffff:169.254.169.254)
         let mapped_metadata = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xa9fe, 0xa9fe);
         let result = is_ip_blocked(&IpAddr::V6(mapped_metadata), &config);
-        assert!(result.is_some(), "IPv6-mapped metadata endpoint should be blocked");
+        assert!(
+            result.is_some(),
+            "IPv6-mapped metadata endpoint should be blocked"
+        );
 
         // IPv6-mapped public (::ffff:8.8.8.8) should NOT be blocked
         let mapped_public = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808);
         let result = is_ip_blocked(&IpAddr::V6(mapped_public), &config);
-        assert!(result.is_none(), "IPv6-mapped public IP should not be blocked");
+        assert!(
+            result.is_none(),
+            "IPv6-mapped public IP should not be blocked"
+        );
     }
 
     #[test]
@@ -575,16 +613,28 @@ mod tests {
         // IPv4-compatible loopback (::127.0.0.1, deprecated but should still be blocked)
         let compat_loopback = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0x7f00, 0x0001);
         let result = is_ip_blocked(&IpAddr::V6(compat_loopback), &config);
-        assert!(result.is_some(), "IPv4-compatible loopback should be blocked");
+        assert!(
+            result.is_some(),
+            "IPv4-compatible loopback should be blocked"
+        );
     }
 
     #[test]
     fn test_allowlist() {
         assert!(is_host_in_allowlist("example.com", &["example.com".into()]));
-        assert!(is_host_in_allowlist("sub.example.com", &["*.example.com".into()]));
-        assert!(is_host_in_allowlist("example.com", &["*.example.com".into()]));
+        assert!(is_host_in_allowlist(
+            "sub.example.com",
+            &["*.example.com".into()]
+        ));
+        assert!(is_host_in_allowlist(
+            "example.com",
+            &["*.example.com".into()]
+        ));
         assert!(!is_host_in_allowlist("evil.com", &["example.com".into()]));
-        assert!(!is_host_in_allowlist("notexample.com", &["*.example.com".into()]));
+        assert!(!is_host_in_allowlist(
+            "notexample.com",
+            &["*.example.com".into()]
+        ));
     }
 
     #[test]

@@ -54,11 +54,7 @@ impl TestContext {
     }
 
     /// Create a test file with content
-    pub fn create_test_file(
-        &self,
-        name: &str,
-        content: &str,
-    ) -> Result<PathBuf, std::io::Error> {
+    pub fn create_test_file(&self, name: &str, content: &str) -> Result<PathBuf, std::io::Error> {
         let path = self.temp_dir.path().join(name);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;

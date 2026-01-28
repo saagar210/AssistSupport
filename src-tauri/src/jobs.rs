@@ -284,7 +284,10 @@ pub struct JobContext {
 
 impl JobContext {
     pub fn new(job_id: String, cancel_token: CancellationToken) -> Self {
-        Self { job_id, cancel_token }
+        Self {
+            job_id,
+            cancel_token,
+        }
     }
 
     /// Check if the job has been cancelled
@@ -353,7 +356,10 @@ mod tests {
     #[test]
     fn test_job_type_display() {
         assert_eq!(JobType::IngestWeb.to_string(), "ingest_web");
-        assert_eq!(JobType::Custom("test".to_string()).to_string(), "custom:test");
+        assert_eq!(
+            JobType::Custom("test".to_string()).to_string(),
+            "custom:test"
+        );
     }
 
     #[test]

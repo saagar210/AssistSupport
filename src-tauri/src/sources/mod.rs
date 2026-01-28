@@ -3,4 +3,4 @@
 
 pub mod parser;
 
-pub use parser::{SourceDefinition, SourceFile, SourceType, ParseError};
+pub use parser::{ParseError, SourceDefinition, SourceFile, SourceType};

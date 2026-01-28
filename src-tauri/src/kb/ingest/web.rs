@@ -5,14 +5,17 @@
 //! All DNS resolution is performed once at validation time, and the validated
 //! IPs are used for the actual HTTP connection.
 
+use super::{
+    CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument,
+    ProgressCallback,
+};
 use crate::db::{Database, IngestRunCompletion, IngestSource};
 use crate::kb::dns::{build_ip_url, PinnedDnsResolver, ValidatedUrl};
-use crate::kb::network::{
-    canonicalize_url, extract_same_origin_links, is_login_page,
-    validate_url_for_ssrf_with_pinning, NetworkError, SsrfConfig,
-};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
-use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
+use crate::kb::network::{
+    canonicalize_url, extract_same_origin_links, is_login_page, validate_url_for_ssrf_with_pinning,
+    NetworkError, SsrfConfig,
+};
 use futures::StreamExt;
 use reqwest::Client;
 use std::collections::HashSet;
@@ -109,7 +112,8 @@ impl WebIngester {
         // Create resolver in a blocking context
         let resolver = futures::executor::block_on(async {
             PinnedDnsResolver::new(config.ssrf.clone()).await
-        }).map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+        })
+        .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
         Ok(Self {
             config,
@@ -137,158 +141,161 @@ impl WebIngester {
         &'a self,
         validated: ValidatedUrl,
         redirect_count: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = IngestResult<FetchedPage>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = IngestResult<FetchedPage>> + Send + 'a>>
+    {
         Box::pin(async move {
-        const MAX_REDIRECTS: usize = 10;
+            const MAX_REDIRECTS: usize = 10;
 
-        if redirect_count >= MAX_REDIRECTS {
-            return Err(IngestError::Network(NetworkError::RequestFailed(
-                "Too many redirects".into()
-            )));
-        }
-
-        // Build request URL - use IP directly to bypass DNS
-        let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
-            build_ip_url(&validated).map_err(|e| {
-                IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-            })?
-        } else {
-            // Allowlisted host - use original URL
-            (validated.url.to_string(), validated.host.clone())
-        };
-
-        // Make request with proper Host header
-        let response = self
-            .client
-            .get(&request_url)
-            .header("Host", &host_header)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    IngestError::Timeout(format!("Request to {} timed out", validated.url))
-                } else {
-                    IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-                }
-            })?;
-
-        // Check status - handle redirects manually with DNS pinning
-        let status = response.status();
-
-        // Handle redirects with DNS validation
-        if status.is_redirection() {
-            if let Some(location) = response.headers().get("location") {
-                let location_str = location.to_str().map_err(|_| {
-                    IngestError::Network(NetworkError::RequestFailed(
-                        "Invalid redirect location header".into()
-                    ))
-                })?;
-
-                // Resolve relative URLs against the current URL
-                let redirect_url = validated.url.join(location_str).map_err(|e| {
-                    IngestError::Network(NetworkError::InvalidUrl(e.to_string()))
-                })?;
-
-                // Validate redirect target with DNS pinning
-                let redirect_validated = validate_url_for_ssrf_with_pinning(
-                    redirect_url.as_str(),
-                    &self.resolver,
-                ).await?;
-
-                // Follow redirect recursively
-                return self.fetch_with_redirects(redirect_validated, redirect_count + 1).await;
-            }
-        }
-
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(IngestError::NotFound(validated.url.to_string()));
-        }
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(IngestError::AuthRequired(format!(
-                "Authentication required for {}",
-                validated.url
-            )));
-        }
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(IngestError::RateLimited(format!(
-                "Rate limited for {}",
-                validated.url
-            )));
-        }
-        if !status.is_success() {
-            return Err(IngestError::Network(NetworkError::RequestFailed(format!(
-                "HTTP {} for {}",
-                status, validated.url
-            ))));
-        }
-
-        // Extract headers
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        let etag = response
-            .headers()
-            .get("etag")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        let last_modified = response
-            .headers()
-            .get("last-modified")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        // Check content type is HTML
-        if let Some(ref ct) = content_type {
-            if !ct.contains("text/html") && !ct.contains("application/xhtml") {
-                return Err(IngestError::InvalidSource(format!(
-                    "URL {} is not HTML (content-type: {})",
-                    validated.url, ct
+            if redirect_count >= MAX_REDIRECTS {
+                return Err(IngestError::Network(NetworkError::RequestFailed(
+                    "Too many redirects".into(),
                 )));
             }
-        }
 
-        // Get content length if available
-        if let Some(content_length) = response.content_length() {
-            if content_length as usize > self.config.max_page_size {
-                return Err(IngestError::ContentTooLarge {
-                    size: content_length as usize,
-                    max: self.config.max_page_size,
-                });
+            // Build request URL - use IP directly to bypass DNS
+            let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
+                build_ip_url(&validated)
+                    .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?
+            } else {
+                // Allowlisted host - use original URL
+                (validated.url.to_string(), validated.host.clone())
+            };
+
+            // Make request with proper Host header
+            let response = self
+                .client
+                .get(&request_url)
+                .header("Host", &host_header)
+                .send()
+                .await
+                .map_err(|e| {
+                    if e.is_timeout() {
+                        IngestError::Timeout(format!("Request to {} timed out", validated.url))
+                    } else {
+                        IngestError::Network(NetworkError::RequestFailed(e.to_string()))
+                    }
+                })?;
+
+            // Check status - handle redirects manually with DNS pinning
+            let status = response.status();
+
+            // Handle redirects with DNS validation
+            if status.is_redirection() {
+                if let Some(location) = response.headers().get("location") {
+                    let location_str = location.to_str().map_err(|_| {
+                        IngestError::Network(NetworkError::RequestFailed(
+                            "Invalid redirect location header".into(),
+                        ))
+                    })?;
+
+                    // Resolve relative URLs against the current URL
+                    let redirect_url = validated.url.join(location_str).map_err(|e| {
+                        IngestError::Network(NetworkError::InvalidUrl(e.to_string()))
+                    })?;
+
+                    // Validate redirect target with DNS pinning
+                    let redirect_validated =
+                        validate_url_for_ssrf_with_pinning(redirect_url.as_str(), &self.resolver)
+                            .await?;
+
+                    // Follow redirect recursively
+                    return self
+                        .fetch_with_redirects(redirect_validated, redirect_count + 1)
+                        .await;
+                }
             }
-        }
 
-        // Read body with streaming size limit
-        // This ensures we stop reading early if content exceeds max size
-        let bytes = read_body_with_limit(response, self.config.max_page_size).await?;
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Err(IngestError::NotFound(validated.url.to_string()));
+            }
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
+                return Err(IngestError::AuthRequired(format!(
+                    "Authentication required for {}",
+                    validated.url
+                )));
+            }
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(IngestError::RateLimited(format!(
+                    "Rate limited for {}",
+                    validated.url
+                )));
+            }
+            if !status.is_success() {
+                return Err(IngestError::Network(NetworkError::RequestFailed(format!(
+                    "HTTP {} for {}",
+                    status, validated.url
+                ))));
+            }
 
-        // Convert to string
-        let content = String::from_utf8_lossy(&bytes).to_string();
+            // Extract headers
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            let etag = response
+                .headers()
+                .get("etag")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            let last_modified = response
+                .headers()
+                .get("last-modified")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
 
-        // Use the original URL for canonical (not the IP-based request URL)
-        let canonical = canonicalize_url(validated.url.as_str())?;
+            // Check content type is HTML
+            if let Some(ref ct) = content_type {
+                if !ct.contains("text/html") && !ct.contains("application/xhtml") {
+                    return Err(IngestError::InvalidSource(format!(
+                        "URL {} is not HTML (content-type: {})",
+                        validated.url, ct
+                    )));
+                }
+            }
 
-        // Check for login page
-        if is_login_page(&validated.url, Some(&content)) {
-            return Err(IngestError::AuthRequired(format!(
+            // Get content length if available
+            if let Some(content_length) = response.content_length() {
+                if content_length as usize > self.config.max_page_size {
+                    return Err(IngestError::ContentTooLarge {
+                        size: content_length as usize,
+                        max: self.config.max_page_size,
+                    });
+                }
+            }
+
+            // Read body with streaming size limit
+            // This ensures we stop reading early if content exceeds max size
+            let bytes = read_body_with_limit(response, self.config.max_page_size).await?;
+
+            // Convert to string
+            let content = String::from_utf8_lossy(&bytes).to_string();
+
+            // Use the original URL for canonical (not the IP-based request URL)
+            let canonical = canonicalize_url(validated.url.as_str())?;
+
+            // Check for login page
+            if is_login_page(&validated.url, Some(&content)) {
+                return Err(IngestError::AuthRequired(format!(
                 "URL {} appears to be a login page. Please download the content manually after authenticating.",
                 validated.url
             )));
-        }
+            }
 
-        // Extract title from HTML
-        let title = extract_html_title(&content);
+            // Extract title from HTML
+            let title = extract_html_title(&content);
 
-        Ok(FetchedPage {
-            url: validated.url.to_string(),
-            canonical_url: canonical,
-            content,
-            content_type,
-            etag,
-            last_modified,
-            title,
-        })
+            Ok(FetchedPage {
+                url: validated.url.to_string(),
+                canonical_url: canonical,
+                content,
+                content_type,
+                etag,
+                last_modified,
+                title,
+            })
         }) // Close Box::pin(async move {
     }
 
@@ -306,9 +313,8 @@ impl WebIngester {
 
         // Build request URL using pinned IP
         let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
-            build_ip_url(&validated).map_err(|e| {
-                IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-            })?
+            build_ip_url(&validated)
+                .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?
         } else {
             (validated.url.to_string(), validated.host.clone())
         };
@@ -323,9 +329,10 @@ impl WebIngester {
             request = request.header("If-Modified-Since", lm);
         }
 
-        let response = request.send().await.map_err(|e| {
-            IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
         // 304 Not Modified means no refresh needed
         Ok(response.status() != reqwest::StatusCode::NOT_MODIFIED)
@@ -342,8 +349,8 @@ impl WebIngester {
         let mut visited = HashSet::new();
         let mut to_visit = vec![start_url.to_string()];
 
-        let start_parsed = Url::parse(start_url)
-            .map_err(|e| IngestError::InvalidSource(e.to_string()))?;
+        let start_parsed =
+            Url::parse(start_url).map_err(|e| IngestError::InvalidSource(e.to_string()))?;
         let base_host = start_parsed.host_str().unwrap_or("");
 
         while let Some(url) = to_visit.pop() {
@@ -373,7 +380,9 @@ impl WebIngester {
                             let links = extract_same_origin_links(&page_url, &page.content);
                             for link in links {
                                 if let Ok(link_url) = Url::parse(&link) {
-                                    if link_url.host_str() == Some(base_host) && !visited.contains(&link) {
+                                    if link_url.host_str() == Some(base_host)
+                                        && !visited.contains(&link)
+                                    {
                                         to_visit.push(link);
                                     }
                                 }
@@ -482,7 +491,8 @@ impl WebIngester {
         let content_hash = sha256_hash(&text_content);
 
         // Check if content is unchanged (incremental ingestion)
-        let existing_doc: Option<(String, String, i32)> = db.conn()
+        let existing_doc: Option<(String, String, i32)> = db
+            .conn()
             .query_row(
                 "SELECT id, file_hash, chunk_count FROM kb_documents WHERE source_id = ?",
                 rusqlite::params![source.id],
@@ -600,7 +610,8 @@ impl WebIngester {
         for (i, chunk) in chunks.iter().enumerate() {
             if cancel_token.is_cancelled() {
                 // Rollback by deleting the document (cascades to chunks)
-                db.conn().execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
+                db.conn()
+                    .execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
                 db.complete_ingest_run(IngestRunCompletion {
                     run_id: &run_id,
                     status: "cancelled",
@@ -675,9 +686,8 @@ async fn read_body_with_limit(
     let mut total_bytes = 0usize;
 
     while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.map_err(|e| {
-            IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-        })?;
+        let chunk = chunk_result
+            .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
         total_bytes += chunk.len();
 
@@ -802,7 +812,7 @@ fn build_sections_from_headings(content: &str, headings: &[(usize, String)]) -> 
 
 /// Compute SHA256 hash of content
 fn sha256_hash(content: &str) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     hex::encode(hasher.finalize())
@@ -892,7 +902,8 @@ mod tests {
         let config = SsrfConfig::default();
         let resolver = PinnedDnsResolver::new(config).await.unwrap();
 
-        let result = validate_url_for_ssrf_with_pinning("http://1.1.1.1/path?query=1", &resolver).await;
+        let result =
+            validate_url_for_ssrf_with_pinning("http://1.1.1.1/path?query=1", &resolver).await;
         assert!(result.is_ok());
 
         let validated = result.unwrap();
@@ -907,7 +918,9 @@ mod tests {
             url: Url::parse("https://example.com/path").unwrap(),
             host: "example.com".to_string(),
             port: 443,
-            pinned_ips: vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34))],
+            pinned_ips: vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                93, 184, 216, 34,
+            ))],
         };
 
         let (ip_url, host_header) = build_ip_url(&validated).unwrap();

@@ -171,9 +171,11 @@ pub fn validate_path_within(path: &Path, allowed_root: &Path) -> Result<PathBuf,
     }
 
     // Canonicalize both paths to resolve symlinks and relative components
-    let canonical = path.canonicalize()
+    let canonical = path
+        .canonicalize()
         .map_err(|_| ValidationError::PathNotFound(path.display().to_string()))?;
-    let canonical_root = allowed_root.canonicalize()
+    let canonical_root = allowed_root
+        .canonicalize()
         .map_err(|_| ValidationError::PathNotFound(allowed_root.display().to_string()))?;
 
     // Verify the path is within the allowed root
@@ -251,9 +253,9 @@ pub fn validate_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
         ));
     }
 
-    let canonical_parent = parent.canonicalize().map_err(|_| {
-        ValidationError::PathNotFound(parent.display().to_string())
-    })?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|_| ValidationError::PathNotFound(parent.display().to_string()))?;
     let canonical_home = home
         .canonicalize()
         .map_err(|_| ValidationError::PathNotFound(home.display().to_string()))?;
@@ -276,8 +278,9 @@ pub fn validate_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
     }
 
     // Create the directory
-    fs::create_dir_all(&target_path)
-        .map_err(|e| ValidationError::InvalidFormat(format!("Failed to create directory: {}", e)))?;
+    fs::create_dir_all(&target_path).map_err(|e| {
+        ValidationError::InvalidFormat(format!("Failed to create directory: {}", e))
+    })?;
 
     Ok(target_path)
 }
@@ -286,7 +289,10 @@ pub fn validate_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
 pub fn validate_text_size(text: &str, max_bytes: usize) -> Result<(), ValidationError> {
     let size = text.len();
     if size > max_bytes {
-        return Err(ValidationError::InputTooLarge { size, max: max_bytes });
+        return Err(ValidationError::InputTooLarge {
+            size,
+            max: max_bytes,
+        });
     }
     Ok(())
 }
@@ -307,7 +313,7 @@ pub fn validate_ticket_id(ticket_id: &str) -> Result<(), ValidationError> {
     let re = regex_lite::Regex::new(r"^[A-Z]{2,10}-\d{1,7}$").unwrap();
     if !re.is_match(ticket_id) {
         return Err(ValidationError::InvalidFormat(
-            "Invalid ticket ID format. Expected: PROJECT-123".into()
+            "Invalid ticket ID format. Expected: PROJECT-123".into(),
         ));
     }
     Ok(())
@@ -317,7 +323,7 @@ pub fn validate_ticket_id(ticket_id: &str) -> Result<(), ValidationError> {
 pub fn validate_url(url: &str) -> Result<(), ValidationError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ValidationError::InvalidFormat(
-            "URL must start with http:// or https://".into()
+            "URL must start with http:// or https://".into(),
         ));
     }
     Ok(())
@@ -327,7 +333,7 @@ pub fn validate_url(url: &str) -> Result<(), ValidationError> {
 pub fn validate_https_url(url: &str) -> Result<(), ValidationError> {
     if !url.starts_with("https://") {
         return Err(ValidationError::InvalidFormat(
-            "URL must use HTTPS for security. HTTP connections require explicit opt-in.".into()
+            "URL must use HTTPS for security. HTTP connections require explicit opt-in.".into(),
         ));
     }
     Ok(())
@@ -360,8 +366,14 @@ mod tests {
     #[test]
     fn test_validate_non_empty() {
         assert!(validate_non_empty("hello").is_ok());
-        assert!(matches!(validate_non_empty(""), Err(ValidationError::EmptyInput)));
-        assert!(matches!(validate_non_empty("   "), Err(ValidationError::EmptyInput)));
+        assert!(matches!(
+            validate_non_empty(""),
+            Err(ValidationError::EmptyInput)
+        ));
+        assert!(matches!(
+            validate_non_empty("   "),
+            Err(ValidationError::EmptyInput)
+        ));
     }
 
     #[test]
@@ -404,10 +416,16 @@ mod tests {
         assert!(super::is_sensitive_path(&home.join(".ssh"), &home));
         assert!(super::is_sensitive_path(&home.join(".ssh/id_rsa"), &home));
         assert!(super::is_sensitive_path(&home.join(".aws"), &home));
-        assert!(super::is_sensitive_path(&home.join(".aws/credentials"), &home));
+        assert!(super::is_sensitive_path(
+            &home.join(".aws/credentials"),
+            &home
+        ));
         assert!(super::is_sensitive_path(&home.join(".gnupg"), &home));
         assert!(super::is_sensitive_path(&home.join(".config"), &home));
-        assert!(super::is_sensitive_path(&home.join("Library/Keychains"), &home));
+        assert!(super::is_sensitive_path(
+            &home.join("Library/Keychains"),
+            &home
+        ));
 
         // Should not be sensitive
         assert!(!super::is_sensitive_path(&home.join("Documents"), &home));

@@ -1,10 +1,13 @@
 //! YouTube transcript ingestion module for AssistSupport
 //! Uses yt-dlp to extract video transcripts/captions
 
+use super::{
+    CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument,
+    ProgressCallback,
+};
 use crate::db::{Database, IngestRunCompletion, IngestSource};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use crate::kb::network::NetworkError;
-use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
 use std::process::Command;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -25,7 +28,7 @@ pub struct YouTubeIngestConfig {
 impl Default for YouTubeIngestConfig {
     fn default() -> Self {
         Self {
-            ytdlp_path: "yt-dlp".into(), // Assume in PATH
+            ytdlp_path: "yt-dlp".into(),          // Assume in PATH
             max_transcript_size: 2 * 1024 * 1024, // 2MB
             timeout_secs: 60,
             preferred_language: "en".into(),
@@ -100,7 +103,11 @@ impl YouTubeIngester {
         }
 
         // Try to extract from plain video ID (11 characters)
-        if url.len() == 11 && url.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if url.len() == 11
+            && url
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             return Some(url.to_string());
         }
 
@@ -122,12 +129,7 @@ impl YouTubeIngester {
 
         // Run yt-dlp to get metadata
         let output = tokio::process::Command::new(&self.config.ytdlp_path)
-            .args([
-                "--dump-json",
-                "--no-download",
-                "--no-warnings",
-                &url,
-            ])
+            .args(["--dump-json", "--no-download", "--no-warnings", &url])
             .output()
             .await
             .map_err(IngestError::Io)?;
@@ -141,7 +143,10 @@ impl YouTubeIngester {
                 )));
             }
             if stderr.contains("Video unavailable") || stderr.contains("not available") {
-                return Err(IngestError::NotFound(format!("Video {} not found", video_id)));
+                return Err(IngestError::NotFound(format!(
+                    "Video {} not found",
+                    video_id
+                )));
             }
             return Err(IngestError::Parse(format!(
                 "Failed to fetch metadata: {}",
@@ -167,19 +172,14 @@ impl YouTubeIngester {
 
         // Use the --dump-json metadata to locate caption URLs
         let output = tokio::process::Command::new(&self.config.ytdlp_path)
-            .args([
-                "--dump-json",
-                "--no-download",
-                "--no-warnings",
-                &url,
-            ])
+            .args(["--dump-json", "--no-download", "--no-warnings", &url])
             .output()
             .await
             .map_err(IngestError::Io)?;
 
         if !output.status.success() {
             return Err(IngestError::Parse(
-                String::from_utf8_lossy(&output.stderr).to_string()
+                String::from_utf8_lossy(&output.stderr).to_string(),
             ));
         }
 
@@ -228,10 +228,7 @@ impl YouTubeIngester {
         }
 
         let selected = selected.ok_or_else(|| {
-            IngestError::NotFound(format!(
-                "No usable caption formats for video {}",
-                video_id
-            ))
+            IngestError::NotFound(format!("No usable caption formats for video {}", video_id))
         })?;
 
         let caption_url = selected
@@ -335,10 +332,12 @@ impl YouTubeIngester {
         // Fetch metadata with timeout
         let metadata = timeout(
             Duration::from_secs(self.config.timeout_secs),
-            self.fetch_metadata(&video_id)
+            self.fetch_metadata(&video_id),
         )
         .await
-        .map_err(|_| IngestError::Timeout(format!("Metadata fetch timed out for {}", video_id)))??;
+        .map_err(|_| {
+            IngestError::Timeout(format!("Metadata fetch timed out for {}", video_id))
+        })??;
 
         if cancel_token.is_cancelled() {
             return Err(IngestError::Cancelled);
@@ -357,10 +356,12 @@ impl YouTubeIngester {
         // Fetch transcript with timeout
         let transcript = timeout(
             Duration::from_secs(self.config.timeout_secs),
-            self.fetch_transcript(&video_id)
+            self.fetch_transcript(&video_id),
         )
         .await
-        .map_err(|_| IngestError::Timeout(format!("Transcript fetch timed out for {}", video_id)))??;
+        .map_err(|_| {
+            IngestError::Timeout(format!("Transcript fetch timed out for {}", video_id))
+        })??;
 
         if cancel_token.is_cancelled() {
             return Err(IngestError::Cancelled);
@@ -390,10 +391,13 @@ impl YouTubeIngester {
                 existing.last_ingested_at = Some(now.clone());
                 existing.status = "active".to_string();
                 existing.updated_at = now.clone();
-                existing.metadata_json = Some(serde_json::json!({
-                    "channel": metadata.channel,
-                    "duration_secs": metadata.duration_secs,
-                }).to_string());
+                existing.metadata_json = Some(
+                    serde_json::json!({
+                        "channel": metadata.channel,
+                        "duration_secs": metadata.duration_secs,
+                    })
+                    .to_string(),
+                );
                 db.save_ingest_source(&existing)?;
                 existing
             }
@@ -410,10 +414,13 @@ impl YouTubeIngester {
                     last_ingested_at: Some(now.clone()),
                     status: "active".to_string(),
                     error_message: None,
-                    metadata_json: Some(serde_json::json!({
-                        "channel": metadata.channel,
-                        "duration_secs": metadata.duration_secs,
-                    }).to_string()),
+                    metadata_json: Some(
+                        serde_json::json!({
+                            "channel": metadata.channel,
+                            "duration_secs": metadata.duration_secs,
+                        })
+                        .to_string(),
+                    ),
                     created_at: now.clone(),
                     updated_at: now.clone(),
                 };
@@ -427,14 +434,15 @@ impl YouTubeIngester {
 
         // Compute content hash for incremental ingestion
         let content_hash = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(full_transcript.as_bytes());
             hex::encode(hasher.finalize())
         };
 
         // Check if content is unchanged (incremental ingestion)
-        let existing_doc: Option<(String, String, i32)> = db.conn()
+        let existing_doc: Option<(String, String, i32)> = db
+            .conn()
             .query_row(
                 "SELECT id, file_hash, chunk_count FROM kb_documents WHERE source_id = ?",
                 rusqlite::params![source.id],
@@ -539,7 +547,8 @@ impl YouTubeIngester {
         // Insert chunks
         for (i, chunk) in chunks.iter().enumerate() {
             if cancel_token.is_cancelled() {
-                db.conn().execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
+                db.conn()
+                    .execute("DELETE FROM kb_documents WHERE id = ?", [&doc_id])?;
                 db.complete_ingest_run(IngestRunCompletion {
                     run_id: &run_id,
                     status: "cancelled",
@@ -600,9 +609,10 @@ impl YouTubeIngester {
 }
 
 fn parse_ms(value: &serde_json::Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)).or_else(|| {
-        value.as_str().and_then(|s| s.parse::<f64>().ok())
-    })
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|v| v as f64))
+        .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
 fn parse_json3_transcript(body: &str) -> Result<Vec<TranscriptEntry>, IngestError> {
@@ -690,7 +700,10 @@ mod tests {
         );
 
         // Invalid
-        assert_eq!(YouTubeIngester::extract_video_id("https://example.com"), None);
+        assert_eq!(
+            YouTubeIngester::extract_video_id("https://example.com"),
+            None
+        );
     }
 
     #[test]

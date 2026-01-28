@@ -1,10 +1,13 @@
 //! GitHub repository ingestion module for AssistSupport
 //! Indexes local Git repositories and supports private repos via token
 
+use super::{
+    CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument,
+    ProgressCallback,
+};
 use crate::db::{Database, IngestRunCompletion, IngestSource};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use crate::security::create_secure_dir;
-use super::{CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback};
 use base64::engine::general_purpose;
 use base64::Engine;
 use sha2::{Digest, Sha256};
@@ -43,29 +46,56 @@ impl Default for GitHubIngestConfig {
             .unwrap_or_else(|| std::env::temp_dir())
             .join("AssistSupport");
         Self {
-            allowed_roots: vec![
-                dirs::home_dir().unwrap_or_default(),
-            ],
-            max_file_size: 1024 * 1024, // 1MB per file
-            max_repo_size: 100 * 1024 * 1024, // 100MB total
-            max_clone_size: 1024 * 1024 * 1024, // 1GB per repo clone
+            allowed_roots: vec![dirs::home_dir().unwrap_or_default()],
+            max_file_size: 1024 * 1024,              // 1MB per file
+            max_repo_size: 100 * 1024 * 1024,        // 100MB total
+            max_clone_size: 1024 * 1024 * 1024,      // 1GB per repo clone
             max_cache_size: 10 * 1024 * 1024 * 1024, // 10GB total cache
             cache_root: app_dir.join("github-cache"),
             allowed_extensions: vec![
                 // Documentation
-                "md".into(), "mdx".into(), "txt".into(), "rst".into(), "adoc".into(),
+                "md".into(),
+                "mdx".into(),
+                "txt".into(),
+                "rst".into(),
+                "adoc".into(),
                 // Code - common languages
-                "py".into(), "js".into(), "ts".into(), "jsx".into(), "tsx".into(),
-                "rs".into(), "go".into(), "java".into(), "kt".into(), "swift".into(),
-                "c".into(), "cpp".into(), "h".into(), "hpp".into(),
-                "cs".into(), "rb".into(), "php".into(), "pl".into(),
+                "py".into(),
+                "js".into(),
+                "ts".into(),
+                "jsx".into(),
+                "tsx".into(),
+                "rs".into(),
+                "go".into(),
+                "java".into(),
+                "kt".into(),
+                "swift".into(),
+                "c".into(),
+                "cpp".into(),
+                "h".into(),
+                "hpp".into(),
+                "cs".into(),
+                "rb".into(),
+                "php".into(),
+                "pl".into(),
                 // Config
-                "json".into(), "yaml".into(), "yml".into(), "toml".into(),
-                "xml".into(), "ini".into(), "cfg".into(),
+                "json".into(),
+                "yaml".into(),
+                "yml".into(),
+                "toml".into(),
+                "xml".into(),
+                "ini".into(),
+                "cfg".into(),
                 // Web
-                "html".into(), "css".into(), "scss".into(), "less".into(),
+                "html".into(),
+                "css".into(),
+                "scss".into(),
+                "less".into(),
                 // Shell
-                "sh".into(), "bash".into(), "zsh".into(), "fish".into(),
+                "sh".into(),
+                "bash".into(),
+                "zsh".into(),
+                "fish".into(),
             ],
             skip_dirs: vec![
                 ".git".into(),
@@ -144,7 +174,9 @@ impl GitHubRemoteRepo {
 }
 
 fn is_valid_slug(value: &str) -> bool {
-    value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 fn sanitize_host_for_path(host_port: &str) -> String {
@@ -156,8 +188,8 @@ fn sanitize_host_for_path(host_port: &str) -> String {
 
 /// Parse an HTTPS repo URL into host/owner/repo components
 pub fn parse_https_repo_url(url: &str) -> IngestResult<GitHubRemoteRepo> {
-    let parsed = Url::parse(url)
-        .map_err(|e| IngestError::InvalidSource(format!("Invalid URL: {}", e)))?;
+    let parsed =
+        Url::parse(url).map_err(|e| IngestError::InvalidSource(format!("Invalid URL: {}", e)))?;
 
     if parsed.scheme() != "https" {
         return Err(IngestError::InvalidSource(
@@ -174,7 +206,10 @@ pub fn parse_https_repo_url(url: &str) -> IngestResult<GitHubRemoteRepo> {
     let host = parsed
         .host_str()
         .ok_or_else(|| IngestError::InvalidSource("Repository URL missing host".to_string()))?;
-    if !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
         return Err(IngestError::InvalidSource(
             "Repository host contains invalid characters".to_string(),
         ));
@@ -212,7 +247,8 @@ pub fn parse_https_repo_url(url: &str) -> IngestResult<GitHubRemoteRepo> {
 
     if !is_valid_slug(owner) || !is_valid_slug(&repo) {
         return Err(IngestError::InvalidSource(
-            "Repository owner and name must use only letters, numbers, '.', '-', or '_'".to_string(),
+            "Repository owner and name must use only letters, numbers, '.', '-', or '_'"
+                .to_string(),
         ));
     }
 
@@ -238,7 +274,8 @@ impl GitHubIngester {
     /// Validate that a path is within allowed roots
     fn validate_repo_path(&self, path: &Path) -> IngestResult<PathBuf> {
         // Canonicalize the path
-        let canonical = path.canonicalize()
+        let canonical = path
+            .canonicalize()
             .map_err(|e| IngestError::InvalidSource(format!("Invalid path: {}", e)))?;
 
         // Check it's within one of the allowed roots
@@ -315,9 +352,7 @@ impl GitHubIngester {
             }
 
             let path = entry.path();
-            let file_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             // Skip certain files
             if self.should_skip_file(file_name) {
@@ -330,8 +365,7 @@ impl GitHubIngester {
             }
 
             // Check file size
-            let metadata = entry.metadata()
-                .map_err(|e| IngestError::Io(e.into()))?;
+            let metadata = entry.metadata().map_err(|e| IngestError::Io(e.into()))?;
             let size = metadata.len();
 
             if size > self.config.max_file_size as u64 {
@@ -347,7 +381,8 @@ impl GitHubIngester {
                 });
             }
 
-            let relative_path = path.strip_prefix(repo_path)
+            let relative_path = path
+                .strip_prefix(repo_path)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string_lossy().to_string());
 
@@ -363,8 +398,7 @@ impl GitHubIngester {
 
     /// Read and parse a file
     fn read_file(&self, file: &RepoFile) -> IngestResult<String> {
-        let content = std::fs::read(&file.path)
-            .map_err(IngestError::Io)?;
+        let content = std::fs::read(&file.path).map_err(IngestError::Io)?;
 
         // Try to decode as UTF-8, fall back to lossy conversion
         Ok(String::from_utf8(content)
@@ -372,8 +406,7 @@ impl GitHubIngester {
     }
 
     fn ensure_cache_root(&self) -> IngestResult<()> {
-        create_secure_dir(&self.config.cache_root)
-            .map_err(|e| IngestError::Io(e.into()))
+        create_secure_dir(&self.config.cache_root).map_err(|e| IngestError::Io(e.into()))
     }
 
     fn cache_dir_for(&self, remote: &GitHubRemoteRepo) -> PathBuf {
@@ -417,7 +450,12 @@ impl GitHubIngester {
         for entry in WalkDir::new(path).follow_links(false) {
             let entry = entry.map_err(|e| IngestError::Io(e.into()))?;
             if entry.file_type().is_file() {
-                total = total.saturating_add(entry.metadata().map_err(|e| IngestError::Io(e.into()))?.len());
+                total = total.saturating_add(
+                    entry
+                        .metadata()
+                        .map_err(|e| IngestError::Io(e.into()))?
+                        .len(),
+                );
             }
         }
         Ok(total)
@@ -493,7 +531,8 @@ impl GitHubIngester {
         if let Some(token) = token {
             if !token.trim().is_empty() {
                 let header = Self::build_auth_header(token.trim());
-                command.arg("-c")
+                command
+                    .arg("-c")
                     .arg(format!("http.extraHeader=Authorization: Basic {}", header));
             }
         }
@@ -514,7 +553,10 @@ impl GitHubIngester {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let err_lower = stderr.to_lowercase();
 
-        if err_lower.contains("authentication") || err_lower.contains("403") || err_lower.contains("401") {
+        if err_lower.contains("authentication")
+            || err_lower.contains("403")
+            || err_lower.contains("401")
+        {
             return Err(IngestError::AuthRequired(
                 "Authentication failed for GitHub repository".to_string(),
             ));
@@ -783,7 +825,11 @@ impl GitHubIngester {
         };
         db.complete_ingest_run(IngestRunCompletion {
             run_id: &run_id,
-            status: if errors.is_empty() { "completed" } else { "completed_with_errors" },
+            status: if errors.is_empty() {
+                "completed"
+            } else {
+                "completed_with_errors"
+            },
             docs_added: documents.len() as i32,
             docs_updated: 0,
             docs_removed: 0,
@@ -868,7 +914,10 @@ impl GitHubIngester {
         }
 
         let repo_dir = self.clone_or_update_repo(&remote, token, cancel_token)?;
-        let source_uri = format!("github://{}/{}/{}", remote.host_port, remote.owner, remote.repo);
+        let source_uri = format!(
+            "github://{}/{}/{}",
+            remote.host_port, remote.owner, remote.repo
+        );
         let metadata = serde_json::json!({
             "url": remote.display_url(),
             "cache_path": repo_dir.to_string_lossy(),
@@ -962,8 +1011,10 @@ fn extract_code_headings(content: &str, filename: &str) -> Vec<(usize, String)> 
         }
         "js" | "ts" | "jsx" | "tsx" => {
             // JavaScript/TypeScript: function, class
-            let class_re = regex_lite::Regex::new(r"^\s*(export\s+)?(class|interface)\s+(\w+)").unwrap();
-            let fn_re = regex_lite::Regex::new(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)").unwrap();
+            let class_re =
+                regex_lite::Regex::new(r"^\s*(export\s+)?(class|interface)\s+(\w+)").unwrap();
+            let fn_re =
+                regex_lite::Regex::new(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)").unwrap();
 
             for line in content.lines() {
                 if let Some(cap) = class_re.captures(line) {
@@ -999,8 +1050,14 @@ mod tests {
 
     #[test]
     fn test_repo_name() {
-        assert_eq!(GitHubIngester::repo_name(Path::new("/home/user/my-repo")), "my-repo");
-        assert_eq!(GitHubIngester::repo_name(Path::new("/var/projects/awesome-project")), "awesome-project");
+        assert_eq!(
+            GitHubIngester::repo_name(Path::new("/home/user/my-repo")),
+            "my-repo"
+        );
+        assert_eq!(
+            GitHubIngester::repo_name(Path::new("/var/projects/awesome-project")),
+            "awesome-project"
+        );
     }
 
     #[test]

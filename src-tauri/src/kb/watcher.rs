@@ -1,10 +1,13 @@
 //! File watcher for KB auto-sync
 //! Watches KB folder for changes and triggers incremental indexing
 
-use notify::{RecommendedWatcher, RecursiveMode, EventKind};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, FileIdMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -140,11 +143,8 @@ fn run_watcher(
 ) -> Result<(), WatcherError> {
     let (debounce_tx, debounce_rx) = std::sync::mpsc::channel();
 
-    let mut debouncer: Debouncer<RecommendedWatcher, FileIdMap> = new_debouncer(
-        DEBOUNCE_DURATION,
-        None,
-        debounce_tx,
-    )?;
+    let mut debouncer: Debouncer<RecommendedWatcher, FileIdMap> =
+        new_debouncer(DEBOUNCE_DURATION, None, debounce_tx)?;
 
     // Debouncer now implements Watcher directly
     debouncer.watch(&folder, RecursiveMode::Recursive)?;

@@ -110,7 +110,7 @@ fn test_unicode_stripped_correctly() {
     let test_cases = vec![
         ("café", "caf"),
         ("naïve", "nave"),
-        ("日本語", ""),  // All non-ASCII
+        ("日本語", ""), // All non-ASCII
         ("hello世界", "hello"),
         ("Zürich", "zrich"),
         ("straße", "strae"), // German ß
@@ -118,11 +118,7 @@ fn test_unicode_stripped_correctly() {
 
     for (input, expected) in test_cases {
         let result = normalize_namespace_id(input);
-        assert_eq!(
-            result, expected,
-            "Unicode handling failed for '{}'",
-            input
-        );
+        assert_eq!(result, expected, "Unicode handling failed for '{}'", input);
     }
 }
 
@@ -311,7 +307,9 @@ fn test_normalized_output_is_valid() {
 
         // Normalized output should only contain valid characters
         assert!(
-            normalized.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            normalized
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-'),
             "Normalized '{}' contains invalid chars: '{}'",
             input,
             normalized

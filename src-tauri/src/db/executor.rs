@@ -104,9 +104,7 @@ impl DbExecutor {
         F: FnOnce(&rusqlite::Connection) -> DbResult<T> + Send + 'static,
         T: Send + 'static,
     {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.run(op))
-        })
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(self.run(op)))
     }
 }
 
@@ -126,7 +124,9 @@ pub enum DbExecutorError {
 impl From<DbExecutorError> for crate::error::AppError {
     fn from(e: DbExecutorError) -> Self {
         match e {
-            DbExecutorError::Database(db_err) => crate::error::AppError::db_query_failed(db_err.to_string()),
+            DbExecutorError::Database(db_err) => {
+                crate::error::AppError::db_query_failed(db_err.to_string())
+            }
             DbExecutorError::ChannelClosed => {
                 crate::error::AppError::internal("Database executor channel closed")
             }
@@ -140,8 +140,8 @@ impl From<DbExecutorError> for crate::error::AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use crate::security::MasterKey;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_executor_basic_query() {

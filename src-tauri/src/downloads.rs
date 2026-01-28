@@ -1,12 +1,12 @@
 //! Model download manager for AssistSupport
 //! Supports HuggingFace downloads with resume, progress, and checksum verification
 
-use std::path::{Path, PathBuf};
-use std::io::{Read, Write};
+use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
-use sha2::{Sha256, Digest};
 use tokio::sync::mpsc;
 
 use crate::security::{FileKeyStore, TOKEN_HUGGINGFACE};
@@ -32,10 +32,22 @@ pub enum DownloadError {
 /// Download progress event
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum DownloadProgress {
-    Started { url: String, total_bytes: Option<u64> },
-    Progress { downloaded: u64, total: Option<u64>, speed_bps: u64 },
-    Completed { path: PathBuf, sha256: String },
-    Error { message: String },
+    Started {
+        url: String,
+        total_bytes: Option<u64>,
+    },
+    Progress {
+        downloaded: u64,
+        total: Option<u64>,
+        speed_bps: u64,
+    },
+    Completed {
+        path: PathBuf,
+        sha256: String,
+    },
+    Error {
+        message: String,
+    },
     Cancelled,
 }
 
@@ -128,7 +140,9 @@ impl DownloadManager {
 
         let url = source.download_url();
         let dest_path = self.models_dir.join(&source.filename);
-        let partial_path = self.downloads_dir.join(format!("{}.partial", source.filename));
+        let partial_path = self
+            .downloads_dir
+            .join(format!("{}.partial", source.filename));
 
         // Get HuggingFace token from file-based storage (optional)
         let hf_token = FileKeyStore::get_token(TOKEN_HUGGINGFACE).ok().flatten();
@@ -167,23 +181,29 @@ impl DownloadManager {
             Ok(response) => response,
             Err(e) => {
                 let message = format!("Network error: {}", e);
-                let _ = progress_tx.send(DownloadProgress::Error {
-                    message: message.clone(),
-                }).await;
+                let _ = progress_tx
+                    .send(DownloadProgress::Error {
+                        message: message.clone(),
+                    })
+                    .await;
                 cleanup_partial_file(&partial_path);
                 return Err(DownloadError::Network(message));
             }
         };
 
-        if !response.status().is_success() && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        if !response.status().is_success()
+            && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        {
             let message = format!(
                 "HTTP {}: {}",
                 response.status(),
                 response.status().canonical_reason().unwrap_or("Unknown")
             );
-            let _ = progress_tx.send(DownloadProgress::Error {
-                message: message.clone(),
-            }).await;
+            let _ = progress_tx
+                .send(DownloadProgress::Error {
+                    message: message.clone(),
+                })
+                .await;
             cleanup_partial_file(&partial_path);
             return Err(DownloadError::Network(format!(
                 "HTTP {}: {}",
@@ -198,13 +218,20 @@ impl DownloadManager {
         }
 
         // Get total size
-        let total_bytes = response.content_length()
-            .map(|len| if resume_from > 0 { len + resume_from } else { len });
+        let total_bytes = response.content_length().map(|len| {
+            if resume_from > 0 {
+                len + resume_from
+            } else {
+                len
+            }
+        });
 
-        let _ = progress_tx.send(DownloadProgress::Started {
-            url: url.clone(),
-            total_bytes,
-        }).await;
+        let _ = progress_tx
+            .send(DownloadProgress::Started {
+                url: url.clone(),
+                total_bytes,
+            })
+            .await;
 
         // Open file for writing (append if resuming)
         let mut file = OpenOptions::new()
@@ -235,17 +262,21 @@ impl DownloadManager {
                 Ok(data) => data,
                 Err(e) => {
                     let message = format!("Network error: {}", e);
-                    let _ = progress_tx.send(DownloadProgress::Error {
-                        message: message.clone(),
-                    }).await;
+                    let _ = progress_tx
+                        .send(DownloadProgress::Error {
+                            message: message.clone(),
+                        })
+                        .await;
                     cleanup_partial_file(&partial_path);
                     return Err(DownloadError::Network(message));
                 }
             };
             if let Err(e) = file.write_all(&chunk) {
-                let _ = progress_tx.send(DownloadProgress::Error {
-                    message: "Failed to write download data".to_string(),
-                }).await;
+                let _ = progress_tx
+                    .send(DownloadProgress::Error {
+                        message: "Failed to write download data".to_string(),
+                    })
+                    .await;
                 cleanup_partial_file(&partial_path);
                 return Err(DownloadError::Io(e));
             }
@@ -258,11 +289,13 @@ impl DownloadManager {
                 let bytes_since = downloaded - last_downloaded;
                 let speed_bps = (bytes_since as f64 / elapsed_secs) as u64;
 
-                let _ = progress_tx.send(DownloadProgress::Progress {
-                    downloaded,
-                    total: total_bytes,
-                    speed_bps,
-                }).await;
+                let _ = progress_tx
+                    .send(DownloadProgress::Progress {
+                        downloaded,
+                        total: total_bytes,
+                        speed_bps,
+                    })
+                    .await;
 
                 last_progress_time = now;
                 last_downloaded = downloaded;
@@ -271,9 +304,11 @@ impl DownloadManager {
 
         // Sync to disk
         if let Err(e) = file.sync_all() {
-            let _ = progress_tx.send(DownloadProgress::Error {
-                message: "Failed to sync download to disk".to_string(),
-            }).await;
+            let _ = progress_tx
+                .send(DownloadProgress::Error {
+                    message: "Failed to sync download to disk".to_string(),
+                })
+                .await;
             cleanup_partial_file(&partial_path);
             return Err(DownloadError::Io(e));
         }
@@ -283,9 +318,11 @@ impl DownloadManager {
         let sha256 = match self.calculate_sha256(&partial_path) {
             Ok(hash) => hash,
             Err(e) => {
-                let _ = progress_tx.send(DownloadProgress::Error {
-                    message: "Checksum calculation failed".to_string(),
-                }).await;
+                let _ = progress_tx
+                    .send(DownloadProgress::Error {
+                        message: "Checksum calculation failed".to_string(),
+                    })
+                    .await;
                 cleanup_partial_file(&partial_path);
                 return Err(e);
             }
@@ -294,9 +331,11 @@ impl DownloadManager {
         // Verify checksum if provided
         if let Some(expected) = &source.sha256 {
             if sha256.to_lowercase() != expected.to_lowercase() {
-                let _ = progress_tx.send(DownloadProgress::Error {
-                    message: "Checksum mismatch".to_string(),
-                }).await;
+                let _ = progress_tx
+                    .send(DownloadProgress::Error {
+                        message: "Checksum mismatch".to_string(),
+                    })
+                    .await;
                 cleanup_partial_file(&partial_path);
                 return Err(DownloadError::ChecksumMismatch {
                     expected: expected.clone(),
@@ -307,17 +346,21 @@ impl DownloadManager {
 
         // Move to final location
         if let Err(e) = std::fs::rename(&partial_path, &dest_path) {
-            let _ = progress_tx.send(DownloadProgress::Error {
-                message: "Failed to finalize download".to_string(),
-            }).await;
+            let _ = progress_tx
+                .send(DownloadProgress::Error {
+                    message: "Failed to finalize download".to_string(),
+                })
+                .await;
             cleanup_partial_file(&partial_path);
             return Err(DownloadError::Io(e));
         }
 
-        let _ = progress_tx.send(DownloadProgress::Completed {
-            path: dest_path.clone(),
-            sha256: sha256.clone(),
-        }).await;
+        let _ = progress_tx
+            .send(DownloadProgress::Completed {
+                path: dest_path.clone(),
+                sha256: sha256.clone(),
+            })
+            .await;
 
         Ok(dest_path)
     }
@@ -330,7 +373,9 @@ impl DownloadManager {
 
         loop {
             let n = file.read(&mut buffer)?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             hasher.update(&buffer[..n]);
         }
 
@@ -369,19 +414,20 @@ fn cleanup_partial_file(path: &Path) {
 
 /// Fetch file info from HuggingFace API to get SHA256 checksum
 /// Returns (size_bytes, sha256) if successful
-pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, String), DownloadError> {
+pub async fn fetch_hf_file_info(
+    repo: &str,
+    filename: &str,
+) -> Result<(u64, String), DownloadError> {
     // HuggingFace API endpoint for file metadata
-    let url = format!(
-        "https://huggingface.co/api/models/{}/tree/main",
-        repo
-    );
+    let url = format!("https://huggingface.co/api/models/{}/tree/main", repo);
 
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| DownloadError::Network(e.to_string()))?;
-    let response = client.get(&url)
+    let response = client
+        .get(&url)
         .header("Accept", "application/json")
         .send()
         .await
@@ -389,37 +435,43 @@ pub async fn fetch_hf_file_info(repo: &str, filename: &str) -> Result<(u64, Stri
 
     if !response.status().is_success() {
         return Err(DownloadError::HuggingFaceApi(format!(
-            "HTTP {}", response.status()
+            "HTTP {}",
+            response.status()
         )));
     }
 
-    let body: serde_json::Value = response.json()
+    let body: serde_json::Value = response
+        .json()
         .await
         .map_err(|e| DownloadError::Network(e.to_string()))?;
 
     // Find the file in the response
-    let files = body.as_array()
+    let files = body
+        .as_array()
         .ok_or_else(|| DownloadError::HuggingFaceApi("Invalid API response".into()))?;
 
     for file in files {
         if file.get("path").and_then(|p| p.as_str()) == Some(filename) {
             // Get LFS info which contains the SHA256
             if let Some(lfs) = file.get("lfs") {
-                let size = lfs.get("size")
+                let size = lfs
+                    .get("size")
                     .and_then(|s| s.as_u64())
                     .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
-                let sha256 = lfs.get("oid")
+                let sha256 = lfs
+                    .get("oid")
                     .and_then(|s| s.as_str())
                     .ok_or_else(|| DownloadError::HuggingFaceApi("Missing LFS oid".into()))?
                     .to_string();
                 return Ok((size, sha256));
             }
             // Non-LFS file - get size from file object
-            let _size = file.get("size")
+            let _size = file
+                .get("size")
                 .and_then(|s| s.as_u64())
                 .ok_or_else(|| DownloadError::HuggingFaceApi("Missing size".into()))?;
             return Err(DownloadError::HuggingFaceApi(
-                "File is not LFS - no SHA256 available".into()
+                "File is not LFS - no SHA256 available".into(),
             ));
         }
     }
@@ -435,28 +487,36 @@ pub fn recommended_models() -> Vec<ModelSource> {
             repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".to_string(),
             filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string(),
             size_bytes: Some(807_694_464),
-            sha256: Some("6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83".to_string()),
+            sha256: Some(
+                "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83".to_string(),
+            ),
         },
         ModelSource {
             name: "Llama-3.2-3B-Instruct (Balanced)".to_string(),
             repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".to_string(),
             filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
             size_bytes: Some(2_019_377_696),
-            sha256: Some("6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff".to_string()),
+            sha256: Some(
+                "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff".to_string(),
+            ),
         },
         ModelSource {
             name: "Phi-3.1-mini-4k-instruct (Reasoning)".to_string(),
             repo: "bartowski/Phi-3.1-mini-4k-instruct-GGUF".to_string(),
             filename: "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf".to_string(),
             size_bytes: Some(2_393_232_096),
-            sha256: Some("d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f".to_string()),
+            sha256: Some(
+                "d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f".to_string(),
+            ),
         },
         ModelSource {
             name: "nomic-embed-text (Embeddings)".to_string(),
             repo: "nomic-ai/nomic-embed-text-v1.5-GGUF".to_string(),
             filename: "nomic-embed-text-v1.5.Q5_K_M.gguf".to_string(),
             size_bytes: Some(99_588_928),
-            sha256: Some("0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6".to_string()),
+            sha256: Some(
+                "0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6".to_string(),
+            ),
         },
     ]
 }

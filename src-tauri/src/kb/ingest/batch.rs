@@ -1,14 +1,15 @@
 //! Batch processing module for AssistSupport
 //! Handles batch ingestion of multiple sources
 
+use super::{
+    github::{GitHubIngestConfig, GitHubIngester},
+    web::{WebIngestConfig, WebIngester},
+    youtube::{YouTubeIngestConfig, YouTubeIngester},
+    CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument,
+    ProgressCallback,
+};
 use crate::db::Database;
 use crate::validation::validate_within_home;
-use super::{
-    CancellationToken, IngestError, IngestPhase, IngestProgress, IngestResult, IngestedDocument, ProgressCallback,
-    web::{WebIngester, WebIngestConfig},
-    youtube::{YouTubeIngester, YouTubeIngestConfig},
-    github::{GitHubIngester, GitHubIngestConfig},
-};
 use std::path::Path;
 
 /// Batch ingestion configuration
@@ -48,12 +49,16 @@ impl BatchSource {
 
         // YouTube URLs
         if source.contains("youtube.com") || source.contains("youtu.be") {
-            return Some(BatchSource::YouTube { url: source.to_string() });
+            return Some(BatchSource::YouTube {
+                url: source.to_string(),
+            });
         }
 
         // HTTP(S) URLs
         if source.starts_with("http://") || source.starts_with("https://") {
-            return Some(BatchSource::WebPage { url: source.to_string() });
+            return Some(BatchSource::WebPage {
+                url: source.to_string(),
+            });
         }
 
         // Local paths (for GitHub repos) - must be within home directory

@@ -52,7 +52,11 @@ fn test_basic_ingest_index_search() {
 
     // Search for "password"
     let search_results = HybridSearch::fts_search(&ctx.db, "password", 10).expect("Search failed");
-    assert_eq!(search_results.len(), 1, "Should find 1 result for 'password'");
+    assert_eq!(
+        search_results.len(),
+        1,
+        "Should find 1 result for 'password'"
+    );
     assert!(
         search_results[0].content.contains("password"),
         "Result should contain 'password'"
@@ -60,7 +64,11 @@ fn test_basic_ingest_index_search() {
 
     // Search for "billing"
     let billing_results = HybridSearch::fts_search(&ctx.db, "billing", 10).expect("Search failed");
-    assert_eq!(billing_results.len(), 1, "Should find 1 result for 'billing'");
+    assert_eq!(
+        billing_results.len(),
+        1,
+        "Should find 1 result for 'billing'"
+    );
 
     // Search for something in both
     let support_results = HybridSearch::fts_search(&ctx.db, "support", 10).expect("Search failed");
@@ -143,7 +151,8 @@ fn test_namespace_isolation() {
         .expect("Failed to index external");
 
     // Search without filter - should find both
-    let all_results = HybridSearch::fts_search(&ctx.db, "documentation", 10).expect("Search failed");
+    let all_results =
+        HybridSearch::fts_search(&ctx.db, "documentation", 10).expect("Search failed");
     assert_eq!(all_results.len(), 2, "Should find 2 results without filter");
 }
 
@@ -153,7 +162,10 @@ fn test_default_namespace() {
 
     // Create and index without specifying namespace
     let kb_dir = ctx
-        .create_test_files("kb", &[("doc.md", "# Default\n\nDefault namespace content.")])
+        .create_test_files(
+            "kb",
+            &[("doc.md", "# Default\n\nDefault namespace content.")],
+        )
         .expect("Failed to create test files");
 
     let indexer = KbIndexer::new();
@@ -163,7 +175,10 @@ fn test_default_namespace() {
 
     // Search should work
     let results = HybridSearch::fts_search(&ctx.db, "default", 10).expect("Search failed");
-    assert!(!results.is_empty(), "Should find content in default namespace");
+    assert!(
+        !results.is_empty(),
+        "Should find content in default namespace"
+    );
 }
 
 // ============================================================================
@@ -182,21 +197,31 @@ fn test_document_update_re_index() {
     fs::write(&doc_path, "# Original\n\nOriginal content here.").expect("Failed to write");
 
     let indexer = KbIndexer::new();
-    indexer.index_folder(&ctx.db, &kb_dir, noop_progress).expect("Initial index failed");
+    indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Initial index failed");
 
     // Verify original content is searchable
-    let original_results = HybridSearch::fts_search(&ctx.db, "original", 10).expect("Search failed");
+    let original_results =
+        HybridSearch::fts_search(&ctx.db, "original", 10).expect("Search failed");
     assert_eq!(original_results.len(), 1, "Should find original content");
 
     // Update content
-    fs::write(&doc_path, "# Updated\n\nCompletely updated content here.").expect("Failed to update");
+    fs::write(&doc_path, "# Updated\n\nCompletely updated content here.")
+        .expect("Failed to update");
 
     // Re-index
-    indexer.index_folder(&ctx.db, &kb_dir, noop_progress).expect("Re-index failed");
+    indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Re-index failed");
 
     // Old content should no longer be found
     let old_results = HybridSearch::fts_search(&ctx.db, "original", 10).expect("Search failed");
-    assert_eq!(old_results.len(), 0, "Should not find old content after update");
+    assert_eq!(
+        old_results.len(),
+        0,
+        "Should not find old content after update"
+    );
 
     // New content should be found
     let new_results = HybridSearch::fts_search(&ctx.db, "updated", 10).expect("Search failed");
@@ -213,7 +238,9 @@ fn test_document_removal() {
     fs::write(&doc_path, "# Content\n\nSearchable content.").expect("Failed to write");
 
     let indexer = KbIndexer::new();
-    indexer.index_folder(&ctx.db, &kb_dir, noop_progress).expect("Initial index failed");
+    indexer
+        .index_folder(&ctx.db, &kb_dir, noop_progress)
+        .expect("Initial index failed");
 
     // Verify content is searchable
     let results = HybridSearch::fts_search(&ctx.db, "searchable", 10).expect("Search failed");
@@ -223,7 +250,9 @@ fn test_document_removal() {
     let doc_path_str = doc_path.to_string_lossy().to_string();
 
     // Remove using the indexer API
-    indexer.remove_document(&ctx.db, &doc_path_str).expect("Failed to remove document");
+    indexer
+        .remove_document(&ctx.db, &doc_path_str)
+        .expect("Failed to remove document");
 
     // Content should no longer be found
     let results_after = HybridSearch::fts_search(&ctx.db, "searchable", 10).expect("Search failed");
@@ -262,7 +291,10 @@ fn test_large_document_chunking() {
         .conn()
         .query_row("SELECT COUNT(*) FROM kb_chunks", [], |row| row.get(0))
         .expect("Failed to count chunks");
-    assert!(chunk_count > 1, "Large document should be split into multiple chunks");
+    assert!(
+        chunk_count > 1,
+        "Large document should be split into multiple chunks"
+    );
 }
 
 // ============================================================================
@@ -274,7 +306,10 @@ fn test_text_file_indexing() {
     let ctx = common::TestContext::new().expect("Failed to create context");
 
     let kb_dir = ctx
-        .create_test_files("kb", &[("readme.txt", "Plain text file content for testing.")])
+        .create_test_files(
+            "kb",
+            &[("readme.txt", "Plain text file content for testing.")],
+        )
         .expect("Failed to create test files");
 
     let indexer = KbIndexer::new();
@@ -354,11 +389,22 @@ fn test_indexing_with_progress() {
             IndexProgress::Started { total_files } => {
                 println!("Started: {} files", total_files);
             }
-            IndexProgress::Processing { current, total, file_name } => {
+            IndexProgress::Processing {
+                current,
+                total,
+                file_name,
+            } => {
                 println!("Processing: {}/{} - {}", current, total, file_name);
             }
-            IndexProgress::Completed { indexed, skipped, errors } => {
-                println!("Completed: {} indexed, {} skipped, {} errors", indexed, skipped, errors);
+            IndexProgress::Completed {
+                indexed,
+                skipped,
+                errors,
+            } => {
+                println!(
+                    "Completed: {} indexed, {} skipped, {} errors",
+                    indexed, skipped, errors
+                );
             }
             IndexProgress::Error { file_name, message } => {
                 println!("Error: {} - {}", file_name, message);
@@ -410,7 +456,10 @@ fn test_nested_directories() {
         .index_folder(&ctx.db, &kb_dir, noop_progress)
         .expect("Indexing failed");
 
-    assert_eq!(result.indexed, 2, "Should index files in nested directories");
+    assert_eq!(
+        result.indexed, 2,
+        "Should index files in nested directories"
+    );
 
     // Both should be searchable
     let root_results = HybridSearch::fts_search(&ctx.db, "root", 10).expect("Search failed");
@@ -427,7 +476,10 @@ fn test_special_characters_in_search() {
     let kb_dir = ctx
         .create_test_files(
             "kb",
-            &[("special.md", "# Special\n\nC++ programming and C# development.")],
+            &[(
+                "special.md",
+                "# Special\n\nC++ programming and C# development.",
+            )],
         )
         .expect("Failed to create test files");
 
@@ -438,7 +490,10 @@ fn test_special_characters_in_search() {
 
     // FTS5 handles special characters
     let results = HybridSearch::fts_search(&ctx.db, "programming", 10).expect("Search failed");
-    assert!(!results.is_empty(), "Should find content with special chars");
+    assert!(
+        !results.is_empty(),
+        "Should find content with special chars"
+    );
 }
 
 #[test]
@@ -542,7 +597,10 @@ fn test_e2e_incremental_reindex() {
 
     // 1. Create initial file
     let kb_dir = ctx
-        .create_test_files("kb", &[("guide.md", "# Original Guide\n\nOriginal content here.")])
+        .create_test_files(
+            "kb",
+            &[("guide.md", "# Original Guide\n\nOriginal content here.")],
+        )
         .expect("Failed to create test files");
 
     let indexer = KbIndexer::new();
@@ -560,7 +618,8 @@ fn test_e2e_incremental_reindex() {
 
     // 4. Update the file
     let guide_path = kb_dir.join("guide.md");
-    fs::write(&guide_path, "# Updated Guide\n\nNew updated content.").expect("Failed to update file");
+    fs::write(&guide_path, "# Updated Guide\n\nNew updated content.")
+        .expect("Failed to update file");
 
     // 5. Re-index
     let result2 = indexer
@@ -587,7 +646,10 @@ fn test_e2e_multi_format_support() {
         .create_test_files(
             "kb",
             &[
-                ("readme.md", "# Markdown\n\nThis is markdown content about kubernetes."),
+                (
+                    "readme.md",
+                    "# Markdown\n\nThis is markdown content about kubernetes.",
+                ),
                 ("notes.txt", "Plain text notes about docker containers."),
             ],
         )

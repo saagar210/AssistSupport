@@ -327,7 +327,10 @@ mod tests {
     fn test_has_data_with_file() {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("test.txt");
-        File::create(&file_path).unwrap().write_all(b"data").unwrap();
+        File::create(&file_path)
+            .unwrap()
+            .write_all(b"data")
+            .unwrap();
         assert!(has_data(&file_path));
     }
 

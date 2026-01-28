@@ -269,7 +269,10 @@ impl AuditLogger {
 
         // Set secure permissions on new files (0o600)
         if is_new {
-            let _ = crate::security::set_secure_permissions(&log_path, crate::security::FILE_PERMISSIONS);
+            let _ = crate::security::set_secure_permissions(
+                &log_path,
+                crate::security::FILE_PERMISSIONS,
+            );
         }
 
         let mut writer = BufWriter::new(file);
@@ -477,7 +480,7 @@ fn audit_sender() -> &'static std::sync::mpsc::SyncSender<AuditEntry> {
 pub fn log_audit_best_effort(entry: AuditEntry) {
     let sender = audit_sender();
     if let Err(std::sync::mpsc::TrySendError::Full(entry))
-        | Err(std::sync::mpsc::TrySendError::Disconnected(entry)) = sender.try_send(entry)
+    | Err(std::sync::mpsc::TrySendError::Disconnected(entry)) = sender.try_send(entry)
     {
         // Channel full or disconnected — buffer for later retry
         add_to_ring_buffer(entry);
@@ -488,7 +491,10 @@ pub fn log_audit_best_effort(entry: AuditEntry) {
 ///
 /// DEPRECATED: Use `log_audit_best_effort` for non-critical events
 /// or `log_audit_critical` for security events.
-#[deprecated(since = "0.3.0", note = "Use log_audit_best_effort or log_audit_critical instead")]
+#[deprecated(
+    since = "0.3.0",
+    note = "Use log_audit_best_effort or log_audit_critical instead"
+)]
 pub fn log_audit_async(entry: AuditEntry) {
     log_audit_best_effort(entry);
 }
@@ -664,33 +670,25 @@ pub fn audit_app_initialized(is_first_run: bool) {
 /// Log security failure (CRITICAL - security event)
 pub fn audit_security_failure(event: AuditEventType, message: &str) {
     // Security-critical: security failures must be logged
-    let _ = log_audit_critical(AuditEntry::new(
-        event,
-        AuditSeverity::Error,
-        message,
-    ));
+    let _ = log_audit_critical(AuditEntry::new(event, AuditSeverity::Error, message));
 }
 
 /// Log database repair (informational)
 pub fn audit_database_repaired(details: &str) {
-    log_audit_best_effort(
-        AuditEntry::new(
-            AuditEventType::DatabaseRepaired,
-            AuditSeverity::Info,
-            format!("Database repaired: {}", details),
-        ),
-    );
+    log_audit_best_effort(AuditEntry::new(
+        AuditEventType::DatabaseRepaired,
+        AuditSeverity::Info,
+        format!("Database repaired: {}", details),
+    ));
 }
 
 /// Log vector store rebuilt (informational)
 pub fn audit_vector_store_rebuilt(details: &str) {
-    log_audit_best_effort(
-        AuditEntry::new(
-            AuditEventType::VectorStoreRebuilt,
-            AuditSeverity::Info,
-            format!("Vector store rebuilt: {}", details),
-        ),
-    );
+    log_audit_best_effort(AuditEntry::new(
+        AuditEventType::VectorStoreRebuilt,
+        AuditSeverity::Info,
+        format!("Vector store rebuilt: {}", details),
+    ));
 }
 
 pub fn audit_model_download_started(model_id: &str, repo: &str, filename: &str) {

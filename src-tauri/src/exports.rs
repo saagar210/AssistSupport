@@ -84,15 +84,9 @@ pub fn format_draft(
     }
 
     match format {
-        ExportFormat::Plaintext => {
-            format_plaintext(&response, summary_text.as_deref(), sources)
-        }
-        ExportFormat::Html => {
-            format_html(&response, summary_text.as_deref(), sources, false)
-        }
-        ExportFormat::TicketHtml => {
-            format_html(&response, summary_text.as_deref(), sources, true)
-        }
+        ExportFormat::Plaintext => format_plaintext(&response, summary_text.as_deref(), sources),
+        ExportFormat::Html => format_html(&response, summary_text.as_deref(), sources, false),
+        ExportFormat::TicketHtml => format_html(&response, summary_text.as_deref(), sources, true),
         ExportFormat::Json => {
             let export = serde_json::json!({
                 "response": response,
@@ -105,11 +99,7 @@ pub fn format_draft(
 }
 
 /// Format as plaintext
-fn format_plaintext(
-    response: &str,
-    summary: Option<&str>,
-    sources: &[ExportedSource],
-) -> String {
+fn format_plaintext(response: &str, summary: Option<&str>, sources: &[ExportedSource]) -> String {
     let mut output = String::new();
 
     if let Some(sum) = summary {
@@ -151,7 +141,9 @@ fn format_html(
         html.push_str("line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }\n");
         html.push_str("h1, h2, h3 { color: #333; }\n");
         html.push_str(".summary { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }\n");
-        html.push_str(".sources { margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; }\n");
+        html.push_str(
+            ".sources { margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; }\n",
+        );
         html.push_str(".sources ul { padding-left: 20px; }\n");
         html.push_str("</style>\n</head>\n<body>\n");
     }
@@ -220,8 +212,8 @@ fn apply_safe_export(text: &str, opts: &SafeExportOptions) -> String {
 
     if opts.strip_emails {
         // Simple email pattern replacement
-        let email_re = regex_lite::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
-            .unwrap();
+        let email_re =
+            regex_lite::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap();
         result = email_re.replace_all(&result, "[email]").to_string();
     }
 
@@ -236,15 +228,17 @@ fn apply_safe_export(text: &str, opts: &SafeExportOptions) -> String {
         let path_re = regex_lite::Regex::new(r"(/[A-Za-z0-9._-]+)+(/[A-Za-z0-9._-]+)").unwrap();
         result = path_re.replace_all(&result, "[path]").to_string();
         // Windows paths
-        let win_path_re = regex_lite::Regex::new(r"[A-Za-z]:\\([A-Za-z0-9._-]+\\)+[A-Za-z0-9._-]+").unwrap();
+        let win_path_re =
+            regex_lite::Regex::new(r"[A-Za-z]:\\([A-Za-z0-9._-]+\\)+[A-Za-z0-9._-]+").unwrap();
         result = win_path_re.replace_all(&result, "[path]").to_string();
     }
 
     if opts.strip_internal_ids {
         // Replace UUIDs
         let uuid_re = regex_lite::Regex::new(
-            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
-        ).unwrap();
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        )
+        .unwrap();
         result = uuid_re.replace_all(&result, "[id]").to_string();
     }
 
@@ -291,13 +285,11 @@ mod tests {
 
     #[test]
     fn test_format_plaintext() {
-        let sources = vec![
-            ExportedSource {
-                title: "VPN Guide".to_string(),
-                path: Some("/docs/vpn.md".to_string()),
-                url: None,
-            },
-        ];
+        let sources = vec![ExportedSource {
+            title: "VPN Guide".to_string(),
+            path: Some("/docs/vpn.md".to_string()),
+            url: None,
+        }];
 
         let output = format_plaintext("Test response", Some("Test summary"), &sources);
 
@@ -355,13 +347,11 @@ mod tests {
 
     #[test]
     fn test_format_for_clipboard() {
-        let sources = vec![
-            ExportedSource {
-                title: "Doc 1".to_string(),
-                path: None,
-                url: Some("https://example.com".to_string()),
-            },
-        ];
+        let sources = vec![ExportedSource {
+            title: "Doc 1".to_string(),
+            path: None,
+            url: Some("https://example.com".to_string()),
+        }];
 
         let output = format_for_clipboard("Response text", &sources, true);
         assert!(output.contains("Response text"));

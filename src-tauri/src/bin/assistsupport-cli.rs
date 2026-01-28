@@ -40,7 +40,10 @@ enum JobsCommand {
 #[derive(Debug)]
 enum KbCommand {
     Stats,
-    Index { #[allow(dead_code)] force: bool },
+    Index {
+        #[allow(dead_code)]
+        force: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -72,7 +75,8 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         "version" | "--version" | "-V" => Ok(Command::Version),
 
         "backup" => {
-            let output = args.get(2)
+            let output = args
+                .get(2)
                 .filter(|a| *a == "--output" || *a == "-o")
                 .and_then(|_| args.get(3))
                 .map(PathBuf::from);
@@ -85,22 +89,19 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             match args[2].as_str() {
                 "list" => {
-                    let status = args.get(3)
+                    let status = args
+                        .get(3)
                         .filter(|a| *a == "--status" || *a == "-s")
                         .and_then(|_| args.get(4))
                         .cloned();
                     Ok(Command::Jobs(JobsCommand::List { status }))
                 }
                 "get" => {
-                    let job_id = args.get(3)
-                        .ok_or("Missing job ID")?
-                        .clone();
+                    let job_id = args.get(3).ok_or("Missing job ID")?.clone();
                     Ok(Command::Jobs(JobsCommand::Get { job_id }))
                 }
                 "cleanup" => {
-                    let days = args.get(3)
-                        .and_then(|d| d.parse().ok())
-                        .unwrap_or(30);
+                    let days = args.get(3).and_then(|d| d.parse().ok()).unwrap_or(30);
                     Ok(Command::Jobs(JobsCommand::Cleanup { days }))
                 }
                 _ => Err(format!("Unknown jobs subcommand: {}", args[2])),
@@ -114,7 +115,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             match args[2].as_str() {
                 "stats" => Ok(Command::Kb(KbCommand::Stats)),
                 "index" => {
-                    let force = args.get(3).map(|a| a == "--force" || a == "-f").unwrap_or(false);
+                    let force = args
+                        .get(3)
+                        .map(|a| a == "--force" || a == "-f")
+                        .unwrap_or(false);
                     Ok(Command::Kb(KbCommand::Index { force }))
                 }
                 _ => Err(format!("Unknown kb subcommand: {}", args[2])),
@@ -142,7 +146,8 @@ fn run_command(cmd: Command) -> Result<(), String> {
 }
 
 fn print_help() {
-    println!(r#"AssistSupport CLI - Local automation tool
+    println!(
+        r#"AssistSupport CLI - Local automation tool
 
 USAGE:
     assistsupport-cli <COMMAND> [OPTIONS]
@@ -171,7 +176,8 @@ EXAMPLES:
     assistsupport-cli jobs list --status running
     assistsupport-cli jobs get abc123
     assistsupport-cli kb stats
-"#);
+"#
+    );
 }
 
 fn get_db_path() -> PathBuf {
@@ -183,7 +189,10 @@ fn get_db_path() -> PathBuf {
 fn open_database() -> Result<Database, String> {
     let db_path = get_db_path();
     if !db_path.exists() {
-        return Err(format!("Database not found at {:?}. Run the app first to initialize.", db_path));
+        return Err(format!(
+            "Database not found at {:?}. Run the app first to initialize.",
+            db_path
+        ));
     }
 
     // For CLI, we need to get the master key
@@ -193,8 +202,7 @@ fn open_database() -> Result<Database, String> {
     let master_key = FileKeyStore::get_master_key()
         .map_err(|e| format!("Failed to get master key: {}. Initialize the app first.", e))?;
 
-    Database::open(&db_path, &master_key)
-        .map_err(|e| format!("Failed to open database: {}", e))
+    Database::open(&db_path, &master_key).map_err(|e| format!("Failed to open database: {}", e))
 }
 
 fn run_backup(output: Option<PathBuf>) -> Result<(), String> {
@@ -203,10 +211,10 @@ fn run_backup(output: Option<PathBuf>) -> Result<(), String> {
     let backup_path = match output {
         Some(p) => {
             // Use file copy approach for SQLCipher
-            db.conn().execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            db.conn()
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
                 .map_err(|e| format!("Checkpoint failed: {}", e))?;
-            std::fs::copy(get_db_path(), &p)
-                .map_err(|e| format!("Backup copy failed: {}", e))?;
+            std::fs::copy(get_db_path(), &p).map_err(|e| format!("Backup copy failed: {}", e))?;
             p
         }
         None => db.backup().map_err(|e| format!("Backup failed: {}", e))?,
@@ -229,13 +237,17 @@ fn run_jobs_command(cmd: JobsCommand) -> Result<(), String> {
                 "cancelled" => Some(JobStatus::Cancelled),
                 _ => None,
             });
-            let jobs = db.list_jobs(status_filter, 100)
+            let jobs = db
+                .list_jobs(status_filter, 100)
                 .map_err(|e| format!("Failed to list jobs: {}", e))?;
 
             if jobs.is_empty() {
                 println!("No jobs found.");
             } else {
-                println!("{:<36} {:<12} {:<20} {:<8}", "ID", "TYPE", "STATUS", "PROGRESS");
+                println!(
+                    "{:<36} {:<12} {:<20} {:<8}",
+                    "ID", "TYPE", "STATUS", "PROGRESS"
+                );
                 println!("{}", "-".repeat(80));
                 for job in jobs {
                     println!(
@@ -250,7 +262,8 @@ fn run_jobs_command(cmd: JobsCommand) -> Result<(), String> {
             Ok(())
         }
         JobsCommand::Get { job_id } => {
-            let job = db.get_job(&job_id)
+            let job = db
+                .get_job(&job_id)
                 .map_err(|e| format!("Failed to get job: {}", e))?
                 .ok_or_else(|| format!("Job not found: {}", job_id))?;
 
@@ -265,7 +278,8 @@ fn run_jobs_command(cmd: JobsCommand) -> Result<(), String> {
             }
 
             // Get logs (last 50)
-            let logs = db.get_job_logs(&job_id, 50)
+            let logs = db
+                .get_job_logs(&job_id, 50)
                 .map_err(|e| format!("Failed to get logs: {}", e))?;
             if !logs.is_empty() {
                 println!("\nLogs:");
@@ -277,7 +291,8 @@ fn run_jobs_command(cmd: JobsCommand) -> Result<(), String> {
             Ok(())
         }
         JobsCommand::Cleanup { days } => {
-            let deleted = db.cleanup_old_jobs(days)
+            let deleted = db
+                .cleanup_old_jobs(days)
                 .map_err(|e| format!("Failed to cleanup: {}", e))?;
             println!("Deleted {} old jobs (older than {} days)", deleted, days);
             Ok(())
@@ -291,29 +306,25 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
     match cmd {
         KbCommand::Stats => {
             // Get document and chunk counts
-            let doc_count: i64 = db.conn().query_row(
-                "SELECT COUNT(*) FROM kb_documents",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| format!("Query failed: {}", e))?;
+            let doc_count: i64 = db
+                .conn()
+                .query_row("SELECT COUNT(*) FROM kb_documents", [], |row| row.get(0))
+                .map_err(|e| format!("Query failed: {}", e))?;
 
-            let chunk_count: i64 = db.conn().query_row(
-                "SELECT COUNT(*) FROM kb_chunks",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| format!("Query failed: {}", e))?;
+            let chunk_count: i64 = db
+                .conn()
+                .query_row("SELECT COUNT(*) FROM kb_chunks", [], |row| row.get(0))
+                .map_err(|e| format!("Query failed: {}", e))?;
 
-            let source_count: i64 = db.conn().query_row(
-                "SELECT COUNT(*) FROM ingest_sources",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| format!("Query failed: {}", e))?;
+            let source_count: i64 = db
+                .conn()
+                .query_row("SELECT COUNT(*) FROM ingest_sources", [], |row| row.get(0))
+                .map_err(|e| format!("Query failed: {}", e))?;
 
-            let namespace_count: i64 = db.conn().query_row(
-                "SELECT COUNT(*) FROM namespaces",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| format!("Query failed: {}", e))?;
+            let namespace_count: i64 = db
+                .conn()
+                .query_row("SELECT COUNT(*) FROM namespaces", [], |row| row.get(0))
+                .map_err(|e| format!("Query failed: {}", e))?;
 
             println!("Knowledge Base Statistics");
             println!("{}", "-".repeat(30));
@@ -323,10 +334,15 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
             println!("Namespaces: {}", namespace_count);
 
             // Get vector consent status
-            let vector_enabled = db.get_vector_consent()
-                .map(|c| c.enabled)
-                .unwrap_or(false);
-            println!("Vectors:    {}", if vector_enabled { "Enabled" } else { "Disabled" });
+            let vector_enabled = db.get_vector_consent().map(|c| c.enabled).unwrap_or(false);
+            println!(
+                "Vectors:    {}",
+                if vector_enabled {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            );
 
             Ok(())
         }

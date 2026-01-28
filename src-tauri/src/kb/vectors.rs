@@ -10,8 +10,10 @@ use std::sync::Arc;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
-use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray, FixedSizeListArray};
 use arrow_array::types::Float32Type;
+use arrow_array::{
+    FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
+};
 use arrow_schema::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{connect, Connection, Table};
@@ -50,7 +52,7 @@ fn is_unicode_confusable(c: char) -> bool {
         '\u{FF1D}' | // FULLWIDTH EQUALS SIGN
         // Parentheses
         '\u{FF08}' | // FULLWIDTH LEFT PARENTHESIS
-        '\u{FF09}'   // FULLWIDTH RIGHT PARENTHESIS
+        '\u{FF09}' // FULLWIDTH RIGHT PARENTHESIS
     )
 }
 
@@ -89,18 +91,15 @@ fn sanitize_filter_value(value: &str) -> Option<String> {
 
     // SQL keywords to block (with word-boundary awareness)
     let sql_keywords = [
-        "select", "insert", "update", "delete", "drop", "truncate",
-        "exec", "execute", "union", "alter", "create",
+        "select", "insert", "update", "delete", "drop", "truncate", "exec", "execute", "union",
+        "alter", "create",
     ];
 
     // Keywords that need word boundary checking (to avoid false positives)
     let word_bounded_keywords = ["or", "and", "not"];
 
     // Exact patterns to block
-    let exact_patterns = [
-        "' or ", "' and ", "';", "'--", "/*", "*/",
-        "1=1", "1 = 1",
-    ];
+    let exact_patterns = ["' or ", "' and ", "';", "'--", "/*", "*/", "1=1", "1 = 1"];
 
     // Check SQL keywords with word-boundary awareness
     let has_boundary_before = |pos: usize| -> bool {
@@ -175,7 +174,10 @@ fn sanitize_id(id: &str) -> Option<String> {
 
     // Strict allowlist: only ASCII alphanumeric, hyphens, and underscores
     // Do NOT fall back to sanitize_filter_value - IDs should be strictly validated
-    if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         Some(id.to_string())
     } else {
         None
@@ -346,13 +348,19 @@ impl VectorStore {
     /// Check if the table has the new schema with namespace_id
     async fn table_has_namespace(&self) -> Result<bool, VectorError> {
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
-        let schema = table.schema().await.map_err(|e| VectorError::LanceDb(e.to_string()))?;
+        let schema = table
+            .schema()
+            .await
+            .map_err(|e| VectorError::LanceDb(e.to_string()))?;
         Ok(schema.field_with_name("namespace_id").is_ok())
     }
 
     /// Create or open the chunks table
     pub async fn create_table(&mut self) -> Result<(), VectorError> {
-        let conn = self.connection.as_ref().ok_or(VectorError::NotInitialized)?;
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or(VectorError::NotInitialized)?;
 
         // Check if table exists
         let table_names = conn
@@ -442,17 +450,23 @@ impl VectorStore {
         // Build arrays
         let id_array = StringArray::from(ids.to_vec());
         let namespace_array = StringArray::from(
-            metadata.iter().map(|m| m.namespace_id.clone()).collect::<Vec<_>>()
+            metadata
+                .iter()
+                .map(|m| m.namespace_id.clone())
+                .collect::<Vec<_>>(),
         );
         let document_array = StringArray::from(
-            metadata.iter().map(|m| m.document_id.clone()).collect::<Vec<_>>()
+            metadata
+                .iter()
+                .map(|m| m.document_id.clone())
+                .collect::<Vec<_>>(),
         );
 
         // Create FixedSizeListArray from embeddings
         let embedding_dim = self.config.embedding_dim as i32;
-        let vector_iter = embeddings.iter().map(|emb| {
-            Some(emb.iter().map(|&v| Some(v)).collect::<Vec<_>>())
-        });
+        let vector_iter = embeddings
+            .iter()
+            .map(|emb| Some(emb.iter().map(|&v| Some(v)).collect::<Vec<_>>()));
         let vector_array = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
             vector_iter,
             embedding_dim,
@@ -489,12 +503,16 @@ impl VectorStore {
         embeddings: &[Vec<f32>],
     ) -> Result<(), VectorError> {
         // Create default metadata for backward compatibility
-        let metadata: Vec<VectorMetadata> = ids.iter().map(|_| VectorMetadata {
-            namespace_id: "default".to_string(),
-            document_id: String::new(),
-        }).collect();
+        let metadata: Vec<VectorMetadata> = ids
+            .iter()
+            .map(|_| VectorMetadata {
+                namespace_id: "default".to_string(),
+                document_id: String::new(),
+            })
+            .collect();
 
-        self.insert_embeddings_with_metadata(ids, embeddings, &metadata).await
+        self.insert_embeddings_with_metadata(ids, embeddings, &metadata)
+            .await
     }
 
     /// Search for similar vectors
@@ -503,7 +521,8 @@ impl VectorStore {
         query_embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<VectorSearchResult>, VectorError> {
-        self.search_similar_in_namespace(query_embedding, None, limit).await
+        self.search_similar_in_namespace(query_embedding, None, limit)
+            .await
     }
 
     /// Search for similar vectors within a specific namespace
@@ -543,7 +562,8 @@ impl VectorStore {
         let batches: Vec<Result<RecordBatch, lancedb::Error>> = results.collect().await;
 
         for batch_result in batches {
-            let batch = batch_result.map_err(|e: lancedb::Error| VectorError::LanceDb(e.to_string()))?;
+            let batch =
+                batch_result.map_err(|e: lancedb::Error| VectorError::LanceDb(e.to_string()))?;
 
             let id_col = batch
                 .column_by_name("id")
@@ -742,16 +762,28 @@ mod tests {
     #[test]
     fn test_sanitize_filter_value_valid() {
         // Normal values should pass
-        assert_eq!(sanitize_filter_value("my-namespace"), Some("my-namespace".to_string()));
-        assert_eq!(sanitize_filter_value("default"), Some("default".to_string()));
-        assert_eq!(sanitize_filter_value("namespace-123"), Some("namespace-123".to_string()));
+        assert_eq!(
+            sanitize_filter_value("my-namespace"),
+            Some("my-namespace".to_string())
+        );
+        assert_eq!(
+            sanitize_filter_value("default"),
+            Some("default".to_string())
+        );
+        assert_eq!(
+            sanitize_filter_value("namespace-123"),
+            Some("namespace-123".to_string())
+        );
     }
 
     #[test]
     fn test_sanitize_filter_value_escapes_quotes() {
         // Single quotes should be escaped
         assert_eq!(sanitize_filter_value("it's"), Some("it''s".to_string()));
-        assert_eq!(sanitize_filter_value("test'value"), Some("test''value".to_string()));
+        assert_eq!(
+            sanitize_filter_value("test'value"),
+            Some("test''value".to_string())
+        );
     }
 
     #[test]
@@ -767,7 +799,10 @@ mod tests {
     #[test]
     fn test_sanitize_id_valid() {
         // UUIDs and simple IDs should pass
-        assert_eq!(sanitize_id("550e8400-e29b-41d4-a716-446655440000"), Some("550e8400-e29b-41d4-a716-446655440000".to_string()));
+        assert_eq!(
+            sanitize_id("550e8400-e29b-41d4-a716-446655440000"),
+            Some("550e8400-e29b-41d4-a716-446655440000".to_string())
+        );
         assert_eq!(sanitize_id("chunk_123"), Some("chunk_123".to_string()));
         assert_eq!(sanitize_id("abc123"), Some("abc123".to_string()));
     }

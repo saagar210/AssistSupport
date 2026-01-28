@@ -13,7 +13,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use argon2::{Argon2, Params, Version};
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::fs;
@@ -247,12 +247,10 @@ impl KeychainManager {
         let entry = keyring::Entry::new(SERVICE_NAME, MASTER_KEY_ENTRY)
             .map_err(|e| SecurityError::Keychain(e.to_string()))?;
 
-        let mut secret = entry
-            .get_secret()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => SecurityError::MasterKeyNotFound,
-                _ => SecurityError::Keychain(e.to_string()),
-            })?;
+        let mut secret = entry.get_secret().map_err(|e| match e {
+            keyring::Error::NoEntry => SecurityError::MasterKeyNotFound,
+            _ => SecurityError::Keychain(e.to_string()),
+        })?;
 
         if secret.len() != KEY_LEN {
             secret.zeroize();
@@ -409,8 +407,8 @@ impl FileKeyStore {
             .parent()
             .ok_or_else(|| SecurityError::FileIO("Missing parent directory".into()))?;
 
-        let mut temp = NamedTempFile::new_in(parent)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let mut temp =
+            NamedTempFile::new_in(parent).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         temp.write_all(contents)
             .map_err(|e| SecurityError::FileIO(e.to_string()))?;
         temp.as_file()
@@ -471,8 +469,8 @@ impl FileKeyStore {
             return Ok(KeyStorageMode::default());
         }
 
-        let content = fs::read_to_string(&config_path)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let content =
+            fs::read_to_string(&config_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         let config: KeyStorageConfig = serde_json::from_str(&content)
             .map_err(|e| SecurityError::FileIO(format!("Invalid key_storage.json: {}", e)))?;
         Ok(config.mode)
@@ -495,11 +493,17 @@ impl FileKeyStore {
             return true;
         }
         // Check wrapped key file
-        if Self::wrapped_key_path().map(|p| p.exists()).unwrap_or(false) {
+        if Self::wrapped_key_path()
+            .map(|p| p.exists())
+            .unwrap_or(false)
+        {
             return true;
         }
         // Check legacy plaintext file
-        if Self::legacy_master_key_path().map(|p| p.exists()).unwrap_or(false) {
+        if Self::legacy_master_key_path()
+            .map(|p| p.exists())
+            .unwrap_or(false)
+        {
             return true;
         }
         false
@@ -514,8 +518,8 @@ impl FileKeyStore {
             return Ok(HashMap::new());
         }
 
-        let content = fs::read_to_string(&tokens_path)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let content =
+            fs::read_to_string(&tokens_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         let value: serde_json::Value = serde_json::from_str(&content)
             .map_err(|e| SecurityError::FileIO(format!("Invalid tokens.json: {}", e)))?;
 
@@ -548,18 +552,16 @@ impl FileKeyStore {
                 .decode(&encrypted.ciphertext_b64)
                 .map_err(|e| Self::tokens_file_error(format!("Invalid ciphertext: {}", e)))?;
 
-            let decrypted = Crypto::decrypt(
-                master_key.as_bytes(),
-                &EncryptedData { ciphertext, nonce },
-            )?;
+            let decrypted =
+                Crypto::decrypt(master_key.as_bytes(), &EncryptedData { ciphertext, nonce })?;
             let tokens: HashMap<String, String> = serde_json::from_slice(&decrypted)
                 .map_err(|e| Self::tokens_file_error(e.to_string()))?;
 
             return Ok((tokens, false));
         }
 
-        let tokens: HashMap<String, String> = serde_json::from_value(value)
-            .map_err(|e| Self::tokens_file_error(e.to_string()))?;
+        let tokens: HashMap<String, String> =
+            serde_json::from_value(value).map_err(|e| Self::tokens_file_error(e.to_string()))?;
         Ok((tokens, true))
     }
 
@@ -570,8 +572,8 @@ impl FileKeyStore {
         Self::ensure_dir()?;
         let tokens_path = Self::tokens_path()?;
 
-        let serialized = serde_json::to_vec(tokens)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let serialized =
+            serde_json::to_vec(tokens).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         let encrypted = Crypto::encrypt(master_key.as_bytes(), &serialized)?;
         let payload = EncryptedTokensFile {
             encrypted: true,
@@ -626,8 +628,7 @@ impl FileKeyStore {
             Self::set_storage_mode(KeyStorageMode::Keychain)?;
 
             // Secure-delete legacy file
-            secure_delete_file(&legacy_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&legacy_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
 
             // Migrate tokens from old Keychain storage
             Self::migrate_tokens_from_keychain(&key)?;
@@ -671,8 +672,7 @@ impl FileKeyStore {
             Self::store_master_key_with_passphrase(&key, passphrase)?;
 
             // Secure-delete legacy file
-            secure_delete_file(&legacy_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&legacy_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
 
             // Migrate tokens
             Self::migrate_tokens_from_keychain(&key)?;
@@ -737,22 +737,19 @@ impl FileKeyStore {
         // Delete wrapped key file
         let wrapped_path = Self::wrapped_key_path()?;
         if wrapped_path.exists() {
-            secure_delete_file(&wrapped_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&wrapped_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
 
         // Delete legacy file
         let legacy_path = Self::legacy_master_key_path()?;
         if legacy_path.exists() {
-            secure_delete_file(&legacy_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&legacy_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
 
         // Delete config
         let config_path = Self::storage_config_path()?;
         if config_path.exists() {
-            fs::remove_file(&config_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            fs::remove_file(&config_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
 
         Ok(())
@@ -760,13 +757,11 @@ impl FileKeyStore {
 
     /// Read legacy plaintext key file
     fn read_legacy_key_file(path: &Path) -> Result<MasterKey, SecurityError> {
-        let mut hex = fs::read_to_string(path)
-            .map_err(|e| SecurityError::FileIO(e.to_string()))?;
-        let mut bytes = hex::decode(hex.trim())
-            .map_err(|_| {
-                hex.zeroize();
-                SecurityError::InvalidKeyFormat
-            })?;
+        let mut hex = fs::read_to_string(path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
+        let mut bytes = hex::decode(hex.trim()).map_err(|_| {
+            hex.zeroize();
+            SecurityError::InvalidKeyFormat
+        })?;
         hex.zeroize();
 
         if bytes.len() != KEY_LEN {
@@ -784,8 +779,7 @@ impl FileKeyStore {
     fn cleanup_legacy_key_file(_key: &MasterKey) -> Result<(), SecurityError> {
         let legacy_path = Self::legacy_master_key_path()?;
         if legacy_path.exists() {
-            secure_delete_file(&legacy_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&legacy_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
         Ok(())
     }
@@ -958,8 +952,7 @@ impl KeyRotation {
         // Delete wrapped key file
         let wrapped_path = FileKeyStore::wrapped_key_path()?;
         if wrapped_path.exists() {
-            secure_delete_file(&wrapped_path)
-                .map_err(|e| SecurityError::FileIO(e.to_string()))?;
+            secure_delete_file(&wrapped_path).map_err(|e| SecurityError::FileIO(e.to_string()))?;
         }
 
         Ok(())
@@ -972,8 +965,8 @@ pub struct Crypto;
 impl Crypto {
     /// Encrypt data with AES-256-GCM
     pub fn encrypt(key: &[u8; KEY_LEN], plaintext: &[u8]) -> Result<EncryptedData, SecurityError> {
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|e| SecurityError::Encryption(e.to_string()))?;
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|e| SecurityError::Encryption(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
@@ -990,9 +983,12 @@ impl Crypto {
     }
 
     /// Decrypt data with AES-256-GCM
-    pub fn decrypt(key: &[u8; KEY_LEN], encrypted: &EncryptedData) -> Result<Vec<u8>, SecurityError> {
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|e| SecurityError::Decryption(e.to_string()))?;
+    pub fn decrypt(
+        key: &[u8; KEY_LEN],
+        encrypted: &EncryptedData,
+    ) -> Result<Vec<u8>, SecurityError> {
+        let cipher =
+            Aes256Gcm::new_from_slice(key).map_err(|e| SecurityError::Decryption(e.to_string()))?;
 
         let nonce = Nonce::from_slice(&encrypted.nonce);
 
@@ -1090,7 +1086,10 @@ impl ExportCrypto {
     /// Encrypt data for export with user-provided password
     ///
     /// Security: The derived key is zeroized after use.
-    pub fn encrypt_for_export(data: &[u8], password: &str) -> Result<ExportEncryptResult, SecurityError> {
+    pub fn encrypt_for_export(
+        data: &[u8],
+        password: &str,
+    ) -> Result<ExportEncryptResult, SecurityError> {
         let salt = Crypto::generate_salt();
         let mut key = Crypto::derive_key_from_passphrase(password, &salt)?;
         let result = Crypto::encrypt(&key, data);
@@ -1230,8 +1229,14 @@ mod tests {
             let json = serde_json::to_string_pretty(&tokens).unwrap();
             let parsed: HashMap<String, String> = serde_json::from_str(&json).unwrap();
 
-            assert_eq!(parsed.get("huggingface_token"), Some(&"hf_test123".to_string()));
-            assert_eq!(parsed.get("jira_api_token"), Some(&"jira_test456".to_string()));
+            assert_eq!(
+                parsed.get("huggingface_token"),
+                Some(&"hf_test123".to_string())
+            );
+            assert_eq!(
+                parsed.get("jira_api_token"),
+                Some(&"jira_test456".to_string())
+            );
         }
 
         #[test]

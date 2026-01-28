@@ -9,7 +9,7 @@ use crate::db::{CustomVariable, Database, DecisionTree, ResponseTemplate, SavedD
 use crate::security::ExportCrypto;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{Read, Write, Cursor};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
@@ -80,7 +80,7 @@ pub struct ImportPreview {
 /// Encrypted backup metadata (stored as first bytes of encrypted file)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EncryptedBackupHeader {
-    pub magic: String,  // "ASSISTSUPPORT_ENCRYPTED_BACKUP"
+    pub magic: String, // "ASSISTSUPPORT_ENCRYPTED_BACKUP"
     pub version: String,
     pub salt: [u8; 32],
     pub nonce: [u8; 12],
@@ -120,7 +120,8 @@ pub fn export_backup(
     {
         let cursor = Cursor::new(&mut zip_buffer);
         let mut zip = ZipWriter::new(cursor);
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         // Export version info
         let version = BackupVersion {
@@ -180,7 +181,8 @@ pub fn export_backup(
     let drafts_count = db.list_drafts(10000).map(|d| d.len()).unwrap_or(0);
     let templates_count = db.list_templates().map(|t| t.len()).unwrap_or(0);
     let variables_count = db.list_custom_variables().map(|v| v.len()).unwrap_or(0);
-    let trees_count = db.list_decision_trees()
+    let trees_count = db
+        .list_decision_trees()
         .map(|t| t.into_iter().filter(|tree| tree.source == "custom").count())
         .unwrap_or(0);
 
@@ -275,7 +277,10 @@ fn decrypt_backup(path: &Path, password: &str) -> Result<Vec<u8>, BackupError> {
 }
 
 /// Preview what will be imported from a backup file (with optional password for encrypted backups)
-pub fn preview_import(backup_path: &Path, password: Option<&str>) -> Result<ImportPreview, BackupError> {
+pub fn preview_import(
+    backup_path: &Path,
+    password: Option<&str>,
+) -> Result<ImportPreview, BackupError> {
     let path_str = backup_path.display().to_string();
 
     // Check if encrypted

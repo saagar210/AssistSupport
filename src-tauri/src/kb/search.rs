@@ -130,7 +130,12 @@ impl HybridSearch {
         query: &str,
         options: SearchOptions,
     ) -> Result<Vec<SearchResult>, SearchError> {
-        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit)?;
+        let fts_results = Self::fts_search_with_namespace(
+            db,
+            query,
+            options.namespace_id.as_deref(),
+            options.limit,
+        )?;
         Ok(fts_results)
     }
 
@@ -143,12 +148,7 @@ impl HybridSearch {
         limit: usize,
         vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
     ) -> Result<Vec<SearchResult>, SearchError> {
-        Self::search_with_vectors_and_options(
-            db,
-            query,
-            SearchOptions::new(limit),
-            vector_results,
-        )
+        Self::search_with_vectors_and_options(db, query, SearchOptions::new(limit), vector_results)
     }
 
     /// Perform hybrid search with options
@@ -159,7 +159,12 @@ impl HybridSearch {
         vector_results: Option<Vec<super::vectors::VectorSearchResult>>,
     ) -> Result<Vec<SearchResult>, SearchError> {
         // Get FTS5 results (fetch more for fusion and dedup)
-        let fts_results = Self::fts_search_with_namespace(db, query, options.namespace_id.as_deref(), options.limit * 3)?;
+        let fts_results = Self::fts_search_with_namespace(
+            db,
+            query,
+            options.namespace_id.as_deref(),
+            options.limit * 3,
+        )?;
 
         // If no vector results, just return FTS5 (with dedup if enabled)
         let vector_results = match vector_results {
@@ -242,7 +247,8 @@ impl HybridSearch {
                     source_type: row.get(7)?,
                 })
             },
-        ).map_err(|e| SearchError::Database(DbError::Sqlite(e)))
+        )
+        .map_err(|e| SearchError::Database(DbError::Sqlite(e)))
     }
 
     /// Perform FTS5 keyword search
@@ -263,9 +269,10 @@ impl HybridSearch {
     ) -> Result<Vec<SearchResult>, SearchError> {
         let conn = db.conn();
 
-        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(ns) = namespace_id {
-            (
-                r#"
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) =
+            if let Some(ns) = namespace_id {
+                (
+                    r#"
                 SELECT
                     kb_chunks.id,
                     kb_chunks.document_id,
@@ -283,16 +290,17 @@ impl HybridSearch {
                 WHERE kb_fts MATCH ?1 AND kb_documents.namespace_id = ?2
                 ORDER BY rank
                 LIMIT ?3
-                "#.to_string(),
-                vec![
-                    Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(ns.to_string()),
-                    Box::new(limit as i64),
-                ]
-            )
-        } else {
-            (
-                r#"
+                "#
+                    .to_string(),
+                    vec![
+                        Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(ns.to_string()),
+                        Box::new(limit as i64),
+                    ],
+                )
+            } else {
+                (
+                    r#"
                 SELECT
                     kb_chunks.id,
                     kb_chunks.document_id,
@@ -310,18 +318,21 @@ impl HybridSearch {
                 WHERE kb_fts MATCH ?1
                 ORDER BY rank
                 LIMIT ?2
-                "#.to_string(),
-                vec![
-                    Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
-                    Box::new(limit as i64),
-                ]
-            )
-        };
+                "#
+                    .to_string(),
+                    vec![
+                        Box::new(query.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(limit as i64),
+                    ],
+                )
+            };
 
-        let mut stmt = conn.prepare(&sql)
+        let mut stmt = conn
+            .prepare(&sql)
             .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?;
 
-        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
         let results = stmt
             .query_map(params_refs.as_slice(), |row| {
@@ -437,8 +448,16 @@ impl HybridSearch {
 
         // Normalize weights
         let total_weight = fts_weight + vector_weight;
-        let fts_w = if total_weight > 0.0 { fts_weight / total_weight } else { 0.5 };
-        let vec_w = if total_weight > 0.0 { vector_weight / total_weight } else { 0.5 };
+        let fts_w = if total_weight > 0.0 {
+            fts_weight / total_weight
+        } else {
+            0.5
+        };
+        let vec_w = if total_weight > 0.0 {
+            vector_weight / total_weight
+        } else {
+            0.5
+        };
 
         // Build RRF scores with weights
         let mut rrf_scores: HashMap<String, (f64, Option<SearchResult>)> = HashMap::new();
@@ -446,7 +465,8 @@ impl HybridSearch {
         // Add FTS5 scores (weighted)
         for (rank, result) in fts_results.into_iter().enumerate() {
             let score = fts_w * (1.0 / (RRF_K + rank as f64 + 1.0));
-            rrf_scores.entry(result.chunk_id.clone())
+            rrf_scores
+                .entry(result.chunk_id.clone())
                 .and_modify(|(s, _)| *s += score)
                 .or_insert((score, Some(result)));
         }
@@ -454,7 +474,8 @@ impl HybridSearch {
         // Add vector scores (weighted)
         for (rank, result) in vector_results.into_iter().enumerate() {
             let score = vec_w * (1.0 / (RRF_K + rank as f64 + 1.0));
-            rrf_scores.entry(result.chunk_id.clone())
+            rrf_scores
+                .entry(result.chunk_id.clone())
                 .and_modify(|(s, existing)| {
                     *s += score;
                     if existing.is_none() {
@@ -494,9 +515,9 @@ impl HybridSearch {
 
         for result in results {
             // Check if this result is too similar to any already-kept result
-            let is_duplicate = deduped.iter().any(|kept| {
-                Self::content_similarity(&kept.content, &result.content) >= threshold
-            });
+            let is_duplicate = deduped
+                .iter()
+                .any(|kept| Self::content_similarity(&kept.content, &result.content) >= threshold);
 
             if !is_duplicate {
                 deduped.push(result);
@@ -539,7 +560,8 @@ impl HybridSearch {
 
     /// Get chunk content by ID
     pub fn get_chunk_content(db: &Database, chunk_id: &str) -> Result<String, SearchError> {
-        let content: String = db.conn()
+        let content: String = db
+            .conn()
             .query_row(
                 "SELECT content FROM kb_chunks WHERE id = ?",
                 params![chunk_id],
@@ -559,7 +581,8 @@ impl HybridSearch {
             return Ok(vec![]);
         }
 
-        let placeholders: String = chunk_ids.iter()
+        let placeholders: String = chunk_ids
+            .iter()
             .enumerate()
             .map(|(i, _)| format!("?{}", i + 1))
             .collect::<Vec<_>>()
@@ -578,14 +601,15 @@ impl HybridSearch {
             placeholders
         );
 
-        let mut stmt = db.conn().prepare(&query)
+        let mut stmt = db
+            .conn()
+            .prepare(&query)
             .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?;
 
         let results = stmt
-            .query_map(
-                rusqlite::params_from_iter(chunk_ids.iter()),
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
+            .query_map(rusqlite::params_from_iter(chunk_ids.iter()), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
             .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| SearchError::Database(DbError::Sqlite(e)))?;
@@ -638,8 +662,14 @@ impl HybridSearch {
             return;
         }
 
-        let min_score = results.iter().map(|r| r.score).fold(f64::INFINITY, f64::min);
-        let max_score = results.iter().map(|r| r.score).fold(f64::NEG_INFINITY, f64::max);
+        let min_score = results
+            .iter()
+            .map(|r| r.score)
+            .fold(f64::INFINITY, f64::min);
+        let max_score = results
+            .iter()
+            .map(|r| r.score)
+            .fold(f64::NEG_INFINITY, f64::max);
 
         let range = max_score - min_score;
         if range > 0.0 {
@@ -684,7 +714,8 @@ impl SimHash {
         let mut v = [0i32; 64];
 
         // Tokenize and hash each token
-        for token in text.to_lowercase()
+        for token in text
+            .to_lowercase()
             .split(|c: char| !c.is_alphanumeric())
             .filter(|w| w.len() > 2)
         {
@@ -805,21 +836,19 @@ mod tests {
 
     #[test]
     fn test_format_context() {
-        let results = vec![
-            SearchResult {
-                chunk_id: "1".to_string(),
-                document_id: "d1".to_string(),
-                file_path: "/docs/vpn.md".to_string(),
-                title: Some("VPN Guide".to_string()),
-                heading_path: Some("Connection Issues".to_string()),
-                content: "If VPN fails, restart the client.".to_string(),
-                snippet: "".to_string(),
-                score: 1.0,
-                source: SearchSource::Fts5,
-                namespace_id: Some("default".to_string()),
-                source_type: Some("file".to_string()),
-            },
-        ];
+        let results = vec![SearchResult {
+            chunk_id: "1".to_string(),
+            document_id: "d1".to_string(),
+            file_path: "/docs/vpn.md".to_string(),
+            title: Some("VPN Guide".to_string()),
+            heading_path: Some("Connection Issues".to_string()),
+            content: "If VPN fails, restart the client.".to_string(),
+            snippet: "".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: Some("default".to_string()),
+            source_type: Some("file".to_string()),
+        }];
 
         let context = HybridSearch::format_context(&results);
         assert!(context.contains("VPN Guide"));
@@ -904,37 +933,33 @@ mod tests {
 
     #[test]
     fn test_weighted_rrf() {
-        let fts_results = vec![
-            SearchResult {
-                chunk_id: "a".to_string(),
-                document_id: "d1".to_string(),
-                file_path: "/test.md".to_string(),
-                title: None,
-                heading_path: None,
-                content: "A".to_string(),
-                snippet: "A".to_string(),
-                score: 1.0,
-                source: SearchSource::Fts5,
-                namespace_id: None,
-                source_type: None,
-            },
-        ];
+        let fts_results = vec![SearchResult {
+            chunk_id: "a".to_string(),
+            document_id: "d1".to_string(),
+            file_path: "/test.md".to_string(),
+            title: None,
+            heading_path: None,
+            content: "A".to_string(),
+            snippet: "A".to_string(),
+            score: 1.0,
+            source: SearchSource::Fts5,
+            namespace_id: None,
+            source_type: None,
+        }];
 
-        let vector_results = vec![
-            SearchResult {
-                chunk_id: "b".to_string(),
-                document_id: "d1".to_string(),
-                file_path: "/test.md".to_string(),
-                title: None,
-                heading_path: None,
-                content: "B".to_string(),
-                snippet: "B".to_string(),
-                score: 1.0,
-                source: SearchSource::Vector,
-                namespace_id: None,
-                source_type: None,
-            },
-        ];
+        let vector_results = vec![SearchResult {
+            chunk_id: "b".to_string(),
+            document_id: "d1".to_string(),
+            file_path: "/test.md".to_string(),
+            title: None,
+            heading_path: None,
+            content: "B".to_string(),
+            snippet: "B".to_string(),
+            score: 1.0,
+            source: SearchSource::Vector,
+            namespace_id: None,
+            source_type: None,
+        }];
 
         // With heavy FTS weight, FTS result should rank higher
         let results = HybridSearch::hybrid_search_with_weights(
@@ -947,13 +972,8 @@ mod tests {
         assert_eq!(results[0].chunk_id, "a");
 
         // With heavy vector weight, vector result should rank higher
-        let results = HybridSearch::hybrid_search_with_weights(
-            fts_results,
-            vector_results,
-            0.1,
-            0.9,
-            10,
-        );
+        let results =
+            HybridSearch::hybrid_search_with_weights(fts_results, vector_results, 0.1, 0.9, 10);
         assert_eq!(results[0].chunk_id, "b");
     }
 
@@ -1053,7 +1073,11 @@ mod tests {
         let a = SimHash::compute("The quick brown fox jumps over the lazy dog");
         let b = SimHash::compute("The quick brown fox runs over the lazy cat");
         let sim_similar = SimHash::similarity(a, b);
-        assert!(sim_similar > 0.5, "Similar text similarity: {}", sim_similar);
+        assert!(
+            sim_similar > 0.5,
+            "Similar text similarity: {}",
+            sim_similar
+        );
 
         // Different text should have lower similarity than identical
         let a = SimHash::compute("The quick brown fox jumps over the lazy dog");
@@ -1061,8 +1085,11 @@ mod tests {
         let sim_different = SimHash::similarity(a, b);
         // SimHash may still show moderate similarity for short texts
         // The key is that different text has lower similarity than similar text
-        assert!(sim_different < sim_similar || sim_different < 1.0,
-                "Different text similarity: {}", sim_different);
+        assert!(
+            sim_different < sim_similar || sim_different < 1.0,
+            "Different text similarity: {}",
+            sim_different
+        );
     }
 
     #[test]

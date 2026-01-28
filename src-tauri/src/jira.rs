@@ -1,8 +1,8 @@
 //! Jira Cloud integration module
 //! Phase 18: Added comment posting, timeout/retry configuration
 
-use base64::{Engine as _, engine::general_purpose};
-use reqwest::{Client, header, StatusCode};
+use base64::{engine::general_purpose, Engine as _};
+use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -102,9 +102,15 @@ impl JiraClient {
     }
 
     /// Create a new Jira client with custom request configuration
-    pub fn with_config(base_url: &str, email: &str, api_token: &str, config: JiraRequestConfig) -> Self {
+    pub fn with_config(
+        base_url: &str,
+        email: &str,
+        api_token: &str,
+        config: JiraRequestConfig,
+    ) -> Self {
         let mut auth = format!("{}:{}", email, api_token);
-        let auth_header = SecureString::new(format!("Basic {}", general_purpose::STANDARD.encode(&auth)));
+        let auth_header =
+            SecureString::new(format!("Basic {}", general_purpose::STANDARD.encode(&auth)));
         auth.zeroize(); // Clear the intermediate auth string
 
         let client = Client::builder()
@@ -123,7 +129,8 @@ impl JiraClient {
     /// Test the connection by fetching current user
     pub async fn test_connection(&self) -> Result<bool, JiraError> {
         let url = format!("{}/rest/api/3/myself", self.base_url);
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header(header::AUTHORIZATION, self.auth_header.as_str())
             .header(header::ACCEPT, "application/json")
@@ -143,7 +150,8 @@ impl JiraClient {
             self.base_url, ticket_key
         );
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header(header::AUTHORIZATION, self.auth_header.as_str())
             .header(header::ACCEPT, "application/json")
@@ -160,7 +168,10 @@ impl JiraClient {
                     body.len()
                 );
             }
-            return Err(JiraError::Api(format!("HTTP {} error fetching ticket", status)));
+            return Err(JiraError::Api(format!(
+                "HTTP {} error fetching ticket",
+                status
+            )));
         }
 
         let json: serde_json::Value = resp.json().await?;
@@ -177,11 +188,19 @@ impl JiraClient {
             description,
             status: fields["status"]["name"].as_str().unwrap_or("").to_string(),
             priority: fields["priority"]["name"].as_str().map(|s| s.to_string()),
-            assignee: fields["assignee"]["displayName"].as_str().map(|s| s.to_string()),
-            reporter: fields["reporter"]["displayName"].as_str().unwrap_or("").to_string(),
+            assignee: fields["assignee"]["displayName"]
+                .as_str()
+                .map(|s| s.to_string()),
+            reporter: fields["reporter"]["displayName"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
             created: fields["created"].as_str().unwrap_or("").to_string(),
             updated: fields["updated"].as_str().unwrap_or("").to_string(),
-            issue_type: fields["issuetype"]["name"].as_str().unwrap_or("").to_string(),
+            issue_type: fields["issuetype"]["name"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
         })
     }
 
@@ -240,10 +259,7 @@ impl JiraClient {
         validate_ticket_id(ticket_key)
             .map_err(|e| JiraError::Api(format!("Invalid ticket key: {}", e)))?;
 
-        let url = format!(
-            "{}/rest/api/3/issue/{}/comment",
-            self.base_url, ticket_key
-        );
+        let url = format!("{}/rest/api/3/issue/{}/comment", self.base_url, ticket_key);
 
         // Build comment body in ADF format
         let mut comment_body = serde_json::json!({
@@ -295,16 +311,18 @@ impl JiraClient {
         }
 
         // Execute with retry logic
-        let response = self.execute_with_retry(|| async {
-            self.client
-                .post(&url)
-                .header(header::AUTHORIZATION, self.auth_header.as_str())
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::ACCEPT, "application/json")
-                .json(&comment_body)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .execute_with_retry(|| async {
+                self.client
+                    .post(&url)
+                    .header(header::AUTHORIZATION, self.auth_header.as_str())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json")
+                    .json(&comment_body)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let json: serde_json::Value = response.json().await?;
         let comment_id = json["id"].as_str().unwrap_or("").to_string();
@@ -334,12 +352,16 @@ impl JiraClient {
             }
         }
 
-        self.add_comment(ticket_key, &formatted_body, visibility).await
+        self.add_comment(ticket_key, &formatted_body, visibility)
+            .await
     }
 
     /// Execute a request with retry logic for transient errors
     /// Does NOT retry on auth errors (401/403)
-    async fn execute_with_retry<F, Fut>(&self, request_fn: F) -> Result<reqwest::Response, JiraError>
+    async fn execute_with_retry<F, Fut>(
+        &self,
+        request_fn: F,
+    ) -> Result<reqwest::Response, JiraError>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<reqwest::Response, reqwest::Error>>,
@@ -371,8 +393,9 @@ impl JiraClient {
                         last_error = Some(JiraError::Api(format!("Server error: {}", status)));
                         if attempt < self.config.max_retries {
                             tokio::time::sleep(Duration::from_millis(
-                                self.config.retry_delay_ms * (attempt as u64 + 1)
-                            )).await;
+                                self.config.retry_delay_ms * (attempt as u64 + 1),
+                            ))
+                            .await;
                             continue;
                         }
                     }
@@ -395,8 +418,9 @@ impl JiraClient {
 
                     if attempt < self.config.max_retries {
                         tokio::time::sleep(Duration::from_millis(
-                            self.config.retry_delay_ms * (attempt as u64 + 1)
-                        )).await;
+                            self.config.retry_delay_ms * (attempt as u64 + 1),
+                        ))
+                        .await;
                     }
                 }
             }
@@ -431,7 +455,10 @@ mod tests {
         let fields = serde_json::json!({
             "description": "Simple description"
         });
-        assert_eq!(JiraClient::parse_description(&fields), Some("Simple description".to_string()));
+        assert_eq!(
+            JiraClient::parse_description(&fields),
+            Some("Simple description".to_string())
+        );
     }
 
     #[test]
@@ -455,6 +482,9 @@ mod tests {
                 ]
             }
         });
-        assert_eq!(JiraClient::parse_description(&fields), Some("First paragraph\nSecond paragraph".to_string()));
+        assert_eq!(
+            JiraClient::parse_description(&fields),
+            Some("First paragraph\nSecond paragraph".to_string())
+        );
     }
 }

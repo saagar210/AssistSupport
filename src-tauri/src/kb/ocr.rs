@@ -191,12 +191,13 @@ impl OcrEngine for VisionOcr {
             let stdout = String::from_utf8_lossy(&output.stdout);
 
             // Parse JSON response from helper
-            let response: VisionOcrResponse = serde_json::from_str(&stdout)
-                .map_err(|e| OcrError::ProcessingFailed(format!("Failed to parse OCR response: {}", e)))?;
+            let response: VisionOcrResponse = serde_json::from_str(&stdout).map_err(|e| {
+                OcrError::ProcessingFailed(format!("Failed to parse OCR response: {}", e))
+            })?;
 
             if !response.success {
                 return Err(OcrError::ProcessingFailed(
-                    response.error.unwrap_or_else(|| "Unknown error".into())
+                    response.error.unwrap_or_else(|| "Unknown error".into()),
                 ));
             }
 
@@ -204,7 +205,10 @@ impl OcrEngine for VisionOcr {
             let avg_confidence = if response.results.is_empty() {
                 None
             } else {
-                Some(response.results.iter().map(|r| r.confidence).sum::<f32>() / response.results.len() as f32)
+                Some(
+                    response.results.iter().map(|r| r.confidence).sum::<f32>()
+                        / response.results.len() as f32,
+                )
             };
 
             return Ok(OcrResult {
@@ -552,7 +556,9 @@ mod tests {
             Ok(ocr_result) => {
                 println!("OCR Result: {}", ocr_result.text);
                 println!("Confidence: {:?}", ocr_result.confidence);
-                assert!(ocr_result.text.contains("AssistSupport") || ocr_result.text.contains("OCR"));
+                assert!(
+                    ocr_result.text.contains("AssistSupport") || ocr_result.text.contains("OCR")
+                );
             }
             Err(e) => {
                 println!("OCR failed: {}", e);

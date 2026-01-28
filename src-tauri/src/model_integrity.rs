@@ -3,7 +3,7 @@
 //! This module provides SHA256 verification for downloaded models
 //! with an allowlist of known-good model hashes.
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -57,7 +57,8 @@ impl ModelAllowlist {
             AllowedModel {
                 name: "Llama-3.2-1B-Instruct Q4_K_M".to_string(),
                 repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".to_string(),
-                sha256: "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83".to_string(),
+                sha256: "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83"
+                    .to_string(),
                 size_bytes: 807_694_464,
                 verified_date: "2026-01-25",
             },
@@ -69,7 +70,8 @@ impl ModelAllowlist {
             AllowedModel {
                 name: "Llama-3.2-3B-Instruct Q4_K_M".to_string(),
                 repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".to_string(),
-                sha256: "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff".to_string(),
+                sha256: "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff"
+                    .to_string(),
                 size_bytes: 2_019_377_696,
                 verified_date: "2026-01-25",
             },
@@ -81,7 +83,8 @@ impl ModelAllowlist {
             AllowedModel {
                 name: "Phi-3.1-mini-4k-instruct Q4_K_M".to_string(),
                 repo: "bartowski/Phi-3.1-mini-4k-instruct-GGUF".to_string(),
-                sha256: "d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f".to_string(),
+                sha256: "d6d25bf078321bea4a079c727b273cb0b5a2e0b4cf3add0f7a2c8e43075c414f"
+                    .to_string(),
                 size_bytes: 2_393_232_096,
                 verified_date: "2026-01-25",
             },
@@ -93,7 +96,8 @@ impl ModelAllowlist {
             AllowedModel {
                 name: "nomic-embed-text-v1.5 Q5_K_M".to_string(),
                 repo: "nomic-ai/nomic-embed-text-v1.5-GGUF".to_string(),
-                sha256: "0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6".to_string(),
+                sha256: "0c7930f6c4f6f29b7da5046e3a2c0832aa3f602db3de5760a95f0582dbd3d6e6"
+                    .to_string(),
                 size_bytes: 99_588_928,
                 verified_date: "2026-01-25",
             },
@@ -126,13 +130,12 @@ impl ModelAllowlist {
 
     /// Verify a model file against the allowlist
     pub fn verify_model(&self, path: &Path) -> Result<VerificationResult, IntegrityError> {
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| IntegrityError::Io(std::io::Error::new(
+        let filename = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+            IntegrityError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Invalid filename",
-            )))?;
+            ))
+        })?;
 
         let actual_hash = calculate_sha256(path)?;
 

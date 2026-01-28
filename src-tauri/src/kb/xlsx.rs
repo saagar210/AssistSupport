@@ -1,8 +1,8 @@
 //! XLSX/XLS text extraction for KB indexing
 
+use calamine::{open_workbook_auto, Data, Reader};
 use std::path::Path;
 use thiserror::Error;
-use calamine::{Reader, open_workbook_auto, Data};
 
 #[derive(Debug, Error)]
 pub enum XlsxError {
@@ -27,9 +27,7 @@ pub fn extract_text(path: &Path) -> Result<String, XlsxError> {
 
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
             for row in range.rows() {
-                let row_text: Vec<String> = row.iter()
-                    .map(cell_to_string)
-                    .collect();
+                let row_text: Vec<String> = row.iter().map(cell_to_string).collect();
 
                 // Skip completely empty rows
                 if row_text.iter().all(|s| s.is_empty()) {
@@ -60,7 +58,13 @@ fn cell_to_string(cell: &Data) -> String {
             }
         }
         Data::Int(i) => format!("{}", i),
-        Data::Bool(b) => if *b { "TRUE".to_string() } else { "FALSE".to_string() },
+        Data::Bool(b) => {
+            if *b {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }
+        }
         Data::Error(e) => format!("#ERROR: {:?}", e),
         Data::DateTime(dt) => format!("{}", dt),
         Data::DateTimeIso(s) => s.clone(),

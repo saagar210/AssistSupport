@@ -15,8 +15,7 @@ pub enum DocxError {
 pub fn extract_text(path: &Path) -> Result<String, DocxError> {
     let file_bytes = std::fs::read(path)?;
 
-    let doc = docx_rs::read_docx(&file_bytes)
-        .map_err(|e| DocxError::Parse(e.to_string()))?;
+    let doc = docx_rs::read_docx(&file_bytes).map_err(|e| DocxError::Parse(e.to_string()))?;
 
     let mut text = String::new();
 

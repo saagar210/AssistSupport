@@ -184,7 +184,12 @@ fn test_path_traversal_with_dotdot() {
     let home = dirs::home_dir().expect("Home directory should exist");
 
     // Try to escape via Documents/../../../etc
-    let traversal_path = home.join("Documents").join("..").join("..").join("..").join("etc");
+    let traversal_path = home
+        .join("Documents")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("etc");
     let result = validate_within_home(&traversal_path);
     assert!(
         matches!(

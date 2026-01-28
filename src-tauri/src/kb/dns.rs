@@ -11,11 +11,11 @@
 //! Solution: Resolve DNS once, validate IPs, then connect directly to the validated IP
 //! with the proper Host header. This completely eliminates DNS re-resolution.
 
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use hickory_resolver::TokioAsyncResolver;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
-use hickory_resolver::config::{ResolverConfig, ResolverOpts};
-use hickory_resolver::TokioAsyncResolver;
 
 use super::network::{is_ip_blocked, SsrfConfig};
 
@@ -70,7 +70,8 @@ impl PinnedDnsResolver {
     /// Create a new pinned DNS resolver
     pub async fn new(ssrf_config: SsrfConfig) -> Result<Self, DnsError> {
         // trust-dns-resolver 0.23's TokioAsyncResolver::tokio() returns the resolver directly
-        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+        let resolver =
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
         Ok(Self {
             pinned: Arc::new(RwLock::new(HashMap::new())),
@@ -205,7 +206,11 @@ pub fn build_ip_url(validated: &ValidatedUrl) -> Result<(String, String), DnsErr
     // Build URL with IP instead of hostname
     let scheme = validated.url.scheme();
     let path = validated.url.path();
-    let query = validated.url.query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let query = validated
+        .url
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
 
     let ip_url = match ip {
         IpAddr::V4(v4) => format!("{}://{}:{}{}{}", scheme, v4, validated.port, path, query),

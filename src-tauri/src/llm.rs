@@ -1,12 +1,12 @@
 //! LLM Engine for AssistSupport
 //! Embedded llama.cpp inference with Metal GPU acceleration
 
+use parking_lot::RwLock;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::num::NonZeroU32;
-use tokio::sync::mpsc;
 use thiserror::Error;
-use parking_lot::RwLock;
+use tokio::sync::mpsc;
 
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -79,9 +79,9 @@ impl Default for GenerationParams {
             top_k: 40,
             repeat_penalty: 1.1,
             stop_sequences: vec![],
-            context_window: None, // Will use model default or 4096
+            context_window: None,   // Will use model default or 4096
             stream_throttle_ms: 16, // ~60fps default throttle
-            stream_min_chars: 4, // Buffer at least 4 chars before emitting
+            stream_min_chars: 4,    // Buffer at least 4 chars before emitting
         }
     }
 }
@@ -90,7 +90,10 @@ impl Default for GenerationParams {
 #[derive(Debug, Clone)]
 pub enum GenerationEvent {
     Token(String),
-    Done { tokens_generated: u32, duration_ms: u64 },
+    Done {
+        tokens_generated: u32,
+        duration_ms: u64,
+    },
     Error(String),
 }
 
@@ -122,7 +125,8 @@ impl LlmEngine {
 
     /// Check if a model is loaded
     pub fn is_model_loaded(&self) -> bool {
-        self.state.read()
+        self.state
+            .read()
             .as_ref()
             .map(|s| s.model.is_some())
             .unwrap_or(false)
@@ -130,13 +134,19 @@ impl LlmEngine {
 
     /// Get current model info
     pub fn model_info(&self) -> Option<ModelInfo> {
-        self.state.read()
+        self.state
+            .read()
             .as_ref()
             .and_then(|s| s.model_info.clone())
     }
 
     /// Load a model from file
-    pub fn load_model(&self, path: &Path, n_gpu_layers: u32, model_id: String) -> Result<ModelInfo, LlmError> {
+    pub fn load_model(
+        &self,
+        path: &Path,
+        n_gpu_layers: u32,
+        model_id: String,
+    ) -> Result<ModelInfo, LlmError> {
         if !path.exists() {
             return Err(LlmError::ModelNotFound(path.display().to_string()));
         }
@@ -146,26 +156,26 @@ impl LlmEngine {
         let size_bytes = metadata.len();
 
         // Validate it's a GGUF file
-        let file_name = path.file_name()
+        let file_name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
         if !file_name.to_lowercase().ends_with(".gguf") {
-            return Err(LlmError::InvalidFormat(
-                "Model must be a .gguf file".into()
-            ));
+            return Err(LlmError::InvalidFormat("Model must be a .gguf file".into()));
         }
 
         let mut state_guard = self.state.write();
-        let state = state_guard.as_mut().ok_or(LlmError::BackendInit("Backend not initialized".into()))?;
+        let state = state_guard
+            .as_mut()
+            .ok_or(LlmError::BackendInit("Backend not initialized".into()))?;
 
         // Unload existing model
         state.model = None;
         state.model_info = None;
 
         // Configure model parameters with GPU offloading
-        let model_params = LlamaModelParams::default()
-            .with_n_gpu_layers(n_gpu_layers);
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
         // Load the model
         let model = LlamaModel::load_from_file(&state.backend, path, &model_params)
@@ -173,7 +183,11 @@ impl LlmEngine {
 
         // Extract model info
         let info = ModelInfo {
-            id: if model_id.trim().is_empty() { file_name.to_string() } else { model_id },
+            id: if model_id.trim().is_empty() {
+                file_name.to_string()
+            } else {
+                model_id
+            },
             path: path.to_path_buf(),
             name: file_name.to_string(),
             size_bytes,
@@ -214,7 +228,8 @@ impl LlmEngine {
         // Run generation in blocking thread
         let result = tokio::task::spawn_blocking(move || {
             Self::generate_blocking(&state, &prompt, params, tx.clone(), cancel_flag, start_time)
-        }).await;
+        })
+        .await;
 
         match result {
             Ok(inner) => inner,
@@ -238,16 +253,18 @@ impl LlmEngine {
 
         // Create context with configurable window size
         // Use provided context_window, or model's training context (capped at 8192), or 4096 as fallback
-        let n_ctx = params.context_window
+        let n_ctx = params
+            .context_window
             .unwrap_or_else(|| model.n_ctx_train().clamp(2048, 8192));
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(n_ctx));
+        let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(n_ctx));
 
-        let mut ctx = model.new_context(&state.backend, ctx_params)
+        let mut ctx = model
+            .new_context(&state.backend, ctx_params)
             .map_err(|e| LlmError::ContextCreate(e.to_string()))?;
 
         // Tokenize prompt
-        let tokens = model.str_to_token(prompt, AddBos::Always)
+        let tokens = model
+            .str_to_token(prompt, AddBos::Always)
             .map_err(|e| LlmError::Tokenize(e.to_string()))?;
 
         if tokens.is_empty() {
@@ -273,7 +290,8 @@ impl LlmEngine {
 
         for (i, token) in tokens.iter().enumerate() {
             let is_last = i == tokens.len() - 1;
-            batch.add(*token, i as i32, &[0], is_last)
+            batch
+                .add(*token, i as i32, &[0], is_last)
                 .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
         }
 
@@ -287,10 +305,10 @@ impl LlmEngine {
             LlamaSampler::top_k(params.top_k),
             LlamaSampler::top_p(params.top_p, 1),
             LlamaSampler::penalties(
-                64,                         // penalty_last_n
-                params.repeat_penalty,      // repeat penalty
-                0.0,                        // frequency penalty
-                0.0,                        // presence penalty
+                64,                    // penalty_last_n
+                params.repeat_penalty, // repeat penalty
+                0.0,                   // frequency penalty
+                0.0,                   // presence penalty
             ),
             LlamaSampler::dist(1234),
         ]);
@@ -299,7 +317,9 @@ impl LlmEngine {
         let mut tokens_generated = 0u32;
         let mut word_buffer = String::new();
         let mut full_output = String::new(); // Track full output for stop sequence checking
-        let max_stop_seq_len = params.stop_sequences.iter()
+        let max_stop_seq_len = params
+            .stop_sequences
+            .iter()
             .map(|s| s.len())
             .max()
             .unwrap_or(0);
@@ -327,7 +347,8 @@ impl LlmEngine {
             }
 
             // Decode token to text
-            let piece = model.token_to_str(token, llama_cpp_2::model::Special::Tokenize)
+            let piece = model
+                .token_to_str(token, llama_cpp_2::model::Special::Tokenize)
                 .map_err(|e| LlmError::Generate(format!("Token decode error: {}", e)))?;
 
             // Buffer and send complete words
@@ -338,7 +359,9 @@ impl LlmEngine {
             let mut hit_stop_sequence = false;
             if !params.stop_sequences.is_empty() {
                 // Only check recent portion of output (optimization)
-                let check_start = full_output.len().saturating_sub(max_stop_seq_len + piece.len());
+                let check_start = full_output
+                    .len()
+                    .saturating_sub(max_stop_seq_len + piece.len());
                 let check_region = &full_output[check_start..];
 
                 for stop_seq in &params.stop_sequences {
@@ -364,14 +387,15 @@ impl LlmEngine {
             // 2. Buffer exceeds 20 chars (force emit)
             // 3. Enough time has passed since last emit (throttle)
             let time_since_emit = last_emit_time.elapsed();
-            let should_emit = !word_buffer.is_empty() && (
-                // Large buffer: force emit
-                word_buffer.len() > 20 ||
+            let should_emit = !word_buffer.is_empty()
+                && (
+                    // Large buffer: force emit
+                    word_buffer.len() > 20 ||
                 // Word boundary with minimum chars and throttle passed
                 (piece.contains(char::is_whitespace) &&
                  word_buffer.len() >= min_chars &&
                  time_since_emit >= throttle_duration)
-            );
+                );
 
             if should_emit {
                 let _ = tx.blocking_send(GenerationEvent::Token(word_buffer.clone()));
@@ -388,7 +412,8 @@ impl LlmEngine {
 
             // Prepare for next token
             batch.clear();
-            batch.add(token, n_cur as i32, &[0], true)
+            batch
+                .add(token, n_cur as i32, &[0], true)
                 .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
 
             ctx.decode(&mut batch)
@@ -413,7 +438,11 @@ impl LlmEngine {
     }
 
     /// Simple non-streaming generation (for testing)
-    pub async fn generate(&self, prompt: &str, params: GenerationParams) -> Result<String, LlmError> {
+    pub async fn generate(
+        &self,
+        prompt: &str,
+        params: GenerationParams,
+    ) -> Result<String, LlmError> {
         let (tx, mut rx) = mpsc::channel(100);
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -440,7 +469,9 @@ impl LlmEngine {
             }
         }
 
-        gen_handle.await.map_err(|e| LlmError::Generate(e.to_string()))??;
+        gen_handle
+            .await
+            .map_err(|e| LlmError::Generate(e.to_string()))??;
 
         Ok(output)
     }
@@ -462,7 +493,10 @@ mod tests {
         assert!(engine.is_ok(), "Engine should initialize");
 
         let engine = engine.unwrap();
-        assert!(!engine.is_model_loaded(), "No model should be loaded initially");
+        assert!(
+            !engine.is_model_loaded(),
+            "No model should be loaded initially"
+        );
     }
 
     #[test]
@@ -495,7 +529,9 @@ mod tests {
             .and_then(|n| n.to_str())
             .unwrap_or("custom-model")
             .to_string();
-        let info = engine.load_model(&model_path, 1000, model_id).expect("Failed to load model");
+        let info = engine
+            .load_model(&model_path, 1000, model_id)
+            .expect("Failed to load model");
         println!("Loaded model: {:?}", info);
         assert!(engine.is_model_loaded());
         assert!(info.n_vocab > 0);
@@ -503,14 +539,16 @@ mod tests {
         // Test generation (blocking for test simplicity)
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(async {
-            engine.generate(
-                "Hello, my name is",
-                GenerationParams {
-                    max_tokens: 20,
-                    temperature: 0.7,
-                    ..Default::default()
-                }
-            ).await
+            engine
+                .generate(
+                    "Hello, my name is",
+                    GenerationParams {
+                        max_tokens: 20,
+                        temperature: 0.7,
+                        ..Default::default()
+                    },
+                )
+                .await
         });
 
         let output = result.expect("Generation failed");

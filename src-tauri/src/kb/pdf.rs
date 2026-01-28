@@ -93,9 +93,7 @@ impl PdfExtractor {
         let pdfium = pdfium_render::prelude::Pdfium::new(
             pdfium_render::prelude::Pdfium::bind_to_library(
                 pdfium_render::prelude::Pdfium::pdfium_platform_library_name_at_path(
-                    pdfium_path
-                        .parent()
-                        .unwrap_or(Path::new(".")),
+                    pdfium_path.parent().unwrap_or(Path::new(".")),
                 ),
             )
             .map_err(|e| PdfError::LoadFailed(e.to_string()))?,
@@ -109,7 +107,9 @@ impl PdfExtractor {
         // Extract text from each page
         let mut pages_text = Vec::new();
         for page in document.pages().iter() {
-            let text = page.text().map_err(|e| PdfError::PageError(e.to_string()))?;
+            let text = page
+                .text()
+                .map_err(|e| PdfError::PageError(e.to_string()))?;
             pages_text.push(text.all());
         }
 
@@ -124,7 +124,11 @@ impl PdfExtractor {
 
     /// Check if a PDF needs OCR (scanned/image PDF with low text content)
     /// Returns true if average text per page is less than threshold chars
-    pub fn needs_ocr(&self, pdf_path: &Path, chars_per_page_threshold: usize) -> Result<bool, PdfError> {
+    pub fn needs_ocr(
+        &self,
+        pdf_path: &Path,
+        chars_per_page_threshold: usize,
+    ) -> Result<bool, PdfError> {
         let pages = self.extract_text(pdf_path)?;
         if pages.is_empty() {
             return Ok(true);
@@ -138,19 +142,20 @@ impl PdfExtractor {
 
     /// Render a PDF page to an image file
     /// Returns the path to the rendered image
-    pub fn render_page_to_image(&self, pdf_path: &Path, page_index: usize, output_path: &Path) -> Result<(), PdfError> {
+    pub fn render_page_to_image(
+        &self,
+        pdf_path: &Path,
+        page_index: usize,
+        output_path: &Path,
+    ) -> Result<(), PdfError> {
         use pdfium_render::prelude::*;
 
         let pdfium_path = self.pdfium_path.as_ref().ok_or(PdfError::LibraryNotFound)?;
 
         let pdfium = Pdfium::new(
-            Pdfium::bind_to_library(
-                Pdfium::pdfium_platform_library_name_at_path(
-                    pdfium_path
-                        .parent()
-                        .unwrap_or(Path::new(".")),
-                ),
-            )
+            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(
+                pdfium_path.parent().unwrap_or(Path::new(".")),
+            ))
             .map_err(|e| PdfError::LoadFailed(e.to_string()))?,
         );
 
@@ -193,7 +198,11 @@ impl PdfExtractor {
 
         // Check if we need OCR (less than 100 chars average per page)
         let total_chars: usize = regular_pages.iter().map(|p| p.len()).sum();
-        let avg_chars = if regular_pages.is_empty() { 0 } else { total_chars / regular_pages.len() };
+        let avg_chars = if regular_pages.is_empty() {
+            0
+        } else {
+            total_chars / regular_pages.len()
+        };
 
         if avg_chars >= 100 {
             // Regular PDF with good text - return as is
@@ -201,14 +210,19 @@ impl PdfExtractor {
         }
 
         // Scanned PDF - need OCR for each page
-        tracing::info!("PDF appears to be scanned (avg {} chars/page), using OCR", avg_chars);
+        tracing::info!(
+            "PDF appears to be scanned (avg {} chars/page), using OCR",
+            avg_chars
+        );
 
         let page_count = self.page_count(pdf_path)?;
         let mut ocr_pages = Vec::with_capacity(page_count);
         let temp_dir = TempDir::new()?;
 
         for page_idx in 0..page_count {
-            let img_path = temp_dir.path().join(format!("pdf_ocr_page_{}.png", page_idx));
+            let img_path = temp_dir
+                .path()
+                .join(format!("pdf_ocr_page_{}.png", page_idx));
 
             // Render page to image
             if let Err(e) = self.render_page_to_image(pdf_path, page_idx, &img_path) {
@@ -241,9 +255,7 @@ impl PdfExtractor {
         let pdfium = pdfium_render::prelude::Pdfium::new(
             pdfium_render::prelude::Pdfium::bind_to_library(
                 pdfium_render::prelude::Pdfium::pdfium_platform_library_name_at_path(
-                    pdfium_path
-                        .parent()
-                        .unwrap_or(Path::new(".")),
+                    pdfium_path.parent().unwrap_or(Path::new(".")),
                 ),
             )
             .map_err(|e| PdfError::LoadFailed(e.to_string()))?,

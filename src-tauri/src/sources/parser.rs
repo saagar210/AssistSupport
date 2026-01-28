@@ -106,15 +106,22 @@ impl SourceFile {
         if self.namespace.is_empty() {
             return Err(ParseError::Validation("Namespace cannot be empty".into()));
         }
-        if !self.namespace.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if !self
+            .namespace
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             return Err(ParseError::Validation(
-                "Namespace must contain only alphanumeric characters, hyphens, and underscores".into()
+                "Namespace must contain only alphanumeric characters, hyphens, and underscores"
+                    .into(),
             ));
         }
 
         // Validate sources
         if self.sources.is_empty() {
-            return Err(ParseError::Validation("At least one source must be defined".into()));
+            return Err(ParseError::Validation(
+                "At least one source must be defined".into(),
+            ));
         }
 
         for source in &self.sources {
@@ -137,25 +144,28 @@ impl SourceDefinition {
             return Err(ParseError::Validation("Source name cannot be empty".into()));
         }
         if self.uri.is_empty() {
-            return Err(ParseError::Validation(
-                format!("Source '{}' has empty URI", self.name)
-            ));
+            return Err(ParseError::Validation(format!(
+                "Source '{}' has empty URI",
+                self.name
+            )));
         }
 
         // Validate URI based on type
         match self.source_type {
             SourceType::Url => {
                 if !self.uri.starts_with("http://") && !self.uri.starts_with("https://") {
-                    return Err(ParseError::Validation(
-                        format!("URL source '{}' must start with http:// or https://", self.name)
-                    ));
+                    return Err(ParseError::Validation(format!(
+                        "URL source '{}' must start with http:// or https://",
+                        self.name
+                    )));
                 }
             }
             SourceType::YouTube => {
                 if !self.uri.contains("youtube.com") && !self.uri.contains("youtu.be") {
-                    return Err(ParseError::Validation(
-                        format!("YouTube source '{}' must be a valid YouTube URL", self.name)
-                    ));
+                    return Err(ParseError::Validation(format!(
+                        "YouTube source '{}' must be a valid YouTube URL",
+                        self.name
+                    )));
                 }
             }
             SourceType::GitHub => {
@@ -173,14 +183,16 @@ impl SourceDefinition {
 
         // Validate limits
         if self.max_pages == 0 {
-            return Err(ParseError::Validation(
-                format!("Source '{}' max_pages must be greater than 0", self.name)
-            ));
+            return Err(ParseError::Validation(format!(
+                "Source '{}' max_pages must be greater than 0",
+                self.name
+            )));
         }
         if self.max_total_bytes == 0 {
-            return Err(ParseError::Validation(
-                format!("Source '{}' max_total_bytes must be greater than 0", self.name)
-            ));
+            return Err(ParseError::Validation(format!(
+                "Source '{}' max_total_bytes must be greater than 0",
+                self.name
+            )));
         }
 
         Ok(())

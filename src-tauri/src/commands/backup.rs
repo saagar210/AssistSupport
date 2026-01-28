@@ -82,7 +82,8 @@ pub async fn export_draft(
                 .as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            std::fs::write(file_path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+            std::fs::write(file_path, content)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
 
             Ok(true)
         }
@@ -128,7 +129,8 @@ pub async fn export_backup(
                 .as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::export_backup(db, file_path, password.as_deref()).map_err(|e| e.to_string())
+            crate::backup::export_backup(db, file_path, password.as_deref())
+                .map_err(|e| e.to_string())
         }
         None => Err("Export cancelled".to_string()),
     }
@@ -186,7 +188,8 @@ pub async fn import_backup(
                 .as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::import_backup(db, file_path, password.as_deref()).map_err(|e| e.to_string())
+            crate::backup::import_backup(db, file_path, password.as_deref())
+                .map_err(|e| e.to_string())
         }
         None => Err("Import cancelled".to_string()),
     }

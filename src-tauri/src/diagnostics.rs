@@ -122,20 +122,16 @@ pub fn check_database_health(db: &crate::db::Database) -> ComponentHealth {
     match db.check_integrity() {
         Ok(()) => {
             // Check basic operations work
-            match db.conn().query_row::<i64, _, _>("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0)) {
-                Ok(count) => {
-                    ComponentHealth::healthy(
-                        "Database",
-                        &format!("OK - {} documents indexed", count)
-                    )
-                }
+            match db
+                .conn()
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0))
+            {
+                Ok(count) => ComponentHealth::healthy(
+                    "Database",
+                    &format!("OK - {} documents indexed", count),
+                ),
                 Err(e) => {
-                    ComponentHealth::error(
-                        "Database",
-                        "Query failed",
-                        Some(&e.to_string()),
-                        false
-                    )
+                    ComponentHealth::error("Database", "Query failed", Some(&e.to_string()), false)
                 }
             }
         }
@@ -144,48 +140,44 @@ pub fn check_database_health(db: &crate::db::Database) -> ComponentHealth {
                 "Database",
                 "Integrity check failed",
                 Some(&e.to_string()),
-                true // Can attempt VACUUM/repair
+                true, // Can attempt VACUUM/repair
             )
         }
     }
 }
 
 /// Check vector store health (async version needed due to count())
-pub fn check_vector_store_health_sync(vectors: Option<&crate::kb::vectors::VectorStore>) -> ComponentHealth {
+pub fn check_vector_store_health_sync(
+    vectors: Option<&crate::kb::vectors::VectorStore>,
+) -> ComponentHealth {
     match vectors {
         Some(store) => {
             if !store.is_enabled() {
                 ComponentHealth::warning(
                     "Vector Store",
                     "Disabled",
-                    Some("Enable vector search in Settings to use semantic search")
+                    Some("Enable vector search in Settings to use semantic search"),
                 )
             } else {
                 let dim = store.embedding_dim();
-                ComponentHealth::healthy(
-                    "Vector Store",
-                    &format!("OK - dim={}", dim)
-                )
+                ComponentHealth::healthy("Vector Store", &format!("OK - dim={}", dim))
             }
         }
-        None => {
-            ComponentHealth::unavailable(
-                "Vector Store",
-                "Not initialized"
-            )
-        }
+        None => ComponentHealth::unavailable("Vector Store", "Not initialized"),
     }
 }
 
 /// Check vector store health with count (async)
-pub async fn check_vector_store_health(vectors: Option<&crate::kb::vectors::VectorStore>) -> ComponentHealth {
+pub async fn check_vector_store_health(
+    vectors: Option<&crate::kb::vectors::VectorStore>,
+) -> ComponentHealth {
     match vectors {
         Some(store) => {
             if !store.is_enabled() {
                 return ComponentHealth::warning(
                     "Vector Store",
                     "Disabled",
-                    Some("Enable vector search in Settings to use semantic search")
+                    Some("Enable vector search in Settings to use semantic search"),
                 );
             }
 
@@ -195,12 +187,12 @@ pub async fn check_vector_store_health(vectors: Option<&crate::kb::vectors::Vect
                         ComponentHealth::warning(
                             "Vector Store",
                             "No vectors indexed",
-                            Some("Run 'Generate Embeddings' to enable semantic search")
+                            Some("Run 'Generate Embeddings' to enable semantic search"),
                         )
                     } else {
                         ComponentHealth::healthy(
                             "Vector Store",
-                            &format!("OK - {} vectors, dim={}", count, store.embedding_dim())
+                            &format!("OK - {} vectors, dim={}", count, store.embedding_dim()),
                         )
                     }
                 }
@@ -209,17 +201,12 @@ pub async fn check_vector_store_health(vectors: Option<&crate::kb::vectors::Vect
                         "Vector Store",
                         "Count query failed",
                         Some(&e.to_string()),
-                        true // Can rebuild
+                        true, // Can rebuild
                     )
                 }
             }
         }
-        None => {
-            ComponentHealth::unavailable(
-                "Vector Store",
-                "Not initialized"
-            )
-        }
+        None => ComponentHealth::unavailable("Vector Store", "Not initialized"),
     }
 }
 
@@ -229,67 +216,51 @@ pub fn check_llm_health(llm: Option<&crate::llm::LlmEngine>) -> ComponentHealth 
         Some(engine) => {
             if engine.is_model_loaded() {
                 match engine.model_info() {
-                    Some(info) => {
-                        ComponentHealth::healthy(
-                            "LLM Engine",
-                            &format!("OK - {} loaded", info.name)
-                        )
-                    }
-                    None => {
-                        ComponentHealth::warning(
-                            "LLM Engine",
-                            "Model loaded but info unavailable",
-                            None
-                        )
-                    }
+                    Some(info) => ComponentHealth::healthy(
+                        "LLM Engine",
+                        &format!("OK - {} loaded", info.name),
+                    ),
+                    None => ComponentHealth::warning(
+                        "LLM Engine",
+                        "Model loaded but info unavailable",
+                        None,
+                    ),
                 }
             } else {
                 ComponentHealth::warning(
                     "LLM Engine",
                     "No model loaded",
-                    Some("Load a model from the Settings tab")
+                    Some("Load a model from the Settings tab"),
                 )
             }
         }
-        None => {
-            ComponentHealth::unavailable(
-                "LLM Engine",
-                "Not initialized"
-            )
-        }
+        None => ComponentHealth::unavailable("LLM Engine", "Not initialized"),
     }
 }
 
 /// Check embedding model health
-pub fn check_embedding_health(embeddings: Option<&crate::kb::embeddings::EmbeddingEngine>) -> ComponentHealth {
+pub fn check_embedding_health(
+    embeddings: Option<&crate::kb::embeddings::EmbeddingEngine>,
+) -> ComponentHealth {
     match embeddings {
         Some(engine) => {
             if engine.is_model_loaded() {
-                ComponentHealth::healthy(
-                    "Embedding Model",
-                    "OK - Model loaded"
-                )
+                ComponentHealth::healthy("Embedding Model", "OK - Model loaded")
             } else {
                 ComponentHealth::warning(
                     "Embedding Model",
                     "No model loaded",
-                    Some("Embedding model will load when generating embeddings")
+                    Some("Embedding model will load when generating embeddings"),
                 )
             }
         }
-        None => {
-            ComponentHealth::unavailable(
-                "Embedding Model",
-                "Not initialized"
-            )
-        }
+        None => ComponentHealth::unavailable("Embedding Model", "Not initialized"),
     }
 }
 
 /// Check file system health (data directories)
 pub fn check_filesystem_health() -> ComponentHealth {
-    let app_data_dir = dirs::data_dir()
-        .map(|p| p.join("AssistSupport"));
+    let app_data_dir = dirs::data_dir().map(|p| p.join("AssistSupport"));
 
     match app_data_dir {
         Some(path) => {
@@ -300,36 +271,29 @@ pub fn check_filesystem_health() -> ComponentHealth {
                     Ok(()) => {
                         let _ = std::fs::remove_file(&test_path);
 
-                        ComponentHealth::healthy(
-                            "File System",
-                            &format!("OK - {}", path.display())
-                        )
+                        ComponentHealth::healthy("File System", &format!("OK - {}", path.display()))
                     }
-                    Err(e) => {
-                        ComponentHealth::error(
-                            "File System",
-                            "Cannot write to data directory",
-                            Some(&e.to_string()),
-                            false
-                        )
-                    }
+                    Err(e) => ComponentHealth::error(
+                        "File System",
+                        "Cannot write to data directory",
+                        Some(&e.to_string()),
+                        false,
+                    ),
                 }
             } else {
                 ComponentHealth::warning(
                     "File System",
                     "Data directory does not exist",
-                    Some("Will be created on first run")
+                    Some("Will be created on first run"),
                 )
             }
         }
-        None => {
-            ComponentHealth::error(
-                "File System",
-                "Cannot determine data directory",
-                None,
-                false
-            )
-        }
+        None => ComponentHealth::error(
+            "File System",
+            "Cannot determine data directory",
+            None,
+            false,
+        ),
     }
 }
 
@@ -340,32 +304,26 @@ pub fn repair_database(db: &crate::db::Database) -> RepairResult {
         Ok(_) => {
             // Re-check integrity
             match db.check_integrity() {
-                Ok(()) => {
-                    RepairResult {
-                        component: "Database".to_string(),
-                        success: true,
-                        action_taken: "Ran VACUUM to compact and repair database".to_string(),
-                        message: Some("Database integrity restored".to_string()),
-                    }
-                }
-                Err(e) => {
-                    RepairResult {
-                        component: "Database".to_string(),
-                        success: false,
-                        action_taken: "VACUUM completed but integrity check still fails".to_string(),
-                        message: Some(format!("Manual intervention may be required: {}", e)),
-                    }
-                }
+                Ok(()) => RepairResult {
+                    component: "Database".to_string(),
+                    success: true,
+                    action_taken: "Ran VACUUM to compact and repair database".to_string(),
+                    message: Some("Database integrity restored".to_string()),
+                },
+                Err(e) => RepairResult {
+                    component: "Database".to_string(),
+                    success: false,
+                    action_taken: "VACUUM completed but integrity check still fails".to_string(),
+                    message: Some(format!("Manual intervention may be required: {}", e)),
+                },
             }
         }
-        Err(e) => {
-            RepairResult {
-                component: "Database".to_string(),
-                success: false,
-                action_taken: "VACUUM failed".to_string(),
-                message: Some(e.to_string()),
-            }
-        }
+        Err(e) => RepairResult {
+            component: "Database".to_string(),
+            success: false,
+            action_taken: "VACUUM failed".to_string(),
+            message: Some(e.to_string()),
+        },
     }
 }
 
@@ -386,7 +344,8 @@ pub fn get_vector_rebuild_guidance() -> RepairResult {
         action_taken: "Guidance provided".to_string(),
         message: Some(
             "To rebuild vectors: 1) Go to Settings > Knowledge Base, \
-             2) Click 'Generate Embeddings'. This will re-process all chunks.".to_string()
+             2) Click 'Generate Embeddings'. This will re-process all chunks."
+                .to_string(),
         ),
     }
 }
@@ -509,40 +468,48 @@ pub struct DatabaseStats {
 }
 
 /// Get database statistics for monitoring
-pub fn get_database_stats(db: &crate::db::Database, db_path: &std::path::Path) -> Result<DatabaseStats, String> {
-    let file_size_bytes = std::fs::metadata(db_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+pub fn get_database_stats(
+    db: &crate::db::Database,
+    db_path: &std::path::Path,
+) -> Result<DatabaseStats, String> {
+    let file_size_bytes = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
 
-    let document_count: i64 = db.conn()
+    let document_count: i64 = db
+        .conn()
         .query_row("SELECT COUNT(*) FROM kb_documents", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let chunk_count: i64 = db.conn()
+    let chunk_count: i64 = db
+        .conn()
         .query_row("SELECT COUNT(*) FROM kb_chunks", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let draft_count: i64 = db.conn()
+    let draft_count: i64 = db
+        .conn()
         .query_row("SELECT COUNT(*) FROM drafts", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let job_count: i64 = db.conn()
+    let job_count: i64 = db
+        .conn()
         .query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let page_count: i64 = db.conn()
+    let page_count: i64 = db
+        .conn()
         .query_row("PRAGMA page_count", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let freelist_count: i64 = db.conn()
+    let freelist_count: i64 = db
+        .conn()
         .query_row("PRAGMA freelist_count", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let last_vacuum: Option<String> = db.conn()
+    let last_vacuum: Option<String> = db
+        .conn()
         .query_row(
             "SELECT value FROM settings WHERE key = 'last_vacuum'",
             [],
-            |r| r.get(0)
+            |r| r.get(0),
         )
         .ok();
 
@@ -561,11 +528,13 @@ pub fn get_database_stats(db: &crate::db::Database, db_path: &std::path::Path) -
 /// Run scheduled database maintenance (VACUUM if needed)
 pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
     // Check if VACUUM is needed (freelist > 10% of pages)
-    let page_count: i64 = db.conn()
+    let page_count: i64 = db
+        .conn()
         .query_row("PRAGMA page_count", [], |r| r.get(0))
         .unwrap_or(1);
 
-    let freelist_count: i64 = db.conn()
+    let freelist_count: i64 = db
+        .conn()
         .query_row("PRAGMA freelist_count", [], |r| r.get(0))
         .unwrap_or(0);
 
@@ -577,7 +546,10 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
             component: "Database".to_string(),
             success: true,
             action_taken: "Checked database - no maintenance needed".to_string(),
-            message: Some(format!("Fragmentation at {:.1}% (threshold: 10%)", fragmentation_pct)),
+            message: Some(format!(
+                "Fragmentation at {:.1}% (threshold: 10%)",
+                fragmentation_pct
+            )),
         };
     }
 
@@ -588,24 +560,25 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
             let now = chrono::Utc::now().to_rfc3339();
             let _ = db.conn().execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_vacuum', ?)",
-                [&now]
+                [&now],
             );
 
             RepairResult {
                 component: "Database".to_string(),
                 success: true,
-                action_taken: format!("VACUUM completed (was {:.1}% fragmented)", fragmentation_pct),
+                action_taken: format!(
+                    "VACUUM completed (was {:.1}% fragmented)",
+                    fragmentation_pct
+                ),
                 message: Some("Database optimized successfully".to_string()),
             }
         }
-        Err(e) => {
-            RepairResult {
-                component: "Database".to_string(),
-                success: false,
-                action_taken: "VACUUM failed".to_string(),
-                message: Some(e.to_string()),
-            }
-        }
+        Err(e) => RepairResult {
+            component: "Database".to_string(),
+            success: false,
+            action_taken: "VACUUM failed".to_string(),
+            message: Some(e.to_string()),
+        },
     }
 }
 
@@ -730,7 +703,7 @@ pub struct VectorMaintenanceInfo {
 
 /// Get vector store maintenance info (async)
 pub async fn get_vector_maintenance_info(
-    vectors: Option<&crate::kb::vectors::VectorStore>
+    vectors: Option<&crate::kb::vectors::VectorStore>,
 ) -> Option<VectorMaintenanceInfo> {
     let store = vectors?;
 

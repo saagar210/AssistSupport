@@ -43,23 +43,17 @@ fn bench_encryption(c: &mut Criterion) {
 
     group.throughput(Throughput::Bytes(1024));
     group.bench_function("encrypt_1kb", |b| {
-        b.iter(|| {
-            Crypto::encrypt(key.as_bytes(), black_box(&small_data)).unwrap()
-        })
+        b.iter(|| Crypto::encrypt(key.as_bytes(), black_box(&small_data)).unwrap())
     });
 
     group.throughput(Throughput::Bytes(65536));
     group.bench_function("encrypt_64kb", |b| {
-        b.iter(|| {
-            Crypto::encrypt(key.as_bytes(), black_box(&medium_data)).unwrap()
-        })
+        b.iter(|| Crypto::encrypt(key.as_bytes(), black_box(&medium_data)).unwrap())
     });
 
     group.throughput(Throughput::Bytes(1_048_576));
     group.bench_function("encrypt_1mb", |b| {
-        b.iter(|| {
-            Crypto::encrypt(key.as_bytes(), black_box(&large_data)).unwrap()
-        })
+        b.iter(|| Crypto::encrypt(key.as_bytes(), black_box(&large_data)).unwrap())
     });
 
     group.finish();
@@ -81,23 +75,17 @@ fn bench_decryption(c: &mut Criterion) {
 
     group.throughput(Throughput::Bytes(1024));
     group.bench_function("decrypt_1kb", |b| {
-        b.iter(|| {
-            Crypto::decrypt(key.as_bytes(), black_box(&encrypted_small)).unwrap()
-        })
+        b.iter(|| Crypto::decrypt(key.as_bytes(), black_box(&encrypted_small)).unwrap())
     });
 
     group.throughput(Throughput::Bytes(65536));
     group.bench_function("decrypt_64kb", |b| {
-        b.iter(|| {
-            Crypto::decrypt(key.as_bytes(), black_box(&encrypted_medium)).unwrap()
-        })
+        b.iter(|| Crypto::decrypt(key.as_bytes(), black_box(&encrypted_medium)).unwrap())
     });
 
     group.throughput(Throughput::Bytes(1_048_576));
     group.bench_function("decrypt_1mb", |b| {
-        b.iter(|| {
-            Crypto::decrypt(key.as_bytes(), black_box(&encrypted_large)).unwrap()
-        })
+        b.iter(|| Crypto::decrypt(key.as_bytes(), black_box(&encrypted_large)).unwrap())
     });
 
     group.finish();
@@ -113,17 +101,13 @@ fn bench_key_derivation(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(15));
 
     group.bench_function("wrap_key_argon2", |b| {
-        b.iter(|| {
-            Crypto::wrap_key(black_box(&master_key), black_box(passphrase)).unwrap()
-        })
+        b.iter(|| Crypto::wrap_key(black_box(&master_key), black_box(passphrase)).unwrap())
     });
 
     let wrapped = Crypto::wrap_key(&master_key, passphrase).unwrap();
 
     group.bench_function("unwrap_key_argon2", |b| {
-        b.iter(|| {
-            Crypto::unwrap_key(black_box(&wrapped), black_box(passphrase)).unwrap()
-        })
+        b.iter(|| Crypto::unwrap_key(black_box(&wrapped), black_box(passphrase)).unwrap())
     });
 
     group.finish();
@@ -148,7 +132,8 @@ fn bench_fts_search(c: &mut Criterion) {
                 format!("hash_{}", i),
                 format!("Test Document {}", i)
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Insert chunks
         for j in 0..5 {
@@ -171,20 +156,20 @@ fn bench_fts_search(c: &mut Criterion) {
     let mut group = c.benchmark_group("fts_search");
 
     group.bench_function("search_simple", |b| {
-        b.iter(|| {
-            db.fts_search(black_box("troubleshooting"), 10).unwrap()
-        })
+        b.iter(|| db.fts_search(black_box("troubleshooting"), 10).unwrap())
     });
 
     group.bench_function("search_multi_word", |b| {
         b.iter(|| {
-            db.fts_search(black_box("IT support technical"), 10).unwrap()
+            db.fts_search(black_box("IT support technical"), 10)
+                .unwrap()
         })
     });
 
     group.bench_function("search_phrase", |b| {
         b.iter(|| {
-            db.fts_search(black_box("\"technical documentation\""), 10).unwrap()
+            db.fts_search(black_box("\"technical documentation\""), 10)
+                .unwrap()
         })
     });
 
@@ -199,22 +184,19 @@ fn bench_db_operations(c: &mut Criterion) {
 
     // Benchmark settings read/write
     group.bench_function("read_vector_consent", |b| {
-        b.iter(|| {
-            db.get_vector_consent().unwrap()
-        })
+        b.iter(|| db.get_vector_consent().unwrap())
     });
 
     group.bench_function("write_vector_consent", |b| {
         b.iter(|| {
-            db.set_vector_consent(black_box(true), black_box(true)).unwrap()
+            db.set_vector_consent(black_box(true), black_box(true))
+                .unwrap()
         })
     });
 
     // Benchmark integrity check
     group.bench_function("check_integrity", |b| {
-        b.iter(|| {
-            db.check_integrity().unwrap()
-        })
+        b.iter(|| db.check_integrity().unwrap())
     });
 
     group.finish();
@@ -224,11 +206,7 @@ fn bench_db_operations(c: &mut Criterion) {
 fn bench_key_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("key_generation");
 
-    group.bench_function("generate_master_key", |b| {
-        b.iter(|| {
-            MasterKey::generate()
-        })
-    });
+    group.bench_function("generate_master_key", |b| b.iter(|| MasterKey::generate()));
 
     group.finish();
 }
@@ -250,7 +228,7 @@ fn bench_db_open(c: &mut Criterion) {
                 let db = Database::open(&db_path, &key).unwrap();
                 db.initialize().unwrap();
                 black_box(db)
-            }
+            },
         )
     });
 

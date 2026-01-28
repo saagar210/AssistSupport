@@ -1,15 +1,15 @@
 //! KB Document Indexer
 //! Handles parsing, chunking, and indexing of documents into the KB
 
+use rusqlite::params;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use sha2::{Sha256, Digest};
 use uuid::Uuid;
-use rusqlite::params;
 
-use crate::db::{Database, DbError};
-use super::pdf::PdfExtractor;
 use super::ocr::OcrManager;
+use super::pdf::PdfExtractor;
+use crate::db::{Database, DbError};
 
 #[derive(Debug, Error)]
 pub enum IndexerError {
@@ -68,11 +68,37 @@ impl CodeLanguage {
     pub fn function_patterns(&self) -> &'static [&'static str] {
         match self {
             Self::Python => &["def ", "class ", "async def "],
-            Self::JavaScript | Self::TypeScript => &["function ", "const ", "class ", "async function ", "export function ", "export const ", "export class ", "export default "],
-            Self::Rust => &["fn ", "pub fn ", "impl ", "struct ", "enum ", "trait ", "mod "],
+            Self::JavaScript | Self::TypeScript => &[
+                "function ",
+                "const ",
+                "class ",
+                "async function ",
+                "export function ",
+                "export const ",
+                "export class ",
+                "export default ",
+            ],
+            Self::Rust => &[
+                "fn ", "pub fn ", "impl ", "struct ", "enum ", "trait ", "mod ",
+            ],
             Self::Go => &["func ", "type "],
-            Self::Java | Self::CSharp => &["public ", "private ", "protected ", "class ", "interface ", "enum "],
-            Self::Cpp | Self::C => &["void ", "int ", "char ", "bool ", "class ", "struct ", "template "],
+            Self::Java | Self::CSharp => &[
+                "public ",
+                "private ",
+                "protected ",
+                "class ",
+                "interface ",
+                "enum ",
+            ],
+            Self::Cpp | Self::C => &[
+                "void ",
+                "int ",
+                "char ",
+                "bool ",
+                "class ",
+                "struct ",
+                "template ",
+            ],
             Self::Ruby => &["def ", "class ", "module "],
             Self::Shell => &["function ", "()"],
         }
@@ -131,10 +157,23 @@ pub struct Section {
 /// Indexing progress event
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum IndexProgress {
-    Started { total_files: usize },
-    Processing { current: usize, total: usize, file_name: String },
-    Completed { indexed: usize, skipped: usize, errors: usize },
-    Error { file_name: String, message: String },
+    Started {
+        total_files: usize,
+    },
+    Processing {
+        current: usize,
+        total: usize,
+        file_name: String,
+    },
+    Completed {
+        indexed: usize,
+        skipped: usize,
+        errors: usize,
+    },
+    Error {
+        file_name: String,
+        message: String,
+    },
 }
 
 /// Maximum file size for text files (10MB)
@@ -198,7 +237,7 @@ impl KbIndexer {
     fn get_file_size_safe(path: &Path) -> Result<u64, IndexerError> {
         if Self::is_symlink(path) {
             return Err(IndexerError::SymlinkNotAllowed(
-                path.to_string_lossy().to_string()
+                path.to_string_lossy().to_string(),
             ));
         }
         let metadata = std::fs::metadata(path)?;
@@ -238,7 +277,8 @@ impl KbIndexer {
             let path = entry.path();
 
             // Skip hidden files and directories
-            if path.file_name()
+            if path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .map(|n| n.starts_with('.'))
                 .unwrap_or(false)
@@ -266,9 +306,7 @@ impl KbIndexer {
 
     /// Parse a document into sections
     pub fn parse_document(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
-        let ext = path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         let doc_type = DocumentType::from_extension(ext)
             .ok_or_else(|| IndexerError::UnsupportedFileType(ext.to_string()))?;
@@ -389,12 +427,14 @@ impl KbIndexer {
     fn parse_pdf(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
         // Use OCR fallback for scanned PDFs (< 100 chars per page average)
         let ocr_manager = &self.ocr_manager;
-        let pages = self.pdf_extractor.extract_text_with_ocr_fallback(path, |img_path| {
-            ocr_manager
-                .recognize(img_path)
-                .map(|r| r.text)
-                .map_err(|e| e.to_string())
-        })?;
+        let pages = self
+            .pdf_extractor
+            .extract_text_with_ocr_fallback(path, |img_path| {
+                ocr_manager
+                    .recognize(img_path)
+                    .map(|r| r.text)
+                    .map_err(|e| e.to_string())
+            })?;
 
         // Combine all pages
         let mut all_text = String::new();
@@ -404,7 +444,8 @@ impl KbIndexer {
         }
 
         // Try to extract title from first line
-        let title = all_text.lines()
+        let title = all_text
+            .lines()
             .next()
             .filter(|l| l.len() < 100 && !l.is_empty())
             .map(|s| s.to_string());
@@ -423,7 +464,8 @@ impl KbIndexer {
     fn parse_plaintext(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
         let raw = std::fs::read(path)?;
         let content = String::from_utf8_lossy(&raw).into_owned();
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
@@ -440,7 +482,8 @@ impl KbIndexer {
     /// Parse an image file using OCR
     fn parse_image(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
         let result = self.ocr_manager.recognize(path)?;
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
@@ -457,7 +500,8 @@ impl KbIndexer {
     /// Parse a DOCX file
     fn parse_docx(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
         let content = super::docx::extract_text(path)?;
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
@@ -474,7 +518,8 @@ impl KbIndexer {
     /// Parse an Excel file (XLSX/XLS)
     fn parse_xlsx(&self, path: &Path) -> Result<ParsedDocument, IndexerError> {
         let content = super::xlsx::extract_text(path)?;
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
@@ -492,7 +537,8 @@ impl KbIndexer {
     fn parse_code(&self, path: &Path, lang: CodeLanguage) -> Result<ParsedDocument, IndexerError> {
         let raw = std::fs::read(path)?;
         let content = String::from_utf8_lossy(&raw).into_owned();
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
 
@@ -581,7 +627,11 @@ impl KbIndexer {
 
         for (i, chunk) in lines.chunks(lines_per_chunk).enumerate() {
             sections.push(Section {
-                heading: Some(format!("Lines {}-{}", i * lines_per_chunk + 1, i * lines_per_chunk + chunk.len())),
+                heading: Some(format!(
+                    "Lines {}-{}",
+                    i * lines_per_chunk + 1,
+                    i * lines_per_chunk + chunk.len()
+                )),
                 level: 1,
                 content: chunk.join("\n"),
             });
@@ -731,7 +781,8 @@ impl KbIndexer {
                 continue;
             }
 
-            if current_words.len() + words.len() > self.max_chunk_words && !current_words.is_empty() {
+            if current_words.len() + words.len() > self.max_chunk_words && !current_words.is_empty()
+            {
                 chunks.push(Chunk {
                     heading_path: heading_path.clone(),
                     content: current_words.join(" "),
@@ -769,7 +820,8 @@ impl KbIndexer {
         let file_path = path.to_string_lossy().to_string();
 
         // Check if already indexed with same hash
-        let existing: Option<String> = db.conn()
+        let existing: Option<String> = db
+            .conn()
             .query_row(
                 "SELECT file_hash FROM kb_documents WHERE file_path = ?",
                 params![&file_path],
@@ -795,7 +847,8 @@ impl KbIndexer {
         // Generate document ID
         let doc_id = if existing.is_some() {
             // Update existing document - get its ID
-            let id: String = db.conn()
+            let id: String = db
+                .conn()
                 .query_row(
                     "SELECT id FROM kb_documents WHERE file_path = ?",
                     params![&file_path],
@@ -815,8 +868,11 @@ impl KbIndexer {
 
         // Insert or update document record
         let now = chrono::Utc::now().to_rfc3339();
-        let title = parsed.title
-            .or_else(|| path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()));
+        let title = parsed.title.or_else(|| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+        });
 
         db.conn()
             .execute(
@@ -868,7 +924,8 @@ impl KbIndexer {
         let mut errors = 0;
 
         for (i, file) in files.iter().enumerate() {
-            let file_name = file.file_name()
+            let file_name = file
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
@@ -909,7 +966,8 @@ impl KbIndexer {
     /// Remove a document from the index
     pub fn remove_document(&self, db: &Database, file_path: &str) -> Result<bool, IndexerError> {
         // Get document ID
-        let doc_id: Option<String> = db.conn()
+        let doc_id: Option<String> = db
+            .conn()
             .query_row(
                 "SELECT id FROM kb_documents WHERE file_path = ?",
                 params![file_path],
@@ -930,16 +988,23 @@ impl KbIndexer {
 
     /// Get indexing statistics
     pub fn get_stats(&self, db: &Database) -> Result<IndexStats, IndexerError> {
-        let doc_count: i64 = db.conn()
+        let doc_count: i64 = db
+            .conn()
             .query_row("SELECT COUNT(*) FROM kb_documents", [], |row| row.get(0))
             .map_err(|e| IndexerError::Database(DbError::Sqlite(e)))?;
 
-        let chunk_count: i64 = db.conn()
+        let chunk_count: i64 = db
+            .conn()
             .query_row("SELECT COUNT(*) FROM kb_chunks", [], |row| row.get(0))
             .map_err(|e| IndexerError::Database(DbError::Sqlite(e)))?;
 
-        let total_words: i64 = db.conn()
-            .query_row("SELECT COALESCE(SUM(word_count), 0) FROM kb_chunks", [], |row| row.get(0))
+        let total_words: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COALESCE(SUM(word_count), 0) FROM kb_chunks",
+                [],
+                |row| row.get(0),
+            )
             .map_err(|e| IndexerError::Database(DbError::Sqlite(e)))?;
 
         Ok(IndexStats {
@@ -980,12 +1045,27 @@ mod tests {
 
     #[test]
     fn test_document_type_detection() {
-        assert_eq!(DocumentType::from_extension("md"), Some(DocumentType::Markdown));
+        assert_eq!(
+            DocumentType::from_extension("md"),
+            Some(DocumentType::Markdown)
+        );
         assert_eq!(DocumentType::from_extension("PDF"), Some(DocumentType::Pdf));
-        assert_eq!(DocumentType::from_extension("txt"), Some(DocumentType::PlainText));
-        assert_eq!(DocumentType::from_extension("png"), Some(DocumentType::Image));
-        assert_eq!(DocumentType::from_extension("docx"), Some(DocumentType::Docx));
-        assert_eq!(DocumentType::from_extension("xlsx"), Some(DocumentType::Xlsx));
+        assert_eq!(
+            DocumentType::from_extension("txt"),
+            Some(DocumentType::PlainText)
+        );
+        assert_eq!(
+            DocumentType::from_extension("png"),
+            Some(DocumentType::Image)
+        );
+        assert_eq!(
+            DocumentType::from_extension("docx"),
+            Some(DocumentType::Docx)
+        );
+        assert_eq!(
+            DocumentType::from_extension("xlsx"),
+            Some(DocumentType::Xlsx)
+        );
         assert_eq!(DocumentType::from_extension("unknown"), None);
     }
 
@@ -993,7 +1073,9 @@ mod tests {
     fn test_markdown_parsing() {
         let dir = tempdir().unwrap();
         let md_path = dir.path().join("test.md");
-        std::fs::write(&md_path, r#"# Main Title
+        std::fs::write(
+            &md_path,
+            r#"# Main Title
 
 This is the introduction.
 
@@ -1009,7 +1091,9 @@ Content in section two.
 ### Subsection
 
 Nested content.
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let indexer = KbIndexer::new();
         let doc = indexer.parse_document(&md_path).unwrap();
@@ -1086,8 +1170,8 @@ Nested content.
 
     #[test]
     fn test_index_and_search_integration() {
-        use crate::security::MasterKey;
         use crate::db::Database;
+        use crate::security::MasterKey;
 
         // Create temp database
         let db_dir = tempdir().unwrap();
@@ -1118,7 +1202,8 @@ Authentication failures often occur when:
 - Account is locked
 - MFA device is not registered
 "#,
-        ).unwrap();
+        )
+        .unwrap();
 
         std::fs::write(
             kb_dir.path().join("password-reset.md"),
@@ -1132,7 +1217,8 @@ Users can reset their own password using the self-service portal.
 
 If self-service is not available, contact IT support for an admin reset.
 "#,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Index the folder
         let indexer = KbIndexer::new();
@@ -1229,12 +1315,30 @@ If self-service is not available, contact IT support for an admin reset.
 
     #[test]
     fn test_max_file_size_by_type() {
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::Markdown), MAX_TEXT_FILE_SIZE);
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::PlainText), MAX_TEXT_FILE_SIZE);
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::Pdf), MAX_BINARY_FILE_SIZE);
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::Docx), MAX_BINARY_FILE_SIZE);
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::Xlsx), MAX_BINARY_FILE_SIZE);
-        assert_eq!(KbIndexer::max_file_size(&DocumentType::Image), MAX_IMAGE_FILE_SIZE);
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::Markdown),
+            MAX_TEXT_FILE_SIZE
+        );
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::PlainText),
+            MAX_TEXT_FILE_SIZE
+        );
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::Pdf),
+            MAX_BINARY_FILE_SIZE
+        );
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::Docx),
+            MAX_BINARY_FILE_SIZE
+        );
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::Xlsx),
+            MAX_BINARY_FILE_SIZE
+        );
+        assert_eq!(
+            KbIndexer::max_file_size(&DocumentType::Image),
+            MAX_IMAGE_FILE_SIZE
+        );
     }
 
     #[cfg(unix)]

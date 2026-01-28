@@ -36,14 +36,14 @@ fn has_data(path: &std::path::Path) -> bool {
 }
 
 /// Simulates the migration logic
-fn simulate_migration(
-    old_dir: &std::path::Path,
-    new_dir: &std::path::Path,
-) -> MigrationResult {
+fn simulate_migration(old_dir: &std::path::Path, new_dir: &std::path::Path) -> MigrationResult {
     let mut result = MigrationResult::default();
 
     if !old_dir.exists() {
-        result.skipped.push(("all".to_string(), "Old directory does not exist".to_string()));
+        result.skipped.push((
+            "all".to_string(),
+            "Old directory does not exist".to_string(),
+        ));
         return result;
     }
 
@@ -57,17 +57,24 @@ fn simulate_migration(
         let new_path = new_dir.join(item_name);
 
         if !old_path.exists() {
-            result.skipped.push((item_name.to_string(), "Does not exist".to_string()));
+            result
+                .skipped
+                .push((item_name.to_string(), "Does not exist".to_string()));
             continue;
         }
 
         if has_data(&new_path) && has_data(&old_path) {
-            result.conflicts.push((item_name.to_string(), "Both locations have data".to_string()));
+            result.conflicts.push((
+                item_name.to_string(),
+                "Both locations have data".to_string(),
+            ));
             continue;
         }
 
         if new_path.exists() && !has_data(&old_path) {
-            result.skipped.push((item_name.to_string(), "Already at new location".to_string()));
+            result
+                .skipped
+                .push((item_name.to_string(), "Already at new location".to_string()));
             continue;
         }
 
@@ -80,7 +87,9 @@ fn simulate_migration(
             fs::remove_file(&old_path).expect("Failed to remove old file");
         }
 
-        result.migrated.push((item_name.to_string(), new_path.clone()));
+        result
+            .migrated
+            .push((item_name.to_string(), new_path.clone()));
     }
 
     // Remove old directory if empty
@@ -157,8 +166,14 @@ fn test_migration_moves_vectors_directory() {
     // Create old vectors directory with content
     let vectors_dir = old_dir.join("vectors");
     fs::create_dir_all(&vectors_dir).unwrap();
-    File::create(vectors_dir.join("data.lance")).unwrap().write_all(b"lance data").unwrap();
-    File::create(vectors_dir.join("index.idx")).unwrap().write_all(b"index data").unwrap();
+    File::create(vectors_dir.join("data.lance"))
+        .unwrap()
+        .write_all(b"lance data")
+        .unwrap();
+    File::create(vectors_dir.join("index.idx"))
+        .unwrap()
+        .write_all(b"index data")
+        .unwrap();
 
     // Run migration
     let result = simulate_migration(&old_dir, &new_dir);
@@ -179,10 +194,22 @@ fn test_migration_moves_all_items() {
 
     // Create all migratable items
     fs::create_dir_all(&old_dir).unwrap();
-    File::create(old_dir.join("assistsupport.db")).unwrap().write_all(b"db").unwrap();
-    File::create(old_dir.join("assistsupport.db-shm")).unwrap().write_all(b"shm").unwrap();
-    File::create(old_dir.join("assistsupport.db-wal")).unwrap().write_all(b"wal").unwrap();
-    File::create(old_dir.join("audit.log")).unwrap().write_all(b"log").unwrap();
+    File::create(old_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"db")
+        .unwrap();
+    File::create(old_dir.join("assistsupport.db-shm"))
+        .unwrap()
+        .write_all(b"shm")
+        .unwrap();
+    File::create(old_dir.join("assistsupport.db-wal"))
+        .unwrap()
+        .write_all(b"wal")
+        .unwrap();
+    File::create(old_dir.join("audit.log"))
+        .unwrap()
+        .write_all(b"log")
+        .unwrap();
 
     fs::create_dir_all(old_dir.join("vectors")).unwrap();
     File::create(old_dir.join("vectors/data")).unwrap();
@@ -232,7 +259,10 @@ fn test_migration_noop_when_already_migrated() {
 
     // Data already at new location
     fs::create_dir_all(&new_dir).unwrap();
-    File::create(new_dir.join("assistsupport.db")).unwrap().write_all(b"data").unwrap();
+    File::create(new_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"data")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
@@ -249,7 +279,10 @@ fn test_migration_skips_items_not_in_old() {
 
     // Create old directory with only audit.log
     fs::create_dir_all(&old_dir).unwrap();
-    File::create(old_dir.join("audit.log")).unwrap().write_all(b"log").unwrap();
+    File::create(old_dir.join("audit.log"))
+        .unwrap()
+        .write_all(b"log")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
@@ -274,13 +307,22 @@ fn test_migration_detects_conflict() {
     // Create same file in both locations
     fs::create_dir_all(&old_dir).unwrap();
     fs::create_dir_all(&new_dir).unwrap();
-    File::create(old_dir.join("assistsupport.db")).unwrap().write_all(b"old data").unwrap();
-    File::create(new_dir.join("assistsupport.db")).unwrap().write_all(b"new data").unwrap();
+    File::create(old_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"old data")
+        .unwrap();
+    File::create(new_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"new data")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
     // Should report conflict
-    assert!(result.conflicts.iter().any(|(name, _)| name == "assistsupport.db"));
+    assert!(result
+        .conflicts
+        .iter()
+        .any(|(name, _)| name == "assistsupport.db"));
 
     // Both files should be untouched
     assert!(old_dir.join("assistsupport.db").exists());
@@ -297,11 +339,20 @@ fn test_migration_handles_mixed_conflicts() {
     fs::create_dir_all(&new_dir).unwrap();
 
     // Conflict: both have database
-    File::create(old_dir.join("assistsupport.db")).unwrap().write_all(b"old").unwrap();
-    File::create(new_dir.join("assistsupport.db")).unwrap().write_all(b"new").unwrap();
+    File::create(old_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"old")
+        .unwrap();
+    File::create(new_dir.join("assistsupport.db"))
+        .unwrap()
+        .write_all(b"new")
+        .unwrap();
 
     // No conflict: only old has audit.log
-    File::create(old_dir.join("audit.log")).unwrap().write_all(b"old log").unwrap();
+    File::create(old_dir.join("audit.log"))
+        .unwrap()
+        .write_all(b"old log")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
@@ -324,8 +375,14 @@ fn test_migration_preserves_nested_structure() {
     // Create nested directory structure
     let nested = old_dir.join("attachments/subdir/deep");
     fs::create_dir_all(&nested).unwrap();
-    File::create(nested.join("file.txt")).unwrap().write_all(b"nested content").unwrap();
-    File::create(old_dir.join("attachments/root.txt")).unwrap().write_all(b"root").unwrap();
+    File::create(nested.join("file.txt"))
+        .unwrap()
+        .write_all(b"nested content")
+        .unwrap();
+    File::create(old_dir.join("attachments/root.txt"))
+        .unwrap()
+        .write_all(b"root")
+        .unwrap();
 
     let _result = simulate_migration(&old_dir, &new_dir);
 
@@ -346,7 +403,10 @@ fn test_migration_removes_empty_old_directory() {
 
     // Create old directory with just one file
     fs::create_dir_all(&old_dir).unwrap();
-    File::create(old_dir.join("audit.log")).unwrap().write_all(b"log").unwrap();
+    File::create(old_dir.join("audit.log"))
+        .unwrap()
+        .write_all(b"log")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
@@ -363,8 +423,14 @@ fn test_migration_keeps_old_directory_if_not_empty() {
 
     // Create old directory with migratable and non-migratable items
     fs::create_dir_all(&old_dir).unwrap();
-    File::create(old_dir.join("audit.log")).unwrap().write_all(b"log").unwrap();
-    File::create(old_dir.join("other_file.txt")).unwrap().write_all(b"other").unwrap();
+    File::create(old_dir.join("audit.log"))
+        .unwrap()
+        .write_all(b"log")
+        .unwrap();
+    File::create(old_dir.join("other_file.txt"))
+        .unwrap()
+        .write_all(b"other")
+        .unwrap();
 
     let result = simulate_migration(&old_dir, &new_dir);
 
