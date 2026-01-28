@@ -3260,6 +3260,25 @@ impl Database {
             0.0
         };
 
+        // Query per-star rating distribution (1-5)
+        let mut rating_distribution = vec![0i64; 5];
+        {
+            let dist_query = format!(
+                "SELECT rating, COUNT(*) FROM response_ratings {} GROUP BY rating",
+                rating_date_filter
+            );
+            let mut stmt = self.conn.prepare(&dist_query)?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            for row in rows {
+                let (star, count) = row?;
+                if star >= 1 && star <= 5 {
+                    rating_distribution[(star - 1) as usize] = count;
+                }
+            }
+        }
+
         Ok(AnalyticsSummary {
             total_events,
             responses_generated,
@@ -3268,6 +3287,88 @@ impl Database {
             daily_counts,
             average_rating,
             total_ratings,
+            rating_distribution,
+        })
+    }
+
+    /// Get analysis of low-rated responses for quality feedback loop
+    pub fn get_low_rating_analysis(
+        &self,
+        period_days: Option<i64>,
+    ) -> Result<LowRatingAnalysis, DbError> {
+        let date_filter = period_days
+            .map(|d| format!("WHERE created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+
+        let total_rating_count: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM response_ratings {}", date_filter),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let low_date_filter = period_days
+            .map(|d| {
+                format!(
+                    "WHERE rating <= 2 AND created_at >= datetime('now', '-{} days')",
+                    d
+                )
+            })
+            .unwrap_or_else(|| "WHERE rating <= 2".to_string());
+
+        let low_rating_count: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM response_ratings {}", low_date_filter),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let low_rating_percentage = if total_rating_count > 0 {
+            (low_rating_count as f64 / total_rating_count as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        // Group by feedback category
+        let cat_query = format!(
+            "SELECT COALESCE(feedback_category, 'Uncategorized'), COUNT(*) FROM response_ratings {} GROUP BY COALESCE(feedback_category, 'Uncategorized') ORDER BY COUNT(*) DESC LIMIT 10",
+            low_date_filter
+        );
+        let mut cat_stmt = self.conn.prepare(&cat_query)?;
+        let feedback_categories = cat_stmt
+            .query_map([], |row| {
+                Ok(FeedbackCategoryCount {
+                    category: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Recent low-rated feedback texts
+        let recent_query = format!(
+            "SELECT rating, COALESCE(feedback_text, ''), feedback_category, created_at FROM response_ratings {} AND feedback_text IS NOT NULL AND feedback_text != '' ORDER BY created_at DESC LIMIT 10",
+            if low_date_filter.contains("WHERE") {
+                low_date_filter.clone()
+            } else {
+                "WHERE rating <= 2".to_string()
+            }
+        );
+        let mut recent_stmt = self.conn.prepare(&recent_query)?;
+        let recent_feedback = recent_stmt
+            .query_map([], |row| {
+                Ok(RecentLowFeedback {
+                    rating: row.get(0)?,
+                    feedback_text: row.get(1)?,
+                    feedback_category: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(LowRatingAnalysis {
+            low_rating_count,
+            total_rating_count,
+            low_rating_percentage,
+            feedback_categories,
+            recent_feedback,
         })
     }
 
@@ -3752,6 +3853,7 @@ pub struct AnalyticsSummary {
     pub daily_counts: Vec<DailyCount>,
     pub average_rating: f64,
     pub total_ratings: i64,
+    pub rating_distribution: Vec<i64>,
 }
 
 /// Daily event count
@@ -3767,6 +3869,32 @@ pub struct ArticleUsage {
     pub document_id: String,
     pub title: String,
     pub usage_count: i64,
+}
+
+/// Low rating analysis results
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LowRatingAnalysis {
+    pub low_rating_count: i64,
+    pub total_rating_count: i64,
+    pub low_rating_percentage: f64,
+    pub feedback_categories: Vec<FeedbackCategoryCount>,
+    pub recent_feedback: Vec<RecentLowFeedback>,
+}
+
+/// Feedback category count
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FeedbackCategoryCount {
+    pub category: String,
+    pub count: i64,
+}
+
+/// Recent low-rated feedback entry
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RecentLowFeedback {
+    pub rating: i32,
+    pub feedback_text: String,
+    pub feedback_category: Option<String>,
+    pub created_at: String,
 }
 
 /// KB health statistics

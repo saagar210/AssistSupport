@@ -250,6 +250,7 @@ pub fn run() {
             commands::log_analytics_event,
             commands::get_analytics_summary,
             commands::get_kb_usage_stats,
+            commands::get_low_rating_analysis,
             // Phase 10: KB Management commands
             commands::update_chunk_content,
             commands::get_kb_health_stats,

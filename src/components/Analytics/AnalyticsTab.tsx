@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAnalytics, AnalyticsSummary, ArticleUsage } from '../../hooks/useAnalytics';
+import { useAnalytics, AnalyticsSummary, ArticleUsage, LowRatingAnalysis } from '../../hooks/useAnalytics';
 import './AnalyticsTab.css';
 
 type Period = 7 | 30 | 90 | null; // null = all time
@@ -12,10 +12,11 @@ const PERIODS: { label: string; value: Period }[] = [
 ];
 
 export function AnalyticsTab() {
-  const { getSummary, getKbUsage } = useAnalytics();
+  const { getSummary, getKbUsage, getLowRatingAnalysis } = useAnalytics();
   const [period, setPeriod] = useState<Period>(30);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [kbUsage, setKbUsage] = useState<ArticleUsage[]>([]);
+  const [lowRatingData, setLowRatingData] = useState<LowRatingAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,19 +24,21 @@ export function AnalyticsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryData, kbData] = await Promise.all([
+      const [summaryData, kbData, lowRating] = await Promise.all([
         getSummary(period ?? undefined),
         getKbUsage(period ?? undefined),
+        getLowRatingAnalysis(period ?? undefined).catch(() => null),
       ]);
       setSummary(summaryData);
       setKbUsage(kbData);
+      setLowRatingData(lowRating);
     } catch (err) {
       console.error('Failed to load analytics:', err);
       setError(typeof err === 'string' ? err : 'Failed to load analytics data');
     } finally {
       setLoading(false);
     }
-  }, [period, getSummary, getKbUsage]);
+  }, [period, getSummary, getKbUsage, getLowRatingAnalysis]);
 
   useEffect(() => {
     loadData();
@@ -146,6 +149,38 @@ export function AnalyticsTab() {
         <RatingDistribution summary={summary} />
       </div>
 
+      {/* Quality Alert */}
+      {lowRatingData && lowRatingData.low_rating_count > 0 && (
+        <div className="low-rating-alert">
+          <div className="section-title">Quality Alert</div>
+          <div className="low-rating-summary">
+            <strong>{lowRatingData.low_rating_count}</strong> low ratings ({lowRatingData.low_rating_percentage.toFixed(1)}% of {lowRatingData.total_rating_count} total)
+          </div>
+          {lowRatingData.feedback_categories.length > 0 && (
+            <div className="feedback-categories">
+              <div className="feedback-categories-title">Top Feedback Categories</div>
+              {lowRatingData.feedback_categories.map(cat => (
+                <div key={cat.category} className="feedback-category-row">
+                  <span className="feedback-category-name">{cat.category}</span>
+                  <span className="feedback-category-count">{cat.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {lowRatingData.recent_feedback.length > 0 && (
+            <div className="recent-feedback">
+              <div className="recent-feedback-title">Recent Feedback</div>
+              {lowRatingData.recent_feedback.slice(0, 5).map((fb, i) => (
+                <div key={i} className="feedback-item">
+                  <span className="feedback-item-rating">{'★'.repeat(fb.rating)}{'☆'.repeat(5 - fb.rating)}</span>
+                  <span className="feedback-item-text">{fb.feedback_text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* KB Usage Table */}
       <KbUsageTable articles={kbUsage} />
     </div>
@@ -170,10 +205,11 @@ function RatingDistribution({ summary }: { summary: AnalyticsSummary }) {
     );
   }
 
-  // Estimate distribution around the average using a simple model.
-  // This provides a reasonable visual until per-star counts are available from the backend.
-  const avg = summary.average_rating;
-  const distribution = estimateRatingDistribution(avg, totalRatings);
+  // Use real per-star counts from the backend
+  const distribution = [5, 4, 3, 2, 1].map(stars => ({
+    stars,
+    count: summary.rating_distribution[stars - 1] ?? 0,
+  }));
 
   const maxCount = Math.max(...distribution.map(d => d.count), 1);
 
@@ -239,31 +275,3 @@ function formatDateLabel(dateStr: string): string {
   }
 }
 
-/** Estimate a rating distribution given an average and total count */
-function estimateRatingDistribution(
-  avg: number,
-  total: number
-): { stars: number; count: number }[] {
-  // Use a simple triangular distribution centered on the average
-  const weights = [1, 2, 3, 4, 5].map(s => {
-    const distance = Math.abs(s - avg);
-    return Math.max(0, 3 - distance);
-  });
-  const weightSum = weights.reduce((a, b) => a + b, 0);
-  const counts = weights.map(w => Math.round((w / weightSum) * total));
-
-  // Adjust rounding so total matches
-  const countSum = counts.reduce((a, b) => a + b, 0);
-  const diff = total - countSum;
-  if (diff !== 0) {
-    // Add the difference to the bucket closest to the average
-    const closestIdx = Math.round(avg) - 1;
-    counts[Math.max(0, Math.min(4, closestIdx))] += diff;
-  }
-
-  // Return in descending order (5 stars first)
-  return [5, 4, 3, 2, 1].map(stars => ({
-    stars,
-    count: counts[stars - 1],
-  }));
-}

@@ -68,7 +68,7 @@ const SHORTCUTS = [
   { keys: ['Cmd', 'S'], description: 'Save draft' },
   { keys: ['Cmd', 'N'], description: 'New draft' },
   { keys: ['Cmd', '/'], description: 'Focus search' },
-  { keys: ['Cmd', '1-6'], description: 'Switch tabs' },
+  { keys: ['Cmd', '1-7'], description: 'Switch tabs' },
 ];
 
 interface ModelOption {
@@ -197,6 +197,27 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 <div>
                   <strong>Knowledge-Powered</strong>
                   <p>Uses your documentation for accurate answers.</p>
+                </div>
+              </div>
+              <div className="onboarding-feature">
+                <Icon name="draft" size={24} />
+                <div>
+                  <strong>Response Templates</strong>
+                  <p>Save and reuse templates for common scenarios.</p>
+                </div>
+              </div>
+              <div className="onboarding-feature">
+                <Icon name="list" size={24} />
+                <div>
+                  <strong>Batch Processing</strong>
+                  <p>Process multiple support queries at once.</p>
+                </div>
+              </div>
+              <div className="onboarding-feature">
+                <Icon name="play" size={24} />
+                <div>
+                  <strong>Voice Input</strong>
+                  <p>Dictate queries using voice recognition.</p>
                 </div>
               </div>
             </div>

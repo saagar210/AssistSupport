@@ -24,14 +24,35 @@ interface ResponsePanelProps {
   modelName?: string | null;
 }
 
-function getConfidenceLevel(avgScore: number): { label: string; className: string } {
+function getConfidenceLevel(avgScore: number): { label: string; className: string; explanation: string } {
   const pct = avgScore * 100;
   if (pct > 80) {
-    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-high' };
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-high', explanation: 'Strong match' };
   } else if (pct >= 50) {
-    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-medium' };
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-medium', explanation: 'Moderate — review suggested' };
   } else {
-    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-low' };
+    return { label: `${pct.toFixed(0)}% confidence`, className: 'confidence-low', explanation: 'Weak — verify manually' };
+  }
+}
+
+function getSearchMethodLabel(method: string | null): string {
+  if (!method) return 'Search';
+  switch (method) {
+    case 'Fts5': return 'Keyword';
+    case 'Vector': return 'Semantic';
+    case 'Hybrid': return 'Hybrid';
+    default: return method;
+  }
+}
+
+function getSourceTypeLabel(sourceType: string | null): string {
+  if (!sourceType) return '';
+  switch (sourceType) {
+    case 'file': return 'File';
+    case 'url': return 'URL';
+    case 'youtube': return 'YouTube';
+    case 'github': return 'GitHub';
+    default: return sourceType;
   }
 }
 
@@ -239,11 +260,19 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
                 <div className="sources-panel-header">
                   <h4>Knowledge Base Sources</h4>
                   {confidence && (
-                    <span className={`confidence-badge ${confidence.className}`}>
-                      {confidence.label}
-                    </span>
+                    <div className="confidence-group">
+                      <span className={`confidence-badge ${confidence.className}`}>
+                        {confidence.label}
+                      </span>
+                      <span className="confidence-explanation">{confidence.explanation}</span>
+                    </div>
                   )}
                 </div>
+                {avgScore < 0.5 && avgScore > 0 && (
+                  <div className="low-confidence-warning">
+                    Low source confidence — response may need manual verification
+                  </div>
+                )}
                 <ul className="sources-list">
                   {sources.map((source, i) => {
                     const isExpanded = expandedSourceId === source.chunk_id;
@@ -271,6 +300,14 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
                               <span className="source-heading">
                                 &rsaquo; {source.heading_path}
                               </span>
+                            )}
+                          </div>
+                          <div className="source-badges">
+                            {source.search_method && (
+                              <span className="search-method-badge">{getSearchMethodLabel(source.search_method)}</span>
+                            )}
+                            {source.source_type && (
+                              <span className="source-type-badge">{getSourceTypeLabel(source.source_type)}</span>
                             )}
                           </div>
                           <div className="source-score-bar" title={`Relevance: ${scorePct}%`}>

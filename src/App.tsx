@@ -294,6 +294,31 @@ function AppContent() {
       category: 'settings',
       action: shortcutsHelp.open,
     },
+    // Feature discovery commands
+    {
+      id: 'feature-templates',
+      label: 'Open Templates',
+      description: 'Use response templates for common scenarios',
+      icon: 'draft',
+      category: 'action',
+      action: () => setActiveTab('draft'),
+    },
+    {
+      id: 'feature-batch',
+      label: 'Start Batch Processing',
+      description: 'Process multiple queries at once',
+      icon: 'list',
+      category: 'action',
+      action: () => setActiveTab('draft'),
+    },
+    {
+      id: 'feature-voice',
+      label: 'Start Voice Input',
+      description: 'Use voice dictation for input',
+      icon: 'play',
+      category: 'action',
+      action: () => setActiveTab('draft'),
+    },
   ], [activeTab, sidebarCollapsed, handleGenerate, handleSaveDraft, handleCopyResponse, handleExport, handleCancelGeneration, handleToggleSidebar, shortcutsHelp.open]);
 
   if (loading) {
@@ -386,6 +411,7 @@ function AppContent() {
         <Header
           activeTab={activeTab}
           onOpenCommandPalette={commandPalette.open}
+          onOpenShortcuts={shortcutsHelp.open}
         />
         <main className="app-main">
           {renderTab()}

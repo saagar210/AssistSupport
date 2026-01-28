@@ -158,3 +158,42 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* Processing indicator */
+.batch-processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-primary);
+}
+
+.processing-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-light);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.batch-result-card.pending {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.batch-result-status-icon {
+  color: var(--success);
+  font-weight: 700;
+  margin-right: 4px;
+}

@@ -842,6 +842,8 @@ pub struct ContextSource {
     pub title: Option<String>,
     pub heading_path: Option<String>,
     pub score: f64,
+    pub search_method: Option<String>,
+    pub source_type: Option<String>,
 }
 
 fn extract_json_block(text: &str) -> Option<&str> {
@@ -1003,6 +1005,8 @@ pub async fn generate_with_context(
             title: r.title.clone(),
             heading_path: r.heading_path.clone(),
             score: r.score,
+            search_method: Some(format!("{:?}", r.source)),
+            source_type: r.source_type.clone(),
         })
         .collect();
 
@@ -1133,6 +1137,8 @@ pub async fn generate_streaming(
             title: r.title.clone(),
             heading_path: r.heading_path.clone(),
             score: r.score,
+            search_method: Some(format!("{:?}", r.source)),
+            source_type: r.source_type.clone(),
         })
         .collect();
 
@@ -4477,6 +4483,21 @@ pub async fn get_kb_usage_stats(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
     db.get_kb_usage_stats(period_days)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_low_rating_analysis(
+    state: State<'_, AppState>,
+    period_days: Option<i64>,
+) -> Result<crate::db::LowRatingAnalysis, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_low_rating_analysis(period_days)
         .map_err(|e| e.to_string())
 }
 

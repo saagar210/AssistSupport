@@ -60,8 +60,8 @@ export function useBatch() {
       // Initial poll
       await poll();
 
-      // Poll every 2 seconds
-      pollRef.current = setInterval(poll, 2000);
+      // Poll every 750ms for responsive updates
+      pollRef.current = setInterval(poll, 750);
 
       return jobId;
     } catch (err) {

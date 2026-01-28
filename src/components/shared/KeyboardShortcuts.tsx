@@ -24,7 +24,8 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ['⌘', '3'], description: 'Go to Sources' },
       { keys: ['⌘', '4'], description: 'Go to Ingest' },
       { keys: ['⌘', '5'], description: 'Go to Knowledge' },
-      { keys: ['⌘', '6'], description: 'Go to Settings' },
+      { keys: ['⌘', '6'], description: 'Go to Analytics' },
+      { keys: ['⌘', '7'], description: 'Go to Settings' },
     ],
   },
   {
@@ -36,6 +37,14 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ['⌘', 'E'], description: 'Export response' },
       { keys: ['⌘', '.'], description: 'Cancel generation' },
       { keys: ['Esc'], description: 'Cancel / Close' },
+    ],
+  },
+  {
+    title: 'Features',
+    shortcuts: [
+      { keys: ['⌘', 'K'], description: 'Templates (via command palette)' },
+      { keys: ['⌘', 'K'], description: 'Batch processing (via command palette)' },
+      { keys: ['⌘', 'K'], description: 'Voice input (via command palette)' },
     ],
   },
   {

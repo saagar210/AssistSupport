@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { Skeleton } from '../shared/Skeleton';
 import { useKb } from '../../hooks/useKb';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { IndexedFile, SearchResult } from '../../types';
+import type { IndexedFile, SearchResult, Namespace } from '../../types';
 import './SourcesTab.css';
 
 type SearchMode = 'files' | 'content';
@@ -24,19 +25,24 @@ export function SourcesTab() {
   const [searching, setSearching] = useState(false);
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [namespaces, setNamespaces] = useState<Namespace[]>([]);
+  const [filterNamespace, setFilterNamespace] = useState<string>('');
+  const [filterSourceType, setFilterSourceType] = useState<string>('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [folder, fileList, indexStats] = await Promise.all([
+      const [folder, fileList, indexStats, nsList] = await Promise.all([
         getKbFolder(),
         listFiles().catch(() => []),
         getIndexStats().catch(() => null),
+        invoke<Namespace[]>('list_namespaces').catch(() => []),
       ]);
       setKbFolder(folder);
       setFiles(fileList);
       setStats(indexStats);
+      setNamespaces(nsList);
     } catch (err) {
       setError(`Failed to load data: ${err}`);
     } finally {
@@ -89,14 +95,19 @@ export function SourcesTab() {
     }
     setSearching(true);
     try {
-      const results = await search(query, 20);
-      setContentResults(results);
+      const nsFilter = filterNamespace || undefined;
+      const results = await search(query, 20, nsFilter);
+      // Client-side filter by source type if set
+      const filtered = filterSourceType
+        ? results.filter(r => r.source_type === filterSourceType)
+        : results;
+      setContentResults(filtered);
     } catch (err) {
       setError(`Search failed: ${err}`);
     } finally {
       setSearching(false);
     }
-  }, [search]);
+  }, [search, filterNamespace, filterSourceType]);
 
   // Debounced content search
   useEffect(() => {
@@ -107,7 +118,7 @@ export function SourcesTab() {
     }, 300);
 
     return () => clearTimeout(timeout);
-  }, [searchQuery, searchMode, handleContentSearch]);
+  }, [searchQuery, searchMode, handleContentSearch, filterNamespace, filterSourceType]);
 
   function formatDate(isoString: string): string {
     return new Date(isoString).toLocaleDateString('en-US', {
@@ -207,6 +218,31 @@ export function SourcesTab() {
           onChange={e => setSearchQuery(e.target.value)}
           className="search-input"
         />
+        {searchMode === 'content' && (
+          <div className="sources-filters">
+            <select
+              value={filterNamespace}
+              onChange={e => setFilterNamespace(e.target.value)}
+              className="filter-select"
+            >
+              <option value="">All Namespaces</option>
+              {namespaces.map(ns => (
+                <option key={ns.id} value={ns.id}>{ns.name}</option>
+              ))}
+            </select>
+            <select
+              value={filterSourceType}
+              onChange={e => setFilterSourceType(e.target.value)}
+              className="filter-select"
+            >
+              <option value="">All Types</option>
+              <option value="file">File</option>
+              <option value="url">URL</option>
+              <option value="youtube">YouTube</option>
+              <option value="github">GitHub</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {searchMode === 'content' ? (
@@ -223,7 +259,17 @@ export function SourcesTab() {
               <div key={result.chunk_id} className="content-result-item">
                 <div className="result-header">
                   <span className="result-title">{result.title || formatPath(result.file_path)}</span>
-                  <span className="result-score">{Math.round(result.score * 100)}%</span>
+                  <div className="result-header-right">
+                    {result.source_type && (
+                      <span className="result-badge result-badge-type">{result.source_type}</span>
+                    )}
+                    {result.namespace_id && namespaces.length > 0 && (
+                      <span className="result-badge result-badge-ns">
+                        {namespaces.find(ns => ns.id === result.namespace_id)?.name ?? result.namespace_id}
+                      </span>
+                    )}
+                    <span className="result-score">{Math.round(result.score * 100)}%</span>
+                  </div>
                 </div>
                 {result.heading_path && (
                   <span className="result-heading">{result.heading_path}</span>

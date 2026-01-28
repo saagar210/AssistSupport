@@ -87,11 +87,21 @@ export function BatchPanel({ responseLength, modelLoaded }: BatchPanelProps) {
 
           {error && <div className="batch-error">{error}</div>}
 
+          {status.status === 'running' && (
+            <div className="batch-processing-indicator">
+              <div className="processing-spinner-small" />
+              <span>Processing query {status.completed + 1} of {status.total}...</span>
+            </div>
+          )}
+
           <div className="batch-results-list">
             {status.results.map((result, index) => (
               <div key={index} className="batch-result-card">
                 <div className="batch-result-input">
-                  <span className="batch-result-label">Query {index + 1}:</span>
+                  <span className="batch-result-label">
+                    <span className="batch-result-status-icon">&#10003;</span>
+                    Query {index + 1}:
+                  </span>
                   <span className="batch-result-text">{result.input}</span>
                 </div>
                 <div className="batch-result-response">
@@ -104,6 +114,17 @@ export function BatchPanel({ responseLength, modelLoaded }: BatchPanelProps) {
                 </div>
               </div>
             ))}
+            {status.status === 'running' && status.completed < status.total && (
+              <div className="batch-result-card pending">
+                <div className="batch-result-input">
+                  <span className="batch-result-label">
+                    <div className="processing-spinner-small" />
+                    Query {status.completed + 1}:
+                  </span>
+                  <span className="batch-result-text">Processing...</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="batch-actions">

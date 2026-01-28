@@ -122,6 +122,27 @@
   line-height: 1;
 }
 
+/* Help Button */
+.header-help-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.header-help-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-color-hover);
+}
+
 /* Header Right - Status Indicator */
 .header-right {
   display: flex;

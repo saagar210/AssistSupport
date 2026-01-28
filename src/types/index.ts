@@ -111,6 +111,8 @@ export interface ContextSource {
   title: string | null;
   heading_path: string | null;
   score: number;
+  search_method: string | null;
+  source_type: string | null;
 }
 
 export type ResponseLength = 'Short' | 'Medium' | 'Long';

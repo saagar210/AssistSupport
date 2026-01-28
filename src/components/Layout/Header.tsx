@@ -12,6 +12,7 @@ import './Header.css';
 interface HeaderProps {
   activeTab: Tab;
   onOpenCommandPalette?: () => void;
+  onOpenShortcuts?: () => void;
 }
 
 interface TabInfo {
@@ -58,7 +59,7 @@ const tabInfo: Record<Tab, TabInfo> = {
   }
 };
 
-export function Header({ activeTab, onOpenCommandPalette }: HeaderProps) {
+export function Header({ activeTab, onOpenCommandPalette, onOpenShortcuts }: HeaderProps) {
   const info = tabInfo[activeTab];
   const appStatus = useAppStatus();
   const [showStatusPanel, setShowStatusPanel] = useState(false);
@@ -100,6 +101,15 @@ export function Header({ activeTab, onOpenCommandPalette }: HeaderProps) {
       </div>
 
       <div className="header-right">
+        {onOpenShortcuts && (
+          <button
+            className="header-help-btn"
+            onClick={onOpenShortcuts}
+            title="Keyboard shortcuts (Cmd+?)"
+          >
+            <Icon name="help-circle" size={18} />
+          </button>
+        )}
         <button
           className={`status-indicator status-${overallHealth}`}
           onClick={() => setShowStatusPanel(!showStatusPanel)}
