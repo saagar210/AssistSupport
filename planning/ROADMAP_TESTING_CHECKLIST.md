@@ -83,16 +83,39 @@
 - Q4 2026: v1.0 stable release
 - Beyond: ServiceNow, advanced features
 
-## Next Steps (After This Session)
+## Phase 6: KB Build from Confluence
+- [x] Export Confluence space as HTML (664 pages, 2.0 GB)
+- [x] Audit and categorize pages (663 audited, 481 kept)
+- [x] Convert HTML to Markdown (484 files via 9 parallel agents)
+- [x] Validate and fix issues
+  - [x] Fix unclosed code block (eus-automations-tools.md)
+  - [x] Fix HTML entities (ticket-etiquette-closure.md)
+  - [x] Remove 16 empty stub files
+  - [x] Resolve 3 cross-category duplicates
+- [x] Map cross-references (87 relationships identified)
+- [x] Add Related Articles to 15 hub articles (64 links)
+- [x] Create KB documentation (README, MAINTENANCE, DEPLOYMENT)
+- [x] Clean up build artifacts
+- [x] Create deployment notes (planning/KB_DEPLOYMENT_NOTES.md)
 
-**Immediate (This Week)**:
-1. Manually add GitHub topics (UI: Settings > General > Repository topics)
-2. Review compliance report links in README
-3. Test all new links and navigation
+### KB Build Results
+- **466 articles** across 13 categories
+- **~462,000 words**, 2.98 MB total
+- **Largest category**: Admin-Runbooks (230 articles)
+- **KB location**: ~/Documents/IT-KnowledgeBase/
+
+## Next Steps
+
+**Immediate**:
+1. Open AssistSupport and configure KB path to ~/Documents/IT-KnowledgeBase/
+2. Run initial indexing (expect 5-10 minutes)
+3. Verify search results with test queries (see planning/KB_DEPLOYMENT_NOTES.md)
+4. Connect Jira integration if applicable
 
 **Week 1**:
 1. Monitor GitHub stars and traffic
 2. Gather feedback on testing docs
+3. Review KB search quality with real support queries
 
 **Week 2-3**:
 1. Start Jira integration enhancement (v0.3.3)
