@@ -8,6 +8,7 @@ import { KnowledgeBrowser } from './components/Knowledge';
 import { SettingsTab } from './components/Settings/SettingsTab';
 import { AnalyticsTab } from './components/Analytics/AnalyticsTab';
 import { PilotTab } from './components/Pilot';
+import { HybridSearchTab } from './components/Search';
 import { Toast, ToastContainer } from './components/shared/Toast';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Button } from './components/shared/Button';
@@ -21,7 +22,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
 import './App.css';
 
-type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'settings';
+type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'settings';
 
 function AppContent() {
   const { initResult, loading, error } = useInitialize();
@@ -96,8 +97,8 @@ function AppContent() {
     onCancelGeneration: handleCancelGeneration,
     onExport: handleExport,
     onSwitchTab: (n) => {
-      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'pilot', 'settings'];
-      if (n >= 1 && n <= 8) setActiveTab(tabs[n - 1]);
+      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'pilot', 'search', 'settings'];
+      if (n >= 1 && n <= 9) setActiveTab(tabs[n - 1]);
     },
   });
 
@@ -206,11 +207,20 @@ function AppContent() {
       action: () => setActiveTab('pilot'),
     },
     {
+      id: 'nav-search',
+      label: 'Go to Search',
+      description: 'Hybrid PostgreSQL search',
+      icon: 'database',
+      shortcut: 'Cmd+8',
+      category: 'navigation',
+      action: () => setActiveTab('search'),
+    },
+    {
       id: 'nav-settings',
       label: 'Go to Settings',
       description: 'Configure app preferences',
       icon: 'settings',
-      shortcut: 'Cmd+8',
+      shortcut: 'Cmd+9',
       category: 'navigation',
       action: () => setActiveTab('settings'),
     },
@@ -406,6 +416,12 @@ function AppContent() {
         return (
           <ErrorBoundary fallbackTitle="Pilot tab encountered an error">
             <PilotTab />
+          </ErrorBoundary>
+        );
+      case 'search':
+        return (
+          <ErrorBoundary fallbackTitle="Search tab encountered an error">
+            <HybridSearchTab />
           </ErrorBoundary>
         );
       case 'settings':

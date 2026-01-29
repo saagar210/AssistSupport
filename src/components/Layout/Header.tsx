@@ -57,6 +57,11 @@ const tabInfo: Record<Tab, TabInfo> = {
     description: 'Feedback dashboard',
     icon: 'list'
   },
+  search: {
+    title: 'Hybrid Search',
+    description: 'PostgreSQL BM25 + HNSW search',
+    icon: 'database'
+  },
   settings: {
     title: 'Settings',
     description: 'App configuration',

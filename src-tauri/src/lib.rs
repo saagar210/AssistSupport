@@ -294,6 +294,11 @@ pub fn run() {
             commands::get_pilot_stats,
             commands::get_pilot_query_logs,
             commands::export_pilot_data,
+            // PostgreSQL Hybrid Search API (Week 4)
+            commands::search_api::hybrid_search,
+            commands::search_api::submit_search_feedback,
+            commands::search_api::get_search_api_stats,
+            commands::search_api::check_search_api_health,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

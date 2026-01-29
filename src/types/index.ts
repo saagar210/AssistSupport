@@ -260,7 +260,7 @@ export interface OcrResult {
 }
 
 // UI State types
-export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'settings';
+export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -575,4 +575,63 @@ export interface JiraTransition {
   id: string;
   name: string;
   to_status: string;
+}
+
+// PostgreSQL Hybrid Search types (Week 4)
+
+export interface HybridSearchScores {
+  bm25: number;
+  vector: number;
+  fused: number;
+}
+
+export interface HybridSearchResult {
+  rank: number;
+  article_id: string;
+  title: string;
+  category: string;
+  preview: string;
+  source_document: string | null;
+  section: string | null;
+  scores: HybridSearchScores | null;
+}
+
+export interface HybridSearchMetrics {
+  latency_ms: number;
+  embedding_time_ms: number;
+  search_time_ms: number;
+  result_count: number;
+  timestamp: string;
+}
+
+export interface HybridSearchResponse {
+  status: string;
+  query: string;
+  query_id: string | null;
+  intent: string;
+  intent_confidence: number;
+  results_count: number;
+  results: HybridSearchResult[];
+  metrics: HybridSearchMetrics;
+}
+
+export interface SearchApiLatency {
+  avg: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+export interface SearchApiFeedbackStats {
+  helpful: number;
+  not_helpful: number;
+  incorrect: number;
+}
+
+export interface SearchApiStatsData {
+  queries_24h: number;
+  queries_total: number;
+  latency_ms: SearchApiLatency;
+  feedback_stats: SearchApiFeedbackStats;
+  intent_distribution: Record<string, number>;
 }

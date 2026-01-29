@@ -1,0 +1,1 @@
+export { HybridSearchTab } from './HybridSearchTab';

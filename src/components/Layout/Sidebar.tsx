@@ -72,13 +72,20 @@ const navItems: NavItem[] = [
     shortcut: '7',
     description: 'View pilot feedback dashboard'
   },
+  {
+    id: 'search',
+    label: 'Search',
+    icon: 'database',
+    shortcut: '8',
+    description: 'Hybrid PostgreSQL search (BM25 + HNSW)'
+  },
 ];
 
 const settingsItem: NavItem = {
   id: 'settings',
   label: 'Settings',
   icon: 'settings',
-  shortcut: '8',
+  shortcut: '9',
   description: 'Configure app and model settings'
 };
 
