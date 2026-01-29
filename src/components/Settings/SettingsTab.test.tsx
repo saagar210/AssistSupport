@@ -250,7 +250,7 @@ describe('SettingsTab', () => {
     it('renders about info', async () => {
       await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('About')).toBeInTheDocument();
-      expect(screen.getByText('Version 0.1.0')).toBeInTheDocument();
+      expect(screen.getByText('Version 1.0.0')).toBeInTheDocument();
       expect(screen.getByText('All processing happens locally on your machine.')).toBeInTheDocument();
     });
   });
