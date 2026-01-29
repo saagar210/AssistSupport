@@ -2,7 +2,7 @@
 
 > **Local-first, fully offline AI assistant for IT support engineers**
 
-![Version](https://img.shields.io/badge/version-0.5.2-10a37f)
+![Version](https://img.shields.io/badge/version-0.6.0--pilot-10a37f)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
@@ -90,6 +90,8 @@ pnpm tauri build
 ### Knowledge Base
 - Index markdown, PDF, DOCX, XLSX, code files, and images
 - Hybrid search: FTS5 full-text + LanceDB vector/semantic search
+- **Policy-first search ranking** — policy documents automatically boosted for permission/restriction queries
+- **Disk ingestion pipeline** — folder ingestion with source/run tracking and incremental re-indexing (SHA-256 hash comparison)
 - OCR support via macOS Vision framework (screenshots, scanned PDFs)
 - Web page, YouTube transcript, and GitHub repo ingestion
 - Namespace organization for multi-team KB separation
@@ -107,6 +109,15 @@ pnpm tauri build
 - KB usage metrics (search frequency, top queries, article citations)
 - Article-level drill-down (which articles get cited most)
 - Generation performance metrics
+
+### Pilot Feedback System (v0.6.0-pilot)
+- **Pilot Tab** — dedicated tab for team pilot testing and feedback collection
+- **Query Tester** — search KB, view results, and rate responses in one flow
+- **Feedback Dashboard** — real-time stats (total queries, feedback count, accuracy/clarity/helpfulness averages)
+- **Per-category breakdown** — stats split by policy, procedure, and reference queries
+- **Star ratings** — accuracy, clarity, and helpfulness rated 1-5 with optional comments
+- **CSV export** — export all query logs and feedback data for analysis
+- **Query logging** — automatic category detection and response logging
 
 ### Productivity
 - Session tokens — 24h auto-unlock, no password friction on every launch
@@ -127,7 +138,7 @@ pnpm tauri build
 - **Audit logging** for security events
 - **Compliance validated** against [HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, NIST SP 800-53](docs/compliance/COMPLIANCE_REPORT.md)
 
-### Design (v0.5.2)
+### Design (v0.6.0)
 - Two-section response format: OUTPUT (copy-paste ready) + IT SUPPORT INSTRUCTIONS (engineer guidance)
 - ChatGPT-inspired dark-first UI with green accent
 - Clickable KB suggestion chips — navigate directly to matching sources
@@ -198,6 +209,7 @@ src/                        # React frontend
 │   ├── Batch/              # Batch processing
 │   ├── Draft/              # Response drafting, alternatives, ratings
 │   ├── Layout/             # Header, sidebar, command palette
+│   ├── Pilot/              # Pilot feedback: query tester, dashboard, ratings
 │   ├── Settings/           # Model, KB, Jira configuration
 │   ├── Sources/            # KB browser, ingestion, health
 │   └── shared/             # Onboarding, status indicators
@@ -206,14 +218,15 @@ src/                        # React frontend
 └── styles/                 # CSS design tokens, themes
 
 src-tauri/src/              # Rust backend
-├── commands/               # Tauri command handlers (~200 endpoints)
-├── db/                     # SQLCipher database layer
+├── commands/               # Tauri command handlers (~205 endpoints)
+├── db/                     # SQLCipher database layer (schema v11)
+├── feedback/               # Pilot feedback logger, stats, CSV export
 ├── kb/                     # Knowledge base
 │   ├── indexer.rs          # File indexing and chunking
-│   ├── search.rs           # Hybrid FTS + vector search
+│   ├── search.rs           # Hybrid FTS + vector search (policy boost)
 │   ├── embeddings.rs       # Embedding model
 │   ├── vectors.rs          # LanceDB vector store
-│   └── ingest/             # Web, YouTube, GitHub ingestion
+│   └── ingest/             # Web, YouTube, GitHub, disk ingestion
 ├── llm.rs                  # LLM engine (llama.cpp)
 ├── jira.rs                 # Jira API integration
 ├── security.rs             # Encryption, key management
@@ -278,7 +291,7 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 | `Cmd+E` | Export response |
 | `Cmd+N` | New draft |
 | `Cmd+/` | Focus search |
-| `Cmd+1-6` | Switch tabs |
+| `Cmd+1-8` | Switch tabs |
 
 ---
 
@@ -296,22 +309,38 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 | [Operations](docs/OPERATIONS.md) | Daily usage and maintenance |
 | [Testing](docs/TESTING.md) | Test suite, health checks, CI/CD |
 | [Roadmap](docs/ROADMAP.md) | Feature priorities and release plan |
+| [Pilot Quick Start](docs/PILOT_QUICK_START.md) | Team pilot testing instructions |
+| [Pilot Validation](docs/TEAM_PILOT_VALIDATION.md) | 20 structured test queries |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ---
 
 ## Roadmap
 
-### v0.5.2 (Current)
+### v0.6.0-pilot (Current)
+- [x] Pilot feedback system — query tester, star ratings, dashboard, CSV export
+- [x] Feedback logger backend — SQLite-backed with per-category stats
+- [x] Pilot Tab with real-time dashboard and expandable query logs
+- [x] DB schema v11 — `pilot_query_logs` and `pilot_feedback` tables
+- [x] 8 backend tests for feedback system
+
+### v0.6.0
+- [x] Disk ingestion pipeline with source/run tracking
+- [x] Incremental re-indexing via SHA-256 hash comparison
+- [x] Policy-first search ranking with confidence scoring
+- [x] Policy enforcement in system prompt (v5.1.0)
+- [x] 26-article structured knowledge base (POLICIES/PROCEDURES/REFERENCE)
+- [x] 44 new tests (policy detection, search ranking, disk ingestion, feedback)
+
+### v0.5.3
+- [x] Policy query detection with confidence scoring
+- [x] Search result boost for POLICIES/ documents
+- [x] 38 new policy-related tests
+
+### v0.5.2
 - [x] Two-section response format: OUTPUT (clean, copy-paste ready) + IT SUPPORT INSTRUCTIONS
 - [x] Tab UI for switching between response sections
 - [x] Copy button copies only the OUTPUT section
-- [x] Engineer gets actionable pre-send checks, post-send actions, and KB references
-
-### v0.5.1
-- [x] Interactive KB suggestion chips — click to navigate to Sources tab
-- [x] Responsive layout fixes — all content visible at any window size
-- [x] Button wrapping and overflow handling across all panels
 
 ### v0.5.0
 - [x] ChatGPT-inspired UI redesign (dark-first, green accent)
@@ -321,7 +350,6 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 - [x] Response alternatives and template recycling
 - [x] Jira post + transition workflow
 - [x] KB health and staleness monitoring
-- [x] CLI with real search and indexing
 
 ### Next
 - [ ] Draft management improvements (save, resume, history)
