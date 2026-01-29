@@ -2,7 +2,7 @@
 
 > **Local-first, fully offline AI assistant for IT support engineers**
 
-![Version](https://img.shields.io/badge/version-0.6.0--pilot-10a37f)
+![Version](https://img.shields.io/badge/version-0.7.0--search-10a37f)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
@@ -67,12 +67,33 @@ pnpm tauri build
 # Output: src-tauri/target/release/bundle/dmg/
 ```
 
+### Hybrid Search Backend (Optional)
+
+To enable the PostgreSQL Hybrid Search tab (Cmd+8):
+
+```bash
+# Install PostgreSQL + pgvector
+brew install postgresql@16
+brew services start postgresql@16
+
+# Create database and user
+createuser -s assistsupport_dev
+createdb -U assistsupport_dev assistsupport_dev
+
+# Start the search API
+cd ~/assistsupport-semantic-migration/week4
+source venv/bin/activate
+python3 search_api.py
+# API runs on http://localhost:3000
+```
+
 ### First Run
 
 1. **Key Storage** — Choose Keychain (recommended) or passphrase mode
 2. **Model Selection** — Pick an LLM model (Llama 3.2 3B recommended)
 3. **Knowledge Base** — Point to your team's documentation folder
 4. **Generate** — Type a ticket summary, search your KB, get a draft response
+5. **Hybrid Search** — Click Search tab (Cmd+8) for PostgreSQL semantic search
 
 ---
 
@@ -86,6 +107,15 @@ pnpm tauri build
 - Save top-rated responses as reusable templates
 - Conversation-style input with context threading
 - Draft versioning with diff viewer
+
+### Hybrid PostgreSQL Search (Cmd+8)
+- **BM25 + HNSW vector search** across 3,536 knowledge base articles via PostgreSQL 16 + pgvector
+- **Intent detection** — classifies queries as POLICY, PROCEDURE, or REFERENCE with confidence scoring
+- **Adaptive score fusion** — BM25 keyword and 384-dim vector scores combined based on detected intent
+- **Category boosting** — policy articles boosted 1.5x when policy intent is detected
+- **User feedback** — rate individual results as helpful, not helpful, or incorrect
+- **Monitoring dashboard** — live metrics: query volume, p50/p95/p99 latency, accuracy, intent distribution
+- **Performance** — p50: 8ms, p95: 82ms, avg: 25ms across 3,536 articles
 
 ### Knowledge Base
 - Index markdown, PDF, DOCX, XLSX, code files, and images
@@ -174,7 +204,9 @@ pnpm tauri build
 | Frontend | React 19 + TypeScript (strict) + Vite |
 | Backend | Rust + Tauri 2.x |
 | Database | SQLite + SQLCipher (AES-256) + FTS5 |
-| Vector Store | LanceDB |
+| Search Backend | PostgreSQL 16 + pgvector 0.8 (BM25 + HNSW) |
+| Search API | Python Flask on localhost:3000 |
+| Vector Store | LanceDB (local), pgvector (PostgreSQL) |
 | LLM Runtime | llama.cpp via llama-cpp-2 (GGUF models) |
 | PDF | PDFium (bundled) |
 | OCR | macOS Vision framework |
@@ -185,14 +217,15 @@ pnpm tauri build
 Knowledge Base (markdown, PDF, DOCX, web, YouTube)
     |
     v
-SQLite Database (encrypted, AES-256)
-    ├── FTS5 Index (full-text search)
-    ├── Vector Index (LanceDB, semantic search)
-    └── Response History (drafts, ratings, templates)
-    |
-    v
-User Input + KB Context + Jira Context
-    |
+SQLite Database (encrypted, AES-256)         PostgreSQL 16 + pgvector
+    ├── FTS5 Index (full-text search)          ├── BM25 FTS (keyword)
+    ├── Vector Index (LanceDB, semantic)       ├── HNSW Index (384-dim vectors)
+    └── Response History (drafts, ratings)     ├── Intent Detection
+                                               └── Feedback Collection
+    |                                               |
+    v                                               v
+User Input + KB Context + Jira Context    Hybrid Search (Cmd+8)
+    |                                        └── Flask API (localhost:3000)
     v
 LLM Inference (llama.cpp, fully local)
     |
@@ -210,15 +243,17 @@ src/                        # React frontend
 │   ├── Draft/              # Response drafting, alternatives, ratings
 │   ├── Layout/             # Header, sidebar, command palette
 │   ├── Pilot/              # Pilot feedback: query tester, dashboard, ratings
+│   ├── Search/             # Hybrid PostgreSQL search UI, feedback, stats
 │   ├── Settings/           # Model, KB, Jira configuration
 │   ├── Sources/            # KB browser, ingestion, health
 │   └── shared/             # Onboarding, status indicators
 ├── contexts/               # AppStatusContext (centralized state)
-├── hooks/                  # useLlm, useKb, useInitialize
+├── hooks/                  # useLlm, useKb, useHybridSearch, useInitialize
 └── styles/                 # CSS design tokens, themes
 
 src-tauri/src/              # Rust backend
-├── commands/               # Tauri command handlers (~205 endpoints)
+├── commands/               # Tauri command handlers (~209 endpoints)
+│   └── search_api.rs      # PostgreSQL hybrid search proxy (4 commands)
 ├── db/                     # SQLCipher database layer (schema v11)
 ├── feedback/               # Pilot feedback logger, stats, CSV export
 ├── kb/                     # Knowledge base
@@ -291,7 +326,8 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 | `Cmd+E` | Export response |
 | `Cmd+N` | New draft |
 | `Cmd+/` | Focus search |
-| `Cmd+1-8` | Switch tabs |
+| `Cmd+1-9` | Switch tabs |
+| `Cmd+8` | Open Hybrid Search |
 
 ---
 
@@ -317,7 +353,18 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 
 ## Roadmap
 
-### v0.6.0-pilot (Current)
+### v0.7.0-search (Current)
+- [x] Hybrid PostgreSQL search — BM25 keyword + HNSW vector (384-dim) across 3,536 articles
+- [x] Intent detection — automatic POLICY/PROCEDURE/REFERENCE classification
+- [x] Adaptive score fusion — intent-weighted BM25+vector combination with category boosting
+- [x] Search tab (Cmd+8) — full UI with result cards, score breakdowns, API health indicator
+- [x] User feedback collection — per-result helpful/not_helpful/incorrect ratings
+- [x] Monitoring — live stats (query volume, p50/p95/p99 latency, accuracy, intent distribution)
+- [x] Flask REST API — 5 endpoints on localhost:3000 with rate limiting
+- [x] Tauri integration — 4 Rust commands proxying to Flask API via reqwest
+- [x] Performance — p95 latency 82ms, 100% embedding coverage, 5/5 production readiness checks
+
+### v0.6.0-pilot
 - [x] Pilot feedback system — query tester, star ratings, dashboard, CSV export
 - [x] Feedback logger backend — SQLite-backed with per-category stats
 - [x] Pilot Tab with real-time dashboard and expandable query logs
@@ -362,6 +409,19 @@ See [ROADMAP.md](docs/ROADMAP.md) for the full release plan.
 
 ---
 
+## Search Performance
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| p50 latency | <50ms | 8ms | Exceeds |
+| p95 latency | <100ms | 82ms | Meets |
+| Avg latency | <50ms | 25ms | Exceeds |
+| Embedding coverage | 100% | 3,536/3,536 | Full |
+| Intent detection | Functional | POLICY/PROCEDURE/REFERENCE | Active |
+| Production readiness | 5/5 | 5/5 PASS | Ready |
+
+---
+
 ## Troubleshooting
 
 **Rust build fails with missing system libraries**
@@ -385,6 +445,11 @@ pnpm tauri dev
 **Database encryption error on first launch**
 - The app creates its database at `~/Library/Application Support/AssistSupport/`
 - If migrating from a previous version, check the migration log in the app
+
+**Search tab shows "API Offline"**
+- Ensure PostgreSQL is running: `brew services start postgresql@16`
+- Ensure Flask API is running: `cd ~/assistsupport-semantic-migration/week4 && python3 search_api.py`
+- Check API health: `curl http://localhost:3000/health`
 
 **"Could not determine which binary to run"**
 - Ensure `default-run = "assistsupport"` is set in `src-tauri/Cargo.toml`
@@ -439,4 +504,4 @@ To report a vulnerability, please open a security advisory on GitHub.
 
 ## Acknowledgments
 
-Built with [React](https://react.dev), [Tauri](https://tauri.app), [Rust](https://www.rust-lang.org), [llama.cpp](https://github.com/ggerganov/llama.cpp), [SQLite](https://sqlite.org), and [LanceDB](https://lancedb.com).
+Built with [React](https://react.dev), [Tauri](https://tauri.app), [Rust](https://www.rust-lang.org), [llama.cpp](https://github.com/ggerganov/llama.cpp), [SQLite](https://sqlite.org), [LanceDB](https://lancedb.com), [PostgreSQL](https://www.postgresql.org), [pgvector](https://github.com/pgvector/pgvector), and [Flask](https://flask.palletsprojects.com).
