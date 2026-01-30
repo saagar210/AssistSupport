@@ -1,0 +1,237 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║         AssistSupport Response Quality — Diagnostic Summary              ║
+║                         January 29, 2026                                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+SITUATION:
+  Infrastructure: Production-ready (PostgreSQL 16 + pgvector 0.8.0)  ✓
+  Latency:        Excellent (p95 = 86ms, avg = 24.8ms)               ✓
+  Tests:          44 comprehensive tests passing                     ✓
+  Response quality: POOR                                             ✗
+
+═══════════════════════════════════════════════════════════════════════════
+
+ROOT CAUSE ANALYSIS — RANKED BY IMPACT
+
+─────────────────────────────────────────────────────────────────────────
+#1  CRITICAL: CURATED KB NOT IN POSTGRESQL DATABASE
+─────────────────────────────────────────────────────────────────────────
+
+    Impact: ★★★★★  (This is THE primary root cause)
+
+    The 27 high-quality curated articles in knowledge_base/ (policies,
+    procedures, references) were NEVER loaded into PostgreSQL.
+
+    The PostgreSQL database contains 3,536 articles from a Confluence/wiki
+    bulk export — these are mostly low-quality fragments:
+
+    Evidence:
+    - "Can I use a flash drive?" → Returns "Laptop Provisioning" (WRONG)
+      No flash drive policy exists in the DB. The curated
+      flash_drives_forbidden.md (2,286 chars, excellent quality) is only
+      in the local knowledge_base/ directory, NOT in PostgreSQL.
+    - Zero results for: "flash drives are strictly forbidden",
+      "removable media policy" — confirming curated content is absent.
+    - The DB articles are from source_document_id UUIDs (Confluence export),
+      not from the knowledge_base/ markdown files.
+
+    Fix: Ingest all 27 curated KB articles into PostgreSQL.
+    Effort: 1-2 hours
+    Expected improvement: +40-50%
+
+─────────────────────────────────────────────────────────────────────────
+#2  HIGH: DATABASE FULL OF LOW-QUALITY FRAGMENTS
+─────────────────────────────────────────────────────────────────────────
+
+    Impact: ★★★★☆  (Noise drowns signal)
+
+    Article Quality Distribution:
+    ┌──────────────────────┬───────┬─────────┐
+    │ Length Bucket         │ Count │ Percent │
+    ├──────────────────────┼───────┼─────────┤
+    │ Under 100 chars      │   293 │   8.3%  │
+    │ 100-499 chars        │ 1,617 │  45.7%  │
+    │ 500-999 chars        │   711 │  20.1%  │
+    │ 1,000-1,999 chars    │   522 │  14.8%  │
+    │ 2,000-4,999 chars    │   389 │  11.0%  │
+    │ 5,000+ chars         │     4 │   0.1%  │
+    └──────────────────────┴───────┴─────────┘
+
+    Key stats:
+    - Median article length: 445 chars
+    - P25 length: 203 chars (25% of articles are tiny)
+    - 54% of all articles under 500 chars
+    - 293 articles are essentially empty (ticket numbers, TOC stubs,
+      image references, "Screenshot 2023-07-21 at 8.43.52 AM.png")
+
+    Category Imbalance:
+    - REFERENCE: 2,134 articles (60.4%)
+    - PROCEDURE: 1,300 articles (36.8%)
+    - POLICY:      102 articles (2.9%)  ← severely underrepresented
+
+    Title Quality:
+    - 829 titles over 100 chars (breadcrumb paths from wiki export)
+    - 12 titles under 10 chars
+    - Example: "OS X > ASD tests > Installing" — not searchable
+
+    Fix: Quality filter (remove < 100 char articles), clean titles,
+         add minimum content thresholds.
+    Effort: 2-3 hours
+    Expected improvement: +15-25%
+
+─────────────────────────────────────────────────────────────────────────
+#3  MEDIUM: SCORE FUSION FORMULA BUG
+─────────────────────────────────────────────────────────────────────────
+
+    Impact: ★★★☆☆  (Creates misleading scores)
+
+    Bug in score_fusion.py weighted_combination():
+    The "policy_boost" (+0.1) is applied to ANY document whose
+    normalized BM25 score exceeds 0.5 — regardless of:
+    - Whether the query is policy-related
+    - Whether the document is in the POLICY category
+
+    This causes the top BM25 result to ALWAYS get inflated by +0.1
+    because normalizing by max guarantees the top result = 1.0 > 0.5.
+
+    Proof:
+    Query: "Can I use a flash drive?"
+    Top result: "Laptop Provisioning" (PROCEDURE, irrelevant)
+      BM25 raw = 0.259 (max in result set)
+      BM25 normalized = 0.259/0.259 = 1.0
+      Vector = 0.0 (not found by vector search)
+      Score = 0.5 * 1.0 + 0.4 * 0.0 + 0.1 = 0.600 ← exactly what we see
+
+    The +0.1 boost is always applied to the top BM25 result, making
+    keyword-matched but semantically irrelevant articles rank #1.
+
+    Fix: Only apply policy_boost when intent=policy AND document
+         category=POLICY.
+    Effort: 30 minutes
+    Expected improvement: +10-15%
+
+─────────────────────────────────────────────────────────────────────────
+#4  LOW-MEDIUM: INTENT DETECTION WORKS BUT DOESN'T FILTER RESULTS
+─────────────────────────────────────────────────────────────────────────
+
+    Impact: ★★☆☆☆  (Correct detection, wasted signal)
+
+    Intent detection IS working:
+    - "Can I use a flash drive?" → policy (conf: 0.6) ✓
+    - "How do I set up VPN?" → procedure (conf: 0.6) ✓
+    - "Steps to request a new laptop" → procedure (conf: 0.8) ✓
+    - "Tell me about security compliance" → reference (conf: 0.6) ✓
+
+    BUT the adaptive fusion only adjusts BM25/vector weight ratios.
+    It does NOT:
+    - Filter results by detected category
+    - Boost category-matching results
+    - Penalize category-mismatching results
+
+    Result: "Can I use a flash drive?" detects intent=policy but
+    returns PROCEDURE articles because there's no category filtering.
+
+    Query Performance Logs (183 queries):
+    ┌──────────────┬───────┬────────────────┬──────────────┐
+    │ Intent       │ Count │ Avg Confidence │ Avg Latency  │
+    ├──────────────┼───────┼────────────────┼──────────────┤
+    │ procedure    │    79 │   0.404        │   20.0ms     │
+    │ policy       │    60 │   0.427        │   20.6ms     │
+    │ unknown      │    37 │   0.000        │   40.8ms     │
+    │ reference    │     7 │   0.457        │   10.8ms     │
+    └──────────────┴───────┴────────────────┴──────────────┘
+
+    20% of queries classified as "unknown" — these get no
+    category-aware boosting at all.
+
+    Fix: Add category boost to results matching detected intent.
+    Effort: 1 hour
+    Expected improvement: +5-10%
+
+─────────────────────────────────────────────────────────────────────────
+#5  LOW: VECTOR SEARCH MISSES FOR MANY QUERIES
+─────────────────────────────────────────────────────────────────────────
+
+    Impact: ★★☆☆☆  (Single-signal degradation)
+
+    Many top results show Vector=0.0, meaning the article wasn't
+    found by semantic search at all. The fusion then degrades to
+    pure BM25 keyword matching.
+
+    Examples:
+    - "Can I use a flash drive?" → Top: Vector=0.0 (BM25 only)
+    - "What is our password policy?" → Top: Vector=0.0 (BM25 only)
+    - "Steps to request a new laptop" → Top: Vector=0.0 (BM25 only)
+    - "VPN setup instructions" → Top: Vector=0.0 (BM25 only)
+
+    This happens because HNSW vector search returns top-20 results
+    but BM25 returns top-50. When the BM25 top result isn't in the
+    vector top-20, its vector score defaults to 0.0.
+
+    Root cause: The articles with BM25 matches are short fragments
+    with weak embeddings — they match keywords but have no semantic
+    representation.
+
+    Fix: Addressed by Root Causes #1 and #2 above.
+
+═══════════════════════════════════════════════════════════════════════════
+
+SUMMARY OF ROOT CAUSES
+
+  #1 Curated KB not in PostgreSQL    ★★★★★  Fix: 1-2 hours   +40-50%
+  #2 DB full of junk fragments       ★★★★☆  Fix: 2-3 hours   +15-25%
+  #3 Score fusion formula bug         ★★★☆☆  Fix: 30 min      +10-15%
+  #4 Intent doesn't filter results   ★★☆☆☆  Fix: 1 hour      +5-10%
+  #5 Vector misses (symptom of #1+2) ★★☆☆☆  Fix: via #1+#2   included
+
+  Combined fix potential: +70-90% quality improvement
+  Total effort: 4-6 hours
+
+═══════════════════════════════════════════════════════════════════════════
+
+RECOMMENDED IMMEDIATE ACTIONS
+
+  1. Ingest curated KB articles into PostgreSQL (1-2 hours)
+     → Immediately provides correct answers for policy questions
+
+  2. Fix the policy_boost bug in score_fusion.py (30 min)
+     → Stops irrelevant keyword matches from being artificially boosted
+
+  3. Add minimum content length filter (1 hour)
+     → Remove articles < 100 chars, flag articles < 300 chars
+
+  4. Add category boost for intent-matching results (1 hour)
+     → When intent=policy, boost POLICY category results
+
+  After these 4 fixes: expected quality improvement +60-80%
+
+═══════════════════════════════════════════════════════════════════════════
+
+EMBEDDING MODEL ASSESSMENT
+
+  Current model: sentence-transformers/all-MiniLM-L6-v2 (PostgreSQL)
+                 nomic-embed-text (local Tauri app via llama-cpp)
+  Dimension: 384 (PostgreSQL) / 768 (local)
+
+  Verdict: The embedding model is NOT the primary problem.
+  The model can't find relevant articles because the relevant articles
+  (curated KB) aren't in the database. Upgrading the model would not
+  help when the content itself is missing.
+
+  Recommendation: Fix KB content first (#1, #2), then re-evaluate
+  model performance. Only upgrade model if quality is still <80%
+  after content fixes.
+
+═══════════════════════════════════════════════════════════════════════════
+
+FEEDBACK DATA
+
+  Total queries logged: 183
+  Total feedback: 4 (3 helpful, 1 not_helpful)
+  Feedback rate: 2.2% — insufficient for data-driven optimization
+
+  Recommendation: Increase feedback collection by making the
+  feedback buttons more prominent. Need 50+ feedback entries
+  for statistical significance.
+
+═══════════════════════════════════════════════════════════════════════════
