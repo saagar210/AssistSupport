@@ -157,6 +157,7 @@ def search():
                 "latency_ms": round(result["metrics"]["total_time_ms"], 1),
                 "embedding_time_ms": round(result["metrics"]["embedding_time_ms"], 1),
                 "search_time_ms": round(result["metrics"]["search_time_ms"], 1),
+                "rerank_time_ms": round(result["metrics"].get("rerank_time_ms", 0), 1),
                 "result_count": len(formatted_results),
                 "timestamp": datetime.utcnow().isoformat(),
             },
@@ -203,6 +204,7 @@ def submit_feedback():
         result_rank = data.get("result_rank")
         rating = data.get("rating")
         comment = data.get("comment", "")
+        article_id = data.get("article_id")
 
         if not all([query_id, result_rank is not None, rating]):
             return (
@@ -214,7 +216,7 @@ def submit_feedback():
             return jsonify({"error": f"Invalid rating: {rating}"}), 400
 
         engine = _get_engine()
-        engine._log_feedback(query_id, result_rank, rating, comment)
+        engine._log_feedback(query_id, result_rank, rating, comment, article_id)
 
         return (
             jsonify(

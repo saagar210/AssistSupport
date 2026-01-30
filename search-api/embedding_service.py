@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 AssistSupport Embedding Service
-Generates 384-dimensional embeddings using all-MiniLM-L6-v2 model
+Generates 768-dimensional embeddings using intfloat/e5-base-v2 (IR-optimized)
+Fallback: sentence-transformers/all-MiniLM-L6-v2 (384 dims)
 """
 
 import os
@@ -10,28 +11,44 @@ from sentence_transformers import SentenceTransformer
 
 
 class EmbeddingService:
+    # Models that require "query: "/"passage: " prefixes
+    PREFIX_MODELS = {"intfloat/e5-base-v2", "intfloat/e5-small-v2", "intfloat/e5-large-v2"}
+
     def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
         """Initialize embedding service with local model"""
         model_dir = os.path.expanduser("~/assistsupport-semantic-migration/models")
         self.model = SentenceTransformer(model_name, cache_folder=model_dir)
-        self.dimension = 384
+        self.model_name = model_name
+        self.dimension = self.model.get_sentence_embedding_dimension()
+        self.uses_prefix = model_name in self.PREFIX_MODELS
         print(f"Embedding service initialized: {model_name}")
         print(f"  Dimension: {self.dimension}")
         print(f"  Device: {self.model.device}")
+        print(f"  Uses prefix: {self.uses_prefix}")
 
-    def embed_text(self, text: str) -> np.ndarray:
-        """Generate single embedding"""
+    def embed_query(self, text: str) -> np.ndarray:
+        """Generate embedding for a search query"""
         if not text or not isinstance(text, str):
             raise ValueError("Text must be non-empty string")
-        embedding = self.model.encode(text, normalize_embeddings=True)
-        if len(embedding) != self.dimension:
-            raise ValueError(f"Expected {self.dimension} dims, got {len(embedding)}")
+        prefixed = f"query: {text}" if self.uses_prefix else text
+        embedding = self.model.encode(prefixed, normalize_embeddings=True)
         return embedding.astype(np.float32)
 
-    def embed_batch(self, texts: list, batch_size=32, show_progress=False) -> list:
+    def embed_text(self, text: str) -> np.ndarray:
+        """Generate embedding for a document/passage"""
+        if not text or not isinstance(text, str):
+            raise ValueError("Text must be non-empty string")
+        prefixed = f"passage: {text}" if self.uses_prefix else text
+        embedding = self.model.encode(prefixed, normalize_embeddings=True)
+        return embedding.astype(np.float32)
+
+    def embed_batch(self, texts: list, batch_size=32, show_progress=False, is_query=False) -> list:
         """Generate embeddings for multiple texts"""
         if not texts:
             raise ValueError("Texts must be non-empty list")
+        if self.uses_prefix:
+            prefix = "query: " if is_query else "passage: "
+            texts = [f"{prefix}{t}" for t in texts]
         embeddings = self.model.encode(
             texts,
             batch_size=batch_size,
@@ -42,24 +59,25 @@ class EmbeddingService:
 
     def test(self):
         """Verify service is working"""
-        test_texts = [
-            "Can I use a flash drive?",
+        queries = ["Can I use a flash drive?"]
+        passages = [
             "USB drives and removable media are forbidden",
             "Cloud storage is approved for business use",
         ]
 
         print("\nTesting embedding service...")
-        embeddings = self.embed_batch(test_texts, show_progress=False)
+        q_emb = self.embed_query(queries[0])
+        p_embs = self.embed_batch(passages, is_query=False)
 
-        for text, embedding in zip(test_texts, embeddings):
-            print(f"  {text:50s} -> {len(embedding):3d} dims, norm={np.linalg.norm(embedding):.4f}")
+        print(f"  Query:   {queries[0]:50s} -> {len(q_emb):3d} dims")
+        for text, embedding in zip(passages, p_embs):
+            print(f"  Passage: {text:50s} -> {len(embedding):3d} dims")
 
-        # Cosine similarity (embeddings are normalized, so dot product = cosine sim)
-        sim_01 = np.dot(embeddings[0], embeddings[1])
-        sim_02 = np.dot(embeddings[0], embeddings[2])
-        print(f"\n  Cosine similarity (Q1 'flash drive' vs A1 'USB forbidden'): {sim_01:.4f}")
-        print(f"  Cosine similarity (Q1 'flash drive' vs A2 'cloud storage'):  {sim_02:.4f}")
-        print(f"  Q1 is more similar to A1 than A2: {sim_01 > sim_02}")
+        sim_01 = np.dot(q_emb, p_embs[0])
+        sim_02 = np.dot(q_emb, p_embs[1])
+        print(f"\n  Cosine similarity (Q 'flash drive' vs P 'USB forbidden'): {sim_01:.4f}")
+        print(f"  Cosine similarity (Q 'flash drive' vs P 'cloud storage'):  {sim_02:.4f}")
+        print(f"  Q is more similar to P1 than P2: {sim_01 > sim_02}")
         print("Service test passed\n")
 
 

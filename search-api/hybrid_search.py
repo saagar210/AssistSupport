@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from embedding_service import EmbeddingService
 from score_fusion import ScoreFusion
 from intent_detection import IntentDetector
+from reranker import Reranker
+from feedback_loop import get_quality_scores
 
 
 class HybridSearchEngine:
@@ -36,6 +38,7 @@ class HybridSearchEngine:
         # Set HNSW ef_search once at connection time
         self.cur.execute("SET hnsw.ef_search = 100")
         self.embedder = EmbeddingService()
+        self.reranker = Reranker()
         print("Hybrid search engine initialized")
 
     def search(
@@ -55,9 +58,9 @@ class HybridSearchEngine:
         # Step 1: Detect intent
         intent, intent_conf = IntentDetector.detect(query)
 
-        # Step 2: Generate embedding
+        # Step 2: Generate query embedding
         start_embed = time.time()
-        query_embedding = self.embedder.embed_text(query)
+        query_embedding = self.embedder.embed_query(query)
         embed_time = (time.time() - start_embed) * 1000
 
         # Step 3: Execute both searches
@@ -80,6 +83,9 @@ class HybridSearchEngine:
         if intent in ("policy", "procedure", "reference") and intent_conf >= 0.3:
             fused = self._apply_category_boost(fused, intent)
 
+        # Step 5.5: Apply quality score from feedback loop
+        fused = self._apply_quality_scores(fused)
+
         # Step 6: Deduplicate
         if use_deduplication:
             fused = self._deduplicate_results(fused)
@@ -89,7 +95,17 @@ class HybridSearchEngine:
             fused, bm25_results, vector_results, limit
         )
 
-        # Step 8: Log query
+        # Step 8: Cross-encoder re-ranking (optional, disabled by default)
+        rerank_time = 0
+        if fusion_strategy == "rerank":
+            rerank_pool_results = self._fetch_and_format_results(
+                fused, bm25_results, vector_results, min(limit * 2, 20)
+            )
+            start_rerank = time.time()
+            results = self.reranker.rerank(query, rerank_pool_results, top_k=limit)
+            rerank_time = (time.time() - start_rerank) * 1000
+
+        # Step 9: Log query
         total_time = (time.time() - start_total) * 1000
         query_id = self._log_query(
             query,
@@ -114,6 +130,7 @@ class HybridSearchEngine:
                 "embedding_time_ms": embed_time,
                 "search_time_ms": search_time,
                 "fusion_time_ms": fusion_time,
+                "rerank_time_ms": rerank_time,
             },
         }
 
@@ -170,6 +187,20 @@ class HybridSearchEngine:
             boosted.append((article_id, score))
 
         return sorted(boosted, key=lambda x: x[1], reverse=True)
+
+    def _apply_quality_scores(
+        self, fused_results: List[Tuple[str, float]]
+    ) -> List[Tuple[str, float]]:
+        """Multiply fusion scores by per-article quality scores from feedback."""
+        article_ids = [r[0] for r in fused_results[:30]]
+        if not article_ids:
+            return fused_results
+        q_scores = get_quality_scores(self.conn, article_ids)
+        adjusted = []
+        for article_id, score in fused_results:
+            qs = q_scores.get(article_id, 1.0)
+            adjusted.append((article_id, score * qs))
+        return sorted(adjusted, key=lambda x: x[1], reverse=True)
 
     def _vector_search(
         self, query_embedding, limit: int
@@ -317,16 +348,17 @@ class HybridSearchEngine:
             return None
 
     def _log_feedback(
-        self, query_id: str, result_rank: int, rating: str, comment: str = ""
+        self, query_id: str, result_rank: int, rating: str, comment: str = "",
+        article_id: str = None
     ):
         """Log user feedback on search results"""
         try:
             self.cur.execute(
                 """
-                INSERT INTO search_feedback (query_id, result_rank, rating, comment)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO search_feedback (query_id, result_rank, rating, comment, article_id)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (query_id, result_rank, rating, comment),
+                (query_id, result_rank, rating, comment, article_id),
             )
         except Exception as e:
             print(f"Feedback logging error: {e}")

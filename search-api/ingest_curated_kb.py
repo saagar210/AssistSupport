@@ -84,7 +84,7 @@ def main():
 
     # Check for existing curated articles and remove them (clean re-ingest)
     cur.execute(
-        "DELETE FROM kb_articles WHERE source_document_id = 'curated_kb'"
+        "DELETE FROM kb_articles WHERE source_document_id LIKE 'curated_%'"
     )
     deleted = cur.rowcount
     if deleted > 0:
@@ -141,7 +141,7 @@ def main():
                 embedding_str,
                 "all-MiniLM-L6-v2",
                 1,
-                "curated_kb",
+                "curated_" + article["title"].lower().replace(" ", "_"),
                 0,
                 article["filename"],
             ),
