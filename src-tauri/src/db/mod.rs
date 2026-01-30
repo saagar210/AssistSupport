@@ -91,6 +91,16 @@ impl Database {
         Ok(db)
     }
 
+    /// Re-key the database with a new master key (for key rotation).
+    /// Uses SQLCipher's PRAGMA rekey to re-encrypt the entire database.
+    pub fn rekey(&self, new_key: &MasterKey) -> Result<(), DbError> {
+        let mut hex_key = hex::encode(new_key.as_bytes());
+        let pragma = format!("PRAGMA rekey = \"x'{}'\";", hex_key);
+        self.conn.execute_batch(&pragma)?;
+        hex_key.zeroize();
+        Ok(())
+    }
+
     /// Initialize database schema
     pub fn initialize(&self) -> Result<(), DbError> {
         // Run integrity check

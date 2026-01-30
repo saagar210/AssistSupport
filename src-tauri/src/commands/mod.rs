@@ -172,7 +172,7 @@ pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, St
         let config = VectorStoreConfig {
             path: vectors_path,
             embedding_dim: 768, // nomic-embed-text default
-            encryption_enabled: false,
+            encryption_enabled: true,
         };
 
         let mut vector_store = VectorStore::new(config);
@@ -2501,7 +2501,7 @@ pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String>
     let config = VectorStoreConfig {
         path: vectors_path,
         embedding_dim,
-        encryption_enabled: false,
+        encryption_enabled: true,
     };
 
     let mut store = VectorStore::new(config);
