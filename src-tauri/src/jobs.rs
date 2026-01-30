@@ -241,14 +241,18 @@ impl JobManager {
     /// Register a job and get its cancellation token
     pub fn register_job(&self, job_id: &str) -> CancellationToken {
         let token = CancellationToken::new();
-        let mut tokens = self.cancellation_tokens.lock().unwrap();
-        tokens.insert(job_id.to_string(), token.clone());
+        if let Ok(mut tokens) = self.cancellation_tokens.lock() {
+            tokens.insert(job_id.to_string(), token.clone());
+        }
         token
     }
 
     /// Cancel a job
     pub fn cancel_job(&self, job_id: &str) -> bool {
-        let tokens = self.cancellation_tokens.lock().unwrap();
+        let tokens = match self.cancellation_tokens.lock() {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
         if let Some(token) = tokens.get(job_id) {
             token.cancel();
             true
@@ -259,14 +263,17 @@ impl JobManager {
 
     /// Unregister a completed job
     pub fn unregister_job(&self, job_id: &str) {
-        let mut tokens = self.cancellation_tokens.lock().unwrap();
-        tokens.remove(job_id);
+        if let Ok(mut tokens) = self.cancellation_tokens.lock() {
+            tokens.remove(job_id);
+        }
     }
 
     /// Check if a job is registered
     pub fn is_job_active(&self, job_id: &str) -> bool {
-        let tokens = self.cancellation_tokens.lock().unwrap();
-        tokens.contains_key(job_id)
+        match self.cancellation_tokens.lock() {
+            Ok(tokens) => tokens.contains_key(job_id),
+            Err(_) => false,
+        }
     }
 }
 

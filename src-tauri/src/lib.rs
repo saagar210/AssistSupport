@@ -32,8 +32,9 @@ use tokio::sync::RwLock as TokioRwLock;
 
 /// Application state
 pub struct AppState {
-    /// Shared llama.cpp backend — initialized once, shared by LLM and embedding engines
-    pub backend: Arc<LlamaBackend>,
+    /// Shared llama.cpp backend — initialized once, shared by LLM and embedding engines.
+    /// `None` if initialization failed (LLM features disabled, app still usable).
+    pub backend: Option<Arc<LlamaBackend>>,
     pub db: Mutex<Option<Database>>,
     pub llm: Arc<RwLock<Option<LlmEngine>>>,
     pub embeddings: Arc<RwLock<Option<EmbeddingEngine>>>,
@@ -43,7 +44,13 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let backend = Arc::new(LlamaBackend::init().expect("Failed to initialize llama backend"));
+        let backend = match LlamaBackend::init() {
+            Ok(b) => Some(Arc::new(b)),
+            Err(e) => {
+                eprintln!("[startup] Failed to initialize llama backend: {}. LLM features will be unavailable.", e);
+                None
+            }
+        };
         Self {
             backend,
             db: Mutex::new(None),

@@ -4680,10 +4680,14 @@ const BUILTIN_TREES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-/// Get the application data directory
+/// Get the application data directory.
+///
+/// Falls back to `$HOME/.local/share/AssistSupport` if the platform data
+/// directory cannot be determined (should never happen on macOS/Linux/Windows).
 pub fn get_app_data_dir() -> PathBuf {
     dirs::data_dir()
-        .expect("Platform data directory must be available")
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("AssistSupport")
 }
 
@@ -4715,7 +4719,8 @@ pub fn get_downloads_dir() -> PathBuf {
 /// Get logs directory
 pub fn get_logs_dir() -> PathBuf {
     dirs::data_dir()
-        .expect("Platform data directory must be available")
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("Logs")
         .join("AssistSupport")
 }
@@ -4723,7 +4728,8 @@ pub fn get_logs_dir() -> PathBuf {
 /// Get cache directory
 pub fn get_cache_dir() -> PathBuf {
     dirs::cache_dir()
-        .expect("Platform cache directory must be available")
+        .or_else(|| dirs::home_dir().map(|h| h.join(".cache")))
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("AssistSupport")
 }
 

@@ -431,7 +431,11 @@ pub fn init_llm_engine(state: State<'_, AppState>) -> Result<(), String> {
     if state.llm.read().is_some() {
         return Ok(());
     }
-    let engine = LlmEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
+    let backend = state
+        .backend
+        .as_ref()
+        .ok_or("LLM backend not available — initialization failed on startup")?;
+    let engine = LlmEngine::new(backend.clone()).map_err(|e| e.to_string())?;
     *state.llm.write() = Some(engine);
     Ok(())
 }
@@ -2363,7 +2367,11 @@ pub fn init_embedding_engine(state: State<'_, AppState>) -> Result<(), String> {
     if state.embeddings.read().is_some() {
         return Ok(());
     }
-    let engine = EmbeddingEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
+    let backend = state
+        .backend
+        .as_ref()
+        .ok_or("LLM backend not available — initialization failed on startup")?;
+    let engine = EmbeddingEngine::new(backend.clone()).map_err(|e| e.to_string())?;
     *state.embeddings.write() = Some(engine);
     Ok(())
 }
@@ -3579,7 +3587,12 @@ pub fn ingest_kb_from_disk(
 }
 
 /// Ingest a web page URL
-/// Uses block_in_place to run async operations while holding DB lock
+///
+/// NOTE: Holds the DB mutex for the entire ingestion (network fetch + DB write).
+/// This blocks all other DB-accessing commands until complete. A slow or
+/// unresponsive remote server will effectively freeze DB operations. Future
+/// improvement: refactor WebIngester to separate fetch (no lock) from persist
+/// (short lock).
 #[tauri::command]
 pub fn ingest_url(
     state: State<'_, AppState>,
@@ -3625,7 +3638,9 @@ pub fn ingest_url(
 }
 
 /// Ingest a YouTube video transcript
-/// Uses block_in_place to run async operations while holding DB lock
+///
+/// NOTE: Holds the DB mutex for the entire ingestion (yt-dlp + DB write).
+/// Same lock contention caveat as `ingest_url` — see note there.
 #[tauri::command]
 pub fn ingest_youtube(
     state: State<'_, AppState>,
@@ -5499,15 +5514,19 @@ pub async fn post_and_transition(
 pub fn get_model_state(
     state: State<'_, AppState>,
 ) -> Result<ModelStateResult, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    // Read from DB first, then release the lock before acquiring llm/embeddings
+    // locks. This avoids lock ordering inversion with load_model (llm -> db).
+    let (llm, embeddings) = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let llm = db.get_model_state("llm").map_err(|e| e.to_string())?;
+        let embeddings = db
+            .get_model_state("embeddings")
+            .map_err(|e| e.to_string())?;
+        (llm, embeddings)
+    };
+    // db_lock released here — safe to acquire llm/embeddings locks
 
-    let llm = db.get_model_state("llm").map_err(|e| e.to_string())?;
-    let embeddings = db
-        .get_model_state("embeddings")
-        .map_err(|e| e.to_string())?;
-
-    // Check if models are currently loaded in memory
     let llm_loaded = state
         .llm
         .read()

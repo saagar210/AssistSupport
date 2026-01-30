@@ -258,6 +258,14 @@ fn decrypt_backup(path: &Path, password: &str) -> Result<Vec<u8>, BackupError> {
     file.read_exact(&mut header_len_bytes)?;
     let header_len = u32::from_le_bytes(header_len_bytes) as usize;
 
+    // Sanity check: header should be small JSON (prevent OOM from crafted files)
+    if header_len > 4096 {
+        return Err(BackupError::InvalidBackup(format!(
+            "Header length {} exceeds maximum (4096)",
+            header_len
+        )));
+    }
+
     // Read header
     let mut header_json = vec![0u8; header_len];
     file.read_exact(&mut header_json)?;

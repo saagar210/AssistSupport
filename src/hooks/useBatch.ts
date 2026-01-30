@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface BatchResult {
@@ -95,6 +95,11 @@ export function useBatch() {
       }
     }
   }, [status, stopPolling]);
+
+  // Clean up polling interval on unmount to prevent state updates after unmount
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
 
   const reset = useCallback(() => {
     stopPolling();

@@ -450,7 +450,7 @@ static AUDIT_SENDER: std::sync::OnceLock<std::sync::mpsc::SyncSender<AuditEntry>
 fn audit_sender() -> &'static std::sync::mpsc::SyncSender<AuditEntry> {
     AUDIT_SENDER.get_or_init(|| {
         let (tx, rx) = std::sync::mpsc::sync_channel::<AuditEntry>(256);
-        std::thread::Builder::new()
+        match std::thread::Builder::new()
             .name("audit-writer".into())
             .spawn(move || {
                 for entry in rx {
@@ -462,8 +462,12 @@ fn audit_sender() -> &'static std::sync::mpsc::SyncSender<AuditEntry> {
                         }
                     }
                 }
-            })
-            .expect("Failed to spawn audit-writer thread");
+            }) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("[audit] Failed to spawn audit-writer thread: {}. Audit entries will be buffered.", e);
+            }
+        }
         tx
     })
 }
