@@ -383,9 +383,13 @@ pub async fn search_kb_with_options(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Fuse results with configurable options (weights, dedup)
-    let mut results =
-        HybridSearch::fuse_results_with_options(db, fts_results, vector_results, search_opts.clone())
-            .map_err(|e| e.to_string())?;
+    let mut results = HybridSearch::fuse_results_with_options(
+        db,
+        fts_results,
+        vector_results,
+        search_opts.clone(),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Apply post-processing (policy boost, score normalization, snippet sanitization)
     results = HybridSearch::post_process_results(results, &search_opts);
@@ -3546,9 +3550,7 @@ pub fn ingest_kb_from_disk(
 
     // Validate path is within home directory
     let validated_path = validate_within_home(Path::new(&folder_path)).map_err(|e| match e {
-        ValidationError::PathTraversal => {
-            "Folder must be within your home directory".to_string()
-        }
+        ValidationError::PathTraversal => "Folder must be within your home directory".to_string(),
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This directory cannot be used as it contains sensitive data".to_string()
         }
@@ -5051,17 +5053,26 @@ pub async fn export_batch_results(
         return Err("No results to export".to_string());
     }
 
+    // Sanitize job_id to prevent path injection (strip path separators and special chars)
+    let safe_job_id: String = job_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if safe_job_id.is_empty() {
+        return Err("Invalid job ID".to_string());
+    }
+
     let export_dir = crate::db::get_app_data_dir().join("exports");
     std::fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
 
     match format.as_str() {
         "json" => {
-            let path = export_dir.join(format!("batch_{}.json", job_id));
+            let path = export_dir.join(format!("batch_{}.json", safe_job_id));
             let json = serde_json::to_string_pretty(&results).map_err(|e| e.to_string())?;
             std::fs::write(&path, json).map_err(|e| e.to_string())?;
         }
         "csv" => {
-            let path = export_dir.join(format!("batch_{}.csv", job_id));
+            let path = export_dir.join(format!("batch_{}.csv", safe_job_id));
             let mut csv_content = String::from("Input,Response,Duration(ms),Sources\n");
             for r in &results {
                 let sources_str: Vec<String> =
@@ -5511,9 +5522,7 @@ pub async fn post_and_transition(
 
 /// Get the last-used model state (for auto-load on startup)
 #[tauri::command]
-pub fn get_model_state(
-    state: State<'_, AppState>,
-) -> Result<ModelStateResult, String> {
+pub fn get_model_state(state: State<'_, AppState>) -> Result<ModelStateResult, String> {
     // Read from DB first, then release the lock before acquiring llm/embeddings
     // locks. This avoids lock ordering inversion with load_model (llm -> db).
     let (llm, embeddings) = {
@@ -5561,9 +5570,7 @@ pub struct ModelStateResult {
 
 /// Get the last startup metrics
 #[tauri::command]
-pub fn get_startup_metrics(
-    state: State<'_, AppState>,
-) -> Result<StartupMetricsResult, String> {
+pub fn get_startup_metrics(state: State<'_, AppState>) -> Result<StartupMetricsResult, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -5596,24 +5603,15 @@ pub struct StartupMetricsResult {
 
 /// Create a session token (auto-unlock for 24 hours)
 #[tauri::command]
-pub fn create_session_token(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub fn create_session_token(state: State<'_, AppState>) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Clean up expired tokens first
     let _ = db.cleanup_expired_sessions();
 
-    // Generate a secure session ID
+    // Generate a secure session ID (UUID v4 from CSPRNG)
     let session_id = uuid::Uuid::new_v4().to_string();
-
-    // Hash the session ID for storage (using HMAC-like approach with master key)
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(session_id.as_bytes());
-    hasher.update(b"assistsupport-session-salt");
-    let token_hash = hasher.finalize().to_vec();
 
     // 24-hour expiry
     let expires_at = (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339();
@@ -5621,7 +5619,8 @@ pub fn create_session_token(
     // Device identifier (hostname + username)
     let device_id = get_device_identifier();
 
-    db.store_session_token(&session_id, &token_hash, &expires_at, &device_id)
+    // Session is validated by session_id + device_id + expiry (not hash)
+    db.store_session_token(&session_id, &[], &expires_at, &device_id)
         .map_err(|e| e.to_string())?;
 
     Ok(session_id)
@@ -5643,10 +5642,7 @@ pub fn validate_session_token(
 
 /// Clear (revoke) a session token
 #[tauri::command]
-pub fn clear_session_token(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn clear_session_token(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_session_token(&session_id)
@@ -5656,14 +5652,15 @@ pub fn clear_session_token(
 
 /// Clear all session tokens (lock the app)
 #[tauri::command]
-pub fn lock_app(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub fn lock_app(state: State<'_, AppState>) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     // Delete all sessions for this device
     db.conn()
-        .execute("DELETE FROM session_tokens WHERE device_id = ?1", rusqlite::params![get_device_identifier()])
+        .execute(
+            "DELETE FROM session_tokens WHERE device_id = ?1",
+            rusqlite::params![get_device_identifier()],
+        )
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -5724,9 +5721,7 @@ pub fn submit_pilot_feedback(
 
 /// Get pilot dashboard summary stats
 #[tauri::command]
-pub fn get_pilot_stats(
-    state: State<'_, AppState>,
-) -> Result<crate::feedback::PilotStats, String> {
+pub fn get_pilot_stats(state: State<'_, AppState>) -> Result<crate::feedback::PilotStats, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     crate::feedback::get_pilot_stats(db)
@@ -5744,12 +5739,12 @@ pub fn get_pilot_query_logs(
 
 /// Export pilot data to CSV
 #[tauri::command]
-pub fn export_pilot_data(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<usize, String> {
+pub fn export_pilot_data(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     use std::path::Path;
+    // Validate export path is within the user's home directory
+    let validated_path = crate::validation::validate_within_home(Path::new(&path))
+        .map_err(|e| format!("Invalid export path: {}", e))?;
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::export::export_to_csv(db, Path::new(&path))
+    crate::feedback::export::export_to_csv(db, &validated_path)
 }

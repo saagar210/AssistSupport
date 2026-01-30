@@ -161,7 +161,11 @@ pub fn apply_policy_boost(results: &mut Vec<SearchResult>, query: &str) {
     }
 
     // Re-sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 /// Hybrid search engine
@@ -285,7 +289,19 @@ pub fn preprocess_fts5_query(query: &str) -> String {
         return String::new();
     }
 
-    let words: Vec<&str> = query.split_whitespace().collect();
+    // Strip FTS5 operators and special syntax characters to prevent query manipulation
+    let fts5_operators = ["AND", "OR", "NOT", "NEAR"];
+    let words: Vec<&str> = query
+        .split_whitespace()
+        .filter(|w| !fts5_operators.contains(&w.to_uppercase().as_str()))
+        .map(|w| {
+            // Strip prefix operators (- for NOT) and suffix wildcards (*)
+            let w = w.strip_prefix('-').unwrap_or(w);
+            let w = w.strip_suffix('*').unwrap_or(w);
+            w
+        })
+        .filter(|w| !w.is_empty())
+        .collect();
 
     if words.is_empty() {
         return String::new();
@@ -741,7 +757,11 @@ impl HybridSearch {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }
@@ -1675,7 +1695,10 @@ mod tests {
         apply_policy_boost(&mut results, "How do I set up my email?");
 
         let new_order: Vec<String> = results.iter().map(|r| r.chunk_id.clone()).collect();
-        assert_eq!(original_order, new_order, "Non-policy query should not change result order");
+        assert_eq!(
+            original_order, new_order,
+            "Non-policy query should not change result order"
+        );
     }
 
     #[test]
@@ -1765,9 +1788,11 @@ mod tests {
 
     #[test]
     fn test_policy_boost_score_increase() {
-        let mut results = vec![
-            make_result("policy", "/kb/POLICIES/flash_drives_forbidden.md", 0.5),
-        ];
+        let mut results = vec![make_result(
+            "policy",
+            "/kb/POLICIES/flash_drives_forbidden.md",
+            0.5,
+        )];
 
         let original_score = results[0].score;
         apply_policy_boost(&mut results, "Can I get a flash drive?");
@@ -1794,7 +1819,10 @@ mod tests {
     #[test]
     fn test_search_options_with_query_text() {
         let opts = SearchOptions::new(10).with_query_text("Can I use a flash drive?");
-        assert_eq!(opts.query_text, Some("Can I use a flash drive?".to_string()));
+        assert_eq!(
+            opts.query_text,
+            Some("Can I use a flash drive?".to_string())
+        );
     }
 
     #[test]

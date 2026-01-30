@@ -14,6 +14,12 @@ const SENSITIVE_HOME_PATHS: &[&str] = &[
     ".pgp",              // PGP keys
     ".config",           // App configs (often contain tokens)
     "Library/Keychains", // macOS Keychains
+    ".docker",           // Docker credentials
+    ".kube",             // Kubernetes configs and tokens
+    ".netrc",            // Network credentials (FTP, curl, etc.)
+    ".git-credentials",  // Git credential store
+    ".azure",            // Azure CLI credentials
+    ".gcloud",           // Google Cloud credentials
 ];
 
 /// Maximum size for text inputs (10MB)

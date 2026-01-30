@@ -1011,9 +1011,7 @@ impl Database {
     }
 
     /// Get last startup metric
-    pub fn get_last_startup_metric(
-        &self,
-    ) -> Result<Option<(i64, i64, bool)>, DbError> {
+    pub fn get_last_startup_metric(&self) -> Result<Option<(i64, i64, bool)>, DbError> {
         let result = self.conn.query_row(
             "SELECT total_ms, init_app_ms, models_cached FROM startup_metrics ORDER BY id DESC LIMIT 1",
             [],
@@ -1331,14 +1329,16 @@ impl Database {
 
     /// Search drafts by text content
     pub fn search_drafts(&self, query: &str, limit: usize) -> Result<Vec<SavedDraft>, DbError> {
-        let pattern = format!("%{}%", query);
+        // Escape LIKE wildcards (% and _) in user input to prevent wildcard injection
+        let escaped = query.replace('%', "\\%").replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
         let mut stmt = self.conn.prepare(
             "SELECT id, input_text, summary_text, diagnosis_json, response_text,
                     ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name,
                     case_intake_json, status, handoff_summary, finalized_at, finalized_by
              FROM drafts
              WHERE is_autosave = 0
-               AND (input_text LIKE ?1 OR response_text LIKE ?1 OR ticket_id LIKE ?1)
+               AND (input_text LIKE ?1 ESCAPE '\\' OR response_text LIKE ?1 ESCAPE '\\' OR ticket_id LIKE ?1 ESCAPE '\\')
              ORDER BY updated_at DESC
              LIMIT ?2",
         )?;
@@ -4054,11 +4054,14 @@ impl Database {
             return Ok(Vec::new());
         }
 
+        // Build parameterized LIKE clauses (one ?N placeholder per keyword)
         let like_clauses: Vec<String> = keywords
             .iter()
-            .map(|k| format!("content LIKE '%{}%'", k.replace('\'', "''")))
+            .enumerate()
+            .map(|(i, _)| format!("content LIKE ?{}", i + 1))
             .collect();
         let where_clause = like_clauses.join(" OR ");
+        let limit_param_idx = keywords.len() + 1;
 
         let query = format!(
             "SELECT id, source_draft_id, source_rating, name, category, content,
@@ -4066,13 +4069,23 @@ impl Database {
              FROM saved_response_templates
              WHERE {}
              ORDER BY use_count DESC
-             LIMIT ?",
-            where_clause
+             LIMIT ?{}",
+            where_clause, limit_param_idx
         );
+
+        // Escape LIKE wildcards (% and _) and wrap in %...% for substring match
+        let mut param_values: Vec<String> = keywords
+            .iter()
+            .map(|k| {
+                let escaped = k.replace('%', "\\%").replace('_', "\\_");
+                format!("%{}%", escaped)
+            })
+            .collect();
+        param_values.push(limit.to_string());
 
         let mut stmt = self.conn.prepare(&query)?;
         let templates = stmt
-            .query_map([limit as i64], |row| {
+            .query_map(rusqlite::params_from_iter(param_values.iter()), |row| {
                 Ok(SavedResponseTemplate {
                     id: row.get(0)?,
                     source_draft_id: row.get(1)?,

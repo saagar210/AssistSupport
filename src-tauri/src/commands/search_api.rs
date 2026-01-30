@@ -155,7 +155,10 @@ pub async fn submit_search_feedback(
     comment: Option<String>,
 ) -> Result<String, String> {
     if !["helpful", "not_helpful", "incorrect"].contains(&rating.as_str()) {
-        return Err(format!("Invalid rating '{}': must be helpful, not_helpful, or incorrect", rating));
+        return Err(format!(
+            "Invalid rating '{}': must be helpful, not_helpful, or incorrect",
+            rating
+        ));
     }
 
     let client = reqwest::Client::new();
