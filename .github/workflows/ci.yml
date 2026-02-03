@@ -87,7 +87,61 @@ jobs:
         run: pnpm add -D @vitest/coverage-v8@^4.0.18 --no-frozen-lockfile
 
       - name: Run coverage
-        run: pnpm run test:coverage
+        run: pnpm vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.reportsDirectory=coverage/frontend
+
+      - name: Summarize coverage
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lcovPath = 'coverage/frontend/lcov.info';
+          if (!fs.existsSync(lcovPath)) {
+            console.error('Missing lcov report at ' + lcovPath);
+            process.exit(1);
+          }
+          const lines = fs.readFileSync(lcovPath, 'utf8').split('\n');
+          let lf = 0;
+          let lh = 0;
+          for (const line of lines) {
+            if (line.startsWith('LF:')) lf += Number(line.slice(3));
+            if (line.startsWith('LH:')) lh += Number(line.slice(3));
+          }
+          const pct = lf > 0 ? (lh / lf) * 100 : 0;
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `### Frontend Coverage\n\n- Line coverage: **${pct.toFixed(2)}%** (${lh}/${lf})\n`
+          );
+          fs.writeFileSync(
+            'coverage/frontend/summary.json',
+            JSON.stringify({ line_total: lf, line_hit: lh, line_pct: pct }, null, 2)
+          );
+          NODE
+
+      - name: Enforce frontend coverage floor (optional)
+        if: ${{ vars.FRONTEND_COVERAGE_MIN != '' }}
+        env:
+          FRONTEND_COVERAGE_MIN: ${{ vars.FRONTEND_COVERAGE_MIN }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const summary = JSON.parse(fs.readFileSync('coverage/frontend/summary.json', 'utf8'));
+          const min = Number(process.env.FRONTEND_COVERAGE_MIN);
+          if (Number.isNaN(min)) {
+            console.error('FRONTEND_COVERAGE_MIN is not a number');
+            process.exit(1);
+          }
+          if (summary.line_pct < min) {
+            console.error(`Frontend coverage ${summary.line_pct.toFixed(2)}% is below required ${min}%`);
+            process.exit(1);
+          }
+          console.log(`Frontend coverage gate passed: ${summary.line_pct.toFixed(2)}% >= ${min}%`);
+          NODE
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/frontend
+          if-no-files-found: error
 
   check-backend:
     name: Check & Test Backend
@@ -147,11 +201,65 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Create coverage directory
-        run: mkdir -p coverage
+        run: mkdir -p coverage/backend
 
       - name: Run coverage
         working-directory: src-tauri
-        run: cargo llvm-cov --workspace --lcov --output-path ../coverage/lcov.info
+        run: cargo llvm-cov --workspace --lcov --output-path ../coverage/backend/lcov.info
+
+      - name: Summarize coverage
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lcovPath = 'coverage/backend/lcov.info';
+          if (!fs.existsSync(lcovPath)) {
+            console.error('Missing lcov report at ' + lcovPath);
+            process.exit(1);
+          }
+          const lines = fs.readFileSync(lcovPath, 'utf8').split('\n');
+          let lf = 0;
+          let lh = 0;
+          for (const line of lines) {
+            if (line.startsWith('LF:')) lf += Number(line.slice(3));
+            if (line.startsWith('LH:')) lh += Number(line.slice(3));
+          }
+          const pct = lf > 0 ? (lh / lf) * 100 : 0;
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `### Backend Coverage\n\n- Line coverage: **${pct.toFixed(2)}%** (${lh}/${lf})\n`
+          );
+          fs.writeFileSync(
+            'coverage/backend/summary.json',
+            JSON.stringify({ line_total: lf, line_hit: lh, line_pct: pct }, null, 2)
+          );
+          NODE
+
+      - name: Enforce backend coverage floor (optional)
+        if: ${{ vars.BACKEND_COVERAGE_MIN != '' }}
+        env:
+          BACKEND_COVERAGE_MIN: ${{ vars.BACKEND_COVERAGE_MIN }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const summary = JSON.parse(fs.readFileSync('coverage/backend/summary.json', 'utf8'));
+          const min = Number(process.env.BACKEND_COVERAGE_MIN);
+          if (Number.isNaN(min)) {
+            console.error('BACKEND_COVERAGE_MIN is not a number');
+            process.exit(1);
+          }
+          if (summary.line_pct < min) {
+            console.error(`Backend coverage ${summary.line_pct.toFixed(2)}% is below required ${min}%`);
+            process.exit(1);
+          }
+          console.log(`Backend coverage gate passed: ${summary.line_pct.toFixed(2)}% >= ${min}%`);
+          NODE
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/backend
+          if-no-files-found: error
 
   security-audit:
     name: Security Audit
