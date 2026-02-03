@@ -21,24 +21,33 @@ window.onunhandledrejection = (event) => {
   // Don't destroy the page — let React error boundaries and try-catch handle recovery
 };
 
-try {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <ThemeProvider>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </ThemeProvider>
-    </React.StrictMode>,
-  );
-} catch (e) {
-  // Log full details to console for debugging
-  console.error('Render Error:', e);
+async function bootstrap() {
+  try {
+    if (import.meta.env.VITE_E2E_MOCK_TAURI === '1') {
+      const { setupE2eTauriMock } = await import('./test/e2eTauriMock');
+      setupE2eTauriMock();
+    }
 
-  // Show safe message without exposing internals
-  const errorDiv = document.createElement('div');
-  errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
-  errorDiv.innerHTML = '<h1>Application Error</h1><p>Failed to initialize the application. Please restart.</p><p>Check the developer console for details.</p>';
-  document.body.innerHTML = '';
-  document.body.appendChild(errorDiv);
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode>
+        <ThemeProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </ThemeProvider>
+      </React.StrictMode>,
+    );
+  } catch (e) {
+    // Log full details to console for debugging
+    console.error('Render Error:', e);
+
+    // Show safe message without exposing internals
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'padding: 20px; font-family: system-ui, sans-serif; color: #dc2626;';
+    errorDiv.innerHTML = '<h1>Application Error</h1><p>Failed to initialize the application. Please restart.</p><p>Check the developer console for details.</p>';
+    document.body.innerHTML = '';
+    document.body.appendChild(errorDiv);
+  }
 }
+
+void bootstrap();

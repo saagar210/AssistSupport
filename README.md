@@ -117,6 +117,8 @@ User Question: "Can I work from home?"
 
 ## Quick Start
 
+For day-to-day engineering workflows (local validation, CI triage, backup/restore validation, key rotation, and release/rollback), see [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ### Prerequisites
 
 | Requirement | Version | Notes |

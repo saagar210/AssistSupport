@@ -9,7 +9,12 @@
 // Domain-specific command modules
 pub mod backup;
 pub mod diagnostics;
+pub mod draft_commands;
+pub mod jira_commands;
+pub mod kb_commands;
+pub mod model_commands;
 pub mod search_api;
+pub mod security_commands;
 
 // Re-export commands from submodules
 pub use backup::{export_backup, export_draft, import_backup, preview_backup_import, ExportFormat};
@@ -1767,86 +1772,49 @@ pub fn delete_downloaded_model(filename: String) -> Result<(), String> {
 /// Get HuggingFace token status (not the actual token for security)
 #[tauri::command]
 pub fn has_hf_token() -> Result<bool, String> {
-    FileKeyStore::get_token(TOKEN_HUGGINGFACE)
-        .map(|t| t.is_some())
-        .map_err(|e| e.to_string())
+    security_commands::has_hf_token_impl()
 }
 
 /// Store HuggingFace token
 #[tauri::command]
 pub fn set_hf_token(token: String) -> Result<(), String> {
-    FileKeyStore::store_token(TOKEN_HUGGINGFACE, &token).map_err(|e| e.to_string())?;
-    audit::audit_token_set("huggingface");
-    Ok(())
+    security_commands::set_hf_token_impl(token)
 }
 
 /// Delete HuggingFace token
 #[tauri::command]
 pub fn clear_hf_token() -> Result<(), String> {
-    FileKeyStore::delete_token(TOKEN_HUGGINGFACE).map_err(|e| e.to_string())?;
-    audit::audit_token_cleared("huggingface");
-    Ok(())
+    security_commands::clear_hf_token_impl()
 }
 
 /// Store GitHub token for a specific host (HTTPS only)
 #[tauri::command]
 pub fn set_github_token(host: String, token: String) -> Result<(), String> {
-    let host = normalize_github_host(&host)?;
-    let token = token.trim();
-    if token.is_empty() {
-        return Err("Token cannot be empty".to_string());
-    }
-    let key = format!("{}{}", GITHUB_TOKEN_PREFIX, host);
-    FileKeyStore::store_token(&key, token).map_err(|e| e.to_string())?;
-    audit::audit_token_set(&format!("github:{}", host));
-    Ok(())
+    security_commands::set_github_token_impl(host, token)
 }
 
 /// Delete GitHub token for a specific host
 #[tauri::command]
 pub fn clear_github_token(host: String) -> Result<(), String> {
-    let host = normalize_github_host(&host)?;
-    let key = format!("{}{}", GITHUB_TOKEN_PREFIX, host);
-    FileKeyStore::delete_token(&key).map_err(|e| e.to_string())?;
-    audit::audit_token_cleared(&format!("github:{}", host));
-    Ok(())
+    security_commands::clear_github_token_impl(host)
 }
 
 /// Check if a GitHub token exists for a host (does not return the token)
 #[tauri::command]
 pub fn has_github_token(host: String) -> Result<bool, String> {
-    let host = normalize_github_host(&host)?;
-    let key = format!("{}{}", GITHUB_TOKEN_PREFIX, host);
-    Ok(FileKeyStore::get_token(&key)
-        .map_err(|e| e.to_string())?
-        .is_some())
+    security_commands::has_github_token_impl(host)
 }
 
 /// Read audit log entries (most recent first if limit is set)
 #[tauri::command]
 pub fn get_audit_entries(limit: Option<usize>) -> Result<Vec<crate::audit::AuditEntry>, String> {
-    crate::audit::read_audit_entries(limit).map_err(|e| e.to_string())
+    security_commands::get_audit_entries_impl(limit)
 }
 
 /// Export audit log entries to a JSON file
 #[tauri::command]
 pub fn export_audit_log(export_path: String) -> Result<String, String> {
-    use std::path::Path;
-
-    let path = Path::new(&export_path);
-    let validated = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => {
-            "Export path must be within your home directory".to_string()
-        }
-        _ => format!("Invalid export path: {}", e),
-    })?;
-
-    let entries = crate::audit::read_audit_entries(None).map_err(|e| e.to_string())?;
-    let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
-    std::fs::write(&validated, json).map_err(|e| e.to_string())?;
-    let _ = crate::security::set_secure_permissions(&validated, crate::security::FILE_PERMISSIONS);
-
-    Ok(validated.to_string_lossy().to_string())
+    security_commands::export_audit_log_impl(export_path)
 }
 
 use tauri::Emitter;
@@ -2006,55 +1974,13 @@ const KB_FOLDER_SETTING: &str = "kb_folder";
 /// Blocks sensitive directories like .ssh, .aws, .gnupg, .config
 #[tauri::command]
 pub fn set_kb_folder(state: State<'_, AppState>, folder_path: String) -> Result<(), String> {
-    let path = std::path::Path::new(&folder_path);
-
-    // Validate path is within home directory (auto-creates if needed)
-    let validated_path = validate_within_home(path).map_err(|e| match e {
-        ValidationError::PathTraversal => {
-            "KB folder must be within your home directory".to_string()
-        }
-        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
-            "This directory cannot be used as it contains sensitive data".to_string()
-        }
-        _ => format!("Invalid KB folder: {}", e),
-    })?;
-
-    // Verify it's a directory
-    if !validated_path.is_dir() {
-        return Err("Path is not a directory".into());
-    }
-
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Store in settings
-    db.conn()
-        .execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            rusqlite::params![KB_FOLDER_SETTING, validated_path.to_string_lossy().as_ref()],
-        )
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    kb_commands::set_kb_folder_impl(state, folder_path)
 }
 
 /// Get the current KB folder path
 #[tauri::command]
 pub fn get_kb_folder(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let result: Result<String, _> = db.conn().query_row(
-        "SELECT value FROM settings WHERE key = ?",
-        rusqlite::params![KB_FOLDER_SETTING],
-        |row| row.get(0),
-    );
-
-    match result {
-        Ok(path) => Ok(Some(path)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
+    kb_commands::get_kb_folder_impl(state)
 }
 
 /// Index the KB folder with progress events
@@ -2063,44 +1989,13 @@ pub async fn index_kb(
     window: tauri::Window,
     state: State<'_, AppState>,
 ) -> Result<IndexResult, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Get KB folder
-    let folder_path: String = db
-        .conn()
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            rusqlite::params![KB_FOLDER_SETTING],
-            |row| row.get(0),
-        )
-        .map_err(|_| "KB folder not configured")?;
-
-    let path = std::path::Path::new(&folder_path);
-    if !path.exists() {
-        return Err("KB folder does not exist".into());
-    }
-
-    // Run indexing with progress events
-    let indexer = KbIndexer::new();
-    let result = indexer
-        .index_folder(db, path, |progress| {
-            // Emit progress event to frontend
-            let _ = window.emit("kb:indexing:progress", &progress);
-        })
-        .map_err(|e| e.to_string())?;
-
-    Ok(result)
+    kb_commands::index_kb_impl(window, state).await
 }
 
 /// Get KB statistics
 #[tauri::command]
 pub fn get_kb_stats(state: State<'_, AppState>) -> Result<IndexStats, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let indexer = KbIndexer::new();
-    indexer.get_stats(db).map_err(|e| e.to_string())
+    kb_commands::get_kb_stats_impl(state)
 }
 
 /// List indexed KB documents, optionally filtered by namespace and/or source
@@ -2110,32 +2005,7 @@ pub fn list_kb_documents(
     namespace_id: Option<String>,
     source_id: Option<String>,
 ) -> Result<Vec<KbDocumentInfo>, String> {
-    // Validate and normalize namespace_id if provided
-    let namespace_id = namespace_id
-        .map(|ns| normalize_and_validate_namespace_id(&ns))
-        .transpose()
-        .map_err(|e| e.to_string())?;
-
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let docs = db
-        .list_kb_documents(namespace_id.as_deref(), source_id.as_deref())
-        .map_err(|e| e.to_string())?;
-
-    Ok(docs
-        .into_iter()
-        .map(|d| KbDocumentInfo {
-            id: d.id,
-            file_path: d.file_path,
-            title: d.title,
-            indexed_at: d.indexed_at,
-            chunk_count: d.chunk_count.map(|c| c as i64),
-            namespace_id: d.namespace_id,
-            source_type: d.source_type,
-            source_id: d.source_id,
-        })
-        .collect())
+    kb_commands::list_kb_documents_impl(state, namespace_id, source_id)
 }
 
 /// KB document info for API responses
@@ -2154,24 +2024,8 @@ pub struct KbDocumentInfo {
 /// Remove a document from the KB index
 #[tauri::command]
 pub fn remove_kb_document(file_path: String, state: State<'_, AppState>) -> Result<bool, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let indexer = KbIndexer::new();
-    indexer
-        .remove_document(db, &file_path)
-        .map_err(|e| e.to_string())
+    kb_commands::remove_kb_document_impl(file_path, state)
 }
-
-// ============================================================================
-// KB Watcher Commands
-// ============================================================================
-
-use crate::kb::watcher::KbWatcher;
-use std::sync::Mutex as StdMutex;
-
-/// Global watcher instance
-static KB_WATCHER: Lazy<StdMutex<Option<KbWatcher>>> = Lazy::new(|| StdMutex::new(None));
 
 /// Start watching KB folder for changes
 #[tauri::command]
@@ -2179,60 +2033,19 @@ pub async fn start_kb_watcher(
     window: tauri::Window,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    // Get KB folder path
-    let folder_path = {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        db.conn()
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?",
-                rusqlite::params![KB_FOLDER_SETTING],
-                |row| row.get::<_, String>(0),
-            )
-            .map_err(|_| "KB folder not configured")?
-    };
-
-    let path = std::path::Path::new(&folder_path);
-
-    // Create and start watcher
-    let mut watcher = KbWatcher::new(path).map_err(|e| e.to_string())?;
-    let mut rx = watcher.start().map_err(|e| e.to_string())?;
-
-    // Store watcher instance
-    {
-        let mut guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
-        *guard = Some(watcher);
-    }
-
-    // Spawn event handler
-    let window_clone = window.clone();
-    tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            // Emit event to frontend
-            let _ = window_clone.emit("kb:file:changed", &event);
-        }
-    });
-
-    Ok(true)
+    kb_commands::start_kb_watcher_impl(window, state).await
 }
 
 /// Stop watching KB folder
 #[tauri::command]
 pub fn stop_kb_watcher() -> Result<bool, String> {
-    let mut guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
-    if let Some(mut watcher) = guard.take() {
-        watcher.stop();
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    kb_commands::stop_kb_watcher_impl()
 }
 
 /// Check if KB watcher is running
 #[tauri::command]
 pub fn is_kb_watcher_running() -> Result<bool, String> {
-    let guard = KB_WATCHER.lock().map_err(|e| e.to_string())?;
-    Ok(guard.as_ref().map(|w| w.is_running()).unwrap_or(false))
+    kb_commands::is_kb_watcher_running_impl()
 }
 
 /// Generate embeddings for all KB chunks
@@ -2700,44 +2513,13 @@ const JIRA_EMAIL_SETTING: &str = "jira_email";
 /// Check if Jira is configured
 #[tauri::command]
 pub fn is_jira_configured(state: State<'_, AppState>) -> Result<bool, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let base_url: Result<String, _> = db.conn().query_row(
-        "SELECT value FROM settings WHERE key = ?",
-        rusqlite::params![JIRA_BASE_URL_SETTING],
-        |row| row.get(0),
-    );
-
-    let has_token = FileKeyStore::get_token(TOKEN_JIRA)
-        .map(|t| t.is_some())
-        .unwrap_or(false);
-
-    Ok(base_url.is_ok() && has_token)
+    jira_commands::is_jira_configured_impl(state)
 }
 
 /// Get Jira configuration (without token)
 #[tauri::command]
 pub fn get_jira_config(state: State<'_, AppState>) -> Result<Option<JiraConfig>, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let base_url: Result<String, _> = db.conn().query_row(
-        "SELECT value FROM settings WHERE key = ?",
-        rusqlite::params![JIRA_BASE_URL_SETTING],
-        |row| row.get(0),
-    );
-
-    let email: Result<String, _> = db.conn().query_row(
-        "SELECT value FROM settings WHERE key = ?",
-        rusqlite::params![JIRA_EMAIL_SETTING],
-        |row| row.get(0),
-    );
-
-    match (base_url, email) {
-        (Ok(base_url), Ok(email)) => Ok(Some(JiraConfig { base_url, email })),
-        _ => Ok(None),
-    }
+    jira_commands::get_jira_config_impl(state)
 }
 
 /// Configure Jira (tests connection before saving)
@@ -2751,95 +2533,13 @@ pub async fn configure_jira(
     api_token: String,
     allow_http: Option<bool>,
 ) -> Result<(), String> {
-    // Validate URL format
-    validate_url(&base_url).map_err(|e| e.to_string())?;
-
-    // Enforce HTTPS by default
-    let using_http = is_http_url(&base_url);
-    if using_http {
-        if allow_http != Some(true) {
-            return Err(
-                "HTTPS is required for Jira connections. HTTP connections expose credentials \
-                 in transit. If you must use HTTP (e.g., local testing), enable the \
-                 'allow_http' option explicitly."
-                    .to_string(),
-            );
-        }
-        // Log security warning for HTTP opt-in
-        audit::audit_jira_http_opt_in(&base_url);
-    }
-
-    // Test connection first
-    let client = JiraClient::new(&base_url, &email, &api_token);
-    if !client.test_connection().await.map_err(|e| e.to_string())? {
-        return Err("Connection failed - check credentials".to_string());
-    }
-
-    // Store token in file storage
-    FileKeyStore::store_token(TOKEN_JIRA, &api_token).map_err(|e| e.to_string())?;
-    audit::audit_token_set("jira");
-
-    // Store config in DB
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    db.conn()
-        .execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            rusqlite::params![JIRA_BASE_URL_SETTING, &base_url],
-        )
-        .map_err(|e| e.to_string())?;
-
-    db.conn()
-        .execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            rusqlite::params![JIRA_EMAIL_SETTING, &email],
-        )
-        .map_err(|e| e.to_string())?;
-
-    // Store HTTP opt-in preference if used
-    if using_http {
-        db.conn()
-            .execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                rusqlite::params!["jira_http_opt_in", "true"],
-            )
-            .map_err(|e| e.to_string())?;
-    } else {
-        // Clear HTTP opt-in if switching to HTTPS
-        db.conn()
-            .execute(
-                "DELETE FROM settings WHERE key = ?",
-                rusqlite::params!["jira_http_opt_in"],
-            )
-            .map_err(|e| e.to_string())?;
-    }
-
-    // Audit log successful configuration
-    audit::audit_jira_configured(!using_http);
-
-    Ok(())
+    jira_commands::configure_jira_impl(state, base_url, email, api_token, allow_http).await
 }
 
 /// Clear Jira configuration
 #[tauri::command]
 pub fn clear_jira_config(state: State<'_, AppState>) -> Result<(), String> {
-    // Delete token from file storage
-    let _ = FileKeyStore::delete_token(TOKEN_JIRA);
-    audit::audit_token_cleared("jira");
-
-    // Delete config from DB
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    db.conn()
-        .execute(
-            "DELETE FROM settings WHERE key IN (?, ?)",
-            rusqlite::params![JIRA_BASE_URL_SETTING, JIRA_EMAIL_SETTING],
-        )
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    jira_commands::clear_jira_config_impl(state)
 }
 
 /// Get a Jira ticket by key
@@ -3140,10 +2840,7 @@ pub fn list_drafts(
     state: State<'_, AppState>,
     limit: Option<usize>,
 ) -> Result<Vec<SavedDraft>, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_drafts(limit.unwrap_or(50))
-        .map_err(|e| e.to_string())
+    draft_commands::list_drafts_impl(state, limit)
 }
 
 /// Search drafts by text content
@@ -3153,34 +2850,25 @@ pub fn search_drafts(
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<SavedDraft>, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.search_drafts(&query, limit.unwrap_or(50))
-        .map_err(|e| e.to_string())
+    draft_commands::search_drafts_impl(state, query, limit)
 }
 
 /// Get a single draft by ID
 #[tauri::command]
 pub fn get_draft(state: State<'_, AppState>, draft_id: String) -> Result<SavedDraft, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.get_draft(&draft_id).map_err(|e| e.to_string())
+    draft_commands::get_draft_impl(state, draft_id)
 }
 
 /// Save a draft (insert or update)
 #[tauri::command]
 pub fn save_draft(state: State<'_, AppState>, draft: SavedDraft) -> Result<String, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.save_draft(&draft).map_err(|e| e.to_string())
+    draft_commands::save_draft_impl(state, draft)
 }
 
 /// Delete a draft by ID
 #[tauri::command]
 pub fn delete_draft(state: State<'_, AppState>, draft_id: String) -> Result<(), String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.delete_draft(&draft_id).map_err(|e| e.to_string())
+    draft_commands::delete_draft_impl(state, draft_id)
 }
 
 /// List autosave drafts (most recent first)
@@ -3189,10 +2877,7 @@ pub fn list_autosaves(
     state: State<'_, AppState>,
     limit: Option<usize>,
 ) -> Result<Vec<SavedDraft>, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.list_autosaves(limit.unwrap_or(10))
-        .map_err(|e| e.to_string())
+    draft_commands::list_autosaves_impl(state, limit)
 }
 
 /// Cleanup old autosaves, keeping only the most recent ones
@@ -3201,10 +2886,7 @@ pub fn cleanup_autosaves(
     state: State<'_, AppState>,
     keep_count: Option<usize>,
 ) -> Result<usize, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.cleanup_autosaves(keep_count.unwrap_or(10))
-        .map_err(|e| e.to_string())
+    draft_commands::cleanup_autosaves_impl(state, keep_count)
 }
 
 /// Get draft versions by input hash (autosaves with matching input_text hash)
@@ -5499,36 +5181,7 @@ pub async fn post_and_transition(
 pub fn get_model_state(
     state: State<'_, AppState>,
 ) -> Result<ModelStateResult, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let llm = db.get_model_state("llm").map_err(|e| e.to_string())?;
-    let embeddings = db
-        .get_model_state("embeddings")
-        .map_err(|e| e.to_string())?;
-
-    // Check if models are currently loaded in memory
-    let llm_loaded = state
-        .llm
-        .read()
-        .as_ref()
-        .map(|e| e.model_info().is_some())
-        .unwrap_or(false);
-
-    let embeddings_loaded = state
-        .embeddings
-        .read()
-        .as_ref()
-        .map(|e| e.model_info().is_some())
-        .unwrap_or(false);
-
-    Ok(ModelStateResult {
-        llm_model_id: llm.as_ref().and_then(|(_, id)| id.clone()),
-        llm_model_path: llm.map(|(p, _)| p),
-        llm_loaded,
-        embeddings_model_path: embeddings.map(|(p, _)| p),
-        embeddings_loaded,
-    })
+    model_commands::get_model_state_impl(state)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -5545,23 +5198,7 @@ pub struct ModelStateResult {
 pub fn get_startup_metrics(
     state: State<'_, AppState>,
 ) -> Result<StartupMetricsResult, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let metrics = db.get_last_startup_metric().map_err(|e| e.to_string())?;
-
-    match metrics {
-        Some((total_ms, init_app_ms, models_cached)) => Ok(StartupMetricsResult {
-            total_ms,
-            init_app_ms,
-            models_cached,
-        }),
-        None => Ok(StartupMetricsResult {
-            total_ms: 0,
-            init_app_ms: 0,
-            models_cached: false,
-        }),
-    }
+    model_commands::get_startup_metrics_impl(state)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -5580,32 +5217,7 @@ pub struct StartupMetricsResult {
 pub fn create_session_token(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    // Clean up expired tokens first
-    let _ = db.cleanup_expired_sessions();
-
-    // Generate a secure session ID
-    let session_id = uuid::Uuid::new_v4().to_string();
-
-    // Hash the session ID for storage (using HMAC-like approach with master key)
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(session_id.as_bytes());
-    hasher.update(b"assistsupport-session-salt");
-    let token_hash = hasher.finalize().to_vec();
-
-    // 24-hour expiry
-    let expires_at = (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339();
-
-    // Device identifier (hostname + username)
-    let device_id = get_device_identifier();
-
-    db.store_session_token(&session_id, &token_hash, &expires_at, &device_id)
-        .map_err(|e| e.to_string())?;
-
-    Ok(session_id)
+    security_commands::create_session_token_impl(state)
 }
 
 /// Validate a session token
@@ -5614,12 +5226,7 @@ pub fn validate_session_token(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<bool, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
-    let device_id = get_device_identifier();
-    db.validate_session_token(&session_id, &device_id)
-        .map_err(|e| e.to_string())
+    security_commands::validate_session_token_impl(state, session_id)
 }
 
 /// Clear (revoke) a session token
@@ -5628,11 +5235,7 @@ pub fn clear_session_token(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    db.delete_session_token(&session_id)
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    security_commands::clear_session_token_impl(state, session_id)
 }
 
 /// Clear all session tokens (lock the app)
@@ -5640,28 +5243,7 @@ pub fn clear_session_token(
 pub fn lock_app(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    // Delete all sessions for this device
-    db.conn()
-        .execute("DELETE FROM session_tokens WHERE device_id = ?1", rusqlite::params![get_device_identifier()])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Get a stable device identifier (username + home dir hash)
-fn get_device_identifier() -> String {
-    let username = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "unknown".to_string());
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| "unknown".to_string());
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(home.as_bytes());
-    let hash = hex::encode(&hasher.finalize()[..8]);
-    format!("{}@{}", username, hash)
+    security_commands::lock_app_impl(state)
 }
 
 // ── Pilot Feedback commands ─────────────────────────────────────────────
