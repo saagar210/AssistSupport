@@ -98,6 +98,7 @@ async function renderWithProviders(ui: React.ReactElement) {
 describe('SettingsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockInvoke.mockResolvedValue(null);
   });
 
   describe('Appearance Section', () => {

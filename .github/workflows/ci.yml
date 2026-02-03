@@ -83,6 +83,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install coverage provider
+        run: pnpm add -D @vitest/coverage-v8@^4.0.18 --no-frozen-lockfile
+
       - name: Run coverage
         run: pnpm run test:coverage
 
