@@ -6,6 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 const SEARCH_API_BASE: &str = "http://localhost:3000";
+const DEFAULT_TOP_K: usize = 10;
+const MAX_TOP_K: usize = 50;
+const MIN_TOP_K: usize = 1;
 
 // ── Request / Response types ──────────────────────────────────────────────────
 
@@ -110,6 +113,14 @@ struct HealthApiResponse {
     timestamp: Option<String>,
 }
 
+fn sanitize_top_k(top_k: Option<usize>) -> usize {
+    top_k.unwrap_or(DEFAULT_TOP_K).clamp(MIN_TOP_K, MAX_TOP_K)
+}
+
+fn is_valid_feedback_rating(rating: &str) -> bool {
+    matches!(rating, "helpful" | "not_helpful" | "incorrect")
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 /// Execute a hybrid search against the PostgreSQL search API.
@@ -122,7 +133,7 @@ pub async fn hybrid_search(
 
     let request = SearchApiRequest {
         query,
-        top_k: top_k.unwrap_or(10).min(50),
+        top_k: sanitize_top_k(top_k),
         include_scores: true,
         fusion_strategy: "adaptive".to_string(),
     };
@@ -154,8 +165,11 @@ pub async fn submit_search_feedback(
     rating: String,
     comment: Option<String>,
 ) -> Result<String, String> {
-    if !["helpful", "not_helpful", "incorrect"].contains(&rating.as_str()) {
-        return Err(format!("Invalid rating '{}': must be helpful, not_helpful, or incorrect", rating));
+    if !is_valid_feedback_rating(&rating) {
+        return Err(format!(
+            "Invalid rating '{}': must be helpful, not_helpful, or incorrect",
+            rating
+        ));
     }
 
     let client = reqwest::Client::new();
@@ -232,5 +246,70 @@ pub async fn check_search_api_health() -> Result<bool, String> {
             }
         }
         Err(_) => Ok(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_top_k_applies_defaults_and_bounds() {
+        assert_eq!(sanitize_top_k(None), DEFAULT_TOP_K);
+        assert_eq!(sanitize_top_k(Some(0)), MIN_TOP_K);
+        assert_eq!(sanitize_top_k(Some(1)), MIN_TOP_K);
+        assert_eq!(sanitize_top_k(Some(25)), 25);
+        assert_eq!(sanitize_top_k(Some(500)), MAX_TOP_K);
+    }
+
+    #[test]
+    fn feedback_rating_validation_accepts_only_known_values() {
+        assert!(is_valid_feedback_rating("helpful"));
+        assert!(is_valid_feedback_rating("not_helpful"));
+        assert!(is_valid_feedback_rating("incorrect"));
+        assert!(!is_valid_feedback_rating("HELPFUL"));
+        assert!(!is_valid_feedback_rating(" meh "));
+    }
+
+    #[test]
+    fn stats_response_defaults_missing_feedback_fields_to_zero() {
+        let payload = serde_json::json!({
+            "status": "success",
+            "data": {
+                "queries_24h": 1,
+                "queries_total": 2,
+                "latency_ms": {
+                    "avg": 1.0,
+                    "p50": 1.0,
+                    "p95": 2.0,
+                    "p99": 3.0
+                },
+                "feedback_stats": {},
+                "intent_distribution": {}
+            },
+            "timestamp": "2026-02-03T00:00:00Z"
+        });
+
+        let parsed: StatsApiResponse =
+            serde_json::from_value(payload).expect("valid stats payload");
+        assert_eq!(parsed.data.feedback_stats.helpful, 0);
+        assert_eq!(parsed.data.feedback_stats.not_helpful, 0);
+        assert_eq!(parsed.data.feedback_stats.incorrect, 0);
+    }
+
+    #[tokio::test]
+    async fn submit_feedback_rejects_invalid_rating_before_network_call() {
+        let result = submit_search_feedback(
+            "query-123".to_string(),
+            1,
+            "invalid".to_string(),
+            Some("bad".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must reject invalid rating")
+            .contains("Invalid rating"));
     }
 }

@@ -257,6 +257,7 @@ impl LlmEngine {
             .context_window
             .unwrap_or_else(|| model.n_ctx_train().clamp(2048, 8192));
         let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(n_ctx));
+        let n_batch = ctx_params.n_batch() as usize;
 
         let mut ctx = model
             .new_context(&state.backend, ctx_params)
@@ -271,33 +272,47 @@ impl LlmEngine {
             return Err(LlmError::Tokenize("Empty tokenization result".into()));
         }
 
-        // Validate prompt fits within context window
-        let min_generation_tokens = 64;
-        if tokens.len() + min_generation_tokens > n_ctx as usize {
+        // Validate prompt fits within context window (reserve space for generation)
+        if tokens.len() + 1 > n_ctx as usize {
             return Err(LlmError::Generate(format!(
-                "Prompt too long: {} tokens exceeds context window of {} (need {} reserved for generation)",
-                tokens.len(), n_ctx, min_generation_tokens
+                "Prompt too long: {} tokens exceeds context window of {}",
+                tokens.len(), n_ctx
             )));
         }
 
-        // Create batch with dynamic size based on prompt length
-        // Use prompt tokens + expected max output as initial capacity
-        // Minimum 512, scale up for longer prompts, cap at n_ctx
-        let batch_size = (tokens.len() + params.max_tokens as usize)
-            .max(512)
-            .min(n_ctx as usize);
-        let mut batch = LlamaBatch::new(batch_size, 1);
+        // Cap actual generation tokens to remaining context space
+        let effective_max_tokens = (n_ctx as usize)
+            .saturating_sub(tokens.len())
+            .min(params.max_tokens as usize);
 
-        for (i, token) in tokens.iter().enumerate() {
-            let is_last = i == tokens.len() - 1;
-            batch
-                .add(*token, i as i32, &[0], is_last)
-                .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
+        // Decode prompt in chunks to avoid exceeding llama.cpp n_batch limit.
+        // Use 512 as chunk size (matches n_ubatch) for safe batching.
+        let decode_chunk_size = 512;
+        eprintln!(
+            "LLM decode: {} prompt tokens, n_ctx={}, n_batch={}, chunk_size={}",
+            tokens.len(), n_ctx, n_batch, decode_chunk_size
+        );
+        let mut pos = 0;
+        while pos < tokens.len() {
+            let chunk_end = (pos + decode_chunk_size).min(tokens.len());
+            let chunk_len = chunk_end - pos;
+            let mut batch = LlamaBatch::new(decode_chunk_size, 1);
+
+            for i in pos..chunk_end {
+                // Only request logits for the very last token of the entire prompt
+                let is_last = i == tokens.len() - 1;
+                batch
+                    .add(tokens[i], i as i32, &[0], is_last)
+                    .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
+            }
+
+            eprintln!("  decoding chunk {}-{} ({} tokens)", pos, chunk_end, chunk_len);
+            ctx.decode(&mut batch)
+                .map_err(|e| LlmError::Generate(format!("Decode error at pos {}: {}", pos, e)))?;
+
+            pos = chunk_end;
         }
-
-        // Decode prompt
-        ctx.decode(&mut batch)
-            .map_err(|e| LlmError::Generate(format!("Decode error: {}", e)))?;
+        eprintln!("Prompt decoded successfully");
 
         // Set up sampler
         let mut sampler = LlamaSampler::chain_simple([
@@ -329,8 +344,8 @@ impl LlmEngine {
         let min_chars = params.stream_min_chars;
         let mut last_emit_time = std::time::Instant::now();
 
-        // Generation loop
-        while n_cur < (tokens.len() + params.max_tokens as usize) {
+        // Generation loop — bounded by effective_max_tokens and n_ctx
+        while n_cur < (tokens.len() + effective_max_tokens) && n_cur < n_ctx as usize {
             // Check cancellation
             if cancel_flag.load(Ordering::Relaxed) {
                 let _ = tx.blocking_send(GenerationEvent::Error("Cancelled".into()));
@@ -410,13 +425,13 @@ impl LlmEngine {
 
             tokens_generated += 1;
 
-            // Prepare for next token
-            batch.clear();
-            batch
+            // Prepare for next token — single-token batch
+            let mut next_batch = LlamaBatch::new(1, 1);
+            next_batch
                 .add(token, n_cur as i32, &[0], true)
                 .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
 
-            ctx.decode(&mut batch)
+            ctx.decode(&mut next_batch)
                 .map_err(|e| LlmError::Generate(format!("Decode error: {}", e)))?;
 
             n_cur += 1;

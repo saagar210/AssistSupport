@@ -100,18 +100,31 @@ def search():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        query = data.get("query", "").strip()
+        query_raw = data.get("query", "")
+        if not isinstance(query_raw, str):
+            return jsonify({"error": "Query must be a string"}), 400
+
+        query = query_raw.strip()
         if not query:
             return jsonify({"error": "Query parameter required"}), 400
 
-        top_k = min(data.get("top_k", 10), 50)
-        include_scores = data.get("include_scores", False)
-        fusion_strategy = data.get("fusion_strategy", "adaptive")
+        top_k_raw = data.get("top_k", 10)
+        if not isinstance(top_k_raw, int):
+            return jsonify({"error": "top_k must be an integer"}), 400
+        if top_k_raw < 1:
+            return jsonify({"error": "top_k must be >= 1"}), 400
+        top_k = min(top_k_raw, 50)
+
+        include_scores = bool(data.get("include_scores", False))
+        fusion_strategy_raw = data.get("fusion_strategy", "adaptive")
+        if not isinstance(fusion_strategy_raw, str):
+            return jsonify({"error": "fusion_strategy must be a string"}), 400
+        fusion_strategy = fusion_strategy_raw
 
         engine = _get_engine()
 
@@ -195,7 +208,7 @@ def submit_feedback():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -211,6 +224,23 @@ def submit_feedback():
                 jsonify({"error": "query_id, result_rank, and rating required"}),
                 400,
             )
+
+        if not isinstance(query_id, str) or not query_id.strip():
+            return jsonify({"error": "query_id must be a non-empty string"}), 400
+
+        if not isinstance(result_rank, int) or result_rank < 1:
+            return jsonify({"error": "result_rank must be a positive integer"}), 400
+
+        if not isinstance(rating, str):
+            return jsonify({"error": "rating must be a string"}), 400
+
+        if comment is None:
+            comment = ""
+        if not isinstance(comment, str):
+            return jsonify({"error": "comment must be a string"}), 400
+
+        if article_id is not None and not isinstance(article_id, str):
+            return jsonify({"error": "article_id must be a string"}), 400
 
         if rating not in ("helpful", "not_helpful", "incorrect"):
             return jsonify({"error": f"Invalid rating: {rating}"}), 400

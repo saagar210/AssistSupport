@@ -61,7 +61,7 @@ class ScoreFusion:
         else:
             bm25_max = max(s for _, s in bm25_results) if bm25_results else 1.0
             bm25_dict = {
-                article_id: min(1.0, score / max(bm25_max, 0.01))
+                article_id: max(0.0, min(1.0, score / max(bm25_max, 0.01)))
                 for article_id, score in bm25_results
             }
 

@@ -1199,6 +1199,48 @@ mod tests {
         assert_eq!(data.as_slice(), decrypted.as_slice());
     }
 
+    #[test]
+    fn property_encrypt_decrypt_roundtrip_random_payloads() {
+        let key = MasterKey::generate();
+        let mut rng = rand::thread_rng();
+
+        for size in [0usize, 1, 7, 32, 255, 1024, 4096] {
+            let mut plaintext = vec![0u8; size];
+            rng.fill_bytes(&mut plaintext);
+            let encrypted =
+                Crypto::encrypt(key.as_bytes(), &plaintext).expect("encryption should succeed");
+            let decrypted =
+                Crypto::decrypt(key.as_bytes(), &encrypted).expect("decryption should succeed");
+            assert_eq!(decrypted, plaintext);
+        }
+
+        for _ in 0..64 {
+            let mut plaintext = vec![0u8; (rng.next_u32() as usize % 2048) + 1];
+            rng.fill_bytes(&mut plaintext);
+            let encrypted =
+                Crypto::encrypt(key.as_bytes(), &plaintext).expect("encryption should succeed");
+            let decrypted =
+                Crypto::decrypt(key.as_bytes(), &encrypted).expect("decryption should succeed");
+            assert_eq!(decrypted, plaintext);
+        }
+    }
+
+    #[test]
+    fn property_wrong_key_cannot_decrypt_random_payloads() {
+        let key_a = MasterKey::from_bytes([0x11u8; KEY_LEN]);
+        let key_b = MasterKey::from_bytes([0x22u8; KEY_LEN]);
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..64 {
+            let mut plaintext = vec![0u8; (rng.next_u32() as usize % 1024) + 1];
+            rng.fill_bytes(&mut plaintext);
+            let encrypted =
+                Crypto::encrypt(key_a.as_bytes(), &plaintext).expect("encryption should succeed");
+            let decrypted = Crypto::decrypt(key_b.as_bytes(), &encrypted);
+            assert!(decrypted.is_err());
+        }
+    }
+
     // FileKeyStore tests use a test subdirectory to avoid touching real credentials
     mod file_key_store_tests {
         use super::*;
