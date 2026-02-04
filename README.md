@@ -31,9 +31,11 @@ You copy:     Paste into Jira — done in under a minute
 | **Fully Offline** | All AI inference, search, and encryption run locally. Zero cloud dependencies. No telemetry |
 | **Military-Grade Encryption** | AES-256-CBC (database), AES-256-GCM (tokens), Argon2id key derivation, macOS Keychain integration |
 | **Compliance Validated** | Assessed against HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, NIST SP 800-53 |
-| **Self-Improving** | Feedback loop tracks user ratings per article, dynamically adjusts quality scores (0.5-1.5x) |
+| **Trust-Gated Responses** | Confidence modes (answer/clarify/abstain), claim grounding map, citation-aware copy safety for low-confidence output |
+| **Self-Improving** | Feedback loop + KB gap detector surfaces repeated low-confidence/low-rating topics and tracks remediation |
+| **Ops-Ready** | Built-in Operations workspace for deployment preflight/rollback, eval harness runs, triage clustering, and runbook sessions |
 | **436 Tests, 90% Coverage** | 364 Rust backend + 72 frontend tests. Security, search, ingestion, encryption all covered |
-| **179 API Commands** | Comprehensive Tauri command surface for LLM, KB, search, drafts, Jira, settings, diagnostics |
+| **190+ API Commands** | Expanded Tauri command surface for trust signals, ops workflows, evaluations, integrations, and diagnostics |
 
 ---
 
@@ -59,6 +61,23 @@ BM25 keyword + HNSW vector search across 3,536 articles via PostgreSQL 16 + pgve
 | "USB policy" returns 50 docs | "Can I use a flash drive?" returns the right policy |
 | "password" returns noise | "How do I reset it?" returns step-by-step guide |
 | "VPN" returns networking docs | "Can I work from home?" returns remote work policy |
+
+### Confidence-Gated Answers + Source Grounding
+Generation now returns a confidence assessment (`answer` / `clarify` / `abstain`) and a per-claim grounding map that links claims to cited sources. This adds a trust layer before copy/paste and helps reduce unsupported responses.
+
+### Operations Workspace (Ops Tab)
+A new Ops workspace consolidates deployment safety checks and operational tooling:
+- Deployment preflight checks and rollback marking
+- Signed artifact verification workflow
+- Eval harness run execution + history
+- Ticket triage clustering + history
+- Runbook session tracking and progression
+
+### KB Gap Detector
+Low-confidence/unsupported generation events are logged and aggregated into ranked KB gap candidates in Analytics, with status actions (`accepted`, `resolved`, `ignored`) to close the quality loop.
+
+### Integration and Control Foundations
+Support for ServiceNow/Slack/Teams configuration records and workspace role mappings has been added to support enterprise rollout patterns.
 
 ---
 
@@ -192,6 +211,8 @@ python3 search_api.py
 ### Response Generation
 - Generate professional IT support responses with local LLM inference (llama.cpp)
 - Responses automatically cite relevant KB articles
+- Confidence-gated output modes: answer / clarify / abstain
+- Claim-level source grounding panel with support level indicators
 - Generate multiple alternatives for side-by-side comparison
 - Rate responses (1-5 stars) to track quality over time
 - Save top-rated responses as reusable templates
@@ -218,8 +239,18 @@ python3 search_api.py
 ### Analytics & Monitoring
 - Response quality tracking (ratings, trends)
 - KB usage metrics (search frequency, top queries, article citations)
+- KB Gap Detector panel with actionable candidate queue
 - Pilot feedback system with CSV export
 - Search monitoring dashboard (latency percentiles, accuracy, intent distribution)
+
+### Operations Workspace
+- Deployment preflight checks with persisted run history
+- Artifact metadata tracking and signed-pack verification
+- Rollback workflow markers with audit-ready reason capture
+- Eval harness with suite runs and historical comparison
+- Ticket triage autopilot clustering + persisted cluster history
+- Runbook mode sessions with step progression tracking
+- Integration control panel for ServiceNow, Slack, and Teams
 
 ### Security & Privacy
 - **Fully local** — all processing on your machine, zero cloud dependencies, no telemetry
@@ -366,19 +397,20 @@ src/                        # React frontend
 │   ├── Batch/              # Batch processing
 │   ├── Draft/              # Response drafting, alternatives, ratings
 │   ├── Layout/             # Header, sidebar, command palette
+│   ├── Ops/                # Deployment, eval, triage, runbook, integrations
 │   ├── Pilot/              # Pilot feedback: query tester, dashboard
 │   ├── Search/             # Hybrid PostgreSQL search UI, feedback, stats
 │   ├── Settings/           # Model, KB, Jira configuration
 │   ├── Sources/            # KB browser, ingestion, health
 │   └── shared/             # Onboarding, status indicators
 ├── contexts/               # AppStatusContext (centralized state)
-├── hooks/                  # useLlm, useKb, useHybridSearch, useInitialize
+├── hooks/                  # useLlm, useKb, useHybridSearch, useFeatureOps, useInitialize
 └── styles/                 # CSS design tokens, themes
 
 src-tauri/src/              # Rust backend
-├── commands/               # Tauri command handlers (~179 endpoints)
+├── commands/               # Tauri command handlers (190+ endpoints)
 │   └── search_api.rs       # PostgreSQL hybrid search proxy (4 commands)
-├── db/                     # SQLCipher database layer (schema v11)
+├── db/                     # SQLCipher database layer (schema v12)
 ├── feedback/               # Pilot feedback logger, stats, CSV export
 ├── kb/                     # Knowledge base (indexer, search, embeddings, vectors, ingest)
 ├── llm.rs                  # LLM engine (llama.cpp)
@@ -432,6 +464,12 @@ pnpm test
 # Backend tests (364 tests — unit + integration + security)
 cd src-tauri && cargo test
 
+# E2E smoke tests (UI + mock Tauri)
+pnpm run test:e2e:smoke
+
+# Ops workflow E2E tests
+pnpm run test:e2e:ops
+
 # Performance benchmarks
 cd src-tauri && cargo bench
 
@@ -456,8 +494,9 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 | `Cmd+E` | Export response |
 | `Cmd+N` | New draft |
 | `Cmd+/` | Focus search |
-| `Cmd+1-9` | Switch tabs |
+| `Cmd+1-9` | Switch primary tabs |
 | `Cmd+8` | Open Hybrid Search |
+| Sidebar: `Ops` | Open deployment/eval/triage/runbook workspace |
 
 ---
 
@@ -496,6 +535,14 @@ See [Testing Guide](docs/TESTING.md) for the full test suite documentation.
 - Flask REST API (5 endpoints on localhost:3000 with rate limiting)
 - 4 Tauri commands proxying to Flask API via reqwest
 - p50: 8ms, p95: 82ms, avg: 21ms — search quality 92-100%
+
+### Unreleased (main branch)
+- New **Ops** workspace tab for deployment checks, rollback marking, eval harness, triage clusters, runbook sessions, and integrations controls
+- Confidence-gated response modes (`answer` / `clarify` / `abstain`) exposed in generation results
+- Claim-level source grounding map surfaced in the response UI
+- KB Gap Detector analytics pipeline and action queue (accept/resolve/ignore)
+- Deployment artifact tracking, signed artifact verification, and rollback command path
+- New Playwright coverage for Ops workflows (`e2e/ops.spec.ts`)
 
 ### v0.6.0
 - Pilot feedback system (query tester, star ratings, dashboard, CSV export)
