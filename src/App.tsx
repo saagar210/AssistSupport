@@ -9,6 +9,7 @@ import { SettingsTab } from './components/Settings/SettingsTab';
 import { AnalyticsTab } from './components/Analytics/AnalyticsTab';
 import { PilotTab } from './components/Pilot';
 import { HybridSearchTab } from './components/Search';
+import { OpsTab } from './components/Ops';
 import { Toast, ToastContainer } from './components/shared/Toast';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Button } from './components/shared/Button';
@@ -22,7 +23,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
 import './App.css';
 
-type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'settings';
+type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'ops' | 'settings';
 
 function AppContent() {
   const { initResult, loading, error } = useInitialize();
@@ -223,6 +224,14 @@ function AppContent() {
       shortcut: 'Cmd+9',
       category: 'navigation',
       action: () => setActiveTab('settings'),
+    },
+    {
+      id: 'nav-ops',
+      label: 'Go to Operations',
+      description: 'Deployment, eval, triage, and runbooks',
+      icon: 'terminal',
+      category: 'navigation',
+      action: () => setActiveTab('ops'),
     },
     // Quick actions
     {
@@ -428,6 +437,12 @@ function AppContent() {
         return (
           <ErrorBoundary fallbackTitle="Settings tab encountered an error">
             <SettingsTab />
+          </ErrorBoundary>
+        );
+      case 'ops':
+        return (
+          <ErrorBoundary fallbackTitle="Operations tab encountered an error">
+            <OpsTab />
           </ErrorBoundary>
         );
     }

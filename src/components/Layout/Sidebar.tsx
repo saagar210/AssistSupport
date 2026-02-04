@@ -18,7 +18,7 @@ interface NavItem {
   id: Tab;
   label: string;
   icon: IconName;
-  shortcut: string;
+  shortcut?: string;
   description: string;
 }
 
@@ -79,6 +79,12 @@ const navItems: NavItem[] = [
     shortcut: '8',
     description: 'Hybrid PostgreSQL search (BM25 + HNSW)'
   },
+  {
+    id: 'ops',
+    label: 'Ops',
+    icon: 'terminal',
+    description: 'Deployment, evaluation, triage, and runbooks',
+  },
 ];
 
 const settingsItem: NavItem = {
@@ -116,17 +122,19 @@ export function Sidebar({ activeTab, onTabChange, collapsed, onToggleCollapse }:
               <button
                 className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
                 onClick={() => onTabChange(item.id)}
-                title={collapsed ? `${item.label} (Cmd+${item.shortcut})` : item.description}
+                title={collapsed ? `${item.label}${item.shortcut ? ` (Cmd+${item.shortcut})` : ''}` : item.description}
                 aria-current={activeTab === item.id ? 'page' : undefined}
               >
                 <Icon name={item.icon} size={20} className="nav-icon" />
                 {!collapsed && (
                   <>
                     <span className="nav-label">{item.label}</span>
-                    <span className="nav-shortcut">
-                      <kbd>&#8984;</kbd>
-                      <kbd>{item.shortcut}</kbd>
-                    </span>
+                    {item.shortcut && (
+                      <span className="nav-shortcut">
+                        <kbd>&#8984;</kbd>
+                        <kbd>{item.shortcut}</kbd>
+                      </span>
+                    )}
                   </>
                 )}
               </button>

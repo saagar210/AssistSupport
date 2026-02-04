@@ -42,6 +42,89 @@ function mockSearchResults() {
 }
 
 export function setupE2eTauriMock(): void {
+  const deploymentArtifacts = [
+    {
+      id: 'artifact-1',
+      artifact_type: 'app_bundle',
+      version: '1.0.0',
+      channel: 'stable',
+      sha256: 'abc123',
+      is_signed: true,
+      created_at: '2026-02-03T10:00:00Z',
+    },
+  ];
+
+  const deploymentRuns = [
+    {
+      id: 'run-1',
+      target_channel: 'stable',
+      status: 'succeeded',
+      preflight_json: JSON.stringify(['Database integrity: pass', 'Model status: loaded']),
+      rollback_available: true,
+      created_at: '2026-02-03T10:00:00Z',
+      completed_at: '2026-02-03T10:01:00Z',
+    },
+  ];
+
+  const evalRuns = [
+    {
+      id: 'eval-1',
+      suite_name: 'ops-regression-suite',
+      total_cases: 2,
+      passed_cases: 2,
+      avg_confidence: 0.76,
+      details_json: '[]',
+      created_at: '2026-02-03T11:00:00Z',
+    },
+  ];
+
+  const triageClusters = [
+    {
+      id: 'cluster-1',
+      cluster_key: 'vpn',
+      summary: '2 tickets about vpn',
+      ticket_count: 2,
+      tickets_json: JSON.stringify([{ id: 'INC-1001', summary: 'VPN timeout' }]),
+      created_at: '2026-02-03T11:05:00Z',
+    },
+  ];
+
+  const runbookSessions = [
+    {
+      id: 'runbook-1',
+      scenario: 'security-incident',
+      status: 'active',
+      steps_json: JSON.stringify(['Acknowledge incident', 'Contain access', 'Notify stakeholders']),
+      current_step: 0,
+      created_at: '2026-02-03T11:10:00Z',
+      updated_at: '2026-02-03T11:10:00Z',
+    },
+  ];
+
+  const integrationConfigs = [
+    {
+      id: 'integration-1',
+      integration_type: 'servicenow',
+      enabled: true,
+      config_json: '{"endpoint":"https://servicenow.example.com"}',
+      updated_at: '2026-02-03T11:15:00Z',
+    },
+    {
+      id: 'integration-2',
+      integration_type: 'slack',
+      enabled: false,
+      config_json: null,
+      updated_at: '2026-02-03T11:15:00Z',
+    },
+    {
+      id: 'integration-3',
+      integration_type: 'teams',
+      enabled: false,
+      config_json: null,
+      updated_at: '2026-02-03T11:15:00Z',
+    },
+  ];
+
   mockWindows('main');
   mockIPC(
     async (cmd, payload) => {
@@ -142,7 +225,186 @@ export function setupE2eTauriMock(): void {
               context_utilization: 0.22,
             },
             prompt_template_version: 'e2e-mock',
+            confidence: {
+              mode: 'answer',
+              score: 0.86,
+              rationale: 'Strong grounded evidence across cited sources',
+            },
+            grounding: [
+              {
+                claim: 'Use approved VPN and complete MFA.',
+                source_indexes: [0],
+                support_level: 'strong',
+              },
+            ],
           };
+        case 'get_deployment_health_summary': {
+          const lastRun = deploymentRuns[deploymentRuns.length - 1] ?? null;
+          const signedArtifacts = deploymentArtifacts.filter(a => a.is_signed).length;
+          return {
+            total_artifacts: deploymentArtifacts.length,
+            signed_artifacts: signedArtifacts,
+            unsigned_artifacts: deploymentArtifacts.length - signedArtifacts,
+            last_run: lastRun,
+          };
+        }
+        case 'list_deployment_artifacts':
+          return deploymentArtifacts.slice().reverse();
+        case 'record_deployment_artifact': {
+          const body = payload as {
+            artifactType?: string;
+            version?: string;
+            channel?: string;
+            sha256?: string;
+            isSigned?: boolean;
+          };
+          const next = {
+            id: `artifact-${deploymentArtifacts.length + 1}`,
+            artifact_type: body.artifactType ?? 'artifact',
+            version: body.version ?? '0.0.0',
+            channel: body.channel ?? 'stable',
+            sha256: body.sha256 ?? '',
+            is_signed: !!body.isSigned,
+            created_at: new Date().toISOString(),
+          };
+          deploymentArtifacts.push(next);
+          return next.id;
+        }
+        case 'run_deployment_preflight': {
+          const checks = ['Database integrity: pass', 'Model status: loaded', 'Signed artifacts: pass'];
+          const run = {
+            id: `run-${deploymentRuns.length + 1}`,
+            target_channel: 'stable',
+            status: 'succeeded',
+            preflight_json: JSON.stringify(checks),
+            rollback_available: true,
+            created_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+          };
+          deploymentRuns.push(run);
+          return { ok: true, checks };
+        }
+        case 'verify_signed_artifact': {
+          const body = payload as { artifactId?: string; expectedSha256?: string | null };
+          const artifact = deploymentArtifacts.find(a => a.id === body.artifactId) ?? deploymentArtifacts[0];
+          const expected = body.expectedSha256 ?? null;
+          const hashMatches = expected ? artifact.sha256.toLowerCase() === expected.toLowerCase() : true;
+          return {
+            artifact,
+            is_signed: artifact.is_signed,
+            hash_matches: hashMatches,
+            status: artifact.is_signed && hashMatches ? 'verified' : artifact.is_signed ? 'hash_mismatch' : 'unsigned',
+          };
+        }
+        case 'rollback_deployment_run': {
+          const body = payload as { runId?: string };
+          const run = deploymentRuns.find(r => r.id === body.runId) ?? deploymentRuns[deploymentRuns.length - 1];
+          if (run) {
+            run.status = 'rolled_back';
+            run.completed_at = new Date().toISOString();
+          }
+          return null;
+        }
+        case 'list_eval_runs':
+          return evalRuns.slice().reverse();
+        case 'run_eval_harness': {
+          const body = payload as { suiteName?: string; cases?: Array<{ query?: string }> };
+          const total = body.cases?.length ?? 0;
+          const passed = total;
+          const avgConfidence = 0.74;
+          const run = {
+            id: `eval-${evalRuns.length + 1}`,
+            suite_name: body.suiteName ?? 'suite',
+            total_cases: total,
+            passed_cases: passed,
+            avg_confidence: avgConfidence,
+            details_json: JSON.stringify(body.cases ?? []),
+            created_at: new Date().toISOString(),
+          };
+          evalRuns.push(run);
+          return {
+            run_id: run.id,
+            total_cases: total,
+            passed_cases: passed,
+            avg_confidence: avgConfidence,
+          };
+        }
+        case 'list_recent_triage_clusters':
+          return triageClusters.slice().reverse();
+        case 'cluster_tickets_for_triage': {
+          const body = payload as { tickets?: Array<{ id?: string; summary?: string }> };
+          const tickets = body.tickets ?? [];
+          const byKey = new Map<string, Array<{ id?: string; summary?: string }>>();
+          for (const ticket of tickets) {
+            const key = ticket.summary?.split(/\s+/)[0]?.toLowerCase() || 'general';
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key)!.push(ticket);
+          }
+          const output = Array.from(byKey.entries()).map(([cluster_key, group], idx) => {
+            const record = {
+              id: `cluster-${triageClusters.length + idx + 1}`,
+              cluster_key,
+              summary: `${group.length} tickets about ${cluster_key}`,
+              ticket_count: group.length,
+              tickets_json: JSON.stringify(group),
+              created_at: new Date().toISOString(),
+            };
+            triageClusters.push(record);
+            return {
+              cluster_key,
+              summary: record.summary,
+              ticket_ids: group.map(ticket => ticket.id ?? ''),
+            };
+          });
+          return output;
+        }
+        case 'list_runbook_sessions':
+          return runbookSessions.slice().reverse();
+        case 'start_runbook_session': {
+          const body = payload as { scenario?: string; steps?: string[] };
+          const next = {
+            id: `runbook-${runbookSessions.length + 1}`,
+            scenario: body.scenario ?? 'runbook',
+            status: 'active',
+            steps_json: JSON.stringify(body.steps ?? []),
+            current_step: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          runbookSessions.push(next);
+          return next;
+        }
+        case 'advance_runbook_session': {
+          const body = payload as { sessionId?: string; currentStep?: number; status?: string | null };
+          const session = runbookSessions.find(s => s.id === body.sessionId);
+          if (session) {
+            session.current_step = body.currentStep ?? session.current_step;
+            if (body.status) session.status = body.status;
+            session.updated_at = new Date().toISOString();
+          }
+          return null;
+        }
+        case 'list_integrations':
+          return integrationConfigs;
+        case 'configure_integration': {
+          const body = payload as { integrationType?: string; enabled?: boolean; configJson?: string | null };
+          const type = body.integrationType ?? 'unknown';
+          const existing = integrationConfigs.find(item => item.integration_type === type);
+          if (existing) {
+            existing.enabled = !!body.enabled;
+            existing.config_json = body.configJson ?? null;
+            existing.updated_at = new Date().toISOString();
+          } else {
+            integrationConfigs.push({
+              id: `integration-${integrationConfigs.length + 1}`,
+              integration_type: type,
+              enabled: !!body.enabled,
+              config_json: body.configJson ?? null,
+              updated_at: new Date().toISOString(),
+            });
+          }
+          return null;
+        }
         case 'check_search_api_health':
           return true;
         case 'hybrid_search':

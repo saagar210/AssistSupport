@@ -10,10 +10,10 @@ interface RatingPanelProps {
 }
 
 const FEEDBACK_CATEGORIES = [
-  { value: 'accuracy', label: 'Accuracy' },
-  { value: 'relevance', label: 'Relevance' },
-  { value: 'tone', label: 'Tone' },
-  { value: 'completeness', label: 'Completeness' },
+  { value: 'wrong_policy', label: 'Wrong Policy' },
+  { value: 'outdated', label: 'Outdated' },
+  { value: 'too_generic', label: 'Too Generic' },
+  { value: 'unsafe', label: 'Unsafe' },
   { value: 'other', label: 'Other' },
 ];
 

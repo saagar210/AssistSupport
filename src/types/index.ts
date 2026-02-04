@@ -108,6 +108,20 @@ export interface GenerationMetrics {
   context_utilization: number;
 }
 
+export type ConfidenceMode = 'answer' | 'clarify' | 'abstain';
+
+export interface ConfidenceAssessment {
+  mode: ConfidenceMode;
+  score: number;
+  rationale: string;
+}
+
+export interface GroundedClaim {
+  claim: string;
+  source_indexes: number[];
+  support_level: string;
+}
+
 export interface GenerateWithContextResult {
   text: string;
   tokens_generated: number;
@@ -116,6 +130,8 @@ export interface GenerateWithContextResult {
   sources: ContextSource[];
   metrics: GenerationMetrics;
   prompt_template_version: string;
+  confidence: ConfidenceAssessment;
+  grounding: GroundedClaim[];
 }
 
 export interface ContextSource {
@@ -245,6 +261,92 @@ export interface SearchOptions {
   dedup_threshold?: number;
 }
 
+export interface KbGapCandidate {
+  id: string;
+  query_signature: string;
+  sample_query: string;
+  occurrences: number;
+  low_confidence_count: number;
+  low_rating_count: number;
+  unsupported_claim_events: number;
+  suggested_category: string | null;
+  status: string;
+  resolution_note: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface DeploymentRunRecord {
+  id: string;
+  target_channel: string;
+  status: string;
+  preflight_json: string | null;
+  rollback_available: boolean;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface DeploymentHealthSummary {
+  total_artifacts: number;
+  signed_artifacts: number;
+  unsigned_artifacts: number;
+  last_run: DeploymentRunRecord | null;
+}
+
+export interface IntegrationConfigRecord {
+  id: string;
+  integration_type: string;
+  enabled: boolean;
+  config_json: string | null;
+  updated_at: string;
+}
+
+export interface DeploymentArtifactRecord {
+  id: string;
+  artifact_type: string;
+  version: string;
+  channel: string;
+  sha256: string;
+  is_signed: boolean;
+  created_at: string;
+}
+
+export interface SignedArtifactVerificationResult {
+  artifact: DeploymentArtifactRecord;
+  is_signed: boolean;
+  hash_matches: boolean;
+  status: string;
+}
+
+export interface EvalRunRecord {
+  id: string;
+  suite_name: string;
+  total_cases: number;
+  passed_cases: number;
+  avg_confidence: number;
+  details_json: string | null;
+  created_at: string;
+}
+
+export interface TriageClusterRecord {
+  id: string;
+  cluster_key: string;
+  summary: string;
+  ticket_count: number;
+  tickets_json: string;
+  created_at: string;
+}
+
+export interface RunbookSessionRecord {
+  id: string;
+  scenario: string;
+  status: string;
+  steps_json: string;
+  current_step: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Embedding types
 export interface EmbeddingModelInfo {
   path: string;
@@ -260,7 +362,7 @@ export interface OcrResult {
 }
 
 // UI State types
-export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'settings';
+export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'ops' | 'settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 

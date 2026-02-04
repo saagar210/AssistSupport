@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAnalytics, AnalyticsSummary, ArticleUsage, LowRatingAnalysis } from '../../hooks/useAnalytics';
+import { useFeatureOps } from '../../hooks/useFeatureOps';
+import type { KbGapCandidate } from '../../types';
 import { ArticleDetailPanel } from './ArticleDetailPanel';
 import './AnalyticsTab.css';
 
@@ -14,10 +16,12 @@ const PERIODS: { label: string; value: Period }[] = [
 
 export function AnalyticsTab() {
   const { getSummary, getKbUsage, getLowRatingAnalysis } = useAnalytics();
+  const { getKbGapCandidates, updateKbGapStatus } = useFeatureOps();
   const [period, setPeriod] = useState<Period>(30);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [kbUsage, setKbUsage] = useState<ArticleUsage[]>([]);
   const [lowRatingData, setLowRatingData] = useState<LowRatingAnalysis | null>(null);
+  const [gapCandidates, setGapCandidates] = useState<KbGapCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
@@ -31,16 +35,23 @@ export function AnalyticsTab() {
         getKbUsage(period ?? undefined),
         getLowRatingAnalysis(period ?? undefined).catch(() => null),
       ]);
+      const gaps = await getKbGapCandidates(12, 'open').catch(() => []);
       setSummary(summaryData);
       setKbUsage(kbData);
       setLowRatingData(lowRating);
+      setGapCandidates(gaps);
     } catch (err) {
       console.error('Failed to load analytics:', err);
       setError(typeof err === 'string' ? err : 'Failed to load analytics data');
     } finally {
       setLoading(false);
     }
-  }, [period, getSummary, getKbUsage, getLowRatingAnalysis]);
+  }, [period, getSummary, getKbUsage, getLowRatingAnalysis, getKbGapCandidates]);
+
+  const handleGapStatus = useCallback(async (id: string, status: 'accepted' | 'resolved' | 'ignored') => {
+    await updateKbGapStatus(id, status);
+    setGapCandidates(prev => prev.filter(g => g.id !== id));
+  }, [updateKbGapStatus]);
 
   useEffect(() => {
     loadData();
@@ -186,6 +197,35 @@ export function AnalyticsTab() {
       {/* KB Usage Table */}
       <KbUsageTable articles={kbUsage} onArticleClick={setSelectedArticleId} />
 
+      {/* KB Gap Detector */}
+      <div className="kb-gap-panel">
+        <div className="section-title">KB Gap Detector</div>
+        {gapCandidates.length === 0 ? (
+          <div className="analytics-empty">
+            <div className="analytics-empty-description">No open gap candidates detected</div>
+          </div>
+        ) : (
+          <div className="kb-gap-list">
+            {gapCandidates.map(gap => (
+              <div key={gap.id} className="kb-gap-item">
+                <div className="kb-gap-title">{gap.sample_query}</div>
+                <div className="kb-gap-meta">
+                  <span>Occurrences: {gap.occurrences}</span>
+                  <span>Low confidence: {gap.low_confidence_count}</span>
+                  <span>Ungrounded: {gap.unsupported_claim_events}</span>
+                  {gap.suggested_category && <span>Category: {gap.suggested_category}</span>}
+                </div>
+                <div className="kb-gap-actions">
+                  <button className="kb-gap-btn" onClick={() => handleGapStatus(gap.id, 'accepted')}>Accept</button>
+                  <button className="kb-gap-btn" onClick={() => handleGapStatus(gap.id, 'resolved')}>Resolve</button>
+                  <button className="kb-gap-btn kb-gap-btn-muted" onClick={() => handleGapStatus(gap.id, 'ignored')}>Ignore</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Article Detail Panel */}
       {selectedArticleId && (
         <ArticleDetailPanel
@@ -290,4 +330,3 @@ function formatDateLabel(dateStr: string): string {
     return dateStr;
   }
 }
-

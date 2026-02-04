@@ -23,6 +23,7 @@
     "test:performance:database": "vitest run src/__tests__/performance/database.bench.ts",
     "test:coverage": "vitest run --coverage",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts --grep @smoke",
+    "test:e2e:ops": "playwright test --config=playwright.config.ts e2e/ops.spec.ts",
     "test:ci": "vitest run && cd src-tauri && cargo test",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"

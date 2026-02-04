@@ -4,7 +4,13 @@ import { Button } from '../shared/Button';
 import { RatingPanel } from './RatingPanel';
 import { JiraPostPanel } from './JiraPostPanel';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { ContextSource, GenerationMetrics, DocumentChunk } from '../../types';
+import type {
+  ContextSource,
+  ConfidenceAssessment,
+  DocumentChunk,
+  GenerationMetrics,
+  GroundedClaim,
+} from '../../types';
 import './ResponsePanel.css';
 
 type ExportFormat = 'Markdown' | 'PlainText' | 'Html';
@@ -47,6 +53,8 @@ interface ResponsePanelProps {
   sources: ContextSource[];
   generating: boolean;
   metrics: GenerationMetrics | null;
+  confidence?: ConfidenceAssessment | null;
+  grounding?: GroundedClaim[];
   draftId?: string | null;
   onSaveDraft?: () => void;
   onCancel?: () => void;
@@ -58,6 +66,12 @@ interface ResponsePanelProps {
   generatingAlternative?: boolean;
   ticketKey?: string | null;
   onSaveAsTemplate?: (rating: number) => void;
+}
+
+function getModeLabel(mode: ConfidenceAssessment['mode']): string {
+  if (mode === 'answer') return 'Ready to answer';
+  if (mode === 'clarify') return 'Needs clarification';
+  return 'Abstain suggested';
 }
 
 function getConfidenceLevel(avgScore: number): { label: string; className: string; explanation: string } {
@@ -99,7 +113,27 @@ function getScoreBarClassName(score: number): string {
   return 'score-fill-low';
 }
 
-export function ResponsePanel({ response, streamingText, isStreaming, sources, generating, metrics, draftId, onSaveDraft, onCancel, hasInput, onResponseChange, isEdited, modelName, onGenerateAlternative, generatingAlternative, ticketKey, onSaveAsTemplate }: ResponsePanelProps) {
+export function ResponsePanel({
+  response,
+  streamingText,
+  isStreaming,
+  sources,
+  generating,
+  metrics,
+  confidence,
+  grounding = [],
+  draftId,
+  onSaveDraft,
+  onCancel,
+  hasInput,
+  onResponseChange,
+  isEdited,
+  modelName,
+  onGenerateAlternative,
+  generatingAlternative,
+  ticketKey,
+  onSaveAsTemplate,
+}: ResponsePanelProps) {
   const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -153,6 +187,10 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
 
   const handleCopy = useCallback(async () => {
     if (!response) return;
+    if (confidence?.mode === 'abstain') {
+      showError('Confidence gate is in abstain mode. Review and edit before copying.');
+      return;
+    }
     try {
       // Copy only the OUTPUT section (or full response if no sections)
       const textToCopy = parsed.hasSections ? parsed.output : response;
@@ -162,7 +200,7 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
     } catch (err) {
       showError(`Copy failed: ${err}`);
     }
-  }, [response, parsed, showError]);
+  }, [response, parsed, confidence, showError]);
 
   const handleSourceToggle = useCallback(async (source: ContextSource) => {
     const chunkId = source.chunk_id;
@@ -203,7 +241,7 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
   const avgScore = sources.length > 0
     ? sources.reduce((sum, s) => sum + s.score, 0) / sources.length
     : 0;
-  const confidence = sources.length > 0 ? getConfidenceLevel(avgScore) : null;
+  const sourceConfidence = sources.length > 0 ? getConfidenceLevel(avgScore) : null;
 
   return (
     <>
@@ -301,6 +339,16 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
           </>
         ) : response ? (
           <>
+            {confidence && (
+              <div className={`confidence-gate confidence-gate-${confidence.mode}`}>
+                <div className="confidence-gate-main">
+                  <strong>{getModeLabel(confidence.mode)}</strong>
+                  <span>{Math.round(confidence.score * 100)}% confidence</span>
+                </div>
+                <div className="confidence-gate-rationale">{confidence.rationale}</div>
+              </div>
+            )}
+
             {parsed.hasSections && (
               <div className="response-section-tabs">
                 <button
@@ -347,18 +395,36 @@ export function ResponsePanel({ response, streamingText, isStreaming, sources, g
               <div className="sources-panel">
                 <div className="sources-panel-header">
                   <h4>Knowledge Base Sources</h4>
-                  {confidence && (
+                  {sourceConfidence && (
                     <div className="confidence-group">
-                      <span className={`confidence-badge ${confidence.className}`}>
-                        {confidence.label}
+                      <span className={`confidence-badge ${sourceConfidence.className}`}>
+                        {sourceConfidence.label}
                       </span>
-                      <span className="confidence-explanation">{confidence.explanation}</span>
+                      <span className="confidence-explanation">{sourceConfidence.explanation}</span>
                     </div>
                   )}
                 </div>
                 {avgScore < 0.5 && avgScore > 0 && (
                   <div className="low-confidence-warning">
                     Low source confidence — response may need manual verification
+                  </div>
+                )}
+
+                {grounding.length > 0 && (
+                  <div className="grounding-panel">
+                    <h5>Source Grounding</h5>
+                    <ul className="grounding-list">
+                      {grounding.slice(0, 8).map((item, idx) => (
+                        <li key={`${idx}-${item.claim.slice(0, 24)}`} className={`grounding-item grounding-${item.support_level}`}>
+                          <span className="grounding-claim">{item.claim}</span>
+                          <span className="grounding-meta">
+                            {item.source_indexes.length > 0
+                              ? `Sources: ${item.source_indexes.map(i => i + 1).join(', ')}`
+                              : 'No citation'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
                 <ul className="sources-list">

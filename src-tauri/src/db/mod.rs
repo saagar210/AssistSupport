@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 11;
+const CURRENT_SCHEMA_VERSION: i32 = 12;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -232,6 +232,10 @@ impl Database {
 
         if from_version < 11 {
             self.migrate_v11()?;
+        }
+
+        if from_version < 12 {
+            self.migrate_v12()?;
         }
 
         tx.commit()?;
@@ -942,6 +946,124 @@ impl Database {
         Ok(())
     }
 
+    /// Migration to v12: Trust/ops feature foundation tables
+    fn migrate_v12(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            -- Generation quality events (confidence + grounding)
+            CREATE TABLE IF NOT EXISTS generation_quality_events (
+                id TEXT PRIMARY KEY,
+                query_text TEXT NOT NULL,
+                confidence_mode TEXT NOT NULL CHECK(confidence_mode IN ('answer', 'clarify', 'abstain')),
+                confidence_score REAL NOT NULL,
+                unsupported_claims INTEGER NOT NULL DEFAULT 0,
+                total_claims INTEGER NOT NULL DEFAULT 0,
+                source_count INTEGER NOT NULL DEFAULT 0,
+                avg_source_score REAL NOT NULL DEFAULT 0.0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_quality_events_created ON generation_quality_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_quality_events_mode ON generation_quality_events(confidence_mode);
+
+            -- KB gap detector candidates
+            CREATE TABLE IF NOT EXISTS kb_gap_candidates (
+                id TEXT PRIMARY KEY,
+                query_signature TEXT NOT NULL UNIQUE,
+                sample_query TEXT NOT NULL,
+                occurrences INTEGER NOT NULL DEFAULT 1,
+                low_confidence_count INTEGER NOT NULL DEFAULT 0,
+                low_rating_count INTEGER NOT NULL DEFAULT 0,
+                unsupported_claim_events INTEGER NOT NULL DEFAULT 0,
+                suggested_category TEXT,
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'accepted', 'resolved', 'ignored')),
+                resolution_note TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_kb_gap_status ON kb_gap_candidates(status, last_seen_at DESC);
+
+            -- Deployment polish telemetry
+            CREATE TABLE IF NOT EXISTS deployment_artifacts (
+                id TEXT PRIMARY KEY,
+                artifact_type TEXT NOT NULL,
+                version TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                is_signed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_deploy_artifacts_version ON deployment_artifacts(version DESC);
+
+            CREATE TABLE IF NOT EXISTS deployment_runs (
+                id TEXT PRIMARY KEY,
+                target_channel TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('started', 'succeeded', 'failed', 'rolled_back')),
+                preflight_json TEXT,
+                rollback_available INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_deploy_runs_created ON deployment_runs(created_at DESC);
+
+            -- Eval harness runs
+            CREATE TABLE IF NOT EXISTS eval_runs (
+                id TEXT PRIMARY KEY,
+                suite_name TEXT NOT NULL,
+                total_cases INTEGER NOT NULL,
+                passed_cases INTEGER NOT NULL,
+                avg_confidence REAL NOT NULL DEFAULT 0.0,
+                details_json TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_eval_runs_created ON eval_runs(created_at DESC);
+
+            -- Triage autopilot output clusters
+            CREATE TABLE IF NOT EXISTS triage_clusters (
+                id TEXT PRIMARY KEY,
+                cluster_key TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                ticket_count INTEGER NOT NULL,
+                tickets_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_triage_clusters_created ON triage_clusters(created_at DESC);
+
+            -- Runbook sessions
+            CREATE TABLE IF NOT EXISTS runbook_sessions (
+                id TEXT PRIMARY KEY,
+                scenario TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'completed')),
+                steps_json TEXT NOT NULL,
+                current_step INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_runbook_sessions_status ON runbook_sessions(status, updated_at DESC);
+
+            -- Integrations and role/workspace controls
+            CREATE TABLE IF NOT EXISTS integration_configs (
+                id TEXT PRIMARY KEY,
+                integration_type TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                config_json TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_type ON integration_configs(integration_type);
+
+            CREATE TABLE IF NOT EXISTS workspace_roles (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                principal TEXT NOT NULL,
+                role_name TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_principal
+                ON workspace_roles(workspace_id, principal);
+            "#,
+        )?;
+        Ok(())
+    }
+
     // -- Model state helpers --
 
     /// Record that a model was loaded (for auto-load on next startup)
@@ -1011,9 +1133,7 @@ impl Database {
     }
 
     /// Get last startup metric
-    pub fn get_last_startup_metric(
-        &self,
-    ) -> Result<Option<(i64, i64, bool)>, DbError> {
+    pub fn get_last_startup_metric(&self) -> Result<Option<(i64, i64, bool)>, DbError> {
         let result = self.conn.query_row(
             "SELECT total_ms, init_app_ms, models_cached FROM startup_metrics ORDER BY id DESC LIMIT 1",
             [],
@@ -3739,6 +3859,582 @@ impl Database {
         Ok(results)
     }
 
+    /// Record generation quality event and update KB gap detector counters.
+    pub fn record_generation_quality_event(
+        &self,
+        query_text: &str,
+        confidence_mode: &str,
+        confidence_score: f64,
+        unsupported_claims: i32,
+        total_claims: i32,
+        source_count: i32,
+        avg_source_score: f64,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let event_id = uuid::Uuid::new_v4().to_string();
+
+        self.conn.execute(
+            "INSERT INTO generation_quality_events
+             (id, query_text, confidence_mode, confidence_score, unsupported_claims, total_claims, source_count, avg_source_score, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                event_id,
+                query_text,
+                confidence_mode,
+                confidence_score,
+                unsupported_claims,
+                total_claims,
+                source_count,
+                avg_source_score,
+                &now
+            ],
+        )?;
+
+        let query_signature = query_text
+            .trim()
+            .to_lowercase()
+            .chars()
+            .take(180)
+            .collect::<String>();
+        if query_signature.is_empty() {
+            return Ok(());
+        }
+
+        let low_confidence_increment = if confidence_mode == "answer" { 0 } else { 1 };
+        let unsupported_increment = if unsupported_claims > 0 { 1 } else { 0 };
+
+        let suggested_category = if query_signature.contains("policy")
+            || query_signature.contains("allowed")
+            || query_signature.contains("can i")
+        {
+            Some("policy")
+        } else if query_signature.contains("how")
+            || query_signature.contains("steps")
+            || query_signature.contains("setup")
+        {
+            Some("procedure")
+        } else {
+            Some("reference")
+        };
+
+        self.conn.execute(
+            "INSERT INTO kb_gap_candidates
+             (id, query_signature, sample_query, occurrences, low_confidence_count, low_rating_count, unsupported_claim_events, suggested_category, status, first_seen_at, last_seen_at)
+             VALUES (?, ?, ?, 1, ?, 0, ?, ?, 'open', ?, ?)
+             ON CONFLICT(query_signature) DO UPDATE SET
+                occurrences = occurrences + 1,
+                low_confidence_count = low_confidence_count + excluded.low_confidence_count,
+                unsupported_claim_events = unsupported_claim_events + excluded.unsupported_claim_events,
+                suggested_category = COALESCE(kb_gap_candidates.suggested_category, excluded.suggested_category),
+                last_seen_at = excluded.last_seen_at",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                query_signature,
+                query_text.trim(),
+                low_confidence_increment,
+                unsupported_increment,
+                suggested_category,
+                &now,
+                &now
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get KB gap candidates ordered by impact.
+    pub fn get_kb_gap_candidates(
+        &self,
+        limit: usize,
+        status: Option<&str>,
+    ) -> Result<Vec<KbGapCandidate>, DbError> {
+        let status = status.unwrap_or("open");
+        let mut stmt = self.conn.prepare(
+            "SELECT id, query_signature, sample_query, occurrences, low_confidence_count, low_rating_count,
+                    unsupported_claim_events, suggested_category, status, resolution_note, first_seen_at, last_seen_at
+             FROM kb_gap_candidates
+             WHERE status = ?1
+             ORDER BY (occurrences + low_confidence_count + (unsupported_claim_events * 2) + (low_rating_count * 3)) DESC,
+                      last_seen_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![status, limit as i64], |row| {
+                Ok(KbGapCandidate {
+                    id: row.get(0)?,
+                    query_signature: row.get(1)?,
+                    sample_query: row.get(2)?,
+                    occurrences: row.get(3)?,
+                    low_confidence_count: row.get(4)?,
+                    low_rating_count: row.get(5)?,
+                    unsupported_claim_events: row.get(6)?,
+                    suggested_category: row.get(7)?,
+                    status: row.get(8)?,
+                    resolution_note: row.get(9)?,
+                    first_seen_at: row.get(10)?,
+                    last_seen_at: row.get(11)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Update KB gap candidate workflow status.
+    pub fn update_kb_gap_status(
+        &self,
+        id: &str,
+        status: &str,
+        resolution_note: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE kb_gap_candidates SET status = ?, resolution_note = ? WHERE id = ?",
+            params![status, resolution_note, id],
+        )?;
+        Ok(())
+    }
+
+    /// Record deployment artifact metadata.
+    pub fn record_deployment_artifact(
+        &self,
+        artifact_type: &str,
+        version: &str,
+        channel: &str,
+        sha256: &str,
+        is_signed: bool,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO deployment_artifacts (id, artifact_type, version, channel, sha256, is_signed, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![&id, artifact_type, version, channel, sha256, if is_signed { 1 } else { 0 }, &now],
+        )?;
+        Ok(id)
+    }
+
+    /// Record deployment run.
+    pub fn record_deployment_run(
+        &self,
+        target_channel: &str,
+        status: &str,
+        preflight_json: Option<&str>,
+        rollback_available: bool,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let completed_at = if status == "started" {
+            None
+        } else {
+            Some(now.clone())
+        };
+        self.conn.execute(
+            "INSERT INTO deployment_runs (id, target_channel, status, preflight_json, rollback_available, created_at, completed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &id,
+                target_channel,
+                status,
+                preflight_json,
+                if rollback_available { 1 } else { 0 },
+                &now,
+                completed_at
+            ],
+        )?;
+        Ok(id)
+    }
+
+    /// Deployment health summary for UI.
+    pub fn get_deployment_health_summary(&self) -> Result<DeploymentHealthSummary, DbError> {
+        let total_artifacts: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM deployment_artifacts", [], |row| {
+                    row.get(0)
+                })?;
+        let signed_artifacts: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM deployment_artifacts WHERE is_signed = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        let unsigned_artifacts = total_artifacts - signed_artifacts;
+
+        let last_run: Option<DeploymentRunRecord> = self
+            .conn
+            .query_row(
+                "SELECT id, target_channel, status, preflight_json, rollback_available, created_at, completed_at
+                 FROM deployment_runs ORDER BY created_at DESC LIMIT 1",
+                [],
+                |row| {
+                    Ok(DeploymentRunRecord {
+                        id: row.get(0)?,
+                        target_channel: row.get(1)?,
+                        status: row.get(2)?,
+                        preflight_json: row.get(3)?,
+                        rollback_available: row.get::<_, i32>(4)? == 1,
+                        created_at: row.get(5)?,
+                        completed_at: row.get(6)?,
+                    })
+                },
+            )
+            .ok();
+
+        Ok(DeploymentHealthSummary {
+            total_artifacts,
+            signed_artifacts,
+            unsigned_artifacts,
+            last_run,
+        })
+    }
+
+    /// List recent deployment artifacts.
+    pub fn list_deployment_artifacts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<DeploymentArtifactRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, artifact_type, version, channel, sha256, is_signed, created_at
+             FROM deployment_artifacts
+             ORDER BY created_at DESC
+             LIMIT ?",
+        )?;
+        let rows = stmt
+            .query_map([limit as i64], |row| {
+                Ok(DeploymentArtifactRecord {
+                    id: row.get(0)?,
+                    artifact_type: row.get(1)?,
+                    version: row.get(2)?,
+                    channel: row.get(3)?,
+                    sha256: row.get(4)?,
+                    is_signed: row.get::<_, i32>(5)? == 1,
+                    created_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Verify signed artifact metadata against an expected hash.
+    pub fn verify_signed_artifact(
+        &self,
+        artifact_id: &str,
+        expected_sha256: Option<&str>,
+    ) -> Result<SignedArtifactVerificationResult, DbError> {
+        let artifact = self.conn.query_row(
+            "SELECT id, artifact_type, version, channel, sha256, is_signed, created_at
+             FROM deployment_artifacts WHERE id = ?",
+            [artifact_id],
+            |row| {
+                Ok(DeploymentArtifactRecord {
+                    id: row.get(0)?,
+                    artifact_type: row.get(1)?,
+                    version: row.get(2)?,
+                    channel: row.get(3)?,
+                    sha256: row.get(4)?,
+                    is_signed: row.get::<_, i32>(5)? == 1,
+                    created_at: row.get(6)?,
+                })
+            },
+        )?;
+
+        let hash_matches = expected_sha256
+            .map(|expected| artifact.sha256.eq_ignore_ascii_case(expected))
+            .unwrap_or(true);
+
+        let is_signed = artifact.is_signed;
+        Ok(SignedArtifactVerificationResult {
+            artifact,
+            is_signed,
+            hash_matches,
+            status: if is_signed && hash_matches {
+                "verified".to_string()
+            } else if is_signed {
+                "hash_mismatch".to_string()
+            } else {
+                "unsigned".to_string()
+            },
+        })
+    }
+
+    /// Mark a deployment run as rolled back.
+    pub fn rollback_deployment_run(
+        &self,
+        run_id: &str,
+        reason: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let reason_json = reason.map(|r| serde_json::json!({ "rollback_reason": r }).to_string());
+        self.conn.execute(
+            "UPDATE deployment_runs
+             SET status = 'rolled_back',
+                 completed_at = ?,
+                 preflight_json = COALESCE(preflight_json, ?)
+             WHERE id = ?",
+            params![&now, reason_json, run_id],
+        )?;
+        Ok(())
+    }
+
+    /// Save an evaluation harness run result.
+    pub fn save_eval_run(
+        &self,
+        suite_name: &str,
+        total_cases: i32,
+        passed_cases: i32,
+        avg_confidence: f64,
+        details_json: Option<&str>,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO eval_runs (id, suite_name, total_cases, passed_cases, avg_confidence, details_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &id,
+                suite_name,
+                total_cases,
+                passed_cases,
+                avg_confidence,
+                details_json,
+                &now
+            ],
+        )?;
+        Ok(id)
+    }
+
+    /// List evaluation harness runs.
+    pub fn list_eval_runs(&self, limit: usize) -> Result<Vec<EvalRunRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, suite_name, total_cases, passed_cases, avg_confidence, details_json, created_at
+             FROM eval_runs
+             ORDER BY created_at DESC
+             LIMIT ?",
+        )?;
+        let rows = stmt
+            .query_map([limit as i64], |row| {
+                Ok(EvalRunRecord {
+                    id: row.get(0)?,
+                    suite_name: row.get(1)?,
+                    total_cases: row.get(2)?,
+                    passed_cases: row.get(3)?,
+                    avg_confidence: row.get(4)?,
+                    details_json: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Save triage cluster output.
+    pub fn save_triage_cluster(
+        &self,
+        cluster_key: &str,
+        summary: &str,
+        ticket_count: i32,
+        tickets_json: &str,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO triage_clusters (id, cluster_key, summary, ticket_count, tickets_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            params![&id, cluster_key, summary, ticket_count, tickets_json, &now],
+        )?;
+        Ok(id)
+    }
+
+    /// List recent triage clusters.
+    pub fn list_recent_triage_clusters(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TriageClusterRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, cluster_key, summary, ticket_count, tickets_json, created_at
+             FROM triage_clusters
+             ORDER BY created_at DESC
+             LIMIT ?",
+        )?;
+        let rows = stmt
+            .query_map([limit as i64], |row| {
+                Ok(TriageClusterRecord {
+                    id: row.get(0)?,
+                    cluster_key: row.get(1)?,
+                    summary: row.get(2)?,
+                    ticket_count: row.get(3)?,
+                    tickets_json: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Start a runbook session.
+    pub fn create_runbook_session(
+        &self,
+        scenario: &str,
+        steps_json: &str,
+    ) -> Result<RunbookSessionRecord, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO runbook_sessions (id, scenario, status, steps_json, current_step, created_at, updated_at)
+             VALUES (?, ?, 'active', ?, 0, ?, ?)",
+            params![&id, scenario, steps_json, &now, &now],
+        )?;
+        Ok(RunbookSessionRecord {
+            id,
+            scenario: scenario.to_string(),
+            status: "active".to_string(),
+            steps_json: steps_json.to_string(),
+            current_step: 0,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Advance an existing runbook session.
+    pub fn advance_runbook_session(
+        &self,
+        session_id: &str,
+        new_step: i32,
+        status: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE runbook_sessions
+             SET current_step = ?, status = COALESCE(?, status), updated_at = ?
+             WHERE id = ?",
+            params![new_step, status, &now, session_id],
+        )?;
+        Ok(())
+    }
+
+    /// List recent runbook sessions.
+    pub fn list_runbook_sessions(
+        &self,
+        limit: usize,
+        status: Option<&str>,
+    ) -> Result<Vec<RunbookSessionRecord>, DbError> {
+        let status = status.unwrap_or("%");
+        let mut stmt = self.conn.prepare(
+            "SELECT id, scenario, status, steps_json, current_step, created_at, updated_at
+             FROM runbook_sessions
+             WHERE status LIKE ?
+             ORDER BY updated_at DESC
+             LIMIT ?",
+        )?;
+        let rows = stmt
+            .query_map(params![status, limit as i64], |row| {
+                Ok(RunbookSessionRecord {
+                    id: row.get(0)?,
+                    scenario: row.get(1)?,
+                    status: row.get(2)?,
+                    steps_json: row.get(3)?,
+                    current_step: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Upsert integration configuration.
+    pub fn set_integration_config(
+        &self,
+        integration_type: &str,
+        enabled: bool,
+        config_json: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO integration_configs (id, integration_type, enabled, config_json, updated_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(integration_type) DO UPDATE SET
+                enabled = excluded.enabled,
+                config_json = excluded.config_json,
+                updated_at = excluded.updated_at",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                integration_type,
+                if enabled { 1 } else { 0 },
+                config_json,
+                &now
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// List integration configuration records.
+    pub fn list_integration_configs(&self) -> Result<Vec<IntegrationConfigRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, integration_type, enabled, config_json, updated_at
+             FROM integration_configs
+             ORDER BY integration_type ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(IntegrationConfigRecord {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    enabled: row.get::<_, i32>(2)? == 1,
+                    config_json: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Upsert workspace role assignment.
+    pub fn set_workspace_role(
+        &self,
+        workspace_id: &str,
+        principal: &str,
+        role_name: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO workspace_roles (id, workspace_id, principal, role_name, created_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(workspace_id, principal) DO UPDATE SET
+                role_name = excluded.role_name",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                workspace_id,
+                principal,
+                role_name,
+                &now
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// List role assignments for a workspace.
+    pub fn list_workspace_roles(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<WorkspaceRoleRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workspace_id, principal, role_name, created_at
+             FROM workspace_roles
+             WHERE workspace_id = ?
+             ORDER BY principal ASC",
+        )?;
+        let rows = stmt
+            .query_map([workspace_id], |row| {
+                Ok(WorkspaceRoleRecord {
+                    id: row.get(0)?,
+                    workspace_id: row.get(1)?,
+                    principal: row.get(2)?,
+                    role_name: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     // ========================================================================
     // Phase 10: KB Management
     // ========================================================================
@@ -4555,6 +5251,120 @@ pub struct RecentLowFeedback {
     pub rating: i32,
     pub feedback_text: String,
     pub feedback_category: Option<String>,
+    pub created_at: String,
+}
+
+/// KB gap candidate generated from low-confidence/unsupported outputs.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KbGapCandidate {
+    pub id: String,
+    pub query_signature: String,
+    pub sample_query: String,
+    pub occurrences: i64,
+    pub low_confidence_count: i64,
+    pub low_rating_count: i64,
+    pub unsupported_claim_events: i64,
+    pub suggested_category: Option<String>,
+    pub status: String,
+    pub resolution_note: Option<String>,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+}
+
+/// Deployment run record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeploymentRunRecord {
+    pub id: String,
+    pub target_channel: String,
+    pub status: String,
+    pub preflight_json: Option<String>,
+    pub rollback_available: bool,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+/// Deployment health summary for Settings.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeploymentHealthSummary {
+    pub total_artifacts: i64,
+    pub signed_artifacts: i64,
+    pub unsigned_artifacts: i64,
+    pub last_run: Option<DeploymentRunRecord>,
+}
+
+/// Deployment artifact metadata record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeploymentArtifactRecord {
+    pub id: String,
+    pub artifact_type: String,
+    pub version: String,
+    pub channel: String,
+    pub sha256: String,
+    pub is_signed: bool,
+    pub created_at: String,
+}
+
+/// Signed artifact verification output.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SignedArtifactVerificationResult {
+    pub artifact: DeploymentArtifactRecord,
+    pub is_signed: bool,
+    pub hash_matches: bool,
+    pub status: String,
+}
+
+/// Evaluation harness run record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EvalRunRecord {
+    pub id: String,
+    pub suite_name: String,
+    pub total_cases: i32,
+    pub passed_cases: i32,
+    pub avg_confidence: f64,
+    pub details_json: Option<String>,
+    pub created_at: String,
+}
+
+/// Triage clustering result record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriageClusterRecord {
+    pub id: String,
+    pub cluster_key: String,
+    pub summary: String,
+    pub ticket_count: i32,
+    pub tickets_json: String,
+    pub created_at: String,
+}
+
+/// Runbook session record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RunbookSessionRecord {
+    pub id: String,
+    pub scenario: String,
+    pub status: String,
+    pub steps_json: String,
+    pub current_step: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Integration configuration record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IntegrationConfigRecord {
+    pub id: String,
+    pub integration_type: String,
+    pub enabled: bool,
+    pub config_json: Option<String>,
+    pub updated_at: String,
+}
+
+/// Workspace role record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceRoleRecord {
+    pub id: String,
+    pub workspace_id: String,
+    pub principal: String,
+    pub role_name: String,
     pub created_at: String,
 }
 

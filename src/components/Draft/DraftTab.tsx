@@ -19,7 +19,9 @@ import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { JiraTicket } from '../../hooks/useJira';
 import type {
   ContextSource,
+  ConfidenceAssessment,
   GenerationMetrics,
+  GroundedClaim,
   ResponseLength,
   SavedDraft,
   ChecklistItem,
@@ -88,6 +90,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [response, setResponse] = useState('');
   const [sources, setSources] = useState<ContextSource[]>([]);
   const [metrics, setMetrics] = useState<GenerationMetrics | null>(null);
+  const [confidence, setConfidence] = useState<ConfidenceAssessment | null>(null);
+  const [grounding, setGrounding] = useState<GroundedClaim[]>([]);
   const [responseLength, setResponseLength] = useState<ResponseLength>('Medium');
   const [diagnosisCollapsed, setDiagnosisCollapsed] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -120,6 +124,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setGenerating(true);
     setResponse(''); // Clear previous response
     clearStreamingText(); // Clear streaming buffer
+    setConfidence(null);
+    setGrounding([]);
     try {
       const combinedInput = ocrText ? `${input}\n\n[Screenshot OCR Text]:\n${ocrText}` : input;
 
@@ -139,6 +145,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setIsResponseEdited(false);
       setSources(result.sources);
       setMetrics(result.metrics ?? null);
+      setConfidence(result.confidence ?? null);
+      setGrounding(result.grounding ?? []);
       logEvent('response_generated', {
         response_length: responseLength,
         tokens_generated: result.tokens_generated,
@@ -496,6 +504,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setIsResponseEdited(false);
     setSources([]);
     setMetrics(null);
+    setConfidence(null);
+    setGrounding([]);
     setCurrentTicketId(null);
     setCurrentTicket(null);
     setSavedDraftId(null);
@@ -541,12 +551,16 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setGenerating(true);
     setResponse('');
     clearStreamingText();
+    setConfidence(null);
+    setGrounding([]);
     try {
       const result = await generateStreaming(text, responseLength, {});
       setResponse(result.text);
       setOriginalResponse(result.text);
       setIsResponseEdited(false);
       setSources(result.sources);
+      setConfidence(result.confidence ?? null);
+      setGrounding(result.grounding ?? []);
 
       // Add response entry
       const responseEntry: ConversationEntry = {
@@ -627,6 +641,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
         }
         setApprovalResults([]);
         setApprovalError(null);
+
+        const trustState = diagData.trust;
+        setConfidence(trustState?.confidence || null);
+        setGrounding(trustState?.grounding || []);
       } catch {
         setDiagnosticNotes('');
         setTreeResult(null);
@@ -640,6 +658,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
         setApprovalSources([]);
         setApprovalResults([]);
         setApprovalError(null);
+        setConfidence(null);
+        setGrounding([]);
       }
     } else {
       setDiagnosticNotes('');
@@ -654,6 +674,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setApprovalSources([]);
       setApprovalResults([]);
       setApprovalError(null);
+      setConfidence(null);
+      setGrounding([]);
     }
     setCurrentTicketId(draft.ticket_id);
     if (draft.kb_sources_json) {
@@ -679,6 +701,9 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     const approvalState = (approvalQuery.trim() || approvalSummary.trim() || approvalSources.length > 0)
       ? { query: approvalQuery, summary: approvalSummary, sources: approvalSources }
       : null;
+    const trustState = (confidence || grounding.length > 0)
+      ? { confidence, grounding }
+      : null;
 
     const diagnosisData: Record<string, unknown> = {};
     if (diagnosticNotes.trim()) {
@@ -696,6 +721,9 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     if (approvalState) {
       diagnosisData.approval = approvalState;
     }
+    if (trustState) {
+      diagnosisData.trust = trustState;
+    }
 
     return Object.keys(diagnosisData).length > 0
       ? JSON.stringify(diagnosisData)
@@ -710,6 +738,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     approvalSources,
     diagnosticNotes,
     treeResult,
+    confidence,
+    grounding,
   ]);
 
   const handleSaveDraft = useCallback(async () => {
@@ -933,6 +963,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
             sources={sources}
             generating={generating}
             metrics={metrics}
+            confidence={confidence}
+            grounding={grounding}
             draftId={savedDraftId}
             onSaveDraft={handleSaveDraft}
             onCancel={handleCancel}

@@ -62,6 +62,11 @@ const tabInfo: Record<Tab, TabInfo> = {
     description: 'PostgreSQL BM25 + HNSW search',
     icon: 'database'
   },
+  ops: {
+    title: 'Operations',
+    description: 'Deployment, eval harness, triage, and runbooks',
+    icon: 'terminal'
+  },
   settings: {
     title: 'Settings',
     description: 'App configuration',

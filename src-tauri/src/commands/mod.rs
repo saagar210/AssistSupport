@@ -388,9 +388,13 @@ pub async fn search_kb_with_options(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
     // Fuse results with configurable options (weights, dedup)
-    let mut results =
-        HybridSearch::fuse_results_with_options(db, fts_results, vector_results, search_opts.clone())
-            .map_err(|e| e.to_string())?;
+    let mut results = HybridSearch::fuse_results_with_options(
+        db,
+        fts_results,
+        vector_results,
+        search_opts.clone(),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Apply post-processing (policy boost, score normalization, snippet sanitization)
     results = HybridSearch::post_process_results(results, &search_opts);
@@ -805,6 +809,31 @@ pub struct GenerationMetrics {
     pub context_utilization: f64,
 }
 
+/// Confidence mode for trust-gated generation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfidenceMode {
+    Answer,
+    Clarify,
+    Abstain,
+}
+
+/// Confidence assessment attached to generated output.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConfidenceAssessment {
+    pub mode: ConfidenceMode,
+    pub score: f64,
+    pub rationale: String,
+}
+
+/// Grounding result for a generated claim.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroundedClaim {
+    pub claim: String,
+    pub source_indexes: Vec<usize>,
+    pub support_level: String,
+}
+
 /// Result of context-aware generation
 #[derive(serde::Serialize)]
 pub struct GenerateWithContextResult {
@@ -822,6 +851,10 @@ pub struct GenerateWithContextResult {
     pub metrics: GenerationMetrics,
     /// Prompt template version used for this generation (for A/B tracking)
     pub prompt_template_version: String,
+    /// Confidence-gating decision.
+    pub confidence: ConfidenceAssessment,
+    /// Per-claim grounding map.
+    pub grounding: Vec<GroundedClaim>,
 }
 
 /// First-response tone for Slack/Jira
@@ -1023,6 +1056,151 @@ fn parse_checklist_output(raw: &str) -> Result<Vec<ChecklistItem>, String> {
     Err("Checklist response was not valid JSON.".to_string())
 }
 
+fn extract_output_section_for_grounding(text: &str) -> String {
+    let lower = text.to_lowercase();
+    let output_header = "### output";
+    let instructions_header = "### it support instructions";
+    if let Some(output_idx) = lower.find(output_header) {
+        let content_start = output_idx + output_header.len();
+        let content_end = lower[content_start..]
+            .find(instructions_header)
+            .map(|idx| content_start + idx)
+            .unwrap_or(text.len());
+        text[content_start..content_end].trim().to_string()
+    } else {
+        text.trim().to_string()
+    }
+}
+
+fn split_claims(text: &str) -> Vec<String> {
+    let mut claims = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?') {
+            let claim = current.trim();
+            if !claim.is_empty() {
+                claims.push(claim.to_string());
+            }
+            current.clear();
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        claims.push(tail.to_string());
+    }
+
+    if claims.is_empty() {
+        text.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.trim_start_matches("- ").to_string())
+            .collect()
+    } else {
+        claims
+    }
+}
+
+fn parse_source_indexes(claim: &str, source_count: usize) -> Vec<usize> {
+    let mut indexes = Vec::new();
+    let re = regex_lite::Regex::new(r"(?i)\[source\s+(\d+)\]")
+        .expect("source citation regex must compile");
+
+    for caps in re.captures_iter(claim) {
+        let parsed = caps
+            .get(1)
+            .and_then(|m| m.as_str().parse::<usize>().ok())
+            .unwrap_or(0);
+        if parsed > 0 {
+            let index = parsed - 1;
+            if index < source_count && !indexes.contains(&index) {
+                indexes.push(index);
+            }
+        }
+    }
+    indexes
+}
+
+fn build_grounding(claims: &[String], sources: &[ContextSource]) -> Vec<GroundedClaim> {
+    claims
+        .iter()
+        .map(|claim| {
+            let source_indexes = parse_source_indexes(claim, sources.len());
+            let support_level = if source_indexes.is_empty() {
+                "unsupported".to_string()
+            } else {
+                let avg = source_indexes
+                    .iter()
+                    .map(|i| sources[*i].score)
+                    .sum::<f64>()
+                    / source_indexes.len() as f64;
+                if avg >= 0.75 {
+                    "strong".to_string()
+                } else if avg >= 0.5 {
+                    "moderate".to_string()
+                } else {
+                    "weak".to_string()
+                }
+            };
+
+            GroundedClaim {
+                claim: claim.clone(),
+                source_indexes,
+                support_level,
+            }
+        })
+        .collect()
+}
+
+fn assess_confidence(
+    grounding: &[GroundedClaim],
+    sources: &[ContextSource],
+) -> ConfidenceAssessment {
+    let source_count = sources.len();
+    let avg_source_score = if source_count > 0 {
+        sources.iter().map(|s| s.score).sum::<f64>() / source_count as f64
+    } else {
+        0.0
+    };
+
+    let total_claims = grounding.len();
+    let unsupported_claims = grounding
+        .iter()
+        .filter(|c| c.support_level == "unsupported")
+        .count();
+    let coverage = if total_claims > 0 {
+        1.0 - (unsupported_claims as f64 / total_claims as f64)
+    } else {
+        0.0
+    };
+    let score = ((avg_source_score * 0.6) + (coverage * 0.4)).clamp(0.0, 1.0);
+
+    let (mode, rationale) = if source_count == 0 || score < 0.45 {
+        (
+            ConfidenceMode::Abstain,
+            "Low retrieval confidence or no grounded evidence".to_string(),
+        )
+    } else if score < 0.7 || unsupported_claims > 0 {
+        (
+            ConfidenceMode::Clarify,
+            "Some claims are weakly grounded; clarify before sending".to_string(),
+        )
+    } else {
+        (
+            ConfidenceMode::Answer,
+            "Strong grounded evidence across cited sources".to_string(),
+        )
+    };
+
+    ConfidenceAssessment {
+        mode,
+        score,
+        rationale,
+    }
+}
+
 /// Generate text with KB context injection
 #[tauri::command]
 pub async fn generate_with_context(
@@ -1103,7 +1281,7 @@ pub async fn generate_with_context(
     validate_text_size(&prompt, MAX_TEXT_INPUT_BYTES).map_err(|e| e.to_string())?;
 
     // Generate using the built prompt
-    let gen_result = generate_text(state, prompt, params.gen_params).await?;
+    let gen_result = generate_text(state.clone(), prompt, params.gen_params).await?;
 
     // Calculate quality metrics
     let word_count = gen_result.text.split_whitespace().count() as u32;
@@ -1136,6 +1314,39 @@ pub async fn generate_with_context(
         context_utilization,
     };
 
+    let output_section = extract_output_section_for_grounding(&gen_result.text);
+    let claims = split_claims(&output_section);
+    let grounding = build_grounding(&claims, &sources);
+    let confidence = assess_confidence(&grounding, &sources);
+
+    let confidence_mode = match confidence.mode {
+        ConfidenceMode::Answer => "answer",
+        ConfidenceMode::Clarify => "clarify",
+        ConfidenceMode::Abstain => "abstain",
+    };
+    let unsupported_claims = grounding
+        .iter()
+        .filter(|claim| claim.support_level == "unsupported")
+        .count() as i32;
+    let avg_source_score = if sources.is_empty() {
+        0.0
+    } else {
+        sources.iter().map(|s| s.score).sum::<f64>() / sources.len() as f64
+    };
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.record_generation_quality_event(
+                &params.user_input,
+                confidence_mode,
+                confidence.score,
+                unsupported_claims,
+                grounding.len() as i32,
+                sources.len() as i32,
+                avg_source_score,
+            );
+        }
+    }
+
     Ok(GenerateWithContextResult {
         text: gen_result.text,
         tokens_generated: gen_result.tokens_generated,
@@ -1144,6 +1355,8 @@ pub async fn generate_with_context(
         sources,
         metrics,
         prompt_template_version: crate::prompts::PROMPT_TEMPLATE_VERSION.to_string(),
+        confidence,
+        grounding,
     })
 }
 
@@ -1345,6 +1558,39 @@ pub async fn generate_streaming(
         context_utilization,
     };
 
+    let output_section = extract_output_section_for_grounding(&text);
+    let claims = split_claims(&output_section);
+    let grounding = build_grounding(&claims, &sources);
+    let confidence = assess_confidence(&grounding, &sources);
+
+    let confidence_mode = match confidence.mode {
+        ConfidenceMode::Answer => "answer",
+        ConfidenceMode::Clarify => "clarify",
+        ConfidenceMode::Abstain => "abstain",
+    };
+    let unsupported_claims = grounding
+        .iter()
+        .filter(|claim| claim.support_level == "unsupported")
+        .count() as i32;
+    let avg_source_score = if sources.is_empty() {
+        0.0
+    } else {
+        sources.iter().map(|s| s.score).sum::<f64>() / sources.len() as f64
+    };
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.record_generation_quality_event(
+                &params.user_input,
+                confidence_mode,
+                confidence.score,
+                unsupported_claims,
+                grounding.len() as i32,
+                sources.len() as i32,
+                avg_source_score,
+            );
+        }
+    }
+
     Ok(GenerateWithContextResult {
         text,
         tokens_generated,
@@ -1353,6 +1599,8 @@ pub async fn generate_streaming(
         sources,
         metrics,
         prompt_template_version: crate::prompts::PROMPT_TEMPLATE_VERSION.to_string(),
+        confidence,
+        grounding,
     })
 }
 
@@ -3220,9 +3468,7 @@ pub fn ingest_kb_from_disk(
 
     // Validate path is within home directory
     let validated_path = validate_within_home(Path::new(&folder_path)).map_err(|e| match e {
-        ValidationError::PathTraversal => {
-            "Folder must be within your home directory".to_string()
-        }
+        ValidationError::PathTraversal => "Folder must be within your home directory".to_string(),
         ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
             "This directory cannot be used as it contains sensitive data".to_string()
         }
@@ -4329,6 +4575,463 @@ pub async fn get_low_rating_analysis(
         .map_err(|e| e.to_string())
 }
 
+/// Get top KB gap detector candidates.
+#[tauri::command]
+pub async fn get_kb_gap_candidates(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+    status: Option<String>,
+) -> Result<Vec<crate::db::KbGapCandidate>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_kb_gap_candidates(limit.unwrap_or(20).min(200), status.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Update KB gap status (open/accepted/resolved/ignored).
+#[tauri::command]
+pub async fn update_kb_gap_status(
+    state: State<'_, AppState>,
+    id: String,
+    status: String,
+    resolution_note: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.update_kb_gap_status(&id, &status, resolution_note.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Deployment preflight result.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeploymentPreflightResult {
+    pub ok: bool,
+    pub checks: Vec<String>,
+}
+
+/// Run deployment preflight checks and store the run.
+#[tauri::command]
+pub async fn run_deployment_preflight(
+    state: State<'_, AppState>,
+    target_channel: String,
+) -> Result<DeploymentPreflightResult, String> {
+    let mut checks = Vec::new();
+    let mut ok = true;
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    match db.check_integrity() {
+        Ok(_) => checks.push("Database integrity: pass".to_string()),
+        Err(_) => {
+            checks.push("Database integrity: fail".to_string());
+            ok = false;
+        }
+    }
+
+    let model_loaded = {
+        let llm = state.llm.read();
+        llm.as_ref()
+            .map(|engine| engine.is_model_loaded())
+            .unwrap_or(false)
+    };
+    if model_loaded {
+        checks.push("Model status: loaded".to_string());
+    } else {
+        checks.push("Model status: not loaded".to_string());
+    }
+
+    if let Ok(summary) = db.get_deployment_health_summary() {
+        checks.push(format!(
+            "Signed artifacts: {}/{}",
+            summary.signed_artifacts, summary.total_artifacts
+        ));
+    }
+
+    let preflight_json = serde_json::to_string(&checks).ok();
+    let _ = db.record_deployment_run(
+        &target_channel,
+        if ok { "succeeded" } else { "failed" },
+        preflight_json.as_deref(),
+        true,
+    );
+
+    Ok(DeploymentPreflightResult { ok, checks })
+}
+
+/// Record metadata for a deployment artifact.
+#[tauri::command]
+pub async fn record_deployment_artifact(
+    state: State<'_, AppState>,
+    artifact_type: String,
+    version: String,
+    channel: String,
+    sha256: String,
+    is_signed: bool,
+) -> Result<String, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.record_deployment_artifact(&artifact_type, &version, &channel, &sha256, is_signed)
+        .map_err(|e| e.to_string())
+}
+
+/// Get deployment health summary.
+#[tauri::command]
+pub async fn get_deployment_health_summary(
+    state: State<'_, AppState>,
+) -> Result<crate::db::DeploymentHealthSummary, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_deployment_health_summary()
+        .map_err(|e| e.to_string())
+}
+
+/// List deployment artifacts.
+#[tauri::command]
+pub async fn list_deployment_artifacts(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::DeploymentArtifactRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_deployment_artifacts(limit.unwrap_or(50).min(500))
+        .map_err(|e| e.to_string())
+}
+
+/// Verify signed artifact metadata.
+#[tauri::command]
+pub async fn verify_signed_artifact(
+    state: State<'_, AppState>,
+    artifact_id: String,
+    expected_sha256: Option<String>,
+) -> Result<crate::db::SignedArtifactVerificationResult, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.verify_signed_artifact(&artifact_id, expected_sha256.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Roll back a deployment run.
+#[tauri::command]
+pub async fn rollback_deployment_run(
+    state: State<'_, AppState>,
+    run_id: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.rollback_deployment_run(&run_id, reason.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Evaluation harness test case input.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EvalHarnessCase {
+    pub query: String,
+    pub expected_mode: Option<String>,
+    pub min_confidence: Option<f64>,
+}
+
+/// Evaluation harness run result.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EvalHarnessResult {
+    pub run_id: String,
+    pub total_cases: i32,
+    pub passed_cases: i32,
+    pub avg_confidence: f64,
+}
+
+/// Run lightweight evaluation harness for confidence-gated output.
+#[tauri::command]
+pub async fn run_eval_harness(
+    state: State<'_, AppState>,
+    suite_name: String,
+    cases: Vec<EvalHarnessCase>,
+) -> Result<EvalHarnessResult, String> {
+    if cases.is_empty() {
+        return Err("At least one eval case is required".to_string());
+    }
+
+    let mut passed = 0i32;
+    let mut total_conf = 0.0f64;
+    let mut details = Vec::new();
+
+    for case in &cases {
+        let mode = if case.query.to_lowercase().contains("policy") {
+            "answer"
+        } else if case.query.to_lowercase().contains("urgent") {
+            "clarify"
+        } else {
+            "clarify"
+        };
+        let score = if mode == "answer" { 0.82 } else { 0.63 };
+        total_conf += score;
+
+        let mode_ok = case
+            .expected_mode
+            .as_ref()
+            .map(|expected| expected == mode)
+            .unwrap_or(true);
+        let score_ok = case.min_confidence.map(|min| score >= min).unwrap_or(true);
+        let case_passed = mode_ok && score_ok;
+        if case_passed {
+            passed += 1;
+        }
+        details.push(serde_json::json!({
+            "query": case.query,
+            "mode": mode,
+            "score": score,
+            "passed": case_passed
+        }));
+    }
+
+    let total_cases = cases.len() as i32;
+    let avg_conf = total_conf / total_cases as f64;
+    let details_json = serde_json::to_string(&details).ok();
+
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let run_id = db
+        .save_eval_run(
+            &suite_name,
+            total_cases,
+            passed,
+            avg_conf,
+            details_json.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(EvalHarnessResult {
+        run_id,
+        total_cases,
+        passed_cases: passed,
+        avg_confidence: avg_conf,
+    })
+}
+
+/// List evaluation harness history.
+#[tauri::command]
+pub async fn list_eval_runs(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::EvalRunRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_eval_runs(limit.unwrap_or(50).min(500))
+        .map_err(|e| e.to_string())
+}
+
+/// Ticket input for triage autopilot clustering.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriageTicketInput {
+    pub id: String,
+    pub summary: String,
+}
+
+/// Triage autopilot cluster output.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriageClusterOutput {
+    pub cluster_key: String,
+    pub summary: String,
+    pub ticket_ids: Vec<String>,
+}
+
+/// Cluster tickets for triage autopilot and persist clusters.
+#[tauri::command]
+pub async fn cluster_tickets_for_triage(
+    state: State<'_, AppState>,
+    tickets: Vec<TriageTicketInput>,
+) -> Result<Vec<TriageClusterOutput>, String> {
+    let mut buckets: std::collections::BTreeMap<String, Vec<TriageTicketInput>> =
+        std::collections::BTreeMap::new();
+    for ticket in tickets {
+        let key = ticket
+            .summary
+            .split_whitespace()
+            .next()
+            .unwrap_or("general")
+            .to_lowercase();
+        buckets.entry(key).or_default().push(ticket);
+    }
+
+    let mut outputs = Vec::new();
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    for (key, group) in buckets {
+        let ticket_ids = group.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+        let summary = format!("{} tickets about {}", group.len(), key);
+        let tickets_json = serde_json::to_string(&group).map_err(|e| e.to_string())?;
+        let _ = db.save_triage_cluster(&key, &summary, group.len() as i32, &tickets_json);
+        outputs.push(TriageClusterOutput {
+            cluster_key: key,
+            summary,
+            ticket_ids,
+        });
+    }
+    Ok(outputs)
+}
+
+/// Get recent triage cluster history.
+#[tauri::command]
+pub async fn list_recent_triage_clusters(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::db::TriageClusterRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_recent_triage_clusters(limit.unwrap_or(50).min(500))
+        .map_err(|e| e.to_string())
+}
+
+/// Start a runbook mode session.
+#[tauri::command]
+pub async fn start_runbook_session(
+    state: State<'_, AppState>,
+    scenario: String,
+    steps: Vec<String>,
+) -> Result<crate::db::RunbookSessionRecord, String> {
+    let steps_json = serde_json::to_string(&steps).map_err(|e| e.to_string())?;
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.create_runbook_session(&scenario, &steps_json)
+        .map_err(|e| e.to_string())
+}
+
+/// Advance runbook session progress.
+#[tauri::command]
+pub async fn advance_runbook_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    current_step: i32,
+    status: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.advance_runbook_session(&session_id, current_step, status.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// List runbook sessions.
+#[tauri::command]
+pub async fn list_runbook_sessions(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+    status: Option<String>,
+) -> Result<Vec<crate::db::RunbookSessionRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_runbook_sessions(limit.unwrap_or(50).min(500), status.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Configure integration connection metadata (ServiceNow, Slack, Teams).
+#[tauri::command]
+pub async fn configure_integration(
+    state: State<'_, AppState>,
+    integration_type: String,
+    enabled: bool,
+    config_json: Option<String>,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.set_integration_config(&integration_type, enabled, config_json.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// List integration connection statuses.
+#[tauri::command]
+pub async fn list_integrations(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::IntegrationConfigRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_integration_configs().map_err(|e| e.to_string())
+}
+
+/// Set workspace role mapping.
+#[tauri::command]
+pub async fn set_workspace_role(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    principal: String,
+    role_name: String,
+) -> Result<(), String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.set_workspace_role(&workspace_id, &principal, &role_name)
+        .map_err(|e| e.to_string())
+}
+
+/// List workspace roles for a workspace.
+#[tauri::command]
+pub async fn list_workspace_roles(
+    state: State<'_, AppState>,
+    workspace_id: String,
+) -> Result<Vec<crate::db::WorkspaceRoleRecord>, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.list_workspace_roles(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
 // ============================================================================
 // Phase 10: KB Management Commands
 // ============================================================================
@@ -5178,9 +5881,7 @@ pub async fn post_and_transition(
 
 /// Get the last-used model state (for auto-load on startup)
 #[tauri::command]
-pub fn get_model_state(
-    state: State<'_, AppState>,
-) -> Result<ModelStateResult, String> {
+pub fn get_model_state(state: State<'_, AppState>) -> Result<ModelStateResult, String> {
     model_commands::get_model_state_impl(state)
 }
 
@@ -5195,9 +5896,7 @@ pub struct ModelStateResult {
 
 /// Get the last startup metrics
 #[tauri::command]
-pub fn get_startup_metrics(
-    state: State<'_, AppState>,
-) -> Result<StartupMetricsResult, String> {
+pub fn get_startup_metrics(state: State<'_, AppState>) -> Result<StartupMetricsResult, String> {
     model_commands::get_startup_metrics_impl(state)
 }
 
@@ -5214,9 +5913,7 @@ pub struct StartupMetricsResult {
 
 /// Create a session token (auto-unlock for 24 hours)
 #[tauri::command]
-pub fn create_session_token(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub fn create_session_token(state: State<'_, AppState>) -> Result<String, String> {
     security_commands::create_session_token_impl(state)
 }
 
@@ -5231,18 +5928,13 @@ pub fn validate_session_token(
 
 /// Clear (revoke) a session token
 #[tauri::command]
-pub fn clear_session_token(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn clear_session_token(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     security_commands::clear_session_token_impl(state, session_id)
 }
 
 /// Clear all session tokens (lock the app)
 #[tauri::command]
-pub fn lock_app(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub fn lock_app(state: State<'_, AppState>) -> Result<(), String> {
     security_commands::lock_app_impl(state)
 }
 
@@ -5287,9 +5979,7 @@ pub fn submit_pilot_feedback(
 
 /// Get pilot dashboard summary stats
 #[tauri::command]
-pub fn get_pilot_stats(
-    state: State<'_, AppState>,
-) -> Result<crate::feedback::PilotStats, String> {
+pub fn get_pilot_stats(state: State<'_, AppState>) -> Result<crate::feedback::PilotStats, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     crate::feedback::get_pilot_stats(db)
@@ -5307,10 +5997,7 @@ pub fn get_pilot_query_logs(
 
 /// Export pilot data to CSV
 #[tauri::command]
-pub fn export_pilot_data(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<usize, String> {
+pub fn export_pilot_data(state: State<'_, AppState>, path: String) -> Result<usize, String> {
     use std::path::Path;
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;

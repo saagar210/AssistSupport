@@ -7,9 +7,17 @@ import { useDownload } from '../../hooks/useDownload';
 import { useJira } from '../../hooks/useJira';
 import { useEmbedding } from '../../hooks/useEmbedding';
 import { useCustomVariables } from '../../hooks/useCustomVariables';
+import { useFeatureOps } from '../../hooks/useFeatureOps';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
-import type { ModelInfo, CustomVariable, AuditEntry, StartupMetricsResult } from '../../types';
+import type {
+  AuditEntry,
+  CustomVariable,
+  DeploymentHealthSummary,
+  IntegrationConfigRecord,
+  ModelInfo,
+  StartupMetricsResult,
+} from '../../types';
 import './SettingsTab.css';
 
 const AVAILABLE_MODELS: ModelInfo[] = [
@@ -84,6 +92,12 @@ export function SettingsTab() {
     modelInfo: embeddingModelInfo,
     loading: embeddingLoading,
   } = useEmbedding();
+  const {
+    getDeploymentHealthSummary,
+    runDeploymentPreflight,
+    listIntegrations,
+    configureIntegration,
+  } = useFeatureOps();
   const { theme, setTheme } = useTheme();
   const { success: showSuccess, error: showError } = useToastContext();
   const {
@@ -113,6 +127,10 @@ export function SettingsTab() {
   // Startup metrics and session state
   const [startupMetrics, setStartupMetrics] = useState<StartupMetricsResult | null>(null);
   const [lockingApp, setLockingApp] = useState(false);
+  const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealthSummary | null>(null);
+  const [deployPreflightChecks, setDeployPreflightChecks] = useState<string[]>([]);
+  const [deployPreflightRunning, setDeployPreflightRunning] = useState(false);
+  const [integrations, setIntegrations] = useState<IntegrationConfigRecord[]>([]);
 
   // Custom variables state
   const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
@@ -143,7 +161,7 @@ export function SettingsTab() {
 
   async function loadInitialState() {
     try {
-      const [loaded, downloaded, folder, stats, consent, jiraConfigResult, ctxWindow, embDownloaded] = await Promise.all([
+      const [loaded, downloaded, folder, stats, consent, jiraConfigResult, ctxWindow, embDownloaded, deployHealth, integrationsList] = await Promise.all([
         getLoadedModel(),
         listModels(),
         getKbFolder(),
@@ -152,6 +170,8 @@ export function SettingsTab() {
         checkJiraConfig().catch(() => false),
         getContextWindow().catch(() => null),
         isEmbeddingDownloaded().catch(() => false),
+        getDeploymentHealthSummary().catch(() => null),
+        listIntegrations().catch(() => []),
       ]);
       setLoadedModel(loaded);
       setDownloadedModels(downloaded);
@@ -163,6 +183,8 @@ export function SettingsTab() {
       setJiraConfigured(jiraConfigResult);
       setContextWindowSize(ctxWindow);
       setEmbeddingDownloaded(embDownloaded);
+      setDeploymentHealth(deployHealth);
+      setIntegrations(integrationsList);
 
       // Check embedding model status
       await checkEmbeddingStatus();
@@ -499,6 +521,35 @@ export function SettingsTab() {
       setAuditExporting(false);
     }
   }, [showSuccess, showError]);
+
+  const handleRunDeploymentPreflight = useCallback(async () => {
+    setDeployPreflightRunning(true);
+    try {
+      const result = await runDeploymentPreflight('stable');
+      setDeployPreflightChecks(result.checks);
+      const latest = await getDeploymentHealthSummary().catch(() => null);
+      setDeploymentHealth(latest);
+      if (result.ok) {
+        showSuccess('Deployment preflight passed');
+      } else {
+        showError('Deployment preflight reported failures');
+      }
+    } catch (err) {
+      showError(`Deployment preflight failed: ${err}`);
+    } finally {
+      setDeployPreflightRunning(false);
+    }
+  }, [runDeploymentPreflight, getDeploymentHealthSummary, showSuccess, showError]);
+
+  const handleToggleIntegration = useCallback(async (integrationType: string, enabled: boolean) => {
+    try {
+      await configureIntegration(integrationType, enabled);
+      const updated = await listIntegrations();
+      setIntegrations(updated);
+    } catch (err) {
+      showError(`Failed to update ${integrationType}: ${err}`);
+    }
+  }, [configureIntegration, listIntegrations, showError]);
 
   return (
     <div className="settings-tab">
@@ -987,6 +1038,58 @@ export function SettingsTab() {
             </Button>
           </form>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h2>Deployment &amp; Integrations</h2>
+        <p className="settings-description">
+          Deployment health, preflight validation, and integration toggles for ServiceNow/Slack/Teams.
+        </p>
+        <div className="settings-row">
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={handleRunDeploymentPreflight}
+            disabled={deployPreflightRunning}
+          >
+            {deployPreflightRunning ? 'Running preflight...' : 'Run Deployment Preflight'}
+          </Button>
+        </div>
+        {deploymentHealth && (
+          <div className="startup-metrics">
+            <p className="text-sm text-secondary">
+              Signed artifacts: {deploymentHealth.signed_artifacts}/{deploymentHealth.total_artifacts}
+            </p>
+            {deploymentHealth.last_run && (
+              <p className="text-sm text-secondary">
+                Last run: {deploymentHealth.last_run.status} ({deploymentHealth.last_run.target_channel})
+              </p>
+            )}
+          </div>
+        )}
+        {deployPreflightChecks.length > 0 && (
+          <ul className="audit-list">
+            {deployPreflightChecks.map((check, idx) => (
+              <li key={`${check}-${idx}`} className="audit-row">{check}</li>
+            ))}
+          </ul>
+        )}
+        <div className="settings-row">
+          {['servicenow', 'slack', 'teams'].map(type => {
+            const current = integrations.find(i => i.integration_type === type);
+            const enabled = current?.enabled ?? false;
+            return (
+              <label key={type} className="toggle-option">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => void handleToggleIntegration(type, e.target.checked)}
+                />
+                <span>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+              </label>
+            );
+          })}
+        </div>
       </section>
 
       <section className="settings-section">

@@ -6,7 +6,7 @@ interface TabBarProps {
   onTabChange: (tab: Tab) => void;
 }
 
-const tabs: { id: Tab; label: string; shortcut: string }[] = [
+const tabs: { id: Tab; label: string; shortcut?: string }[] = [
   { id: 'draft', label: 'Draft', shortcut: '1' },
   { id: 'followups', label: 'Follow-ups', shortcut: '2' },
   { id: 'sources', label: 'Sources', shortcut: '3' },
@@ -15,6 +15,7 @@ const tabs: { id: Tab; label: string; shortcut: string }[] = [
   { id: 'analytics', label: 'Analytics', shortcut: '6' },
   { id: 'pilot', label: 'Pilot', shortcut: '7' },
   { id: 'search', label: 'Search', shortcut: '8' },
+  { id: 'ops', label: 'Ops' },
   { id: 'settings', label: 'Settings', shortcut: '9' },
 ];
 
@@ -26,7 +27,7 @@ export function TabBar({ activeTab, onTabChange }: TabBarProps) {
           key={tab.id}
           className={`tab-item ${activeTab === tab.id ? 'active' : ''}`}
           onClick={() => onTabChange(tab.id)}
-          title={`${tab.label} (Cmd+${tab.shortcut})`}
+          title={tab.shortcut ? `${tab.label} (Cmd+${tab.shortcut})` : tab.label}
         >
           {tab.label}
         </button>
