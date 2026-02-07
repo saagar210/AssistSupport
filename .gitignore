@@ -70,3 +70,4 @@ venv/
 .cache/
 tmp/
 .next/
+dump.rdb
