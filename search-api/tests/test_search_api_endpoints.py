@@ -30,6 +30,7 @@ if "intent_detection" not in sys.modules:
     sys.modules["intent_detection"] = intent_detection_stub
 
 import search_api  # noqa: E402
+from runtime_config import RuntimeConfigError  # noqa: E402
 
 
 class FakeEngine:
@@ -232,3 +233,36 @@ def test_authentication_checks_apply_in_production(client, monkeypatch):
 
     # Reset env for neighboring tests if run in shared process.
     monkeypatch.setenv("ENVIRONMENT", "development")
+
+
+def test_production_errors_hide_internal_messages(client, monkeypatch):
+    test_client, fake_engine = client
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(search_api, "API_KEY", "secret-key")
+    auth = {"Authorization": "Bearer secret-key"}
+
+    fake_engine.mode = "error"
+    search_response = test_client.post("/search", json={"query": "policy"}, headers=auth)
+    assert search_response.status_code == 500
+    assert search_response.get_json()["error"] == "Internal server error"
+
+    def _raise_feedback_error(*_args, **_kwargs):
+        raise RuntimeError("simulated feedback failure")
+
+    monkeypatch.setattr(fake_engine, "_log_feedback", _raise_feedback_error)
+    feedback_response = test_client.post(
+        "/feedback",
+        json={"query_id": "q1", "result_rank": 1, "rating": "helpful"},
+        headers=auth,
+    )
+    assert feedback_response.status_code == 500
+    assert feedback_response.get_json()["error"] == "Internal server error"
+
+
+def test_run_server_rejects_default_rate_limit_storage_in_production(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ASSISTSUPPORT_API_KEY", "secret-key")
+    monkeypatch.setenv("ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI", "memory://")
+
+    with pytest.raises(RuntimeConfigError, match="ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI"):
+        search_api.run_server()

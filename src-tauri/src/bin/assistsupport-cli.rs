@@ -131,7 +131,13 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                     let query = args.get(3).ok_or("Missing search query")?.clone();
                     let limit = args
                         .get(4)
-                        .and_then(|a| if a == "--limit" || a == "-n" { args.get(5) } else { None })
+                        .and_then(|a| {
+                            if a == "--limit" || a == "-n" {
+                                args.get(5)
+                            } else {
+                                None
+                            }
+                        })
                         .and_then(|n| n.parse().ok())
                         .unwrap_or(5);
                     Ok(Command::Kb(KbCommand::Search { query, limit }))
@@ -372,7 +378,9 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
                     [],
                     |row| row.get(0),
                 )
-                .map_err(|_| "KB folder not configured. Set it in the app first (Settings > Knowledge Base).")?;
+                .map_err(|_| {
+                    "KB folder not configured. Set it in the app first (Settings > Knowledge Base)."
+                })?;
 
             let path = std::path::Path::new(&folder_path);
             if !path.exists() {
@@ -406,10 +414,7 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
                             println!("  Skipped: {}", skipped);
                             println!("  Errors:  {}", errors);
                         }
-                        IndexProgress::Error {
-                            file_name,
-                            message,
-                        } => {
+                        IndexProgress::Error { file_name, message } => {
                             eprintln!("  Error in {}: {}", file_name, message);
                         }
                     }
@@ -438,12 +443,7 @@ fn run_kb_command(cmd: KbCommand) -> Result<(), String> {
                         .and_then(|n| n.to_str())
                         .unwrap_or(&r.file_path);
                     let heading = r.heading_path.as_deref().unwrap_or("");
-                    println!(
-                        "  {}. [score: {:.4}] {}",
-                        i + 1,
-                        r.score,
-                        filename
-                    );
+                    println!("  {}. [score: {:.4}] {}", i + 1, r.score, filename);
                     if !heading.is_empty() {
                         println!("     heading: {}", heading);
                     }

@@ -40,9 +40,10 @@ impl DiskIngester {
         folder: &Path,
         namespace_id: &str,
     ) -> IngestResult<DiskIngestResult> {
-        let files = self.indexer.scan_folder(folder).map_err(|e| {
-            IngestError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
-        })?;
+        let files = self
+            .indexer
+            .scan_folder(folder)
+            .map_err(|e| IngestError::Io(std::io::Error::other(e.to_string())))?;
         let total_files = files.len();
 
         let mut ingested = 0;
@@ -89,7 +90,7 @@ impl DiskIngester {
 
         // Compute file hash for incremental check
         let file_hash = KbIndexer::file_hash(file_path)
-            .map_err(|e| IngestError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| IngestError::Io(std::io::Error::other(e.to_string())))?;
 
         // Find or create ingest source
         let source = match db.find_ingest_source("file", &source_uri, namespace_id)? {
@@ -150,9 +151,10 @@ impl DiskIngester {
         let run_id = db.create_ingest_run(&source.id)?;
 
         // Parse and chunk the document
-        let parsed = self.indexer.parse_document(file_path).map_err(|e| {
-            IngestError::Parse(e.to_string())
-        })?;
+        let parsed = self
+            .indexer
+            .parse_document(file_path)
+            .map_err(|e| IngestError::Parse(e.to_string()))?;
 
         let title = parsed
             .title
@@ -204,7 +206,7 @@ impl DiskIngester {
                     source.id,
                 ],
             )
-            .map_err(|e| IngestError::Sqlite(e))?;
+            .map_err(IngestError::Sqlite)?;
 
         // Insert chunks with namespace_id
         for (i, chunk) in chunks.iter().enumerate() {
@@ -223,7 +225,7 @@ impl DiskIngester {
                         namespace_id,
                     ],
                 )
-                .map_err(|e| IngestError::Sqlite(e))?;
+                .map_err(IngestError::Sqlite)?;
         }
 
         // Determine if this was an add or update

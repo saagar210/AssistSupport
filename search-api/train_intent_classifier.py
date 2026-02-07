@@ -7,11 +7,10 @@ Exports a joblib model for use in production.
 
 import sys
 import os
-import psycopg2
 import json
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from db_config import connect_db
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -186,12 +185,7 @@ TRAINING_DATA = [
 
 def load_real_queries():
     """Load and deduplicate real queries from the database."""
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     cur = conn.cursor()
     cur.execute("""
         SELECT DISTINCT query_text, category_filter, intent_confidence

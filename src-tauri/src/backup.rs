@@ -7,6 +7,7 @@
 
 use crate::db::{CustomVariable, Database, DecisionTree, ResponseTemplate, SavedDraft};
 use crate::security::ExportCrypto;
+use crate::validation::validate_within_home;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
@@ -502,11 +503,61 @@ fn export_kb_config(db: &Database) -> Result<KbConfig, BackupError> {
 
 /// Import a setting into the database
 fn import_setting(db: &Database, key: &str, value: &str) -> Result<(), BackupError> {
+    // Defense in depth: reject imported KB paths that violate home/sensitive-dir validation.
+    // Backups may come from untrusted sources, so settings that drive filesystem access
+    // must be re-validated before persistence.
+    let Some(safe_value) = sanitize_imported_setting(key, value) else {
+        return Ok(());
+    };
+
     let conn = db.conn();
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        rusqlite::params![key, value],
+        rusqlite::params![key, safe_value],
     )
     .map_err(|e| BackupError::Database(e.to_string()))?;
     Ok(())
+}
+
+fn sanitize_imported_setting(key: &str, value: &str) -> Option<String> {
+    if key != "kb_folder" {
+        return Some(value.to_string());
+    }
+
+    let path = Path::new(value);
+    if !path.is_dir() {
+        tracing::warn!("Skipped imported kb_folder because directory does not exist");
+        return None;
+    }
+
+    match validate_within_home(path) {
+        Ok(validated) => Some(validated.to_string_lossy().to_string()),
+        Err(err) => {
+            tracing::warn!("Skipped unsafe imported kb_folder value: {}", err);
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_imported_setting;
+
+    #[test]
+    fn sanitize_imported_setting_accepts_non_kb_keys() {
+        let result = sanitize_imported_setting("theme", "dark");
+        assert_eq!(result, Some("dark".to_string()));
+    }
+
+    #[test]
+    fn sanitize_imported_setting_rejects_outside_home_kb_path() {
+        let result = sanitize_imported_setting("kb_folder", "/etc");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn sanitize_imported_setting_rejects_missing_kb_path() {
+        let result = sanitize_imported_setting("kb_folder", "/path/that/does/not/exist");
+        assert!(result.is_none());
+    }
 }

@@ -42,6 +42,17 @@ pub struct Database {
     path: PathBuf,
 }
 
+/// Metrics payload recorded for generation quality monitoring.
+pub struct GenerationQualityEvent<'a> {
+    pub query_text: &'a str,
+    pub confidence_mode: &'a str,
+    pub confidence_score: f64,
+    pub unsupported_claims: i32,
+    pub total_claims: i32,
+    pub source_count: i32,
+    pub avg_source_score: f64,
+}
+
 impl Database {
     /// Open or create encrypted database
     pub fn open(path: &Path, master_key: &MasterKey) -> Result<Self, DbError> {
@@ -3862,13 +3873,7 @@ impl Database {
     /// Record generation quality event and update KB gap detector counters.
     pub fn record_generation_quality_event(
         &self,
-        query_text: &str,
-        confidence_mode: &str,
-        confidence_score: f64,
-        unsupported_claims: i32,
-        total_claims: i32,
-        source_count: i32,
-        avg_source_score: f64,
+        event: GenerationQualityEvent<'_>,
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let event_id = uuid::Uuid::new_v4().to_string();
@@ -3879,18 +3884,19 @@ impl Database {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 event_id,
-                query_text,
-                confidence_mode,
-                confidence_score,
-                unsupported_claims,
-                total_claims,
-                source_count,
-                avg_source_score,
+                event.query_text,
+                event.confidence_mode,
+                event.confidence_score,
+                event.unsupported_claims,
+                event.total_claims,
+                event.source_count,
+                event.avg_source_score,
                 &now
             ],
         )?;
 
-        let query_signature = query_text
+        let query_signature = event
+            .query_text
             .trim()
             .to_lowercase()
             .chars()
@@ -3900,8 +3906,12 @@ impl Database {
             return Ok(());
         }
 
-        let low_confidence_increment = if confidence_mode == "answer" { 0 } else { 1 };
-        let unsupported_increment = if unsupported_claims > 0 { 1 } else { 0 };
+        let low_confidence_increment = if event.confidence_mode == "answer" {
+            0
+        } else {
+            1
+        };
+        let unsupported_increment = if event.unsupported_claims > 0 { 1 } else { 0 };
 
         let suggested_category = if query_signature.contains("policy")
             || query_signature.contains("allowed")
@@ -3930,7 +3940,7 @@ impl Database {
             params![
                 uuid::Uuid::new_v4().to_string(),
                 query_signature,
-                query_text.trim(),
+                event.query_text.trim(),
                 low_confidence_increment,
                 unsupported_increment,
                 suggested_category,

@@ -6,11 +6,9 @@ use crate::kb::watcher::KbWatcher;
 /// Global watcher instance
 static KB_WATCHER: Lazy<StdMutex<Option<KbWatcher>>> = Lazy::new(|| StdMutex::new(None));
 
-pub(crate) fn set_kb_folder_impl(state: State<'_, AppState>, folder_path: String) -> Result<(), String> {
-    let path = std::path::Path::new(&folder_path);
-
-    // Validate path is within home directory (auto-creates if needed)
-    let validated_path = validate_within_home(path).map_err(|e| match e {
+fn validate_stored_kb_path(folder_path: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::Path::new(folder_path);
+    validate_within_home(path).map_err(|e| match e {
         ValidationError::PathTraversal => {
             "KB folder must be within your home directory".to_string()
         }
@@ -18,7 +16,15 @@ pub(crate) fn set_kb_folder_impl(state: State<'_, AppState>, folder_path: String
             "This directory cannot be used as it contains sensitive data".to_string()
         }
         _ => format!("Invalid KB folder: {}", e),
-    })?;
+    })
+}
+
+pub(crate) fn set_kb_folder_impl(
+    state: State<'_, AppState>,
+    folder_path: String,
+) -> Result<(), String> {
+    // Validate path is within home directory (auto-creates if needed)
+    let validated_path = validate_stored_kb_path(&folder_path)?;
 
     // Verify it's a directory
     if !validated_path.is_dir() {
@@ -73,15 +79,15 @@ pub(crate) async fn index_kb_impl(
         )
         .map_err(|_| "KB folder not configured")?;
 
-    let path = std::path::Path::new(&folder_path);
-    if !path.exists() {
+    let validated_path = validate_stored_kb_path(&folder_path)?;
+    if !validated_path.exists() {
         return Err("KB folder does not exist".into());
     }
 
     // Run indexing with progress events
     let indexer = KbIndexer::new();
     let result = indexer
-        .index_folder(db, path, |progress| {
+        .index_folder(db, &validated_path, |progress| {
             // Emit progress event to frontend
             let _ = window.emit("kb:indexing:progress", &progress);
         })
@@ -161,10 +167,10 @@ pub(crate) async fn start_kb_watcher_impl(
             .map_err(|_| "KB folder not configured")?
     };
 
-    let path = std::path::Path::new(&folder_path);
+    let validated_path = validate_stored_kb_path(&folder_path)?;
 
     // Create and start watcher
-    let mut watcher = KbWatcher::new(path).map_err(|e| e.to_string())?;
+    let mut watcher = KbWatcher::new(&validated_path).map_err(|e| e.to_string())?;
     let mut rx = watcher.start().map_err(|e| e.to_string())?;
 
     // Store watcher instance

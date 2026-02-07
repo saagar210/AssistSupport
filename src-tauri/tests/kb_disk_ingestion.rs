@@ -87,9 +87,7 @@ Standard peripherals provided: external monitor, keyboard, mouse.
     ctx.db.ensure_namespace_exists("default").unwrap();
 
     let ingester = DiskIngester::new();
-    let result = ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    let result = ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
 
     // Verify counts
     assert_eq!(result.total_files, 3, "Should find 3 files");
@@ -147,7 +145,10 @@ Standard peripherals provided: external monitor, keyboard, mouse.
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(disk_docs, 3, "All documents should have source_type='file' and namespace_id='default'");
+    assert_eq!(
+        disk_docs, 3,
+        "All documents should have source_type='file' and namespace_id='default'"
+    );
 }
 
 // ============================================================================
@@ -208,9 +209,7 @@ USB flash drives are not on the approved list.
     ctx.db.ensure_namespace_exists("default").unwrap();
 
     let ingester = DiskIngester::new();
-    ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
 
     // Use fts_search for basic retrieval, then post_process for policy boost
     let results = HybridSearch::fts_search(&ctx.db, "flash drive forbidden", 10).unwrap();
@@ -271,9 +270,7 @@ Laptop requests are typically fulfilled within 3-5 business days.
     ctx.db.ensure_namespace_exists("default").unwrap();
 
     let ingester = DiskIngester::new();
-    ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
 
     // Procedural query — should NOT trigger policy boost
     let results = HybridSearch::fts_search(&ctx.db, "request laptop", 10).unwrap();
@@ -328,13 +325,10 @@ USB drives are not permitted. Use approved cloud platforms.
     ctx.db.ensure_namespace_exists("default").unwrap();
 
     let ingester = DiskIngester::new();
-    ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
 
     // Search with policy boost
-    let options_with_boost =
-        SearchOptions::new(10).with_query_text("Are USB drives allowed?");
+    let options_with_boost = SearchOptions::new(10).with_query_text("Are USB drives allowed?");
     let results_boosted =
         HybridSearch::search_with_options(&ctx.db, "USB drives allowed", options_with_boost)
             .unwrap();
@@ -344,8 +338,14 @@ USB drives are not permitted. Use approved cloud platforms.
     let results_no_boost =
         HybridSearch::search_with_options(&ctx.db, "USB drives allowed", options_no_boost).unwrap();
 
-    assert!(!results_boosted.is_empty(), "Boosted search should have results");
-    assert!(!results_no_boost.is_empty(), "Non-boosted search should have results");
+    assert!(
+        !results_boosted.is_empty(),
+        "Boosted search should have results"
+    );
+    assert!(
+        !results_no_boost.is_empty(),
+        "Non-boosted search should have results"
+    );
 
     // With policy boost, POLICIES/ result should be first
     assert!(
@@ -397,32 +397,29 @@ fn test_incremental_reindex_skips_unchanged() {
     let ingester = DiskIngester::new();
 
     // First ingestion — both files indexed
-    let result1 = ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    let result1 = ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
     assert_eq!(result1.ingested, 2, "First run: both files ingested");
     assert_eq!(result1.skipped, 0, "First run: none skipped");
 
     // Second ingestion — no changes, both skipped
-    let result2 = ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    let result2 = ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
     assert_eq!(result2.ingested, 0, "Second run: none ingested (unchanged)");
     assert_eq!(result2.skipped, 2, "Second run: both skipped");
 
     // Modify one file
-    std::fs::write(&mutable_path, "# Mutable v2\n\nUpdated content with new information.").unwrap();
+    std::fs::write(
+        &mutable_path,
+        "# Mutable v2\n\nUpdated content with new information.",
+    )
+    .unwrap();
 
     // Third ingestion — only the changed file re-indexed
-    let result3 = ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    let result3 = ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
     assert_eq!(result3.ingested, 1, "Third run: one file re-ingested");
     assert_eq!(result3.skipped, 1, "Third run: one file skipped");
 
     // Verify the re-indexed document has updated content
-    let search_results =
-        HybridSearch::fts_search(&ctx.db, "updated new information", 10).unwrap();
+    let search_results = HybridSearch::fts_search(&ctx.db, "updated new information", 10).unwrap();
     assert!(
         !search_results.is_empty(),
         "Should find updated content after re-index"
@@ -557,9 +554,7 @@ Azure Blob requires a separate access request.
 
     // Ingest the entire KB
     let ingester = DiskIngester::new();
-    let result = ingester
-        .ingest_folder(&ctx.db, &kb_dir, "default")
-        .unwrap();
+    let result = ingester.ingest_folder(&ctx.db, &kb_dir, "default").unwrap();
 
     assert_eq!(result.total_files, 5, "Should find all 5 KB files");
     assert_eq!(result.ingested, 5, "Should ingest all 5 files");
@@ -580,13 +575,17 @@ Azure Blob requires a separate access request.
 
     // ---- Query 2: Procedure question (should return PROCEDURES first) ----
     let proc_fts = HybridSearch::fts_search(&ctx.db, "request software", 10).unwrap();
-    assert!(!proc_fts.is_empty(), "Procedure query should return results");
+    assert!(
+        !proc_fts.is_empty(),
+        "Procedure query should return results"
+    );
 
     let proc_opts = SearchOptions::new(10).with_query_text("How do I request new software?");
     let proc_results = HybridSearch::post_process_results(proc_fts, &proc_opts);
 
     assert!(
-        proc_results[0].file_path.contains("PROCEDURES") || proc_results[0].file_path.contains("software"),
+        proc_results[0].file_path.contains("PROCEDURES")
+            || proc_results[0].file_path.contains("software"),
         "Procedure query should rank relevant procedure first, got: {}",
         proc_results[0].file_path
     );

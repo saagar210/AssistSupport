@@ -276,7 +276,8 @@ impl LlmEngine {
         if tokens.len() + 1 > n_ctx as usize {
             return Err(LlmError::Generate(format!(
                 "Prompt too long: {} tokens exceeds context window of {}",
-                tokens.len(), n_ctx
+                tokens.len(),
+                n_ctx
             )));
         }
 
@@ -290,7 +291,10 @@ impl LlmEngine {
         let decode_chunk_size = 512;
         eprintln!(
             "LLM decode: {} prompt tokens, n_ctx={}, n_batch={}, chunk_size={}",
-            tokens.len(), n_ctx, n_batch, decode_chunk_size
+            tokens.len(),
+            n_ctx,
+            n_batch,
+            decode_chunk_size
         );
         let mut pos = 0;
         while pos < tokens.len() {
@@ -306,7 +310,10 @@ impl LlmEngine {
                     .map_err(|e| LlmError::Generate(format!("Batch add error: {}", e)))?;
             }
 
-            eprintln!("  decoding chunk {}-{} ({} tokens)", pos, chunk_end, chunk_len);
+            eprintln!(
+                "  decoding chunk {}-{} ({} tokens)",
+                pos, chunk_end, chunk_len
+            );
             ctx.decode(&mut batch)
                 .map_err(|e| LlmError::Generate(format!("Decode error at pos {}: {}", pos, e)))?;
 

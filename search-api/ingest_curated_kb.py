@@ -8,10 +8,9 @@ import os
 import sys
 import uuid
 import re
-import psycopg2
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from db_config import connect_db
 from embedding_service import EmbeddingService
 
 KB_DIR = os.path.expanduser("~/AssistSupport/knowledge_base")
@@ -55,12 +54,7 @@ def main():
     print()
 
     # Connect to database
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     conn.autocommit = True
     cur = conn.cursor()
 

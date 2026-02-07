@@ -360,10 +360,63 @@ jobs:
             echo "- cargo audit: ✅ Passed"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  test-search-api:
+    name: Test Search API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install redis
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Start redis service
+        run: sudo service redis-server start
+
+      - name: Install Search API test dependencies
+        working-directory: search-api
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: Run Search API tests
+        working-directory: search-api
+        run: |
+          source venv/bin/activate
+          pytest -q
+
+      - name: Validate production runtime config
+        working-directory: search-api
+        env:
+          ENVIRONMENT: production
+          ASSISTSUPPORT_API_KEY: ci-test-key
+          ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI: redis://127.0.0.1:6379/0
+          ASSISTSUPPORT_API_PORT: 3390
+        run: |
+          source venv/bin/activate
+          python validate_runtime.py --check-backends --json
+
+      - name: Run Search API production smoke check
+        working-directory: search-api
+        env:
+          ENVIRONMENT: production
+          ASSISTSUPPORT_API_KEY: ci-test-key
+          ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI: redis://127.0.0.1:6379/0
+          ASSISTSUPPORT_API_PORT: 3390
+        run: |
+          source venv/bin/activate
+          python smoke_search_api.py
+
   build:
     name: Build (macOS)
     runs-on: macos-latest
-    needs: [lint-frontend, test-frontend, test-e2e-smoke, coverage-frontend, check-backend, coverage-backend, security-audit]
+    needs: [lint-frontend, test-frontend, test-e2e-smoke, coverage-frontend, check-backend, coverage-backend, security-audit, test-search-api]
     steps:
       - uses: actions/checkout@v4
 

@@ -184,7 +184,7 @@ export function SettingsTab() {
       setContextWindowSize(ctxWindow);
       setEmbeddingDownloaded(embDownloaded);
       setDeploymentHealth(deployHealth);
-      setIntegrations(integrationsList);
+      setIntegrations(integrationsList ?? []);
 
       // Check embedding model status
       await checkEmbeddingStatus();
@@ -545,7 +545,7 @@ export function SettingsTab() {
     try {
       await configureIntegration(integrationType, enabled);
       const updated = await listIntegrations();
-      setIntegrations(updated);
+      setIntegrations(updated ?? []);
     } catch (err) {
       showError(`Failed to update ${integrationType}: ${err}`);
     }

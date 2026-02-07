@@ -30,7 +30,7 @@ pub use search_api::{
 };
 
 use crate::audit::{self, AuditLogger};
-use crate::db::{get_app_data_dir, get_db_path, get_vectors_dir, Database};
+use crate::db::{get_app_data_dir, get_db_path, get_vectors_dir, Database, GenerationQualityEvent};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{GenerationParams, LlmEngine, ModelInfo};
 use crate::model_integrity::{verify_model_integrity, ModelAllowlist};
@@ -1335,15 +1335,15 @@ pub async fn generate_with_context(
     };
     if let Ok(db_lock) = state.db.lock() {
         if let Some(db) = db_lock.as_ref() {
-            let _ = db.record_generation_quality_event(
-                &params.user_input,
+            let _ = db.record_generation_quality_event(GenerationQualityEvent {
+                query_text: &params.user_input,
                 confidence_mode,
-                confidence.score,
+                confidence_score: confidence.score,
                 unsupported_claims,
-                grounding.len() as i32,
-                sources.len() as i32,
+                total_claims: grounding.len() as i32,
+                source_count: sources.len() as i32,
                 avg_source_score,
-            );
+            });
         }
     }
 
@@ -1579,15 +1579,15 @@ pub async fn generate_streaming(
     };
     if let Ok(db_lock) = state.db.lock() {
         if let Some(db) = db_lock.as_ref() {
-            let _ = db.record_generation_quality_event(
-                &params.user_input,
+            let _ = db.record_generation_quality_event(GenerationQualityEvent {
+                query_text: &params.user_input,
                 confidence_mode,
-                confidence.score,
+                confidence_score: confidence.score,
                 unsupported_claims,
-                grounding.len() as i32,
-                sources.len() as i32,
+                total_claims: grounding.len() as i32,
+                source_count: sources.len() as i32,
                 avg_source_score,
-            );
+            });
         }
     }
 
@@ -4781,10 +4781,9 @@ pub async fn run_eval_harness(
     let mut details = Vec::new();
 
     for case in &cases {
-        let mode = if case.query.to_lowercase().contains("policy") {
+        let lower_query = case.query.to_lowercase();
+        let mode = if lower_query.contains("policy") {
             "answer"
-        } else if case.query.to_lowercase().contains("urgent") {
-            "clarify"
         } else {
             "clarify"
         };

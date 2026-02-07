@@ -40,7 +40,7 @@ pnpm run typecheck && pnpm test && (cd src-tauri && cargo test)
 ## 2) CI Failure Triage
 
 ### Fast path triage sequence
-1. Identify failing job in GitHub Actions (`lint-frontend`, `test-frontend`, `test-e2e-smoke`, `coverage-*`, `security-audit`, `check-backend`, `build`).
+1. Identify failing job in GitHub Actions (`lint-frontend`, `test-frontend`, `test-e2e-smoke`, `coverage-*`, `security-audit`, `test-search-api`, `check-backend`, `build`).
 2. Reproduce locally with the same command.
 3. Fix the smallest failing surface first (lint/type errors before runtime or integration failures).
 4. Re-run only impacted checks, then run full local verification before pushing.
@@ -50,6 +50,7 @@ pnpm run typecheck && pnpm test && (cd src-tauri && cargo test)
 - `test-e2e-smoke`: Check `VITE_E2E_MOCK_TAURI=1` behavior and selectors.
 - `coverage-*`: Confirm coverage providers and lcov output paths exist.
 - `security-audit`: Update vulnerable dependencies, then rerun audit.
+- `test-search-api`: Verify redis is reachable and run `python validate_runtime.py --check-backends` plus `python smoke_search_api.py`.
 - `check-backend`: Ensure formatting/clippy pass with zero warnings.
 
 ## 3) Backup/Restore Validation
@@ -87,6 +88,26 @@ Use this flow before releases and after backup/import logic changes.
 pnpm audit --audit-level high
 cd src-tauri && cargo audit
 ```
+
+### Search API runtime checks
+```bash
+cd search-api
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-test.txt
+ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 python validate_runtime.py --check-backends
+ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 python smoke_search_api.py
+```
+
+### Dependency watch cadence
+- Weekly automated run: `.github/workflows/dependency-watch.yml` (Monday 14:00 UTC).
+- Captures:
+  - `pnpm audit --audit-level high`
+  - `cargo audit`
+  - `pnpm outdated`
+  - `cargo update --dry-run`
+- Auto-creates/updates a GitHub issue (`Dependency Watch Alerts`) when vulnerabilities or Rust advisory warnings are detected.
+- Review the `dependency-watch-reports` artifact from each run and update dependencies when drift/advisories appear.
 
 ### File and path safety checks
 - Keep KB paths inside user home.

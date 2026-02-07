@@ -59,6 +59,11 @@ pub struct YouTubeIngester {
     config: YouTubeIngestConfig,
 }
 
+fn is_youtube_domain(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "youtube.com" || host.ends_with(".youtube.com")
+}
+
 impl YouTubeIngester {
     /// Create a new YouTube ingester
     pub fn new(config: YouTubeIngestConfig) -> Self {
@@ -82,7 +87,7 @@ impl YouTubeIngester {
             }
 
             // youtube.com formats
-            if host.contains("youtube.com") {
+            if is_youtube_domain(host) {
                 // /watch?v= format
                 if parsed.path() == "/watch" {
                     for (key, value) in parsed.query_pairs() {
@@ -702,6 +707,16 @@ mod tests {
         // Invalid
         assert_eq!(
             YouTubeIngester::extract_video_id("https://example.com"),
+            None
+        );
+
+        // Hostname spoofing should be rejected
+        assert_eq!(
+            YouTubeIngester::extract_video_id("https://youtube.com.evil.com/watch?v=dQw4w9WgXcQ"),
+            None
+        );
+        assert_eq!(
+            YouTubeIngester::extract_video_id("https://notyoutube.com/watch?v=dQw4w9WgXcQ"),
             None
         );
     }

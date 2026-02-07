@@ -1363,9 +1363,7 @@ mod tests {
 
     #[test]
     fn test_policy_enforcement_forbid_rule() {
-        let prompt = PromptBuilder::new()
-            .with_user_input("test")
-            .build();
+        let prompt = PromptBuilder::new().with_user_input("test").build();
 
         assert!(
             prompt.contains("FORBIDS"),
@@ -1379,9 +1377,7 @@ mod tests {
 
     #[test]
     fn test_policy_enforcement_no_workarounds() {
-        let prompt = PromptBuilder::new()
-            .with_user_input("test")
-            .build();
+        let prompt = PromptBuilder::new().with_user_input("test").build();
 
         assert!(
             prompt.contains("Never offer workarounds"),
@@ -1391,9 +1387,7 @@ mod tests {
 
     #[test]
     fn test_policy_enforcement_alternatives_required() {
-        let prompt = PromptBuilder::new()
-            .with_user_input("test")
-            .build();
+        let prompt = PromptBuilder::new().with_user_input("test").build();
 
         assert!(
             prompt.contains("approved alternatives"),
@@ -1403,9 +1397,7 @@ mod tests {
 
     #[test]
     fn test_policy_enforcement_no_exceptions() {
-        let prompt = PromptBuilder::new()
-            .with_user_input("test")
-            .build();
+        let prompt = PromptBuilder::new().with_user_input("test").build();
 
         assert!(
             prompt.contains("Emergency situations") && prompt.contains("do NOT override"),

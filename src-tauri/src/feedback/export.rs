@@ -9,12 +9,11 @@ pub fn export_to_csv(db: &Database, path: &Path) -> Result<usize, String> {
     let logs = super::get_query_logs(db)?;
     let feedback = super::get_all_feedback(db)?;
 
-    let mut file = std::fs::File::create(path)
-        .map_err(|e| format!("Failed to create export file: {}", e))?;
+    let mut file =
+        std::fs::File::create(path).map_err(|e| format!("Failed to create export file: {}", e))?;
 
     // Query logs section
-    writeln!(file, "# Query Logs")
-        .map_err(|e| format!("Write error: {}", e))?;
+    writeln!(file, "# Query Logs").map_err(|e| format!("Write error: {}", e))?;
     writeln!(file, "id,query,response,category,user_id,created_at")
         .map_err(|e| format!("Write error: {}", e))?;
 
@@ -34,8 +33,7 @@ pub fn export_to_csv(db: &Database, path: &Path) -> Result<usize, String> {
 
     // Feedback section
     writeln!(file).map_err(|e| format!("Write error: {}", e))?;
-    writeln!(file, "# Feedback")
-        .map_err(|e| format!("Write error: {}", e))?;
+    writeln!(file, "# Feedback").map_err(|e| format!("Write error: {}", e))?;
     writeln!(
         file,
         "id,query_log_id,user_id,accuracy,clarity,helpfulness,comment,created_at"
@@ -52,7 +50,7 @@ pub fn export_to_csv(db: &Database, path: &Path) -> Result<usize, String> {
             fb.accuracy,
             fb.clarity,
             fb.helpfulness,
-            csv_escape(&fb.comment.as_deref().unwrap_or("")),
+            csv_escape(fb.comment.as_deref().unwrap_or("")),
             csv_escape(&fb.created_at),
         )
         .map_err(|e| format!("Write error: {}", e))?;
