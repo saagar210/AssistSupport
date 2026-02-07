@@ -12,7 +12,7 @@ Score formula:
 Minimum 3 feedback entries required before adjusting an article's score.
 """
 
-import psycopg2
+from db_config import connect_db
 
 
 MIN_FEEDBACK = 3
@@ -93,12 +93,7 @@ def get_quality_scores(conn, article_ids):
 
 
 if __name__ == "__main__":
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     conn.autocommit = True
 
     print("Computing quality scores from feedback...")

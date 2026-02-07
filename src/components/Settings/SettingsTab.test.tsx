@@ -170,7 +170,7 @@ describe('SettingsTab', () => {
 
     it('toggle is unchecked by default', async () => {
       await renderWithProviders(<SettingsTab />);
-      const toggle = screen.getByRole('checkbox');
+      const toggle = screen.getByLabelText('Enable vector embeddings');
       expect(toggle).not.toBeChecked();
     });
   });

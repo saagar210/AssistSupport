@@ -13,38 +13,64 @@ from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
-from datetime import datetime
-import time
-
-from hybrid_search import HybridSearchEngine
-from intent_detection import IntentDetector
+from datetime import datetime, timezone
+from runtime_config import (
+    DEFAULT_API_KEY,
+    load_runtime_config,
+    ensure_valid_runtime_config,
+)
 
 # Initialize Flask app
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
+
+# Configuration
+_RUNTIME_CONFIG = load_runtime_config()
+API_KEY = _RUNTIME_CONFIG.api_key
+API_PORT = _RUNTIME_CONFIG.api_port
+RATE_LIMIT_STORAGE_URI = _RUNTIME_CONFIG.rate_limit_storage_uri
 
 # Rate limiting: 100 requests per minute per IP
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=["100 per minute"],
+    storage_uri=RATE_LIMIT_STORAGE_URI,
 )
-
-# Configuration
-API_KEY = os.environ.get("ASSISTSUPPORT_API_KEY", "dev-key-change-in-production")
-API_PORT = int(os.environ.get("ASSISTSUPPORT_API_PORT", "3000"))
 
 # Global search engine instance (initialized on first request)
 _engine = None
+
+
+def is_production() -> bool:
+    return os.environ.get("ENVIRONMENT", "development").lower() == "production"
 
 
 def _get_engine():
     """Lazy-initialize the search engine singleton"""
     global _engine
     if _engine is None:
+        from hybrid_search import HybridSearchEngine
+
         _engine = HybridSearchEngine()
         print("Search engine initialized")
     return _engine
+
+
+def internal_error_response(error: Exception, *, context: str):
+    """Return a safe error payload and avoid leaking internals in production."""
+    print(f"{context}: {error}")
+    error_msg = str(error) if not is_production() else "Internal server error"
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "error": error_msg,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+        500,
+    )
 
 
 def require_api_key(f):
@@ -52,7 +78,17 @@ def require_api_key(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if os.environ.get("ENVIRONMENT") == "production":
+        if is_production() and API_KEY == DEFAULT_API_KEY:
+            return (
+                jsonify(
+                    {
+                        "error": "Server is misconfigured: ASSISTSUPPORT_API_KEY must be set in production"
+                    }
+                ),
+                500,
+            )
+
+        if is_production():
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
                 return (
@@ -76,7 +112,7 @@ def health():
         jsonify(
             {
                 "status": "ok",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "service": "AssistSupport Hybrid Search API",
             }
         ),
@@ -172,24 +208,14 @@ def search():
                 "search_time_ms": round(result["metrics"]["search_time_ms"], 1),
                 "rerank_time_ms": round(result["metrics"].get("rerank_time_ms", 0), 1),
                 "result_count": len(formatted_results),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         }
 
         return jsonify(response), 200
 
     except Exception as e:
-        print(f"Search error: {e}")
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "error": str(e),
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-            ),
-            500,
-        )
+        return internal_error_response(e, context="Search error")
 
 
 @app.route("/feedback", methods=["POST"])
@@ -253,15 +279,14 @@ def submit_feedback():
                 {
                     "status": "success",
                     "message": "Feedback recorded",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ),
             200,
         )
 
     except Exception as e:
-        print(f"Feedback error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return internal_error_response(e, context="Feedback error")
 
 
 @app.route("/stats", methods=["GET"])
@@ -277,14 +302,14 @@ def stats():
                 {
                     "status": "success",
                     "data": data,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ),
             200,
         )
 
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return internal_error_response(e, context="Stats error")
 
 
 @app.route("/config", methods=["GET"])
@@ -318,13 +343,16 @@ def not_found(e):
 
 def run_server():
     """Start the API server"""
-    print(f"Starting AssistSupport Search API on port {API_PORT}")
-    print(f"  Environment: {os.environ.get('ENVIRONMENT', 'development')}")
+    runtime_config = load_runtime_config()
+    ensure_valid_runtime_config(runtime_config, check_backends=True)
+
+    print(f"Starting AssistSupport Search API on port {runtime_config.api_port}")
+    print(f"  Environment: {runtime_config.environment}")
 
     app.run(
         host="localhost",
-        port=API_PORT,
-        debug=os.environ.get("ENVIRONMENT") != "production",
+        port=runtime_config.api_port,
+        debug=runtime_config.environment != "production",
         threaded=True,
     )
 

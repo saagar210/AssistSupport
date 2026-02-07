@@ -32,6 +32,16 @@ fn generate_with_context_result_json_contract() {
             context_utilization: 0.31,
         },
         prompt_template_version: "v1.2.0".to_string(),
+        confidence: commands::ConfidenceAssessment {
+            mode: commands::ConfidenceMode::Answer,
+            score: 0.92,
+            rationale: "Grounded in one high-confidence source".to_string(),
+        },
+        grounding: vec![commands::GroundedClaim {
+            claim: "Use the approved VPN client and MFA.".to_string(),
+            source_indexes: vec![0],
+            support_level: "supported".to_string(),
+        }],
     };
 
     let value = serde_json::to_value(payload).expect("serialize generation payload");
@@ -45,12 +55,16 @@ fn generate_with_context_result_json_contract() {
         "sources",
         "metrics",
         "prompt_template_version",
+        "confidence",
+        "grounding",
     ] {
         assert!(obj.contains_key(key), "missing key: {key}");
     }
 
     assert_eq!(obj["metrics"]["sources_used"], 1);
     assert_eq!(obj["sources"][0]["chunk_id"], "chunk-1");
+    assert_eq!(obj["confidence"]["mode"], "answer");
+    assert_eq!(obj["grounding"][0]["support_level"], "supported");
 }
 
 #[test]

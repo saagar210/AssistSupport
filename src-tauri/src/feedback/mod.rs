@@ -204,7 +204,9 @@ pub fn get_all_feedback(db: &Database) -> Result<Vec<UserFeedback>, String> {
 pub fn get_pilot_stats(db: &Database) -> Result<PilotStats, String> {
     let total_queries: usize = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM pilot_query_logs", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM pilot_query_logs", [], |row| {
+            row.get(0)
+        })
         .map_err(|e| format!("Failed to count queries: {}", e))?;
 
     let total_feedback: usize = db
@@ -335,7 +337,13 @@ mod tests {
     #[test]
     fn test_log_query() {
         let (_dir, db) = setup_test_db();
-        let id = log_query(&db, "Can I get a flash drive?", "No, policy forbids it.", "alice").unwrap();
+        let id = log_query(
+            &db,
+            "Can I get a flash drive?",
+            "No, policy forbids it.",
+            "alice",
+        )
+        .unwrap();
         assert!(!id.is_empty());
 
         let logs = get_query_logs(&db).unwrap();
@@ -349,7 +357,8 @@ mod tests {
         let (_dir, db) = setup_test_db();
         let log_id = log_query(&db, "Flash drive?", "No.", "alice").unwrap();
 
-        let fb_id = submit_feedback(&db, &log_id, "alice", 5, 4, 5, Some("Clear response")).unwrap();
+        let fb_id =
+            submit_feedback(&db, &log_id, "alice", 5, 4, 5, Some("Clear response")).unwrap();
         assert!(!fb_id.is_empty());
 
         let feedback = get_all_feedback(&db).unwrap();
@@ -381,12 +390,30 @@ mod tests {
 
     #[test]
     fn test_detect_query_category() {
-        assert_eq!(detect_query_category("Can I get a flash drive?"), QueryCategory::Policy);
-        assert_eq!(detect_query_category("Am I allowed to install Slack?"), QueryCategory::Policy);
-        assert_eq!(detect_query_category("How do I request a laptop?"), QueryCategory::Procedure);
-        assert_eq!(detect_query_category("How to reset password?"), QueryCategory::Procedure);
-        assert_eq!(detect_query_category("What is the VPN policy?"), QueryCategory::Reference);
-        assert_eq!(detect_query_category("Who do I contact for help?"), QueryCategory::Reference);
+        assert_eq!(
+            detect_query_category("Can I get a flash drive?"),
+            QueryCategory::Policy
+        );
+        assert_eq!(
+            detect_query_category("Am I allowed to install Slack?"),
+            QueryCategory::Policy
+        );
+        assert_eq!(
+            detect_query_category("How do I request a laptop?"),
+            QueryCategory::Procedure
+        );
+        assert_eq!(
+            detect_query_category("How to reset password?"),
+            QueryCategory::Procedure
+        );
+        assert_eq!(
+            detect_query_category("What is the VPN policy?"),
+            QueryCategory::Reference
+        );
+        assert_eq!(
+            detect_query_category("Who do I contact for help?"),
+            QueryCategory::Reference
+        );
         assert_eq!(detect_query_category("hello"), QueryCategory::Unknown);
     }
 

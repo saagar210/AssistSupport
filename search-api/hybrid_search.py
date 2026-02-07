@@ -6,11 +6,11 @@ Combines BM25 (keyword) + HNSW (vector) + intent detection + logging
 
 import sys
 import os
-import psycopg2
 import time
 from typing import List, Dict, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from db_config import connect_db
 from embedding_service import EmbeddingService
 from score_fusion import ScoreFusion
 from intent_detection import IntentDetector
@@ -21,18 +21,8 @@ from feedback_loop import get_quality_scores
 class HybridSearchEngine:
     """Production hybrid search combining FTS + vector + intent detection"""
 
-    def __init__(
-        self,
-        db_host="localhost",
-        db_user="assistsupport_dev",
-        db_name="assistsupport_dev",
-    ):
-        self.conn = psycopg2.connect(
-            host=db_host,
-            user=db_user,
-            password="dev_password_123",
-            database=db_name,
-        )
+    def __init__(self):
+        self.conn = connect_db()
         self.conn.autocommit = True
         self.cur = self.conn.cursor()
         # Set HNSW ef_search once at connection time

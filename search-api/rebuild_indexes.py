@@ -6,20 +6,15 @@ Regenerates embeddings for articles whose content changed (merged/expanded).
 
 import sys
 import os
-import psycopg2
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from db_config import connect_db
 from embedding_service import EmbeddingService
 
 
 def main():
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     conn.autocommit = True
     cur = conn.cursor()
 

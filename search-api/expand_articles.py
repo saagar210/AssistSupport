@@ -5,16 +5,11 @@ For each source_document_id with multiple thin chunks (<500 chars),
 merges them into a single richer article and deactivates the merged-from chunks.
 """
 
-import psycopg2
+from db_config import connect_db
 
 
 def main():
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     conn.autocommit = True
     cur = conn.cursor()
 

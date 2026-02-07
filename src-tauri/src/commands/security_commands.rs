@@ -46,7 +46,9 @@ pub(crate) fn has_github_token_impl(host: String) -> Result<bool, String> {
         .is_some())
 }
 
-pub(crate) fn get_audit_entries_impl(limit: Option<usize>) -> Result<Vec<crate::audit::AuditEntry>, String> {
+pub(crate) fn get_audit_entries_impl(
+    limit: Option<usize>,
+) -> Result<Vec<crate::audit::AuditEntry>, String> {
     crate::audit::read_audit_entries(limit).map_err(|e| e.to_string())
 }
 
@@ -69,9 +71,7 @@ pub(crate) fn export_audit_log_impl(export_path: String) -> Result<String, Strin
     Ok(validated.to_string_lossy().to_string())
 }
 
-pub(crate) fn create_session_token_impl(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub(crate) fn create_session_token_impl(state: State<'_, AppState>) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 
@@ -123,14 +123,15 @@ pub(crate) fn clear_session_token_impl(
     Ok(())
 }
 
-pub(crate) fn lock_app_impl(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub(crate) fn lock_app_impl(state: State<'_, AppState>) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     // Delete all sessions for this device
     db.conn()
-        .execute("DELETE FROM session_tokens WHERE device_id = ?1", rusqlite::params![get_device_identifier()])
+        .execute(
+            "DELETE FROM session_tokens WHERE device_id = ?1",
+            rusqlite::params![get_device_identifier()],
+        )
         .map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -180,9 +180,43 @@ createdb -U assistsupport_dev assistsupport_dev
 
 # Start the search API
 cd search-api
+python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 python3 search_api.py
 # API runs on http://localhost:3000
+```
+
+Production-safe local startup (enforces API key + non-memory rate limit storage):
+
+```bash
+# Start local Redis for limiter storage
+redis-server --daemonize yes
+
+# Create production env from template (one-time)
+cd search-api
+cp .env.example .env.production
+
+# Edit .env.production:
+# - set ENVIRONMENT=production
+# - set ASSISTSUPPORT_API_KEY to a strong random value
+# - set ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0
+
+# Launch with production env
+set -a
+source .env.production
+set +a
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 validate_runtime.py --check-backends
+python3 search_api.py
+```
+
+For a fast production smoke check without launching a long-running server:
+
+```bash
+ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 python3 smoke_search_api.py
 ```
 
 ### First Run

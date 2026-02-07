@@ -17,7 +17,9 @@ pub(crate) fn is_jira_configured_impl(state: State<'_, AppState>) -> Result<bool
     Ok(base_url.is_ok() && has_token)
 }
 
-pub(crate) fn get_jira_config_impl(state: State<'_, AppState>) -> Result<Option<JiraConfig>, String> {
+pub(crate) fn get_jira_config_impl(
+    state: State<'_, AppState>,
+) -> Result<Option<JiraConfig>, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 

@@ -21,19 +21,28 @@ pub(crate) fn search_drafts_impl(
         .map_err(|e| e.to_string())
 }
 
-pub(crate) fn get_draft_impl(state: State<'_, AppState>, draft_id: String) -> Result<SavedDraft, String> {
+pub(crate) fn get_draft_impl(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<SavedDraft, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.get_draft(&draft_id).map_err(|e| e.to_string())
 }
 
-pub(crate) fn save_draft_impl(state: State<'_, AppState>, draft: SavedDraft) -> Result<String, String> {
+pub(crate) fn save_draft_impl(
+    state: State<'_, AppState>,
+    draft: SavedDraft,
+) -> Result<String, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.save_draft(&draft).map_err(|e| e.to_string())
 }
 
-pub(crate) fn delete_draft_impl(state: State<'_, AppState>, draft_id: String) -> Result<(), String> {
+pub(crate) fn delete_draft_impl(
+    state: State<'_, AppState>,
+    draft_id: String,
+) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_draft(&draft_id).map_err(|e| e.to_string())

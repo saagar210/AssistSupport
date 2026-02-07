@@ -6,8 +6,8 @@ Extracts meaningful title from breadcrumb paths like:
 Preserves original title in heading_path if not already set.
 """
 
-import psycopg2
 import re
+from db_config import connect_db
 
 
 def clean_title(title: str, heading_path: str) -> tuple:
@@ -80,12 +80,7 @@ def clean_title(title: str, heading_path: str) -> tuple:
 
 
 def main():
-    conn = psycopg2.connect(
-        host="localhost",
-        user="assistsupport_dev",
-        password="dev_password_123",
-        database="assistsupport_dev",
-    )
+    conn = connect_db()
     conn.autocommit = True
     cur = conn.cursor()
 

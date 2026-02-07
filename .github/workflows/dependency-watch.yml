@@ -1,0 +1,185 @@
+name: Dependency Watch
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dependency-watch:
+    name: Weekly Dependency and Advisory Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run frontend high-severity audit
+        id: pnpm_audit
+        run: |
+          set +e
+          pnpm audit --audit-level high | tee pnpm-audit.txt
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Run Rust advisory audit
+        id: cargo_audit
+        working-directory: src-tauri
+        run: |
+          set +e
+          cargo audit --json > ../cargo-audit.json
+          status=$?
+          cargo audit > ../cargo-audit.txt || true
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Parse Rust advisory summary
+        id: cargo_summary
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path('cargo-audit.json')
+          if report.exists():
+              data = json.loads(report.read_text())
+          else:
+              data = {}
+
+          vulnerabilities = int(data.get('vulnerabilities', {}).get('count', 0))
+          warnings = data.get('warnings', {})
+          unmaintained = len(warnings.get('unmaintained', []))
+          unsound = len(warnings.get('unsound', []))
+          total_warnings = unmaintained + unsound
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f"vuln_count={vulnerabilities}\n")
+              fh.write(f"unmaintained_count={unmaintained}\n")
+              fh.write(f"unsound_count={unsound}\n")
+              fh.write(f"warning_count={total_warnings}\n")
+          PY
+
+      - name: Capture frontend dependency drift
+        run: pnpm outdated > pnpm-outdated.txt || true
+
+      - name: Capture Rust dependency drift
+        working-directory: src-tauri
+        run: cargo update --dry-run > ../cargo-update-dry-run.txt
+
+      - name: Summarize weekly dependency watch
+        run: |
+          {
+            echo "### Dependency Watch"
+            echo
+            echo "- pnpm audit exit code: ${{ steps.pnpm_audit.outputs.exit_code }}"
+            echo "- cargo audit exit code: ${{ steps.cargo_audit.outputs.exit_code }}"
+            echo "- cargo vulnerabilities: ${{ steps.cargo_summary.outputs.vuln_count }}"
+            echo "- cargo warnings (unmaintained): ${{ steps.cargo_summary.outputs.unmaintained_count }}"
+            echo "- cargo warnings (unsound): ${{ steps.cargo_summary.outputs.unsound_count }}"
+            echo
+            echo "Artifacts contain full command output for review."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update dependency alert issue
+        if: steps.pnpm_audit.outputs.exit_code != '0' || steps.cargo_summary.outputs.warning_count != '0' || steps.cargo_summary.outputs.vuln_count != '0'
+        uses: actions/github-script@v7
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PNPM_AUDIT_EXIT: ${{ steps.pnpm_audit.outputs.exit_code }}
+          CARGO_AUDIT_EXIT: ${{ steps.cargo_audit.outputs.exit_code }}
+          CARGO_VULNS: ${{ steps.cargo_summary.outputs.vuln_count }}
+          CARGO_WARNINGS: ${{ steps.cargo_summary.outputs.warning_count }}
+          CARGO_UNMAINTAINED: ${{ steps.cargo_summary.outputs.unmaintained_count }}
+          CARGO_UNSOUND: ${{ steps.cargo_summary.outputs.unsound_count }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = 'Dependency Watch Alerts';
+
+            const body = [
+              '## Dependency Watch Alert',
+              '',
+              `- Run: ${process.env.RUN_URL}`,
+              `- pnpm audit exit code: ${process.env.PNPM_AUDIT_EXIT}`,
+              `- cargo audit exit code: ${process.env.CARGO_AUDIT_EXIT}`,
+              `- cargo vulnerabilities: ${process.env.CARGO_VULNS}`,
+              `- cargo warnings (total): ${process.env.CARGO_WARNINGS}`,
+              `- cargo warnings (unmaintained): ${process.env.CARGO_UNMAINTAINED}`,
+              `- cargo warnings (unsound): ${process.env.CARGO_UNSOUND}`,
+              '',
+              'Review the `dependency-watch-reports` artifact and update dependencies as needed.',
+              '',
+              'Reference baseline: `docs/security/DEPENDENCY_ADVISORY_BASELINE.md`'
+            ].join('\n');
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const existing = issues.find(issue => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: ['dependencies', 'security']
+              });
+            }
+
+      - name: Upload dependency reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-watch-reports
+          path: |
+            pnpm-audit.txt
+            cargo-audit.txt
+            cargo-audit.json
+            pnpm-outdated.txt
+            cargo-update-dry-run.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail on actionable vulnerabilities
+        if: steps.pnpm_audit.outputs.exit_code != '0' || steps.cargo_summary.outputs.vuln_count != '0'
+        run: |
+          echo "Dependency watch detected actionable vulnerabilities."
+          exit 1
