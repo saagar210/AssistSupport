@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #f8fafc;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-accent: #6366f1;
+  --color-accent-foreground: #ffffff;
+  --color-border: #e2e8f0;
+  --color-destructive: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-sidebar: #f8fafc;
+  --color-sidebar-foreground: #64748b;
+  --color-sidebar-active: #6366f1;
+}
+
+.dark {
+  --color-background: #0f172a;
+  --color-foreground: #f8fafc;
+  --color-card: #1e293b;
+  --color-card-foreground: #f8fafc;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-accent: #818cf8;
+  --color-accent-foreground: #ffffff;
+  --color-border: #334155;
+  --color-destructive: #f87171;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-sidebar: #1e293b;
+  --color-sidebar-foreground: #94a3b8;
+  --color-sidebar-active: #818cf8;
+}
+
+html,
+body {
+  @apply h-full overflow-hidden;
+}
+
+#root {
+  @apply h-full;
+}
