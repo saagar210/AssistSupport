@@ -15,6 +15,7 @@ Updated: 2026-02-08 (runtime cutover complete; stabilization closed; hardening e
 - Rehearsal continuation decision: `GO`
 - Runtime cutover decision: `GO`
 - Week 1 stabilization checkpoint: `GO`
+- Workstation transfer readiness checkpoint: `GO`
 - Bilateral sign-off status: `CLOSED`
 
 ## Locked Decisions

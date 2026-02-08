@@ -34,8 +34,12 @@ test('@smoke navigates to settings and hybrid search', async ({ page }) => {
   await expect(page.getByText('Removable Media Policy')).toBeVisible();
 });
 
-test('@smoke generates a draft response in mock mode', async ({ page }) => {
+test('@smoke generates a draft response in degraded mode', async ({ page }) => {
   await page.goto('/');
+
+  await page.getByTitle('View system status').click();
+  const memoryKernelRow = page.locator('.status-item', { hasText: 'MemoryKernel' }).first();
+  await expect(memoryKernelRow).toContainText(/offline|unavailable/i);
 
   const input = page.getByPlaceholder('Paste ticket content or describe the issue...');
   await input.fill('Customer needs remote VPN access while traveling.');

@@ -37,25 +37,35 @@ Objective: improve user-facing reliability and diagnostics while keeping determi
 - [x] Improve diagnostics UX for enrichment disable reasons and remediation hints.
 - [x] Add integration health panel traceability to pin + handoff payload state.
 - [x] Strengthen non-blocking fallback copy and response quality heuristics.
-- [ ] Add smoke tests for degraded-mode Draft flow end-to-end behavior.
+- [x] Add smoke tests for degraded-mode Draft flow end-to-end behavior.
 
 Exit Criteria:
 - Draft flow remains fully usable under producer offline/timeout/schema mismatch.
 - Diagnostics provide actionable operator guidance without exposing sensitive internals.
 - Regression suite proves deterministic fallback and non-blocking behavior.
 
+Evidence:
+- `/Users/d/Projects/AssistSupport/e2e/smoke.spec.ts`
+- `pnpm run test:e2e:smoke`
+
 ## Section 4: Cutover-Program Closeout and Transfer
 Objective: prepare safe transfer to new machine and repeatable operation.
 
-- [ ] Generate one-click workstation bootstrap verification packet from current baseline.
-- [ ] Run full monorepo readiness command set and archive artifacts.
-- [ ] Produce operator handoff runbook for normal operations + incident rollback.
-- [ ] Freeze baseline and publish final checkpoint summary.
+- [x] Generate one-click workstation bootstrap verification packet from current baseline.
+- [x] Run full monorepo readiness command set and archive artifacts.
+- [x] Produce operator handoff runbook for normal operations + incident rollback.
+- [x] Freeze baseline and publish final checkpoint summary.
 
 Exit Criteria:
 - New machine bootstrap path is documented and validated.
 - Complete evidence bundle exists for security/compliance review.
 - Final checkpoint summary is published with explicit steady-state verdict.
+
+Evidence:
+- `/Users/d/Projects/AssistSupport/docs/implementation/evidence/WORKSTATION_BOOTSTRAP_VERIFICATION_PACKET_2026-02-08.md`
+- `/Users/d/Projects/AssistSupport/docs/implementation/MONOREPO_OPERATOR_HANDOFF_RUNBOOK.md`
+- `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_2026-02-08.md`
+- `pnpm run check:monorepo-readiness:full`
 
 ## Mandatory Verification Set (for each section closure)
 ```bash
