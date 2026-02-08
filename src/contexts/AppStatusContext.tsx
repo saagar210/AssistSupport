@@ -27,6 +27,11 @@ export interface AppStatusState {
   memoryKernelReady: boolean;
   memoryKernelStatus: string;
   memoryKernelDetail: string;
+  memoryKernelReleaseTag: string | null;
+  memoryKernelCommitSha: string | null;
+  memoryKernelServiceContract: string | null;
+  memoryKernelApiContract: string | null;
+  memoryKernelIntegrationBaseline: string | null;
 
   // Overall
   initialized: boolean;
@@ -55,6 +60,11 @@ const defaultState: AppStatusState = {
   memoryKernelReady: false,
   memoryKernelStatus: 'unknown',
   memoryKernelDetail: 'Not checked',
+  memoryKernelReleaseTag: null,
+  memoryKernelCommitSha: null,
+  memoryKernelServiceContract: null,
+  memoryKernelApiContract: null,
+  memoryKernelIntegrationBaseline: null,
   initialized: false,
   lastUpdated: null,
 };
@@ -145,6 +155,13 @@ export function AppStatusProvider({ children, pollInterval = 10000 }: Props) {
         memoryKernelReady: preflight.ready && preflight.enrichment_enabled,
         memoryKernelStatus: preflight.status,
         memoryKernelDetail: preflight.message,
+        memoryKernelReleaseTag: preflight.release_tag ?? null,
+        memoryKernelCommitSha: preflight.commit_sha ?? null,
+        memoryKernelServiceContract:
+          preflight.service_contract_version ?? preflight.expected_service_contract_version ?? null,
+        memoryKernelApiContract:
+          preflight.api_contract_version ?? preflight.expected_api_contract_version ?? null,
+        memoryKernelIntegrationBaseline: preflight.integration_baseline ?? null,
       }));
     } catch (err) {
       setState(prev => ({
@@ -153,6 +170,11 @@ export function AppStatusProvider({ children, pollInterval = 10000 }: Props) {
         memoryKernelReady: false,
         memoryKernelStatus: 'error',
         memoryKernelDetail: `Preflight unavailable: ${String(err)}`,
+        memoryKernelReleaseTag: null,
+        memoryKernelCommitSha: null,
+        memoryKernelServiceContract: null,
+        memoryKernelApiContract: null,
+        memoryKernelIntegrationBaseline: null,
       }));
     }
   }, []);

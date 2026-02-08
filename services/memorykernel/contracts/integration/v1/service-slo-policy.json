@@ -8,5 +8,10 @@
     "replay_p95_max": 250,
     "gate_p95_max": 8
   },
+  "operational_thresholds": {
+    "timeout_rate_max_percent": 2.0,
+    "failure_rate_max_percent": 5.0,
+    "schema_unavailable_max_per_1000_requests": 1
+  },
   "required_output": "json"
 }

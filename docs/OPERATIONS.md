@@ -1,5 +1,7 @@
 # AssistSupport Operations Runbook
 
+Updated: 2026-02-08
+
 This runbook covers day-to-day development operations, incident triage, security maintenance, and release execution.
 
 ## 1) Local Development and Validation
@@ -104,6 +106,7 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
 5. Run MemoryKernel contract suite:
    ```bash
    pnpm run test:memorykernel-contract
+   pnpm run test:memorykernel-governance-negative
    ```
 6. Confirm generated evidence artifact exists locally:
    - `artifacts/memorykernel-contract-evidence.json`

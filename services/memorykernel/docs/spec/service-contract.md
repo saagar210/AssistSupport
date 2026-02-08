@@ -75,7 +75,13 @@ The service emits machine-readable error codes with stable semantics:
 
 ## Health vs Readiness
 
-- `GET /v1/health` is a liveness probe only (`status: ok`).
+- `GET /v1/health` is a liveness probe only (`status: ok`) and includes an in-process telemetry snapshot:
+  - `timeout_ms`
+  - `telemetry.requests_total`
+  - `telemetry.requests_success_total`
+  - `telemetry.requests_failure_total`
+  - `telemetry.timeout_total`
+  - per-class failure counters (`invalid_json`, `validation_error`, `context_package_not_found`, `write_conflict`, `schema_unavailable`, `internal_error`, `other_error`)
 - `GET /v1/ready` is a schema readiness probe:
   - returns `200` with `data.status=ready` only when schema is current and no migrations are pending.
   - returns `503 schema_unavailable` when database/schema is unavailable or pending migrations prevent readiness.

@@ -23,20 +23,31 @@ function requireIncludes(text, relPath, snippet) {
   }
 }
 
+function requireUpdatedMarker(text, relPath) {
+  const hasUpdatedMarker = /^Updated:\s+\d{4}-\d{2}-\d{2}(\b|$)/m.test(text);
+  if (!hasUpdatedMarker) {
+    fail(`${relPath} must include an ISO date Updated marker (Updated: YYYY-MM-DD)`);
+  }
+}
+
 function validateCommonDocs(pin) {
   const checkpoint = readText('docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md');
+  requireUpdatedMarker(checkpoint, 'docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md');
   requireIncludes(checkpoint, 'docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md', `- MemoryKernel release tag: \`${pin.release_tag}\``);
   requireIncludes(checkpoint, 'docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md', `- MemoryKernel commit: \`${pin.commit_sha}\``);
 
   const weekly = readText('docs/implementation/WEEKLY_INTEGRATION_REVIEW_2026-02-08.md');
+  requireUpdatedMarker(weekly, 'docs/implementation/WEEKLY_INTEGRATION_REVIEW_2026-02-08.md');
   requireIncludes(weekly, 'docs/implementation/WEEKLY_INTEGRATION_REVIEW_2026-02-08.md', `- MemoryKernel release tag: \`${pin.release_tag}\``);
   requireIncludes(weekly, 'docs/implementation/WEEKLY_INTEGRATION_REVIEW_2026-02-08.md', `- MemoryKernel commit SHA: \`${pin.commit_sha}\``);
 
   const rollback = readText('docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md');
+  requireUpdatedMarker(rollback, 'docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md');
   requireIncludes(rollback, 'docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md', `- release_tag: \`${pin.release_tag}\``);
   requireIncludes(rollback, 'docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md', `- commit_sha: \`${pin.commit_sha}\``);
 
   const matrix = readText('docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md');
+  requireUpdatedMarker(matrix, 'docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md');
   requireIncludes(matrix, 'docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md', `- MemoryKernel release tag: \`${pin.release_tag}\``);
   requireIncludes(matrix, 'docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md', `- MemoryKernel commit SHA: \`${pin.commit_sha}\``);
   requireIncludes(matrix, 'docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md', `- Expected service contract version: \`${pin.expected_service_contract_version}\``);
@@ -49,6 +60,7 @@ function validateCommonDocs(pin) {
   );
 
   const operations = readText('docs/OPERATIONS.md');
+  requireUpdatedMarker(operations, 'docs/OPERATIONS.md');
   for (const snippet of [
     'pnpm run check:memorykernel-pin',
     'pnpm run check:memorykernel-governance',
@@ -58,11 +70,13 @@ function validateCommonDocs(pin) {
     'pnpm run check:memorykernel-cutover-policy',
     'pnpm run test:memorykernel-cutover-dry-run',
     'pnpm run test:memorykernel-contract',
+    'pnpm run test:memorykernel-governance-negative',
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);
   }
 
   const activeStatus = readText('docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md');
+  requireUpdatedMarker(activeStatus, 'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md');
   requireIncludes(
     activeStatus,
     'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md',
@@ -84,7 +98,35 @@ function validateCommonDocs(pin) {
     'Canonical producer runtime/service contract source of truth: `/Users/d/Projects/MemoryKernel` on `main`.'
   );
 
-  readText('docs/implementation/NEXT_EXECUTION_QUEUE.md');
+  const queue = readText('docs/implementation/NEXT_EXECUTION_QUEUE.md');
+  requireUpdatedMarker(queue, 'docs/implementation/NEXT_EXECUTION_QUEUE.md');
+
+  const authority = readText('docs/implementation/MONOREPO_CONSOLIDATION_AUTHORITY_MODEL.md');
+  requireUpdatedMarker(authority, 'docs/implementation/MONOREPO_CONSOLIDATION_AUTHORITY_MODEL.md');
+  requireIncludes(
+    authority,
+    'docs/implementation/MONOREPO_CONSOLIDATION_AUTHORITY_MODEL.md',
+    'Atomic Update Rule'
+  );
+
+  const migrationChecklist = readText('docs/implementation/MONOREPO_MIGRATION_GATE_CHECKLIST.md');
+  requireUpdatedMarker(
+    migrationChecklist,
+    'docs/implementation/MONOREPO_MIGRATION_GATE_CHECKLIST.md'
+  );
+  requireIncludes(
+    migrationChecklist,
+    'docs/implementation/MONOREPO_MIGRATION_GATE_CHECKLIST.md',
+    'Gate D: Negative Drift Proof'
+  );
+
+  const runbook = readText('docs/implementation/MONOREPO_OPERATOR_HANDOFF_RUNBOOK.md');
+  requireUpdatedMarker(runbook, 'docs/implementation/MONOREPO_OPERATOR_HANDOFF_RUNBOOK.md');
+  requireIncludes(
+    runbook,
+    'docs/implementation/MONOREPO_OPERATOR_HANDOFF_RUNBOOK.md',
+    'Incident Rollback Workflow'
+  );
 }
 
 function validatePhaseMode(pin) {

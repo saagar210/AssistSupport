@@ -78,6 +78,24 @@ export function Header({ activeTab, onOpenCommandPalette, onOpenShortcuts }: Hea
   const info = tabInfo[activeTab];
   const appStatus = useAppStatus();
   const [showStatusPanel, setShowStatusPanel] = useState(false);
+  const memoryKernelCommitShort = appStatus.memoryKernelCommitSha
+    ? appStatus.memoryKernelCommitSha.slice(0, 12)
+    : null;
+  const memoryKernelTrace = [
+    appStatus.memoryKernelReleaseTag ? `tag ${appStatus.memoryKernelReleaseTag}` : null,
+    memoryKernelCommitShort ? `sha ${memoryKernelCommitShort}` : null,
+    appStatus.memoryKernelServiceContract && appStatus.memoryKernelApiContract
+      ? `${appStatus.memoryKernelServiceContract}/${appStatus.memoryKernelApiContract}`
+      : null,
+    appStatus.memoryKernelIntegrationBaseline
+      ? appStatus.memoryKernelIntegrationBaseline
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const memoryKernelDetail = appStatus.memoryKernelFeatureEnabled
+    ? [appStatus.memoryKernelDetail, memoryKernelTrace].filter(Boolean).join(' · ')
+    : 'Feature disabled';
 
   // Compute overall health
   const checks = [
@@ -174,7 +192,7 @@ export function Header({ activeTab, onOpenCommandPalette, onOpenShortcuts }: Hea
               <StatusItem
                 label="MemoryKernel"
                 status={appStatus.memoryKernelReady}
-                detail={appStatus.memoryKernelFeatureEnabled ? appStatus.memoryKernelDetail : 'Feature disabled'}
+                detail={memoryKernelDetail}
               />
             </div>
           </div>

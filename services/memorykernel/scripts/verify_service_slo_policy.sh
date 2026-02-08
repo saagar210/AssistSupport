@@ -82,6 +82,7 @@ required_keys = {
     "workloads",
     "repetitions",
     "thresholds_ms",
+    "operational_thresholds",
     "required_output",
 }
 missing = sorted(required_keys - set(policy.keys()))
@@ -93,12 +94,20 @@ for key in ("append_p95_max", "replay_p95_max", "gate_p95_max"):
     if key not in thresholds:
         raise SystemExit(f"service-slo-policy threshold missing: {key}")
 
+operational_thresholds = policy["operational_thresholds"]
+for key in ("timeout_rate_max_percent", "failure_rate_max_percent", "schema_unavailable_max_per_1000_requests"):
+    if key not in operational_thresholds:
+        raise SystemExit(f"service-slo-policy operational threshold missing: {key}")
+
 required_doc_snippets = [
     "Service SLO Policy (Normative)",
     "service-slo-policy.json",
     str(thresholds["append_p95_max"]),
     str(thresholds["replay_p95_max"]),
     str(thresholds["gate_p95_max"]),
+    str(operational_thresholds["timeout_rate_max_percent"]),
+    str(operational_thresholds["failure_rate_max_percent"]),
+    str(operational_thresholds["schema_unavailable_max_per_1000_requests"]),
 ]
 for snippet in required_doc_snippets:
     if snippet not in doc:

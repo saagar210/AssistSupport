@@ -8,10 +8,10 @@ Purpose: convert remaining work into a fixed execution queue to avoid prompt-by-
 ## Section 1: Monorepo Consolidation Readiness
 Objective: eliminate dual-repo operational friction while preserving release safety.
 
-- [ ] Finalize consolidation authority model document (source-of-truth, mirrored components, ownership map).
-- [ ] Create migration gate checklist with explicit pass/fail criteria for each migration gate.
-- [ ] Add compatibility guard that blocks migration if governance artifacts are stale.
-- [ ] Produce pre-migration evidence packet (tests, compliance suite, rollback readiness).
+- [x] Finalize consolidation authority model document (source-of-truth, mirrored components, ownership map).
+- [x] Create migration gate checklist with explicit pass/fail criteria for each migration gate.
+- [x] Add compatibility guard that blocks migration if governance artifacts are stale.
+- [x] Produce pre-migration evidence packet (tests, compliance suite, rollback readiness).
 
 Exit Criteria:
 - Consolidation authority model approved.
@@ -21,10 +21,10 @@ Exit Criteria:
 ## Section 2: MemoryKernel Backend Hardening Extension
 Objective: increase reliability/security observability before broader AssistSupport iteration.
 
-- [ ] Add request-level telemetry counters for service timeout/failure classes in producer service.
-- [ ] Add explicit service timeout SLO definitions and alerting trigger docs.
-- [ ] Expand failure-mode tests for malformed and partial payload edge cases across service endpoints.
-- [ ] Validate governance scripts still detect pin/matrix/manifest drift under negative test fixtures.
+- [x] Add request-level telemetry counters for service timeout/failure classes in producer service.
+- [x] Add explicit service timeout SLO definitions and alerting trigger docs.
+- [x] Expand failure-mode tests for malformed and partial payload edge cases across service endpoints.
+- [x] Validate governance scripts still detect pin/matrix/manifest drift under negative test fixtures.
 
 Exit Criteria:
 - Timeout/error telemetry surfaced in docs and test evidence.
@@ -34,9 +34,9 @@ Exit Criteria:
 ## Section 3: AssistSupport Product Reliability Iteration
 Objective: improve user-facing reliability and diagnostics while keeping deterministic fallback.
 
-- [ ] Improve diagnostics UX for enrichment disable reasons and remediation hints.
-- [ ] Add integration health panel traceability to pin + handoff payload state.
-- [ ] Strengthen non-blocking fallback copy and response quality heuristics.
+- [x] Improve diagnostics UX for enrichment disable reasons and remediation hints.
+- [x] Add integration health panel traceability to pin + handoff payload state.
+- [x] Strengthen non-blocking fallback copy and response quality heuristics.
 - [ ] Add smoke tests for degraded-mode Draft flow end-to-end behavior.
 
 Exit Criteria:
@@ -61,11 +61,13 @@ Exit Criteria:
 ```bash
 pnpm run typecheck
 pnpm run test
+pnpm run test:memorykernel-governance-negative
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
 pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run test:memorykernel-contract
 pnpm run test:ci
+cd services/memorykernel && ./scripts/test_producer_governance_negative.sh --memorykernel-root "$(pwd)"
 ```
 
 ## Program Rule

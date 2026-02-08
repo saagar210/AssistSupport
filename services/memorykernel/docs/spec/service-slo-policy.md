@@ -25,3 +25,15 @@ This policy governs benchmark-based service performance guardrails for MemoryKer
 
 - CI and release workflows MUST use the same guardrail values as the canonical policy file.
 - Policy drift between `service-slo-policy.json` and workflow gate commands is a release blocker.
+
+## Operational Telemetry Thresholds (Release Readiness)
+
+- `timeout_rate_max_percent`: `2.0`
+- `failure_rate_max_percent`: `5.0`
+- `schema_unavailable_max_per_1000_requests`: `1`
+
+## Alert Trigger Guidance
+
+- Trigger warning when timeout rate is above threshold for two consecutive validation runs.
+- Trigger critical alert when failure rate exceeds threshold and includes `schema_unavailable` spikes.
+- Block baseline promotion until telemetry returns within thresholds and regression root cause is documented.

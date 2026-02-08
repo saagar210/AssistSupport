@@ -28,13 +28,13 @@ describe('useMemoryKernelEnrichment', () => {
         status: 'ready',
         message: 'ready',
         base_url: 'http://127.0.0.1:4010',
-        service_contract_version: 'service.v2',
+        service_contract_version: 'service.v3',
         api_contract_version: 'api.v1',
-        expected_service_contract_version: 'service.v2',
+        expected_service_contract_version: 'service.v3',
         expected_api_contract_version: 'api.v1',
         integration_baseline: 'integration/v1',
-        release_tag: 'v0.3.2',
-        commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
+        release_tag: 'v0.4.0',
+        commit_sha: '7e4806a34b98e6c06ee33fa9f11499a975e7b922',
       },
     } as never);
 
@@ -67,11 +67,11 @@ describe('useMemoryKernelEnrichment', () => {
         base_url: 'http://127.0.0.1:4010',
         service_contract_version: null,
         api_contract_version: null,
-        expected_service_contract_version: 'service.v2',
+        expected_service_contract_version: 'service.v3',
         expected_api_contract_version: 'api.v1',
         integration_baseline: 'integration/v1',
-        release_tag: 'v0.3.2',
-        commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
+        release_tag: 'v0.4.0',
+        commit_sha: '7e4806a34b98e6c06ee33fa9f11499a975e7b922',
       },
     } as never);
 
@@ -82,6 +82,8 @@ describe('useMemoryKernelEnrichment', () => {
     expect(enriched.status).toBe('fallback');
     expect(enriched.fallbackReason).toBe('offline');
     expect(enriched.diagnosticNotes).toBe('Checked logs');
+    expect(enriched.message).toContain('service unavailable');
+    expect(enriched.message).toContain('offline');
   });
 
   it('falls back deterministically when adapter command errors', async () => {
@@ -95,5 +97,6 @@ describe('useMemoryKernelEnrichment', () => {
     expect(enriched.fallbackReason).toBe('adapter-error');
     expect(enriched.diagnosticNotes).toBeUndefined();
     expect(enriched.message).toContain('MemoryKernel enrichment unavailable');
+    expect(enriched.message).toContain('adapter');
   });
 });
