@@ -4,6 +4,7 @@
 //! which performs hybrid BM25 + HNSW vector search against PostgreSQL.
 
 use serde::{Deserialize, Serialize};
+use reqwest::StatusCode;
 
 const SEARCH_API_BASE: &str = "http://localhost:3000";
 const DEFAULT_TOP_K: usize = 10;
@@ -95,6 +96,14 @@ pub struct SearchApiStatsData {
     pub intent_distribution: std::collections::HashMap<String, u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchApiHealthStatus {
+    pub healthy: bool,
+    pub status: String,
+    pub message: String,
+    pub base_url: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct StatsApiResponse {
     #[allow(dead_code)]
@@ -113,12 +122,92 @@ struct HealthApiResponse {
     timestamp: Option<String>,
 }
 
+fn search_api_base() -> String {
+    std::env::var("ASSISTSUPPORT_SEARCH_API_BASE_URL")
+        .ok()
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| SEARCH_API_BASE.to_string())
+}
+
 fn sanitize_top_k(top_k: Option<usize>) -> usize {
     top_k.unwrap_or(DEFAULT_TOP_K).clamp(MIN_TOP_K, MAX_TOP_K)
 }
 
 fn is_valid_feedback_rating(rating: &str) -> bool {
     matches!(rating, "helpful" | "not_helpful" | "incorrect")
+}
+
+fn is_html_payload(content_type: Option<&str>, body: &str) -> bool {
+    let ct_has_html = content_type
+        .map(|ct| ct.to_ascii_lowercase().contains("text/html"))
+        .unwrap_or(false);
+    let body_trimmed = body.trim_start();
+    ct_has_html
+        || body_trimmed.starts_with("<!DOCTYPE html")
+        || body_trimmed.starts_with("<html")
+}
+
+fn classify_health_response(
+    status_code: StatusCode,
+    content_type: Option<&str>,
+    body: &str,
+    base_url: &str,
+) -> SearchApiHealthStatus {
+    let base = base_url.to_string();
+
+    if !status_code.is_success() {
+        return SearchApiHealthStatus {
+            healthy: false,
+            status: "offline".to_string(),
+            message: format!(
+                "Search API responded with HTTP {} at {}/health",
+                status_code.as_u16(),
+                base_url
+            ),
+            base_url: base,
+        };
+    }
+
+    if let Ok(health) = serde_json::from_str::<HealthApiResponse>(body) {
+        if health.status == "ok" {
+            return SearchApiHealthStatus {
+                healthy: true,
+                status: "ok".to_string(),
+                message: "Connected".to_string(),
+                base_url: base,
+            };
+        }
+
+        return SearchApiHealthStatus {
+            healthy: false,
+            status: "degraded".to_string(),
+            message: format!("Search API reported status '{}'", health.status),
+            base_url: base,
+        };
+    }
+
+    if is_html_payload(content_type, body) {
+        return SearchApiHealthStatus {
+            healthy: false,
+            status: "wrong-service".to_string(),
+            message: format!(
+                "Port 3000 is serving HTML instead of AssistSupport Search API JSON. Start search-api and ensure {}/health returns JSON.",
+                base_url
+            ),
+            base_url: base,
+        };
+    }
+
+    SearchApiHealthStatus {
+        healthy: false,
+        status: "invalid-response".to_string(),
+        message: format!(
+            "Search API health endpoint returned an unexpected response at {}/health",
+            base_url
+        ),
+        base_url: base,
+    }
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
@@ -130,6 +219,7 @@ pub async fn hybrid_search(
     top_k: Option<usize>,
 ) -> Result<HybridSearchResponse, String> {
     let client = reqwest::Client::new();
+    let base_url = search_api_base();
 
     let request = SearchApiRequest {
         query,
@@ -139,7 +229,7 @@ pub async fn hybrid_search(
     };
 
     let response = client
-        .post(format!("{}/search", SEARCH_API_BASE))
+        .post(format!("{}/search", base_url))
         .json(&request)
         .send()
         .await
@@ -173,6 +263,7 @@ pub async fn submit_search_feedback(
     }
 
     let client = reqwest::Client::new();
+    let base_url = search_api_base();
 
     let feedback = FeedbackApiRequest {
         query_id,
@@ -182,7 +273,7 @@ pub async fn submit_search_feedback(
     };
 
     let response = client
-        .post(format!("{}/feedback", SEARCH_API_BASE))
+        .post(format!("{}/feedback", base_url))
         .json(&feedback)
         .send()
         .await
@@ -201,9 +292,10 @@ pub async fn submit_search_feedback(
 #[tauri::command]
 pub async fn get_search_api_stats() -> Result<SearchApiStatsData, String> {
     let client = reqwest::Client::new();
+    let base_url = search_api_base();
 
     let response = client
-        .get(format!("{}/stats", SEARCH_API_BASE))
+        .get(format!("{}/stats", base_url))
         .send()
         .await
         .map_err(|e| format!("Stats API unavailable: {}", e))?;
@@ -222,31 +314,49 @@ pub async fn get_search_api_stats() -> Result<SearchApiStatsData, String> {
     Ok(stats.data)
 }
 
-/// Check if the search API is healthy.
+/// Diagnose search API health with actionable status.
 #[tauri::command]
-pub async fn check_search_api_health() -> Result<bool, String> {
+pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
+    let base_url = search_api_base();
 
-    match client
-        .get(format!("{}/health", SEARCH_API_BASE))
-        .send()
-        .await
-    {
+    match client.get(format!("{}/health", base_url)).send().await {
         Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<HealthApiResponse>().await {
-                    Ok(health) => Ok(health.status == "ok"),
-                    Err(_) => Ok(false),
-                }
-            } else {
-                Ok(false)
-            }
+            let status_code = response.status();
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.to_string());
+            let body = response.text().await.unwrap_or_default();
+
+            Ok(classify_health_response(
+                status_code,
+                content_type.as_deref(),
+                &body,
+                &base_url,
+            ))
         }
-        Err(_) => Ok(false),
+        Err(e) => Ok(SearchApiHealthStatus {
+            healthy: false,
+            status: "offline".to_string(),
+            message: format!(
+                "Search API unavailable at {}: {}",
+                base_url,
+                e
+            ),
+            base_url,
+        }),
     }
+}
+
+/// Check if the search API is healthy.
+#[tauri::command]
+pub async fn check_search_api_health() -> Result<bool, String> {
+    Ok(get_search_api_health_status().await?.healthy)
 }
 
 #[cfg(test)]
@@ -269,6 +379,42 @@ mod tests {
         assert!(is_valid_feedback_rating("incorrect"));
         assert!(!is_valid_feedback_rating("HELPFUL"));
         assert!(!is_valid_feedback_rating(" meh "));
+    }
+
+    #[test]
+    fn classify_health_response_detects_wrong_service_html() {
+        let status = classify_health_response(
+            StatusCode::OK,
+            Some("text/html; charset=utf-8"),
+            "<!DOCTYPE html><html><body>not api</body></html>",
+            "http://localhost:3000",
+        );
+        assert!(!status.healthy);
+        assert_eq!(status.status, "wrong-service");
+    }
+
+    #[test]
+    fn classify_health_response_accepts_valid_json_health() {
+        let status = classify_health_response(
+            StatusCode::OK,
+            Some("application/json"),
+            r#"{"status":"ok","service":"search-api"}"#,
+            "http://localhost:3000",
+        );
+        assert!(status.healthy);
+        assert_eq!(status.status, "ok");
+    }
+
+    #[test]
+    fn classify_health_response_reports_http_errors() {
+        let status = classify_health_response(
+            StatusCode::NOT_FOUND,
+            Some("application/json"),
+            "{}",
+            "http://localhost:3000",
+        );
+        assert!(!status.healthy);
+        assert_eq!(status.status, "offline");
     }
 
     #[test]

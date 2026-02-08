@@ -317,6 +317,7 @@ pub fn run() {
             commands::search_api::hybrid_search,
             commands::search_api::submit_search_feedback,
             commands::search_api::get_search_api_stats,
+            commands::search_api::get_search_api_health_status,
             commands::search_api::check_search_api_health,
         ])
         .run(tauri::generate_context!())

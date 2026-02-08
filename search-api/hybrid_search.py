@@ -27,9 +27,23 @@ class HybridSearchEngine:
         self.cur = self.conn.cursor()
         # Set HNSW ef_search once at connection time
         self.cur.execute("SET hnsw.ef_search = 100")
+        self.vector_search_enabled = self._detect_vector_capability()
         self.embedder = EmbeddingService()
         self.reranker = Reranker()
         print("Hybrid search engine initialized")
+
+    def _detect_vector_capability(self) -> bool:
+        """Detect whether pgvector is available before issuing vector SQL."""
+        try:
+            self.cur.execute("SELECT to_regtype('vector') IS NOT NULL")
+            row = self.cur.fetchone()
+            enabled = bool(row and row[0])
+            if not enabled:
+                print("Warning: pgvector extension not available; vector search disabled")
+            return enabled
+        except Exception as e:
+            print(f"Warning: Failed to detect vector capability: {e}")
+            return False
 
     def search(
         self,
@@ -196,19 +210,26 @@ class HybridSearchEngine:
         self, query_embedding, limit: int
     ) -> List[Tuple[str, float]]:
         """Execute HNSW vector semantic search"""
-        embedding_str = "[" + ",".join(f"{x:.6f}" for x in query_embedding) + "]"
+        if not self.vector_search_enabled:
+            return []
 
-        self.cur.execute(
-            """
-            SELECT id, 1 - (embedding <=> %s::vector) as cosine_similarity
-            FROM kb_articles
-            WHERE embedding IS NOT NULL AND is_active = true
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-            """,
-            (embedding_str, embedding_str, limit),
-        )
-        return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
+        embedding_str = "[" + ",".join(f"{x:.6f}" for x in query_embedding) + "]"
+        try:
+            self.cur.execute(
+                """
+                SELECT id, 1 - (embedding <=> %s::vector) as cosine_similarity
+                FROM kb_articles
+                WHERE embedding IS NOT NULL AND is_active = true
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (embedding_str, embedding_str, limit),
+            )
+            return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
+        except Exception as e:
+            print(f"Vector search unavailable, falling back to BM25 only: {e}")
+            self.vector_search_enabled = False
+            return []
 
     def _deduplicate_results(
         self, fused_results: List[Tuple[str, float]]

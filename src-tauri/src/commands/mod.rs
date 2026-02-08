@@ -25,8 +25,8 @@ pub use diagnostics::{
     run_quick_health_check, set_llm_resource_limits, QuickHealthResult,
 };
 pub use search_api::{
-    check_search_api_health, get_search_api_stats, hybrid_search, submit_search_feedback,
-    HybridSearchResponse, SearchApiStatsData,
+    check_search_api_health, get_search_api_health_status, get_search_api_stats, hybrid_search,
+    submit_search_feedback, HybridSearchResponse, SearchApiHealthStatus, SearchApiStatsData,
 };
 
 use crate::audit::{self, AuditLogger};

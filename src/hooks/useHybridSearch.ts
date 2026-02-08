@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   HybridSearchResponse,
+  SearchApiHealthStatus,
   SearchApiStatsData,
 } from '../types';
 
@@ -10,6 +11,7 @@ export interface HybridSearchState {
   searching: boolean;
   error: string | null;
   apiHealthy: boolean | null;
+  apiStatusMessage: string | null;
 }
 
 export function useHybridSearch() {
@@ -18,6 +20,7 @@ export function useHybridSearch() {
     searching: false,
     error: null,
     apiHealthy: null,
+    apiStatusMessage: null,
   });
 
   const search = useCallback(async (query: string, topK = 10): Promise<HybridSearchResponse | null> => {
@@ -27,7 +30,13 @@ export function useHybridSearch() {
         query,
         topK,
       });
-      setState(prev => ({ ...prev, searching: false, response, apiHealthy: true }));
+      setState(prev => ({
+        ...prev,
+        searching: false,
+        response,
+        apiHealthy: true,
+        apiStatusMessage: 'Connected',
+      }));
       return response;
     } catch (e) {
       const msg = String(e);
@@ -36,6 +45,7 @@ export function useHybridSearch() {
         searching: false,
         error: msg,
         apiHealthy: msg.includes('unavailable') ? false : prev.apiHealthy,
+        apiStatusMessage: msg.includes('unavailable') ? msg : prev.apiStatusMessage,
       }));
       return null;
     }
@@ -72,11 +82,19 @@ export function useHybridSearch() {
 
   const checkHealth = useCallback(async (): Promise<boolean> => {
     try {
-      const healthy = await invoke<boolean>('check_search_api_health');
-      setState(prev => ({ ...prev, apiHealthy: healthy }));
-      return healthy;
+      const health = await invoke<SearchApiHealthStatus>('get_search_api_health_status');
+      setState(prev => ({
+        ...prev,
+        apiHealthy: health.healthy,
+        apiStatusMessage: health.message,
+      }));
+      return health.healthy;
     } catch {
-      setState(prev => ({ ...prev, apiHealthy: false }));
+      setState(prev => ({
+        ...prev,
+        apiHealthy: false,
+        apiStatusMessage: 'Unable to check Search API health',
+      }));
       return false;
     }
   }, []);

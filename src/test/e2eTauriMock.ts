@@ -407,6 +407,13 @@ export function setupE2eTauriMock(): void {
         }
         case 'check_search_api_health':
           return true;
+        case 'get_search_api_health_status':
+          return {
+            healthy: true,
+            status: 'ok',
+            message: 'Connected',
+            base_url: 'http://localhost:3000',
+          };
         case 'hybrid_search':
           return {
             status: 'success',

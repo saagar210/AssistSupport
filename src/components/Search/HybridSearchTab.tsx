@@ -24,6 +24,7 @@ export function HybridSearchTab() {
     searching,
     error,
     apiHealthy,
+    apiStatusMessage,
     search,
     submitFeedback,
     getStats,
@@ -90,8 +91,21 @@ export function HybridSearchTab() {
             <span className="api-status-text">
               {apiHealthy === true ? 'PostgreSQL API' : apiHealthy === false ? 'API Offline' : 'Checking...'}
             </span>
+            <button
+              type="button"
+              className="api-status-refresh"
+              onClick={() => void checkHealth()}
+              title="Recheck Search API"
+            >
+              Recheck
+            </button>
           </div>
         </div>
+        {apiStatusMessage && (
+          <p className={`api-status-detail ${apiHealthy === false ? 'unhealthy' : ''}`}>
+            {apiStatusMessage}
+          </p>
+        )}
         <p className="hybrid-search-subtitle">
           BM25 keyword + HNSW vector search across 3,536 knowledge base articles
         </p>

@@ -50,6 +50,21 @@
   color: var(--text-secondary);
 }
 
+.api-status-refresh {
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.api-status-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .api-status-dot {
   width: 8px;
   height: 8px;
@@ -69,6 +84,16 @@
 
 .api-status-dot.unknown {
   background: var(--text-muted);
+}
+
+.api-status-detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.api-status-detail.unhealthy {
+  color: var(--warning);
 }
 
 /* Search Form */

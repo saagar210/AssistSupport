@@ -737,3 +737,10 @@ export interface SearchApiStatsData {
   feedback_stats: SearchApiFeedbackStats;
   intent_distribution: Record<string, number>;
 }
+
+export interface SearchApiHealthStatus {
+  healthy: boolean;
+  status: string;
+  message: string;
+  base_url: string;
+}
