@@ -19,6 +19,7 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 10. Added queue-first inbox wrapper behind `ASSISTSUPPORT_REVAMP_INBOX` (default-off).
 11. Extracted app-shell orchestration into dedicated hooks (`useAppShellState`, `useDraftActions`, `useAppShellCommands`).
 12. Added feature-domain compatibility wrappers for all remaining tabs (`sources`, `ingest`, `knowledge`, `analytics`, `pilot`, `search`, `ops`, `settings`).
+13. Added focused hook tests for `useDraftActions` and `useAppShellState`.
 
 ## Rationale
 1. Reduce `App.tsx` orchestration complexity.
@@ -27,8 +28,7 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 4. Complete domain-wrapper seams before UX rebuild to avoid mixed ownership migration risk.
 
 ## Pending Phase 3 Work
-1. Add focused tests for app-shell orchestration hooks and tab rendering contracts.
-2. Define cutover criteria for default-on of first revamp flag.
+1. None. Phase 3 technical foundation goals are complete; Phase 4 UX rebuild can begin behind existing flags.
 
 ## Verification Requirements
 Run canonical revamp verification suite before Phase 3 closure.
@@ -39,3 +39,4 @@ Run canonical revamp verification suite before Phase 3 closure.
 3. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_3_SUMMARY_2026-02-08.md`
 4. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_4_SUMMARY_2026-02-08.md`
 5. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_5_SUMMARY_2026-02-08.md`
+6. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_6_SUMMARY_2026-02-08.md`

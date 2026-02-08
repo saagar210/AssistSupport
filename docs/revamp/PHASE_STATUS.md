@@ -8,7 +8,7 @@ Date: 2026-02-08
 | Phase 0: Program Lock and Risk Freeze | Complete | `PROGRAM_CHARTER.md`, `NON_NEGOTIABLES.md`, `RELEASE_GATES.md`, `RISK_REGISTER.md`, `ADR_INDEX.md` | Governance baseline established. |
 | Phase 1: Baseline Capture and Safety Net | Complete | `BASELINE_METRICS.md`, `BASELINE_USER_FLOWS.md`, `FEATURE_FLAG_MATRIX.md`, `ROLLBACK_PLAN.md`, `evidence/BASELINE_*` | Baseline command evidence captured and rollback anchor tagged. |
 | Phase 2: Target Architecture and Contracts | Complete | `TARGET_ARCHITECTURE.md`, `MODULE_CONTRACTS.md`, `STATE_MODEL.md`, `ERROR_TAXONOMY.md` | Contract baseline ready for implementation phases. |
-| Phase 3: Foundation Refactor | In Progress | `FOUNDATION_MIGRATION_LOG.md`, `evidence/PHASE3_FOUNDATION_SLICE_*` | App-shell contracts and state hooks extracted; revamp flag runtime and queue-first inbox toggle landed (default-off). |
+| Phase 3: Foundation Refactor | Complete | `FOUNDATION_MIGRATION_LOG.md`, `evidence/PHASE3_FOUNDATION_SLICE_*`, `FEATURE_FLAG_MATRIX.md` | App-shell boundaries, flag runtime, compatibility wrappers, and hook coverage completed; ready for Phase 4 UX rebuild. |
 | Phase 4: UX Rebuild | Not Started | Pending | Depends on Phase 3 boundaries. |
 | Phase 5: LLM Runtime Governance | Not Started | Pending | Can partially parallelize after Phase 3. |
 | Phase 6: Integration and Ops Hardening | Not Started | Pending | Depends on revised runtime/UI surfaces. |

@@ -39,3 +39,19 @@ Define existing and planned feature toggles so revamp rollout is reversible and 
 2. Every flag must have a documented rollback command path.
 3. Flag defaults can only flip in release-candidate phase with evidence.
 4. Flag removal requires successful stabilization window and closure ADR.
+
+## Default-On Gate Criteria (First Candidate: `ASSISTSUPPORT_REVAMP_INBOX`)
+1. Technical criteria:
+   1. `pnpm run typecheck` PASS
+   2. `pnpm run test` PASS
+   3. `pnpm run test:memorykernel-contract` PASS
+   4. `pnpm run test:ci` PASS
+2. UX criteria:
+   1. Queue-first mode verified in desktop and mobile shell without navigation regressions.
+   2. Follow-up history operations (search, load, delete, template use) remain functional.
+3. Governance criteria:
+   1. Rollback path documented and rehearsed (`localStorage` override and env default).
+   2. Phase evidence packet recorded in `docs/revamp/evidence/`.
+4. Approval criteria:
+   1. Explicit GO in revamp checkpoint note.
+   2. Runtime cutover posture remains independent and unchanged (still governed by MemoryKernel checkpoint).
