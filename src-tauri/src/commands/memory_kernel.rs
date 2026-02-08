@@ -190,7 +190,8 @@ fn preflight_cache_key(
 fn get_cached_preflight(cache_key: &str) -> Option<MemoryKernelPreflightStatus> {
     let mut guard = PREFLIGHT_CACHE.lock().ok()?;
     if let Some(entry) = guard.as_ref() {
-        let is_expired = entry.cached_at.elapsed() > Duration::from_secs(PREFLIGHT_CACHE_TTL_SECONDS);
+        let is_expired =
+            entry.cached_at.elapsed() > Duration::from_secs(PREFLIGHT_CACHE_TTL_SECONDS);
         let key_mismatch = entry.cache_key != cache_key;
         if !is_expired && !key_mismatch {
             return Some(entry.status.clone());
@@ -493,7 +494,12 @@ fn extract_legacy_error_message(body: &str) -> Option<String> {
                 .legacy_error
                 .as_ref()
                 .and_then(legacy_error_value_to_string)
-                .or_else(|| payload.error.as_ref().and_then(legacy_error_value_to_string))
+                .or_else(|| {
+                    payload
+                        .error
+                        .as_ref()
+                        .and_then(legacy_error_value_to_string)
+                })
         })
 }
 
@@ -572,10 +578,7 @@ pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPrefligh
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    Ok(run_preflight_with_cache(
-        &client, &pin, enabled, &base_url, timeout_ms, false,
-    )
-    .await)
+    Ok(run_preflight_with_cache(&client, &pin, enabled, &base_url, timeout_ms, false).await)
 }
 
 #[tauri::command]
@@ -857,7 +860,11 @@ mod tests {
         )
     }
 
-    fn fixture_transitional_legacy_error(code: &str, message: &str, legacy_message: &str) -> String {
+    fn fixture_transitional_legacy_error(
+        code: &str,
+        message: &str,
+        legacy_message: &str,
+    ) -> String {
         format!(
             "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
             INTEGRATION_PIN.expected_service_contract_version, code, message, legacy_message
@@ -1261,8 +1268,11 @@ mod tests {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
-        let error_body =
-            fixture_transitional_legacy_error("validation_error", "Invalid query", "validation failed");
+        let error_body = fixture_transitional_legacy_error(
+            "validation_error",
+            "Invalid query",
+            "validation failed",
+        );
         assert_non_2xx_envelope_policy(&error_body, "validation_error", true);
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
@@ -1297,7 +1307,10 @@ mod tests {
             .expect("query ask command should not fail");
         assert_eq!(result.status, "fallback");
         assert_eq!(result.fallback_reason.as_deref(), Some("validation-error"));
-        assert_eq!(result.machine_error_code.as_deref(), Some("validation_error"));
+        assert_eq!(
+            result.machine_error_code.as_deref(),
+            Some("validation_error")
+        );
         assert!(result.message.contains("legacy_error: validation failed"));
 
         handle.join().expect("server thread panicked");

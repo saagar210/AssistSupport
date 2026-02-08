@@ -30,8 +30,13 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 21. Added second Playwright revamp path for `at-risk queue -> open draft -> generate response` to harden queue-to-compose continuity.
 22. Added response-quality coaching thresholds and severity bands in Analytics to surface operator risk signals without leaving the app.
 23. Added keyboard-shortcut affordances to Draft workflow strip (`Cmd+G`, `Cmd+N`) to support one-hand MacBook operation.
+24. Added operator-tunable response-quality coaching thresholds in Settings with validated watch/action bands and defaults reset support.
+25. Added Analytics drill-down rendering for coaching signals with draft-level examples (draft ID + metric + excerpt) for targeted remediation.
+26. Added backend `get_response_quality_drilldown_examples` contract and tests to keep drill-down data deterministic and locally queryable.
+27. Added Draft panel density modes (Balanced, Intake Focus, Response Focus) with persistent operator preference and `Cmd+1/2/3` quick toggles for dense 13"/14" MacBook layouts.
+28. Added Operator Scorecard in Analytics to summarize coaching signal posture into a single action-oriented score with top remediation priorities.
 
 ## Next
-1. Continue Draft IA simplification pass for dense tri-pane usage on 13-inch and 14-inch MacBook layouts.
-2. Add operator-tunable coaching thresholds in Settings so quality bands can be calibrated by team.
-3. Add Analytics drill-down from coaching band -> underlying draft examples for targeted remediation.
+1. Extend Operator Scorecard with queue telemetry joins (at-risk queue trend + owner load) for weekly operations reviews.
+2. Start Phase 5 LLM runtime governance hardening (golden-set eval harness + policy gates).
+3. Add Draft task preset workflows (incident / access / rollout) to reduce manual prompt framing.

@@ -49,6 +49,23 @@ interface DraftTabProps {
   onNavigateToSource?: (searchQuery: string) => void;
 }
 
+type DraftPanelDensityMode = 'balanced' | 'focus-intake' | 'focus-response';
+
+const DRAFT_PANEL_DENSITY_STORAGE_KEY = 'draft-panel-density-mode';
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName.toLowerCase();
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    target.isContentEditable
+  );
+}
+
 export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft, onNavigateToSource }, ref) {
   const { error: showError, success: showSuccess } = useToastContext();
   const {
@@ -106,6 +123,13 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [savedDraftId, setSavedDraftId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'panels' | 'conversation'>(() => {
     return (localStorage.getItem('draft-view-mode') as 'panels' | 'conversation') || 'panels';
+  });
+  const [panelDensityMode, setPanelDensityMode] = useState<DraftPanelDensityMode>(() => {
+    const stored = localStorage.getItem(DRAFT_PANEL_DENSITY_STORAGE_KEY);
+    if (stored === 'balanced' || stored === 'focus-intake' || stored === 'focus-response') {
+      return stored;
+    }
+    return 'balanced';
   });
   const [conversationEntries, setConversationEntries] = useState<ConversationEntry[]>([]);
 
@@ -564,6 +588,11 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     localStorage.setItem('draft-view-mode', mode);
   }, []);
 
+  const handlePanelDensityModeChange = useCallback((mode: DraftPanelDensityMode) => {
+    setPanelDensityMode(mode);
+    localStorage.setItem(DRAFT_PANEL_DENSITY_STORAGE_KEY, mode);
+  }, []);
+
   const handleConversationSubmit = useCallback(async (text: string) => {
     if (!modelLoaded) return;
 
@@ -623,6 +652,34 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setIsResponseEdited(false);
     }
   }, [cancelGeneration, streamingText]);
+
+  useEffect(() => {
+    if (viewMode !== 'panels') {
+      return;
+    }
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.altKey || event.ctrlKey) {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === '1') {
+        event.preventDefault();
+        handlePanelDensityModeChange('balanced');
+      } else if (event.key === '2') {
+        event.preventDefault();
+        handlePanelDensityModeChange('focus-intake');
+      } else if (event.key === '3') {
+        event.preventDefault();
+        handlePanelDensityModeChange('focus-response');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [viewMode, handlePanelDensityModeChange]);
 
   const handleLoadDraft = useCallback((draft: SavedDraft) => {
     setInput(draft.input_text);
@@ -937,7 +994,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   }
 
   return (
-    <div className={`draft-tab ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
+    <div className={`draft-tab panel-density-${panelDensityMode} ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
       {viewToggle}
       <section className="draft-workflow-strip" aria-label="Draft workflow overview">
         <div className="draft-workflow-step">
@@ -960,6 +1017,29 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           </p>
         </div>
         <div className="draft-workflow-actions">
+          <div className="draft-layout-mode-toggle" role="group" aria-label="Draft panel layout">
+            <button
+              type="button"
+              className={`draft-layout-mode-btn ${panelDensityMode === 'balanced' ? 'active' : ''}`}
+              onClick={() => handlePanelDensityModeChange('balanced')}
+            >
+              Balanced
+            </button>
+            <button
+              type="button"
+              className={`draft-layout-mode-btn ${panelDensityMode === 'focus-intake' ? 'active' : ''}`}
+              onClick={() => handlePanelDensityModeChange('focus-intake')}
+            >
+              Intake Focus
+            </button>
+            <button
+              type="button"
+              className={`draft-layout-mode-btn ${panelDensityMode === 'focus-response' ? 'active' : ''}`}
+              onClick={() => handlePanelDensityModeChange('focus-response')}
+            >
+              Response Focus
+            </button>
+          </div>
           <Button
             size="small"
             variant="secondary"
@@ -997,6 +1077,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           <div className="draft-workflow-shortcuts" aria-label="Keyboard shortcuts">
             <span><kbd>Cmd</kbd>+<kbd>G</kbd> Generate</span>
             <span><kbd>Cmd</kbd>+<kbd>N</kbd> Clear</span>
+            <span><kbd>Cmd</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> Layout</span>
           </div>
         </div>
       </section>

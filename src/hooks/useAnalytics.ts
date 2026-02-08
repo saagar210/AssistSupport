@@ -43,6 +43,20 @@ export interface ResponseQualitySummary {
   copy_per_saved_ratio: number;
 }
 
+export interface ResponseQualityDrilldownExample {
+  draft_id: string;
+  metric_value: number;
+  created_at: string;
+  draft_excerpt: string | null;
+}
+
+export interface ResponseQualityDrilldownExamples {
+  edit_ratio: ResponseQualityDrilldownExample[];
+  time_to_draft: ResponseQualityDrilldownExample[];
+  copy_per_save: ResponseQualityDrilldownExample[];
+  edited_save_rate: ResponseQualityDrilldownExample[];
+}
+
 export interface FeedbackCategoryCount {
   category: string;
   count: number;
@@ -93,5 +107,27 @@ export function useAnalytics() {
     });
   }, []);
 
-  return { logEvent, getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary };
+  const getResponseQualityDrilldownExamples = useCallback(
+    async (
+      periodDays?: number,
+      limit: number = 6,
+    ): Promise<ResponseQualityDrilldownExamples> =>
+      invoke<ResponseQualityDrilldownExamples>(
+        'get_response_quality_drilldown_examples',
+        {
+          periodDays: periodDays ?? null,
+          limit,
+        },
+      ),
+    [],
+  );
+
+  return {
+    logEvent,
+    getSummary,
+    getKbUsage,
+    getLowRatingAnalysis,
+    getResponseQualitySummary,
+    getResponseQualityDrilldownExamples,
+  };
 }

@@ -3842,7 +3842,11 @@ impl Database {
             None
         } else {
             Some(
-                time_to_draft_values.iter().copied().map(|v| v as f64).sum::<f64>()
+                time_to_draft_values
+                    .iter()
+                    .copied()
+                    .map(|v| v as f64)
+                    .sum::<f64>()
                     / time_to_draft_values.len() as f64,
             )
         };
@@ -3877,6 +3881,130 @@ impl Database {
             avg_time_to_draft_ms,
             median_time_to_draft_ms,
             copy_per_saved_ratio,
+        })
+    }
+
+    /// Get drill-down draft examples for each response quality coaching signal.
+    pub fn get_response_quality_drilldown_examples(
+        &self,
+        period_days: Option<i64>,
+        limit: Option<usize>,
+    ) -> Result<ResponseQualityDrilldownExamples, DbError> {
+        let date_filter = period_days
+            .map(|d| format!("AND a.created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+        let capped_limit = limit.unwrap_or(5).clamp(1, 25);
+
+        let map_examples = |query: &str| -> Result<Vec<ResponseQualityDrilldownExample>, DbError> {
+            let mut stmt = self.conn.prepare(query)?;
+            let rows = stmt.query_map([], |row| {
+                Ok(ResponseQualityDrilldownExample {
+                    draft_id: row.get(0)?,
+                    metric_value: row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                    created_at: row.get(2)?,
+                    draft_excerpt: row.get(3)?,
+                })
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+        };
+
+        let edit_ratio = map_examples(&format!(
+            "SELECT
+                CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT) AS draft_id,
+                CAST(json_extract(a.event_data_json, '$.edit_ratio') AS REAL) AS metric_value,
+                a.created_at,
+                CASE
+                    WHEN d.input_text IS NOT NULL THEN substr(d.input_text, 1, 160)
+                    ELSE NULL
+                END AS draft_excerpt
+             FROM analytics_events a
+             LEFT JOIN drafts d ON d.id = CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT)
+             WHERE a.event_type = 'response_saved'
+               AND json_extract(a.event_data_json, '$.draft_id') IS NOT NULL
+               AND json_extract(a.event_data_json, '$.edit_ratio') IS NOT NULL
+               {}
+             ORDER BY metric_value DESC, a.created_at DESC
+             LIMIT {}",
+            date_filter, capped_limit
+        ))?;
+
+        let time_to_draft = map_examples(&format!(
+            "SELECT
+                CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT) AS draft_id,
+                CAST(json_extract(a.event_data_json, '$.time_to_draft_ms') AS REAL) AS metric_value,
+                a.created_at,
+                CASE
+                    WHEN d.input_text IS NOT NULL THEN substr(d.input_text, 1, 160)
+                    ELSE NULL
+                END AS draft_excerpt
+             FROM analytics_events a
+             LEFT JOIN drafts d ON d.id = CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT)
+             WHERE a.event_type = 'response_quality_snapshot'
+               AND json_extract(a.event_data_json, '$.draft_id') IS NOT NULL
+               AND json_extract(a.event_data_json, '$.time_to_draft_ms') IS NOT NULL
+               {}
+             ORDER BY metric_value DESC, a.created_at DESC
+             LIMIT {}",
+            date_filter, capped_limit
+        ))?;
+
+        let copy_per_save = map_examples(&format!(
+            "SELECT
+                rs.draft_id AS draft_id,
+                0.0 AS metric_value,
+                rs.created_at,
+                CASE
+                    WHEN d.input_text IS NOT NULL THEN substr(d.input_text, 1, 160)
+                    ELSE NULL
+                END AS draft_excerpt
+             FROM (
+                SELECT
+                    CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT) AS draft_id,
+                    a.created_at
+                FROM analytics_events a
+                WHERE a.event_type = 'response_saved'
+                  AND json_extract(a.event_data_json, '$.draft_id') IS NOT NULL
+                  {}
+             ) rs
+             LEFT JOIN drafts d ON d.id = rs.draft_id
+             WHERE NOT EXISTS (
+                SELECT 1
+                FROM analytics_events c
+                WHERE c.event_type = 'response_copied'
+                  AND CAST(json_extract(c.event_data_json, '$.draft_id') AS TEXT) = rs.draft_id
+                  AND c.created_at >= rs.created_at
+             )
+             ORDER BY rs.created_at DESC
+             LIMIT {}",
+            date_filter, capped_limit
+        ))?;
+
+        let edited_save_rate = map_examples(&format!(
+            "SELECT
+                CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT) AS draft_id,
+                CAST(json_extract(a.event_data_json, '$.edit_ratio') AS REAL) AS metric_value,
+                a.created_at,
+                CASE
+                    WHEN d.input_text IS NOT NULL THEN substr(d.input_text, 1, 160)
+                    ELSE NULL
+                END AS draft_excerpt
+             FROM analytics_events a
+             LEFT JOIN drafts d ON d.id = CAST(json_extract(a.event_data_json, '$.draft_id') AS TEXT)
+             WHERE a.event_type = 'response_saved'
+               AND json_extract(a.event_data_json, '$.draft_id') IS NOT NULL
+               AND CAST(json_extract(a.event_data_json, '$.is_edited') AS INTEGER) = 1
+               {}
+             ORDER BY a.created_at DESC
+             LIMIT {}",
+            date_filter, capped_limit
+        ))?;
+
+        Ok(ResponseQualityDrilldownExamples {
+            edit_ratio,
+            time_to_draft,
+            copy_per_save,
+            edited_save_rate,
         })
     }
 
@@ -4486,10 +4614,7 @@ impl Database {
         enabled: bool,
         config_json: Option<&str>,
     ) -> Result<(), DbError> {
-        let normalized_config = match config_json
-            .map(str::trim)
-            .filter(|raw| !raw.is_empty())
-        {
+        let normalized_config = match config_json.map(str::trim).filter(|raw| !raw.is_empty()) {
             Some(raw) => {
                 let parsed: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
                     DbError::InvalidInput(format!("integration config must be valid JSON: {}", e))
@@ -5384,6 +5509,24 @@ pub struct ResponseQualitySummary {
     pub copy_per_saved_ratio: f64,
 }
 
+/// Draft-level drill-down example for a response quality signal.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResponseQualityDrilldownExample {
+    pub draft_id: String,
+    pub metric_value: f64,
+    pub created_at: String,
+    pub draft_excerpt: Option<String>,
+}
+
+/// Grouped drill-down examples keyed by coaching signal.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResponseQualityDrilldownExamples {
+    pub edit_ratio: Vec<ResponseQualityDrilldownExample>,
+    pub time_to_draft: Vec<ResponseQualityDrilldownExample>,
+    pub copy_per_save: Vec<ResponseQualityDrilldownExample>,
+    pub edited_save_rate: Vec<ResponseQualityDrilldownExample>,
+}
+
 /// Daily event count
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DailyCount {
@@ -5929,18 +6072,10 @@ mod tests {
             Some(r#"{"word_count":80,"edit_ratio":0.5,"time_to_draft_ms":3000}"#),
         )
         .unwrap();
-        db.log_analytics_event(
-            "event-3",
-            "response_saved",
-            Some(r#"{"is_edited":true}"#),
-        )
-        .unwrap();
-        db.log_analytics_event(
-            "event-4",
-            "response_saved",
-            Some(r#"{"is_edited":false}"#),
-        )
-        .unwrap();
+        db.log_analytics_event("event-3", "response_saved", Some(r#"{"is_edited":true}"#))
+            .unwrap();
+        db.log_analytics_event("event-4", "response_saved", Some(r#"{"is_edited":false}"#))
+            .unwrap();
         db.log_analytics_event("event-5", "response_copied", Some(r#"{}"#))
             .unwrap();
 
@@ -5954,6 +6089,59 @@ mod tests {
         assert_eq!(summary.median_time_to_draft_ms, Some(6000));
         assert_eq!(summary.avg_time_to_draft_ms, Some(6000.0));
         assert!((summary.copy_per_saved_ratio - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_response_quality_drilldown_examples_include_draft_context() {
+        let (db, _dir) = create_test_db();
+
+        let now = Utc::now().to_rfc3339();
+        db.conn()
+            .execute(
+                "INSERT INTO drafts (id, input_text, summary_text, diagnosis_json, response_text, ticket_id, kb_sources_json, created_at, updated_at, is_autosave, model_name)
+                 VALUES (?1, ?2, NULL, NULL, NULL, NULL, NULL, ?3, ?3, 0, NULL)",
+                params![
+                    "draft-example-1",
+                    "VPN client fails at startup when endpoint posture check blocks launch",
+                    now
+                ],
+            )
+            .unwrap();
+
+        db.log_analytics_event(
+            "drill-event-1",
+            "response_quality_snapshot",
+            Some(
+                r#"{"draft_id":"draft-example-1","word_count":110,"edit_ratio":0.15,"time_to_draft_ms":195000}"#,
+            ),
+        )
+        .unwrap();
+        db.log_analytics_event(
+            "drill-event-2",
+            "response_saved",
+            Some(r#"{"draft_id":"draft-example-1","is_edited":true,"edit_ratio":0.48}"#),
+        )
+        .unwrap();
+
+        let examples = db
+            .get_response_quality_drilldown_examples(None, Some(3))
+            .unwrap();
+        assert!(!examples.edit_ratio.is_empty());
+        assert_eq!(examples.edit_ratio[0].draft_id, "draft-example-1");
+        assert!(examples.edit_ratio[0]
+            .draft_excerpt
+            .as_deref()
+            .unwrap_or_default()
+            .contains("VPN client fails"));
+
+        assert!(!examples.time_to_draft.is_empty());
+        assert_eq!(examples.time_to_draft[0].draft_id, "draft-example-1");
+
+        assert!(!examples.copy_per_save.is_empty());
+        assert_eq!(examples.copy_per_save[0].draft_id, "draft-example-1");
+
+        assert!(!examples.edited_save_rate.is_empty());
+        assert_eq!(examples.edited_save_rate[0].draft_id, "draft-example-1");
     }
 
     #[test]

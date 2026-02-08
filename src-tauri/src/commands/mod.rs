@@ -4565,6 +4565,23 @@ pub async fn get_response_quality_summary(
         .map_err(|e| e.to_string())
 }
 
+/// Get draft-level drill-down examples for response quality coaching signals.
+#[tauri::command]
+pub async fn get_response_quality_drilldown_examples(
+    state: State<'_, AppState>,
+    period_days: Option<i64>,
+    limit: Option<usize>,
+) -> Result<crate::db::ResponseQualityDrilldownExamples, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_response_quality_drilldown_examples(period_days, limit)
+        .map_err(|e| e.to_string())
+}
+
 /// Get KB article usage statistics
 #[tauri::command]
 pub async fn get_kb_usage_stats(

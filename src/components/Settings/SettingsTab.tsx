@@ -8,6 +8,12 @@ import { useJira } from '../../hooks/useJira';
 import { useEmbedding } from '../../hooks/useEmbedding';
 import { useCustomVariables } from '../../hooks/useCustomVariables';
 import { useFeatureOps } from '../../hooks/useFeatureOps';
+import {
+  getResponseQualityThresholds,
+  resetResponseQualityThresholds,
+  ResponseQualityThresholds,
+  saveResponseQualityThresholds,
+} from '../../features/analytics/qualityThresholds';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import type {
@@ -78,6 +84,24 @@ function formatSpeed(bps: number): string {
   return `${formatBytes(bps)}/s`;
 }
 
+function validateQualityThresholds(
+  thresholds: ResponseQualityThresholds,
+): string | null {
+  if (thresholds.editRatioWatch >= thresholds.editRatioAction) {
+    return 'Edit ratio watch threshold must be lower than action threshold.';
+  }
+  if (thresholds.timeToDraftWatchMs >= thresholds.timeToDraftActionMs) {
+    return 'Time-to-draft watch threshold must be lower than action threshold.';
+  }
+  if (thresholds.copyPerSaveWatch <= thresholds.copyPerSaveAction) {
+    return 'Copy-per-save watch threshold must be higher than action threshold.';
+  }
+  if (thresholds.editedSaveRateWatch >= thresholds.editedSaveRateAction) {
+    return 'Edited save rate watch threshold must be lower than action threshold.';
+  }
+  return null;
+}
+
 export function SettingsTab() {
   const { loadModel, unloadModel, getLoadedModel, listModels, getContextWindow, setContextWindow, loadCustomModel, validateGgufFile } = useLlm();
   const { setKbFolder, getKbFolder, rebuildIndex, getIndexStats, getVectorConsent, setVectorConsent, generateEmbeddings } = useKb();
@@ -136,6 +160,10 @@ export function SettingsTab() {
   const [deployPreflightChecks, setDeployPreflightChecks] = useState<string[]>([]);
   const [deployPreflightRunning, setDeployPreflightRunning] = useState(false);
   const [integrations, setIntegrations] = useState<IntegrationConfigRecord[]>([]);
+  const [qualityThresholds, setQualityThresholds] = useState<ResponseQualityThresholds>(() =>
+    getResponseQualityThresholds(),
+  );
+  const [qualityThresholdError, setQualityThresholdError] = useState<string | null>(null);
 
   // Custom variables state
   const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
@@ -220,6 +248,7 @@ export function SettingsTab() {
       setEmbeddingDownloaded(embDownloaded);
       setDeploymentHealth(deployHealth);
       setIntegrations(integrationsList ?? []);
+      setQualityThresholds(getResponseQualityThresholds());
 
       // Check embedding model status
       await checkEmbeddingStatus();
@@ -585,6 +614,36 @@ export function SettingsTab() {
       showError(`Failed to update ${integrationType}: ${err}`);
     }
   }, [configureIntegration, listIntegrations, showError]);
+
+  const updateQualityThreshold = useCallback(
+    <K extends keyof ResponseQualityThresholds>(
+      key: K,
+      value: number,
+    ) => {
+      setQualityThresholds(prev => ({ ...prev, [key]: value }));
+      setQualityThresholdError(null);
+    },
+    [],
+  );
+
+  const handleSaveQualityThresholds = useCallback(() => {
+    const validationError = validateQualityThresholds(qualityThresholds);
+    if (validationError) {
+      setQualityThresholdError(validationError);
+      return;
+    }
+    const saved = saveResponseQualityThresholds(qualityThresholds);
+    setQualityThresholds(saved);
+    setQualityThresholdError(null);
+    showSuccess('Response quality coaching thresholds updated');
+  }, [qualityThresholds, showSuccess]);
+
+  const handleResetQualityThresholds = useCallback(() => {
+    const defaults = resetResponseQualityThresholds();
+    setQualityThresholds(defaults);
+    setQualityThresholdError(null);
+    showSuccess('Response quality coaching thresholds reset to defaults');
+  }, [showSuccess]);
 
   return (
     <div className="settings-tab">
@@ -1162,6 +1221,172 @@ export function SettingsTab() {
               {backupLoading === 'import' ? 'Importing...' : 'Import Data'}
             </Button>
           </div>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>Response Quality Coaching</h2>
+        <p className="settings-description">
+          Tune coaching severity bands used in Analytics. These thresholds are local to this workspace and can be calibrated for your support team.
+        </p>
+        <div className="quality-threshold-grid">
+          <div className="quality-threshold-card">
+            <h3>Edit Ratio (%)</h3>
+            <div className="quality-threshold-fields">
+              <label>
+                Watch
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.editRatioWatch * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'editRatioWatch',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Action
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.editRatioAction * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'editRatioAction',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </div>
+          <div className="quality-threshold-card">
+            <h3>Time to Draft (seconds)</h3>
+            <div className="quality-threshold-fields">
+              <label>
+                Watch
+                <input
+                  type="number"
+                  min={1}
+                  step={5}
+                  value={Math.round(qualityThresholds.timeToDraftWatchMs / 1000)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'timeToDraftWatchMs',
+                      Math.max(1, Number(e.target.value || 1)) * 1000,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Action
+                <input
+                  type="number"
+                  min={1}
+                  step={5}
+                  value={Math.round(qualityThresholds.timeToDraftActionMs / 1000)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'timeToDraftActionMs',
+                      Math.max(1, Number(e.target.value || 1)) * 1000,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </div>
+          <div className="quality-threshold-card">
+            <h3>Copy per Save (%)</h3>
+            <div className="quality-threshold-fields">
+              <label>
+                Watch
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.copyPerSaveWatch * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'copyPerSaveWatch',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Action
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.copyPerSaveAction * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'copyPerSaveAction',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </div>
+          <div className="quality-threshold-card">
+            <h3>Edited Save Rate (%)</h3>
+            <div className="quality-threshold-fields">
+              <label>
+                Watch
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.editedSaveRateWatch * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'editedSaveRateWatch',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Action
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={(qualityThresholds.editedSaveRateAction * 100).toFixed(0)}
+                  onChange={(e) =>
+                    updateQualityThreshold(
+                      'editedSaveRateAction',
+                      Number(e.target.value || 0) / 100,
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+        {qualityThresholdError && (
+          <div className="settings-error">{qualityThresholdError}</div>
+        )}
+        <div className="quality-threshold-actions">
+          <Button variant="secondary" size="small" onClick={handleSaveQualityThresholds}>
+            Save Thresholds
+          </Button>
+          <Button variant="ghost" size="small" onClick={handleResetQualityThresholds}>
+            Reset Defaults
+          </Button>
         </div>
       </section>
 

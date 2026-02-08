@@ -468,6 +468,80 @@
   padding-top: var(--space-3);
 }
 
+.operator-scorecard {
+  margin-top: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  padding: var(--space-3);
+}
+
+.operator-scorecard-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.operator-scorecard-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.operator-scorecard-header p {
+  margin: 6px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  max-width: 620px;
+}
+
+.operator-scorecard-score {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.operator-scorecard-score strong {
+  font-size: 1.5rem;
+}
+
+.operator-scorecard-score span {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.operator-scorecard-actions {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.operator-scorecard-actions-empty {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.operator-scorecard-on-track {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border-color));
+}
+
+.operator-scorecard-watch {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border-color));
+}
+
+.operator-scorecard-at-risk {
+  border-color: color-mix(in srgb, var(--error) 35%, var(--border-color));
+}
+
 .response-quality-coaching-title {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -506,6 +580,12 @@
   color: var(--text-secondary);
 }
 
+.response-quality-coaching-hint {
+  margin-top: 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .response-quality-coaching-item small {
   color: var(--text-muted);
   font-size: 11px;
@@ -517,4 +597,60 @@
 
 .response-quality-coaching-item.severity-action {
   border-color: color-mix(in srgb, var(--error) 40%, var(--border-color));
+}
+
+.quality-drilldown {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-light);
+}
+
+.quality-drilldown-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.quality-drilldown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1-5);
+}
+
+.quality-drilldown-list li {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+  padding: var(--space-1-5) var(--space-2);
+}
+
+.quality-drilldown-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.quality-drilldown-head code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.quality-drilldown-list p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.quality-drilldown-empty {
+  margin-top: var(--space-2);
+  font-size: 11px;
+  color: var(--text-muted);
 }

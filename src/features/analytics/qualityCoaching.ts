@@ -1,3 +1,8 @@
+import {
+  DEFAULT_RESPONSE_QUALITY_THRESHOLDS,
+  ResponseQualityThresholds,
+} from './qualityThresholds';
+
 export type CoachingSeverity = 'healthy' | 'watch' | 'action';
 
 export interface ResponseQualityCoachingInput {
@@ -15,6 +20,7 @@ export interface CoachingSignal {
   severity: CoachingSeverity;
   threshold: string;
   guidance: string;
+  drilldownHint: string;
 }
 
 export interface ResponseQualityCoachingSummary {
@@ -68,16 +74,33 @@ function calculateOverallSeverity(signals: CoachingSignal[]): CoachingSeverity {
 
 export function buildResponseQualityCoaching(
   summary: ResponseQualityCoachingInput | null,
+  thresholds: ResponseQualityThresholds = DEFAULT_RESPONSE_QUALITY_THRESHOLDS,
 ): ResponseQualityCoachingSummary | null {
   if (!summary || summary.snapshots_count === 0) {
     return null;
   }
 
-  const editRatioSeverity = classifyHigherIsRisk(summary.avg_edit_ratio, 0.2, 0.35);
+  const editRatioSeverity = classifyHigherIsRisk(
+    summary.avg_edit_ratio,
+    thresholds.editRatioWatch,
+    thresholds.editRatioAction,
+  );
   const avgTimeMs = summary.avg_time_to_draft_ms ?? 0;
-  const timeSeverity = classifyHigherIsRisk(avgTimeMs, 90_000, 180_000);
-  const copySeverity = classifyLowerIsRisk(summary.copy_per_saved_ratio, 0.6, 0.35);
-  const editedSaveSeverity = classifyHigherIsRisk(summary.edited_save_rate, 0.7, 0.85);
+  const timeSeverity = classifyHigherIsRisk(
+    avgTimeMs,
+    thresholds.timeToDraftWatchMs,
+    thresholds.timeToDraftActionMs,
+  );
+  const copySeverity = classifyLowerIsRisk(
+    summary.copy_per_saved_ratio,
+    thresholds.copyPerSaveWatch,
+    thresholds.copyPerSaveAction,
+  );
+  const editedSaveSeverity = classifyHigherIsRisk(
+    summary.edited_save_rate,
+    thresholds.editedSaveRateWatch,
+    thresholds.editedSaveRateAction,
+  );
 
   const signals: CoachingSignal[] = [
     {
@@ -85,32 +108,36 @@ export function buildResponseQualityCoaching(
       label: 'Edit ratio',
       value: `${(summary.avg_edit_ratio * 100).toFixed(1)}%`,
       severity: editRatioSeverity,
-      threshold: '<20% healthy, 20-35% watch, >35% action',
+      threshold: `<${(thresholds.editRatioWatch * 100).toFixed(0)}% healthy, ${(thresholds.editRatioWatch * 100).toFixed(0)}-${(thresholds.editRatioAction * 100).toFixed(0)}% watch, >${(thresholds.editRatioAction * 100).toFixed(0)}% action`,
       guidance: 'High edit churn usually signals weak first-pass quality. Tighten prompt framing and diagnostics.',
+      drilldownHint: 'Review high edit-ratio drafts in the drill-down panel and compare prompt framing.',
     },
     {
       id: 'time_to_draft',
       label: 'Avg time to draft',
       value: `${(avgTimeMs / 1000).toFixed(1)}s`,
       severity: timeSeverity,
-      threshold: '<90s healthy, 90-180s watch, >180s action',
+      threshold: `<${(thresholds.timeToDraftWatchMs / 1000).toFixed(0)}s healthy, ${(thresholds.timeToDraftWatchMs / 1000).toFixed(0)}-${(thresholds.timeToDraftActionMs / 1000).toFixed(0)}s watch, >${(thresholds.timeToDraftActionMs / 1000).toFixed(0)}s action`,
       guidance: 'Long draft times indicate workflow friction. Re-check queue context quality and checklist depth.',
+      drilldownHint: 'Inspect longest time-to-draft examples to identify missing diagnostics or weak source context.',
     },
     {
       id: 'copy_per_save',
       label: 'Copy per save',
       value: `${(summary.copy_per_saved_ratio * 100).toFixed(1)}%`,
       severity: copySeverity,
-      threshold: '>60% healthy, 35-60% watch, <35% action',
+      threshold: `>${(thresholds.copyPerSaveWatch * 100).toFixed(0)}% healthy, ${(thresholds.copyPerSaveAction * 100).toFixed(0)}-${(thresholds.copyPerSaveWatch * 100).toFixed(0)}% watch, <${(thresholds.copyPerSaveAction * 100).toFixed(0)}% action`,
       guidance: 'Low copy conversion means outputs are not getting reused. Review tone presets and response structure.',
+      drilldownHint: 'Inspect saved-without-copy examples to identify responses that need structure or tone tuning.',
     },
     {
       id: 'edited_save_rate',
       label: 'Edited save rate',
       value: `${(summary.edited_save_rate * 100).toFixed(1)}%`,
       severity: editedSaveSeverity,
-      threshold: '<70% healthy, 70-85% watch, >85% action',
+      threshold: `<${(thresholds.editedSaveRateWatch * 100).toFixed(0)}% healthy, ${(thresholds.editedSaveRateWatch * 100).toFixed(0)}-${(thresholds.editedSaveRateAction * 100).toFixed(0)}% watch, >${(thresholds.editedSaveRateAction * 100).toFixed(0)}% action`,
       guidance: 'If nearly every saved response is heavily edited, improve defaults before wider rollout.',
+      drilldownHint: 'Review heavily edited saves and compare with the generated baseline to tune prompts.',
     },
   ];
 

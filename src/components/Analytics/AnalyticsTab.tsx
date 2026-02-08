@@ -4,10 +4,17 @@ import {
   AnalyticsSummary,
   ArticleUsage,
   LowRatingAnalysis,
+  ResponseQualityDrilldownExamples,
   ResponseQualitySummary,
 } from '../../hooks/useAnalytics';
 import { useFeatureOps } from '../../hooks/useFeatureOps';
 import { buildResponseQualityCoaching } from '../../features/analytics/qualityCoaching';
+import { buildOperatorScorecard } from '../../features/analytics/operatorScorecard';
+import {
+  getResponseQualityThresholds,
+  RESPONSE_QUALITY_THRESHOLDS_UPDATED_EVENT,
+  ResponseQualityThresholds,
+} from '../../features/analytics/qualityThresholds';
 import type { KbGapCandidate } from '../../types';
 import { ArticleDetailPanel } from './ArticleDetailPanel';
 import './AnalyticsTab.css';
@@ -22,11 +29,19 @@ const PERIODS: { label: string; value: Period }[] = [
 ];
 
 export function AnalyticsTab() {
-  const { getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary } = useAnalytics();
+  const {
+    getSummary,
+    getKbUsage,
+    getLowRatingAnalysis,
+    getResponseQualitySummary,
+    getResponseQualityDrilldownExamples,
+  } = useAnalytics();
   const { getKbGapCandidates, updateKbGapStatus } = useFeatureOps();
   const [period, setPeriod] = useState<Period>(30);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [qualitySummary, setQualitySummary] = useState<ResponseQualitySummary | null>(null);
+  const [qualityDrilldown, setQualityDrilldown] = useState<ResponseQualityDrilldownExamples | null>(null);
+  const [qualityThresholds, setQualityThresholds] = useState<ResponseQualityThresholds>(() => getResponseQualityThresholds());
   const [kbUsage, setKbUsage] = useState<ArticleUsage[]>([]);
   const [lowRatingData, setLowRatingData] = useState<LowRatingAnalysis | null>(null);
   const [gapCandidates, setGapCandidates] = useState<KbGapCandidate[]>([]);
@@ -38,15 +53,17 @@ export function AnalyticsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryData, kbData, lowRating, qualityData] = await Promise.all([
+      const [summaryData, kbData, lowRating, qualityData, qualityDrilldownData] = await Promise.all([
         getSummary(period ?? undefined),
         getKbUsage(period ?? undefined),
         getLowRatingAnalysis(period ?? undefined).catch(() => null),
         getResponseQualitySummary(period ?? undefined).catch(() => null),
+        getResponseQualityDrilldownExamples(period ?? undefined, 6).catch(() => null),
       ]);
       const gaps = await getKbGapCandidates(12, 'open').catch(() => []);
       setSummary(summaryData);
       setQualitySummary(qualityData);
+      setQualityDrilldown(qualityDrilldownData);
       setKbUsage(kbData);
       setLowRatingData(lowRating);
       setGapCandidates(gaps);
@@ -56,7 +73,15 @@ export function AnalyticsTab() {
     } finally {
       setLoading(false);
     }
-  }, [period, getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary, getKbGapCandidates]);
+  }, [
+    period,
+    getSummary,
+    getKbUsage,
+    getLowRatingAnalysis,
+    getResponseQualitySummary,
+    getResponseQualityDrilldownExamples,
+    getKbGapCandidates,
+  ]);
 
   const handleGapStatus = useCallback(async (id: string, status: 'accepted' | 'resolved' | 'ignored') => {
     await updateKbGapStatus(id, status);
@@ -66,6 +91,17 @@ export function AnalyticsTab() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const syncThresholds = () => setQualityThresholds(getResponseQualityThresholds());
+    syncThresholds();
+    window.addEventListener(RESPONSE_QUALITY_THRESHOLDS_UPDATED_EVENT, syncThresholds);
+    window.addEventListener('storage', syncThresholds);
+    return () => {
+      window.removeEventListener(RESPONSE_QUALITY_THRESHOLDS_UPDATED_EVENT, syncThresholds);
+      window.removeEventListener('storage', syncThresholds);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -172,7 +208,11 @@ export function AnalyticsTab() {
         <RatingDistribution summary={summary} />
       </div>
 
-      <ResponseQualityPanel summary={qualitySummary} />
+      <ResponseQualityPanel
+        summary={qualitySummary}
+        thresholds={qualityThresholds}
+        drilldown={qualityDrilldown}
+      />
 
       {/* Quality Alert */}
       {lowRatingData && lowRatingData.low_rating_count > 0 && (
@@ -249,7 +289,15 @@ export function AnalyticsTab() {
   );
 }
 
-function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | null }) {
+function ResponseQualityPanel({
+  summary,
+  thresholds,
+  drilldown,
+}: {
+  summary: ResponseQualitySummary | null;
+  thresholds: ResponseQualityThresholds;
+  drilldown: ResponseQualityDrilldownExamples | null;
+}) {
   if (!summary || summary.snapshots_count === 0) {
     return (
       <div className="response-quality-panel">
@@ -267,7 +315,8 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
   const medianTimeSeconds = summary.median_time_to_draft_ms != null
     ? (summary.median_time_to_draft_ms / 1000).toFixed(1)
     : '--';
-  const coaching = buildResponseQualityCoaching(summary);
+  const coaching = buildResponseQualityCoaching(summary, thresholds);
+  const scorecard = buildOperatorScorecard(coaching);
 
   return (
     <div className="response-quality-panel">
@@ -315,6 +364,33 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
           <strong className="response-quality-value">{summary.saved_count}</strong>
         </div>
       </div>
+      {scorecard && (
+        <div className={`operator-scorecard operator-scorecard-${scorecard.posture}`}>
+          <div className="operator-scorecard-header">
+            <div>
+              <div className="operator-scorecard-title">Operator Scorecard</div>
+              <p>{scorecard.summary}</p>
+            </div>
+            <div className="operator-scorecard-score">
+              <strong>{scorecard.score}</strong>
+              <span>/100</span>
+            </div>
+          </div>
+          {scorecard.prioritySignals.length > 0 ? (
+            <ul className="operator-scorecard-actions">
+              {scorecard.prioritySignals.map((signal) => (
+                <li key={`score-${signal.id}`}>
+                  <strong>{signal.label}:</strong> {signal.guidance}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="operator-scorecard-actions-empty">
+              No urgent actions this period. Keep current runbooks and monitor trend drift.
+            </div>
+          )}
+        </div>
+      )}
       {coaching && (
         <div className="response-quality-coaching">
           <div className="response-quality-coaching-title">Coaching thresholds</div>
@@ -326,7 +402,11 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
                   <span>{signal.value}</span>
                 </div>
                 <p>{signal.guidance}</p>
+                <p className="response-quality-coaching-hint">{signal.drilldownHint}</p>
                 <small>{signal.threshold}</small>
+                {signal.severity !== 'healthy' && (
+                  <QualityDrilldownExamples signalId={signal.id} drilldown={drilldown} />
+                )}
               </li>
             ))}
           </ul>
@@ -334,6 +414,61 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
       )}
     </div>
   );
+}
+
+function QualityDrilldownExamples({
+  signalId,
+  drilldown,
+}: {
+  signalId: 'edit_ratio' | 'time_to_draft' | 'copy_per_save' | 'edited_save_rate';
+  drilldown: ResponseQualityDrilldownExamples | null;
+}) {
+  if (!drilldown) {
+    return null;
+  }
+  const items = drilldown[signalId].slice(0, 3);
+  if (items.length === 0) {
+    return (
+      <div className="quality-drilldown-empty">
+        No matching draft examples captured yet for this period.
+      </div>
+    );
+  }
+
+  return (
+    <div className="quality-drilldown">
+      <div className="quality-drilldown-title">Draft examples to review</div>
+      <ul className="quality-drilldown-list">
+        {items.map((item) => (
+          <li key={`${signalId}-${item.draft_id}-${item.created_at}`}>
+            <div className="quality-drilldown-head">
+              <code>{item.draft_id}</code>
+              <span>{formatDrilldownMetric(signalId, item.metric_value)}</span>
+            </div>
+            {item.draft_excerpt && <p>{item.draft_excerpt}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatDrilldownMetric(
+  signalId: 'edit_ratio' | 'time_to_draft' | 'copy_per_save' | 'edited_save_rate',
+  metricValue: number,
+): string {
+  switch (signalId) {
+    case 'edit_ratio':
+      return `${(metricValue * 100).toFixed(1)}% edit ratio`;
+    case 'time_to_draft':
+      return `${(metricValue / 1000).toFixed(1)}s to draft`;
+    case 'copy_per_save':
+      return 'Saved without copy';
+    case 'edited_save_rate':
+      return `${(metricValue * 100).toFixed(1)}% edit ratio`;
+    default:
+      return String(metricValue);
+  }
 }
 
 function RatingDistribution({ summary }: { summary: AnalyticsSummary }) {
