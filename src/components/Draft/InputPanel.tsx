@@ -37,6 +37,26 @@ interface InputPanelProps {
   onNavigateToSource?: (searchQuery: string) => void;
 }
 
+type TaskPresetKey = 'incident' | 'access' | 'rollout';
+
+const TASK_PRESETS: Record<TaskPresetKey, { label: string; content: string }> = {
+  incident: {
+    label: 'Incident triage',
+    content:
+      'Incident triage context:\n- Customer/business impact:\n- Scope (users/systems/regions):\n- Time issue started:\n- Actions already attempted:\n- Current blocker / escalation needed:',
+  },
+  access: {
+    label: 'Access request',
+    content:
+      'Access request context:\n- Requestor and team:\n- Requested system/resource:\n- Business justification:\n- Required access level:\n- Required-by date and approver:',
+  },
+  rollout: {
+    label: 'Change / rollout support',
+    content:
+      'Change rollout context:\n- Change window:\n- Affected services:\n- Validation checklist:\n- Rollback trigger:\n- Communication audience/status:',
+  },
+};
+
 export function InputPanel({
   value,
   onChange,
@@ -71,6 +91,7 @@ export function InputPanel({
   const [ticketFetching, setTicketFetching] = useState(false);
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [showDescription, setShowDescription] = useState(false);
+  const [taskPreset, setTaskPreset] = useState('');
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -194,6 +215,25 @@ export function InputPanel({
     onChange(value + separator + text);
   }, [value, onChange]);
 
+  const handleTaskPresetChange = useCallback(
+    (presetKey: string) => {
+      setTaskPreset(presetKey);
+      if (!presetKey) {
+        return;
+      }
+
+      const preset = TASK_PRESETS[presetKey as TaskPresetKey];
+      if (!preset) {
+        return;
+      }
+
+      const nextValue = value.trim().length > 0 ? `${preset.content}\n\n${value}` : preset.content;
+      onChange(nextValue);
+      setTaskPreset('');
+    },
+    [onChange, value],
+  );
+
   const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
   const hasFirstResponseInput = Boolean(value.trim() || ticket || ocrText);
 
@@ -215,6 +255,19 @@ export function InputPanel({
               onSelectTemplate={onApplyTemplate}
             />
           )}
+          <select
+            className="response-length-select task-preset-select"
+            value={taskPreset}
+            onChange={e => handleTaskPresetChange(e.target.value)}
+            title="Apply ticket task preset"
+          >
+            <option value="">Task preset</option>
+            {Object.entries(TASK_PRESETS).map(([key, preset]) => (
+              <option key={key} value={key}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
           <select
             className="response-length-select"
             value={responseLength}

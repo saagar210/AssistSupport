@@ -26,6 +26,8 @@ pnpm run test:memorykernel-phase3-dry-run
 pnpm run test:ci
 ```
 
+Note: `pnpm run check:llm-golden-set` now regenerates `docs/revamp/evidence/LLM_GOLDEN_SET_LATEST.json` before validation; commit refreshed evidence with each gate transition.
+
 ## Gate Blocking Rules
 1. Any failing command above blocks phase closure.
 2. Missing mandatory artifact blocks phase closure.

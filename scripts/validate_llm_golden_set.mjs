@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const defaultEvidencePath = 'docs/revamp/evidence/LLM_GOLDEN_SET_BASELINE_2026-02-08.json';
+const defaultEvidencePath = 'docs/revamp/evidence/LLM_GOLDEN_SET_LATEST.json';
+const fallbackEvidencePath = 'docs/revamp/evidence/LLM_GOLDEN_SET_BASELINE_2026-02-08.json';
 
 function fail(message) {
   console.error(`LLM golden-set validation failed: ${message}`);
@@ -12,10 +13,13 @@ function fail(message) {
 function readJson(relPath) {
   const absPath = path.join(root, relPath);
   if (!fs.existsSync(absPath)) {
-    fail(`missing evidence file: ${relPath}`);
+    return null;
   }
   try {
-    return JSON.parse(fs.readFileSync(absPath, 'utf8'));
+    return {
+      payload: JSON.parse(fs.readFileSync(absPath, 'utf8')),
+      path: relPath,
+    };
   } catch (error) {
     fail(`invalid JSON in ${relPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -41,12 +45,17 @@ function ensureRange(value, field, min, max) {
 
 function main() {
   const evidencePath = process.env.ASSISTSUPPORT_GOLDEN_SET_PATH ?? defaultEvidencePath;
+  const maxAgeHours = Number(process.env.ASSISTSUPPORT_GOLDEN_SET_MAX_AGE_HOURS ?? 168);
   const minScore = Number(process.env.ASSISTSUPPORT_GOLDEN_SET_MIN_SCORE ?? 80);
   const maxHallucinationRate = Number(process.env.ASSISTSUPPORT_GOLDEN_SET_MAX_HALLUCINATION_RATE ?? 0.03);
   const maxPolicyViolationRate = Number(process.env.ASSISTSUPPORT_GOLDEN_SET_MAX_POLICY_VIOLATION_RATE ?? 0.01);
   const maxCriticalFailures = Number(process.env.ASSISTSUPPORT_GOLDEN_SET_MAX_CRITICAL_FAILURES ?? 0);
 
-  const payload = readJson(evidencePath);
+  const evidence = readJson(evidencePath) ?? readJson(fallbackEvidencePath);
+  if (!evidence) {
+    fail(`missing evidence files: ${evidencePath} and ${fallbackEvidencePath}`);
+  }
+  const { payload, path: resolvedPath } = evidence;
 
   requireString(payload.evaluated_at, 'evaluated_at');
   requireNumber(payload.sample_count, 'sample_count');
@@ -60,6 +69,20 @@ function main() {
   ensureRange(payload.hallucination_rate, 'hallucination_rate', 0, 1);
   ensureRange(payload.policy_violation_rate, 'policy_violation_rate', 0, 1);
   ensureRange(payload.critical_failures, 'critical_failures', 0, Number.MAX_SAFE_INTEGER);
+
+  const evaluatedAtMs = Date.parse(payload.evaluated_at);
+  if (Number.isNaN(evaluatedAtMs)) {
+    fail(`field "evaluated_at" is not a valid ISO timestamp: ${payload.evaluated_at}`);
+  }
+  if (!Number.isNaN(maxAgeHours) && maxAgeHours > 0) {
+    const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+    const ageMs = Date.now() - evaluatedAtMs;
+    if (ageMs > maxAgeMs) {
+      fail(
+        `evidence at ${resolvedPath} is stale (${Math.floor(ageMs / 3600000)}h old, max ${maxAgeHours}h)`,
+      );
+    }
+  }
 
   if (payload.overall_score < minScore) {
     fail(`overall_score ${payload.overall_score} is below minimum ${minScore}`);
@@ -75,9 +98,8 @@ function main() {
   }
 
   console.log(
-    `LLM golden-set validation passed (score=${payload.overall_score}, hallucination_rate=${payload.hallucination_rate}, policy_violation_rate=${payload.policy_violation_rate}, critical_failures=${payload.critical_failures}).`,
+    `LLM golden-set validation passed using ${resolvedPath} (score=${payload.overall_score}, hallucination_rate=${payload.hallucination_rate}, policy_violation_rate=${payload.policy_violation_rate}, critical_failures=${payload.critical_failures}).`,
   );
 }
 
 main();
-

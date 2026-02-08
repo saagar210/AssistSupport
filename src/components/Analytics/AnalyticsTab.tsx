@@ -10,6 +10,7 @@ import {
 import { useFeatureOps } from '../../hooks/useFeatureOps';
 import { buildResponseQualityCoaching } from '../../features/analytics/qualityCoaching';
 import { buildOperatorScorecard } from '../../features/analytics/operatorScorecard';
+import { loadQueueHandoffSnapshot } from '../../features/inbox/queueModel';
 import {
   getResponseQualityThresholds,
   RESPONSE_QUALITY_THRESHOLDS_UPDATED_EVENT,
@@ -316,7 +317,7 @@ function ResponseQualityPanel({
     ? (summary.median_time_to_draft_ms / 1000).toFixed(1)
     : '--';
   const coaching = buildResponseQualityCoaching(summary, thresholds);
-  const scorecard = buildOperatorScorecard(coaching);
+  const scorecard = buildOperatorScorecard(coaching, loadQueueHandoffSnapshot());
 
   return (
     <div className="response-quality-panel">

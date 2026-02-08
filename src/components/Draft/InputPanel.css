@@ -32,6 +32,10 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
+.task-preset-select {
+  min-width: 170px;
+}
+
 .input-content {
   display: flex;
   flex-direction: column;

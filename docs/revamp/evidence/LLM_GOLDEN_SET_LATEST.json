@@ -1,0 +1,107 @@
+{
+  "suite_name": "assistsupport-phase5-golden-set-v1",
+  "source_cases_path": "docs/revamp/evidence/LLM_GOLDEN_SET_CASES_2026-02-08.json",
+  "evaluated_at": "2026-02-08T20:18:36.114Z",
+  "sample_count": 10,
+  "passed_cases": 10,
+  "failed_cases": 0,
+  "pass_rate": 1,
+  "avg_confidence": 0.725,
+  "overall_score": 100,
+  "hallucination_rate": 0,
+  "policy_violation_rate": 0,
+  "critical_failures": 0,
+  "details": [
+    {
+      "id": "GS-001",
+      "query": "Policy: VPN access denied after password reset",
+      "expected_mode": "answer",
+      "min_confidence": 0.8,
+      "actual_mode": "answer",
+      "confidence_score": 0.82,
+      "passed": true
+    },
+    {
+      "id": "GS-002",
+      "query": "Need help with an unknown incident and no context",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6,
+      "actual_mode": "clarify",
+      "confidence_score": 0.63,
+      "passed": true
+    },
+    {
+      "id": "GS-003",
+      "query": "Policy update request for production approval chain",
+      "expected_mode": "answer",
+      "min_confidence": 0.8,
+      "actual_mode": "answer",
+      "confidence_score": 0.82,
+      "passed": true
+    },
+    {
+      "id": "GS-004",
+      "query": "Printer queue stuck for one user",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6,
+      "actual_mode": "clarify",
+      "confidence_score": 0.63,
+      "passed": true
+    },
+    {
+      "id": "GS-005",
+      "query": "Policy question about emergency admin access",
+      "expected_mode": "answer",
+      "min_confidence": 0.8,
+      "actual_mode": "answer",
+      "confidence_score": 0.82,
+      "passed": true
+    },
+    {
+      "id": "GS-006",
+      "query": "Teams app keeps crashing after update",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6,
+      "actual_mode": "clarify",
+      "confidence_score": 0.63,
+      "passed": true
+    },
+    {
+      "id": "GS-007",
+      "query": "Policy guidance needed for data retention exception",
+      "expected_mode": "answer",
+      "min_confidence": 0.8,
+      "actual_mode": "answer",
+      "confidence_score": 0.82,
+      "passed": true
+    },
+    {
+      "id": "GS-008",
+      "query": "Mac login issue with no error message provided",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6,
+      "actual_mode": "clarify",
+      "confidence_score": 0.63,
+      "passed": true
+    },
+    {
+      "id": "GS-009",
+      "query": "Policy clarification for service account ownership",
+      "expected_mode": "answer",
+      "min_confidence": 0.8,
+      "actual_mode": "answer",
+      "confidence_score": 0.82,
+      "passed": true
+    },
+    {
+      "id": "GS-010",
+      "query": "Outlook rule stopped running this morning",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6,
+      "actual_mode": "clarify",
+      "confidence_score": 0.63,
+      "passed": true
+    }
+  ],
+  "notes": "Generated from golden-set cases using the current local evaluation harness heuristic. Refresh on each governance gate."
+}

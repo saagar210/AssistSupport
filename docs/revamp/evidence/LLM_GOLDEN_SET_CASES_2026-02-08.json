@@ -1,0 +1,65 @@
+{
+  "suite_name": "assistsupport-phase5-golden-set-v1",
+  "cases": [
+    {
+      "id": "GS-001",
+      "query": "Policy: VPN access denied after password reset",
+      "expected_mode": "answer",
+      "min_confidence": 0.8
+    },
+    {
+      "id": "GS-002",
+      "query": "Need help with an unknown incident and no context",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6
+    },
+    {
+      "id": "GS-003",
+      "query": "Policy update request for production approval chain",
+      "expected_mode": "answer",
+      "min_confidence": 0.8
+    },
+    {
+      "id": "GS-004",
+      "query": "Printer queue stuck for one user",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6
+    },
+    {
+      "id": "GS-005",
+      "query": "Policy question about emergency admin access",
+      "expected_mode": "answer",
+      "min_confidence": 0.8
+    },
+    {
+      "id": "GS-006",
+      "query": "Teams app keeps crashing after update",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6
+    },
+    {
+      "id": "GS-007",
+      "query": "Policy guidance needed for data retention exception",
+      "expected_mode": "answer",
+      "min_confidence": 0.8
+    },
+    {
+      "id": "GS-008",
+      "query": "Mac login issue with no error message provided",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6
+    },
+    {
+      "id": "GS-009",
+      "query": "Policy clarification for service account ownership",
+      "expected_mode": "answer",
+      "min_confidence": 0.8
+    },
+    {
+      "id": "GS-010",
+      "query": "Outlook rule stopped running this morning",
+      "expected_mode": "clarify",
+      "min_confidence": 0.6
+    }
+  ]
+}

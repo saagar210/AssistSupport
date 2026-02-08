@@ -35,8 +35,10 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 26. Added backend `get_response_quality_drilldown_examples` contract and tests to keep drill-down data deterministic and locally queryable.
 27. Added Draft panel density modes (Balanced, Intake Focus, Response Focus) with persistent operator preference and `Cmd+1/2/3` quick toggles for dense 13"/14" MacBook layouts.
 28. Added Operator Scorecard in Analytics to summarize coaching signal posture into a single action-oriented score with top remediation priorities.
+29. Extended Operator Scorecard with queue telemetry (at-risk rate, unassigned rate, workload skew) so operations risk is scored alongside response-quality posture.
+30. Added Draft task presets (Incident triage, Access request, Change/rollout support) to reduce manual framing and standardize operator intake.
 
 ## Next
-1. Extend Operator Scorecard with queue telemetry joins (at-risk queue trend + owner load) for weekly operations reviews.
-2. Start Phase 5 LLM runtime governance hardening (golden-set eval harness + policy gates).
-3. Add Draft task preset workflows (incident / access / rollout) to reduce manual prompt framing.
+1. Start Phase 6 integration/ops hardening checklist execution against the refreshed Phase 5 governance gates.
+2. Add runtime-target service.v3 candidate scenarios into golden-set cases before cutover decision mode advances.
+3. Continue full workflow rehearsal on compact MacBook layouts with updated Draft presets and queue-aware scorecard guidance.

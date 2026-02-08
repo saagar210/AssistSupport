@@ -48,7 +48,7 @@ Date: 2026-02-08
 1. Model profile registry active.
 2. Prompt contracts validated.
 3. Regression/eval thresholds green.
-4. `pnpm run check:llm-golden-set` passes against current evidence payload.
+4. `pnpm run check:llm-golden-set` passes against generated latest evidence payload (case-driven refresh + freshness policy).
 
 ## Gate G6: Integration + Ops Hardening
 ### Exit Requirements
