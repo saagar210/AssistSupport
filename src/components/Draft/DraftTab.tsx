@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useCallback, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { Button } from '../shared/Button';
 import { InputPanel } from './InputPanel';
 import { DiagnosisPanel, TreeResult } from './DiagnosisPanel';
 import { ResponsePanel } from './ResponsePanel';
@@ -17,6 +18,7 @@ import { useSavedResponses } from '../../hooks/useSavedResponses';
 import { useMemoryKernelEnrichment } from '../../hooks/useMemoryKernelEnrichment';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useAppStatus } from '../../contexts/AppStatusContext';
+import { calculateEditRatio, countWords } from '../../features/analytics/qualityMetrics';
 import type { JiraTicket } from '../../hooks/useJira';
 import type {
   ContextSource,
@@ -114,6 +116,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateModalRating, setTemplateModalRating] = useState<number | undefined>(undefined);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  const firstDraftStartMsRef = useRef<number | null>(null);
 
   const handleGenerate = useCallback(async () => {
     if (!input.trim() || generating) return;
@@ -124,6 +127,9 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     }
 
     setGenerating(true);
+    if (firstDraftStartMsRef.current === null) {
+      firstDraftStartMsRef.current = Date.now();
+    }
     setResponse(''); // Clear previous response
     clearStreamingText(); // Clear streaming buffer
     setConfidence(null);
@@ -159,11 +165,22 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setMetrics(result.metrics ?? null);
       setConfidence(result.confidence ?? null);
       setGrounding(result.grounding ?? []);
+      const responseWordCount = countWords(result.text);
+      const timeToDraftMs = firstDraftStartMsRef.current ? Date.now() - firstDraftStartMsRef.current : null;
       logEvent('response_generated', {
         response_length: responseLength,
         tokens_generated: result.tokens_generated,
         duration_ms: result.duration_ms,
         sources_count: result.sources.length,
+      });
+      logEvent('response_quality_snapshot', {
+        draft_id: savedDraftId,
+        word_count: responseWordCount,
+        edit_ratio: 0,
+        time_to_draft_ms: timeToDraftMs,
+        has_ticket: !!currentTicketId,
+        has_tree_path: !!treeResult,
+        has_notes: !!enrichment.diagnosticNotes?.trim(),
       });
     } catch (e) {
       console.error('Generation failed:', e);
@@ -171,7 +188,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     } finally {
       setGenerating(false);
     }
-  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError, logEvent, enrichDiagnosticNotes]);
+  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError, logEvent, enrichDiagnosticNotes, savedDraftId, currentTicketId]);
 
   const handleGenerateFirstResponse = useCallback(async () => {
     if (firstResponseGenerating) return;
@@ -526,6 +543,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setShowTemplateModal(false);
     setTemplateModalRating(undefined);
     setSuggestionsDismissed(false);
+    firstDraftStartMsRef.current = null;
   }, []);
 
   const handleResponseChange = useCallback((text: string) => {
@@ -783,9 +801,17 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
 
     if (draftId) {
       setSavedDraftId(draftId);
+      const responseWordCount = countWords(response);
+      const editRatio = calculateEditRatio(originalResponse, response);
+      logEvent('response_saved', {
+        draft_id: draftId,
+        word_count: responseWordCount,
+        is_edited: isResponseEdited,
+        edit_ratio: Number(editRatio.toFixed(3)),
+      });
       showSuccess('Draft saved');
     }
-  }, [input, buildDiagnosisJson, response, currentTicketId, sources, saveDraft, showError, showSuccess, loadedModelName]);
+  }, [input, buildDiagnosisJson, response, currentTicketId, sources, saveDraft, showError, showSuccess, loadedModelName, originalResponse, isResponseEdited, logEvent]);
 
   // Load initial draft if provided
   useEffect(() => {
@@ -832,11 +858,17 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     if (!response) return;
     try {
       await navigator.clipboard.writeText(response);
+      logEvent('response_copied', {
+        draft_id: savedDraftId,
+        word_count: countWords(response),
+        is_edited: isResponseEdited,
+        edit_ratio: Number(calculateEditRatio(originalResponse, response).toFixed(3)),
+      });
       showSuccess('Response copied to clipboard');
     } catch (e) {
       showError('Failed to copy response');
     }
-  }, [response, showSuccess, showError]);
+  }, [response, showSuccess, showError, logEvent, savedDraftId, isResponseEdited, originalResponse]);
 
   const handleExportResponse = useCallback(async () => {
     if (!response) {
@@ -868,6 +900,11 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   }), [handleGenerate, handleLoadDraft, handleSaveDraft, handleCopyResponse, handleCancel, handleExportResponse, handleClear]);
 
   const isConversation = viewMode === 'conversation';
+  const checklistCompletedCount = checklistItems.reduce((count, item) => {
+    return checklistCompleted[item.id] ? count + 1 : count;
+  }, 0);
+  const responseWordCount = countWords(response);
+  const responseEditRatio = calculateEditRatio(originalResponse, response);
 
   const viewToggle = (
     <div className="draft-view-header">
@@ -902,6 +939,61 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   return (
     <div className={`draft-tab ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
       {viewToggle}
+      <section className="draft-workflow-strip" aria-label="Draft workflow overview">
+        <div className="draft-workflow-step">
+          <h4>1. Intake</h4>
+          <p>{countWords(input)} words captured {currentTicketId ? '· ticket linked' : '· no ticket linked'}</p>
+        </div>
+        <div className="draft-workflow-step">
+          <h4>2. Diagnose</h4>
+          <p>
+            {treeResult ? 'Tree completed' : 'Tree not run'}
+            {' · '}
+            checklist {checklistCompletedCount}/{checklistItems.length}
+          </p>
+        </div>
+        <div className="draft-workflow-step">
+          <h4>3. Respond</h4>
+          <p>
+            {responseWordCount} words
+            {isResponseEdited ? ` · edited (${Math.round(responseEditRatio * 100)}%)` : ' · unedited'}
+          </p>
+        </div>
+        <div className="draft-workflow-actions">
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={handleGenerateFirstResponse}
+            disabled={!modelLoaded || firstResponseGenerating || !input.trim()}
+          >
+            Draft First Reply
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
+            onClick={handleChecklistGenerate}
+            disabled={!modelLoaded || checklistGenerating || (!input.trim() && !ocrText?.trim() && !currentTicket)}
+          >
+            Build Checklist
+          </Button>
+          <Button
+            size="small"
+            variant="primary"
+            onClick={handleGenerate}
+            disabled={!modelLoaded || generating || !input.trim()}
+          >
+            Generate Full Response
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
+            onClick={handleSaveDraft}
+            disabled={!input.trim()}
+          >
+            Save
+          </Button>
+        </div>
+      </section>
       <div className="draft-panels-container">
         <div className="draft-panel input-panel">
           <InputPanel

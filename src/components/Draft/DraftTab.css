@@ -9,6 +9,43 @@
   overflow: hidden;
 }
 
+.draft-workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.draft-workflow-step {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  padding: var(--space-2) var(--space-3);
+}
+
+.draft-workflow-step h4 {
+  margin: 0 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.draft-workflow-step p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.draft-workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .draft-panels-container {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -117,6 +154,15 @@
 
 /* Responsive: 2-column at medium widths */
 @media (max-width: 1100px) {
+  .draft-workflow-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .draft-workflow-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .draft-panels-container {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto 1fr;
@@ -145,6 +191,10 @@
 
 /* Responsive: single-column stacking */
 @media (max-width: 768px) {
+  .draft-workflow-strip {
+    grid-template-columns: 1fr;
+  }
+
   .draft-panels-container {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;

@@ -20,8 +20,11 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 11. Added workspace quick-actions to deep-link directly into queue views (at-risk, unassigned, in-progress).
 12. Added queue/workspace operator-action telemetry events and revamp rehearsal script (`pnpm run test:revamp-queue-rehearsal`).
 13. Added Mac operator QA checklist to reduce rollout/adoption risk.
+14. Added Draft workflow strip with staged intake/diagnose/respond status and quick actions for faster compose flow.
+15. Added response-quality analytics signals (`response_quality_snapshot`, `response_saved`, `response_copied`) to support tuning.
+16. Added Playwright revamp queue workflow coverage (`pnpm run test:e2e:revamp`) for workspace deep-link and queue view filter transitions.
 
 ## Next
-1. Rework Draft page information architecture for faster ticket-to-response flow (layout + reduced context switching).
-2. Add response quality instrumentation (time-to-first-draft, edit distance, reuse rate) in analytics pipeline.
-3. Add end-to-end Playwright revamp flow for keyboard triage + queue deep-link + draft open loop.
+1. Extend response-quality instrumentation into dashboard summaries for operator/coaching views.
+2. Add second Playwright path for at-risk queue triage followed by draft open + response generation.
+3. Continue Draft IA simplification pass for mobile-density and one-hand keyboard operation on MacBook layouts.

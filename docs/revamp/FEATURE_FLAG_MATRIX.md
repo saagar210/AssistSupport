@@ -50,6 +50,7 @@ Define existing and planned feature toggles so revamp rollout is reversible and 
    3. `pnpm run test:memorykernel-contract` PASS
    4. `pnpm run test:ci` PASS
    5. `pnpm run test:revamp-queue-rehearsal` PASS
+   6. `pnpm run test:e2e:revamp` PASS
 2. UX criteria:
    1. Queue-first mode verified in desktop and mobile shell without navigation regressions.
    2. Follow-up history operations (search, load, delete, template use) remain functional.
