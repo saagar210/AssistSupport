@@ -12,6 +12,8 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 3. Extracted command palette command construction from `App.tsx` into `buildAppShellCommands`.
 4. Extracted active tab rendering switch into `renderActiveTab`.
 5. Kept existing UI behavior and navigation semantics unchanged.
+6. Added unit tests for app-shell command and shortcut contracts.
+7. Re-ran MemoryKernel contract and full CI suites with green results.
 
 ## Rationale
 1. Reduce `App.tsx` orchestration complexity.
@@ -26,3 +28,7 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 
 ## Verification Requirements
 Run canonical revamp verification suite before Phase 3 closure.
+
+## Evidence
+1. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_VERIFICATION_2026-02-08.md`
+2. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_2_SUMMARY_2026-02-08.md`
