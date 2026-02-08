@@ -4,13 +4,17 @@ import { FollowUpsTab } from '../../components/FollowUps/FollowUpsTab';
 import { useDrafts } from '../../hooks/useDrafts';
 import type { SavedDraft } from '../../types';
 import {
+  buildQueueHandoffSnapshot,
   buildQueueItems,
   filterQueueItems,
   formatQueueTimestamp,
   loadQueueMeta,
   persistQueueMeta,
   summarizeQueue,
+  summarizeQueueByOwner,
+  summarizeQueueByPriority,
   type QueueMetaMap,
+  type QueueItem,
   type QueuePriority,
   type QueueState,
   type QueueView,
@@ -66,6 +70,8 @@ export function QueueFirstInboxPage({
   const [queueView, setQueueView] = useState<QueueView>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [operatorName, setOperatorName] = useState(loadOperatorName);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [handoffStatus, setHandoffStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadDrafts(100);
@@ -90,6 +96,9 @@ export function QueueFirstInboxPage({
 
   const queueItems = useMemo(() => buildQueueItems(drafts, queueMetaMap), [drafts, queueMetaMap]);
   const queueSummary = useMemo(() => summarizeQueue(queueItems), [queueItems]);
+  const queuePrioritySummary = useMemo(() => summarizeQueueByPriority(queueItems), [queueItems]);
+  const queueOwnerSummary = useMemo(() => summarizeQueueByOwner(queueItems), [queueItems]);
+  const queueHandoffSnapshot = useMemo(() => buildQueueHandoffSnapshot(queueItems), [queueItems]);
 
   const filteredItems = useMemo(() => {
     const scoped = filterQueueItems(queueItems, queueView);
@@ -105,6 +114,15 @@ export function QueueFirstInboxPage({
       return ticket.includes(normalized) || summary.includes(normalized) || input.includes(normalized);
     });
   }, [queueItems, queueView, searchQuery]);
+
+  useEffect(() => {
+    setSelectedIndex((prev) => {
+      if (filteredItems.length === 0) {
+        return 0;
+      }
+      return Math.max(0, Math.min(prev, filteredItems.length - 1));
+    });
+  }, [filteredItems]);
 
   const updateQueueMeta = useCallback((draftId: string, updates: Partial<{ owner: string; state: QueueState; priority: QueuePriority }>) => {
     setQueueMetaMap((prev) => {
@@ -145,8 +163,83 @@ export function QueueFirstInboxPage({
     updateQueueMeta(draftId, { priority });
   }, [updateQueueMeta]);
 
+  const currentItem = filteredItems[selectedIndex] ?? null;
+
+  const withCurrentItem = useCallback((handler: (item: QueueItem) => void) => {
+    if (!currentItem) {
+      return;
+    }
+    handler(currentItem);
+  }, [currentItem]);
+
+  const handleCopyHandoffSnapshot = useCallback(async () => {
+    const payload = JSON.stringify(queueHandoffSnapshot, null, 2);
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      setHandoffStatus('Clipboard not available in this environment.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(payload);
+      setHandoffStatus('Shift handoff snapshot copied.');
+    } catch {
+      setHandoffStatus('Failed to copy handoff snapshot.');
+    }
+  }, [queueHandoffSnapshot]);
+
+  const handleQueueKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    const isInputElement = target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA';
+    if (isInputElement) {
+      return;
+    }
+
+    switch (event.key.toLowerCase()) {
+      case 'arrowdown':
+      case 'j':
+        event.preventDefault();
+        setSelectedIndex((prev) => Math.min(prev + 1, Math.max(filteredItems.length - 1, 0)));
+        break;
+      case 'arrowup':
+      case 'k':
+        event.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, 0));
+        break;
+      case 'enter':
+        event.preventDefault();
+        withCurrentItem((item) => onLoadDraft(item.draft));
+        break;
+      case 'c':
+        event.preventDefault();
+        withCurrentItem((item) => {
+          if (item.meta.owner === 'unassigned' && item.meta.state !== 'resolved') {
+            handleClaim(item.draft.id);
+          }
+        });
+        break;
+      case 'x':
+        event.preventDefault();
+        withCurrentItem((item) => {
+          if (item.meta.state !== 'resolved') {
+            handleResolve(item.draft.id);
+          }
+        });
+        break;
+      case 'o':
+        event.preventDefault();
+        withCurrentItem((item) => {
+          if (item.meta.state === 'resolved') {
+            handleReopen(item.draft.id);
+          }
+        });
+        break;
+      default:
+        break;
+    }
+  }, [filteredItems.length, handleClaim, handleReopen, handleResolve, onLoadDraft, withCurrentItem]);
+
   return (
-    <div className="queue-inbox-page" data-testid="queue-first-inbox">
+    <div className="queue-inbox-page" data-testid="queue-first-inbox" onKeyDown={handleQueueKeyDown}>
       <section className="queue-inbox-banner" aria-live="polite">
         <h2>Queue-first inbox mode</h2>
         <p>
@@ -171,6 +264,50 @@ export function QueueFirstInboxPage({
         <div className="queue-metric"><span>At Risk</span><strong>{queueSummary.atRisk}</strong></div>
       </section>
 
+      <section className="queue-analytics" aria-label="Shift handoff analytics">
+        <div className="queue-analytics-card">
+          <h3>Priority Mix</h3>
+          <div className="queue-priority-grid">
+            <span>Urgent: <strong>{queuePrioritySummary.urgent}</strong></span>
+            <span>High: <strong>{queuePrioritySummary.high}</strong></span>
+            <span>Normal: <strong>{queuePrioritySummary.normal}</strong></span>
+            <span>Low: <strong>{queuePrioritySummary.low}</strong></span>
+          </div>
+        </div>
+        <div className="queue-analytics-card">
+          <h3>Owner Workload</h3>
+          {queueOwnerSummary.length === 0 ? (
+            <p>No active queue ownership yet.</p>
+          ) : (
+            <ul>
+              {queueOwnerSummary.map((owner) => (
+                <li key={owner.owner}>
+                  <strong>{owner.owner}</strong> · open {owner.openCount} · in progress {owner.inProgressCount}
+                  {owner.atRiskCount > 0 ? ` · at risk ${owner.atRiskCount}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="queue-analytics-card">
+          <h3>Shift Handoff</h3>
+          <p>Generated: {formatQueueTimestamp(queueHandoffSnapshot.generatedAt)}</p>
+          <Button size="small" variant="secondary" onClick={handleCopyHandoffSnapshot}>
+            Copy Handoff Snapshot
+          </Button>
+          {handoffStatus && <p className="queue-handoff-status">{handoffStatus}</p>}
+          {queueHandoffSnapshot.topAtRisk.length > 0 && (
+            <ul>
+              {queueHandoffSnapshot.topAtRisk.slice(0, 3).map((riskItem) => (
+                <li key={riskItem.draftId}>
+                  {riskItem.ticketLabel} · {riskItem.priority} · due {formatQueueTimestamp(riskItem.slaDueAt)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
       <section className="queue-filters" aria-label="Queue filters">
         {QUEUE_VIEWS.map((view) => (
           <Button
@@ -191,15 +328,23 @@ export function QueueFirstInboxPage({
       </section>
 
       <section className="queue-list" aria-label="Queue work items">
+        <p className="queue-shortcuts">
+          Shortcuts: <kbd>J</kbd>/<kbd>K</kbd> move · <kbd>C</kbd> claim · <kbd>X</kbd> resolve · <kbd>O</kbd> reopen · <kbd>Enter</kbd> open
+        </p>
         {loading && <p className="queue-loading">Loading queue...</p>}
         {!loading && filteredItems.length === 0 && (
           <p className="queue-empty">No queue items for this view.</p>
         )}
 
         {!loading && filteredItems.length > 0 && (
-          <ul>
-            {filteredItems.map((item) => (
-              <li key={item.draft.id} className="queue-item" data-priority={item.meta.priority}>
+          <ul data-testid="queue-items-list" tabIndex={0}>
+            {filteredItems.map((item, index) => (
+              <li
+                key={item.draft.id}
+                className={`queue-item ${selectedIndex === index ? 'queue-item--selected' : ''}`}
+                data-priority={item.meta.priority}
+                data-selected={selectedIndex === index ? 'true' : 'false'}
+              >
                 <div className="queue-item-head">
                   <div>
                     <strong>{formatTicketLabel(item.draft)}</strong>

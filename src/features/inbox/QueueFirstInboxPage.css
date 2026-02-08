@@ -43,6 +43,47 @@
   gap: var(--space-2, 8px);
 }
 
+.queue-analytics {
+  display: grid;
+  gap: var(--space-2, 8px);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.queue-analytics-card {
+  border: 1px solid var(--color-border, #2f343f);
+  border-radius: 10px;
+  background: var(--color-surface, #11151b);
+  padding: 10px 12px;
+}
+
+.queue-analytics-card h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.queue-analytics-card p {
+  margin: 0 0 8px;
+  color: var(--color-text-secondary, #a6adbb);
+}
+
+.queue-analytics-card ul {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--color-text-secondary, #a6adbb);
+}
+
+.queue-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  color: var(--color-text-secondary, #a6adbb);
+}
+
+.queue-handoff-status {
+  margin-top: 8px;
+  color: var(--color-text-secondary, #a6adbb);
+}
+
 .queue-metric {
   border: 1px solid var(--color-border, #2f343f);
   border-radius: 10px;
@@ -85,11 +126,28 @@
   gap: var(--space-2, 8px);
 }
 
+.queue-shortcuts {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary, #a6adbb);
+}
+
+.queue-shortcuts kbd {
+  border: 1px solid var(--color-border, #2f343f);
+  border-radius: 6px;
+  padding: 1px 4px;
+  margin: 0 2px;
+}
+
 .queue-item {
   border: 1px solid var(--color-border, #2f343f);
   border-radius: 12px;
   background: var(--color-surface, #11151b);
   padding: 12px;
+}
+
+.queue-item--selected {
+  box-shadow: 0 0 0 1px color-mix(in srgb, #10b981 72%, transparent);
 }
 
 .queue-item[data-priority='urgent'] {

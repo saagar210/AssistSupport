@@ -28,6 +28,34 @@ export interface QueueSummary {
   atRisk: number;
 }
 
+export interface QueuePrioritySummary {
+  low: number;
+  normal: number;
+  high: number;
+  urgent: number;
+}
+
+export interface QueueOwnerWorkload {
+  owner: string;
+  openCount: number;
+  inProgressCount: number;
+  atRiskCount: number;
+}
+
+export interface QueueHandoffSnapshot {
+  generatedAt: string;
+  summary: QueueSummary;
+  prioritySummary: QueuePrioritySummary;
+  ownerWorkload: QueueOwnerWorkload[];
+  topAtRisk: Array<{
+    draftId: string;
+    ticketLabel: string;
+    owner: string;
+    priority: QueuePriority;
+    slaDueAt: string;
+  }>;
+}
+
 const QUEUE_META_STORAGE_KEY = 'assistsupport.queue.meta.v1';
 
 const PRIORITY_RANK: Record<QueuePriority, number> = {
@@ -180,6 +208,84 @@ export function summarizeQueue(items: QueueItem[]): QueueSummary {
     inProgress: items.filter((item) => item.meta.state === 'in_progress').length,
     resolved: items.filter((item) => item.meta.state === 'resolved').length,
     atRisk: items.filter((item) => item.isAtRisk && item.meta.state !== 'resolved').length,
+  };
+}
+
+export function summarizeQueueByPriority(items: QueueItem[]): QueuePrioritySummary {
+  return items.reduce<QueuePrioritySummary>(
+    (acc, item) => {
+      if (item.meta.state === 'resolved') {
+        return acc;
+      }
+
+      acc[item.meta.priority] += 1;
+      return acc;
+    },
+    { low: 0, normal: 0, high: 0, urgent: 0 },
+  );
+}
+
+export function summarizeQueueByOwner(items: QueueItem[]): QueueOwnerWorkload[] {
+  const buckets = new Map<string, QueueOwnerWorkload>();
+
+  for (const item of items) {
+    if (item.meta.state === 'resolved') {
+      continue;
+    }
+
+    const key = item.meta.owner || 'unassigned';
+    const current = buckets.get(key) ?? {
+      owner: key,
+      openCount: 0,
+      inProgressCount: 0,
+      atRiskCount: 0,
+    };
+
+    if (item.meta.state === 'in_progress') {
+      current.inProgressCount += 1;
+    } else {
+      current.openCount += 1;
+    }
+
+    if (item.isAtRisk) {
+      current.atRiskCount += 1;
+    }
+
+    buckets.set(key, current);
+  }
+
+  return Array.from(buckets.values()).sort((a, b) => {
+    const aTotal = a.openCount + a.inProgressCount;
+    const bTotal = b.openCount + b.inProgressCount;
+    if (bTotal !== aTotal) {
+      return bTotal - aTotal;
+    }
+    return a.owner.localeCompare(b.owner);
+  });
+}
+
+function getQueueTicketLabel(draft: SavedDraft): string {
+  return draft.ticket_id?.trim() || `Draft ${draft.id.slice(0, 8)}`;
+}
+
+export function buildQueueHandoffSnapshot(items: QueueItem[], generatedAt = new Date().toISOString()): QueueHandoffSnapshot {
+  const atRisk = items
+    .filter((item) => item.isAtRisk && item.meta.state !== 'resolved')
+    .slice(0, 10)
+    .map((item) => ({
+      draftId: item.draft.id,
+      ticketLabel: getQueueTicketLabel(item.draft),
+      owner: item.meta.owner,
+      priority: item.meta.priority,
+      slaDueAt: item.slaDueAt,
+    }));
+
+  return {
+    generatedAt,
+    summary: summarizeQueue(items),
+    prioritySummary: summarizeQueueByPriority(items),
+    ownerWorkload: summarizeQueueByOwner(items),
+    topAtRisk: atRisk,
   };
 }
 

@@ -7,6 +7,7 @@ interface UseAppShellCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
   revampCommandPaletteV2Enabled: boolean;
+  queueFirstInboxEnabled: boolean;
   setActiveTab: (tab: TabId) => void;
   openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
@@ -24,6 +25,7 @@ export function useAppShellCommands({
   activeTab,
   sidebarCollapsed,
   revampCommandPaletteV2Enabled,
+  queueFirstInboxEnabled,
   setActiveTab,
   openQueueView,
   handleGenerate,
@@ -40,6 +42,7 @@ export function useAppShellCommands({
     activeTab,
     sidebarCollapsed,
     revampCommandPaletteV2Enabled,
+    queueFirstInboxEnabled,
     setActiveTab,
     openQueueView,
     handleGenerate,
@@ -55,6 +58,7 @@ export function useAppShellCommands({
     activeTab,
     sidebarCollapsed,
     revampCommandPaletteV2Enabled,
+    queueFirstInboxEnabled,
     setActiveTab,
     openQueueView,
     handleGenerate,

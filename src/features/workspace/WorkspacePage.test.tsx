@@ -10,6 +10,14 @@ vi.mock('../../components/Draft/DraftTab', () => ({
   ),
 }));
 
+vi.mock('../../hooks/useDrafts', () => ({
+  useDrafts: () => ({
+    drafts: [],
+    loading: false,
+    loadDrafts: vi.fn(),
+  }),
+}));
+
 describe('WorkspacePage', () => {
   it('renders legacy draft tab by default', () => {
     render(<WorkspacePage onNavigateToSource={() => undefined} />);
@@ -19,6 +27,6 @@ describe('WorkspacePage', () => {
   it('renders revamp shell when workspace revamp mode is enabled', () => {
     render(<WorkspacePage onNavigateToSource={() => undefined} revampModeEnabled />);
     expect(screen.getByTestId('workspace-revamp-shell')).toBeInTheDocument();
-    expect(screen.getByText(/Draft workflow/i)).toBeInTheDocument();
+    expect(screen.getByText(/Live queue context/i)).toBeInTheDocument();
   });
 });

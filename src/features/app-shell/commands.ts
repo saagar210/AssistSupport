@@ -6,6 +6,7 @@ interface BuildCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
   revampCommandPaletteV2Enabled: boolean;
+  queueFirstInboxEnabled: boolean;
   setActiveTab: (tab: TabId) => void;
   openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
@@ -23,6 +24,7 @@ export function buildAppShellCommands({
   activeTab,
   sidebarCollapsed,
   revampCommandPaletteV2Enabled,
+  queueFirstInboxEnabled,
   setActiveTab,
   openQueueView,
   handleGenerate,
@@ -258,6 +260,7 @@ export function buildAppShellCommands({
         icon: 'followups',
         category: 'action',
         action: () => openQueueView('unassigned'),
+        disabled: !queueFirstInboxEnabled,
       },
       {
         id: 'queue-open-at-risk',
@@ -266,6 +269,7 @@ export function buildAppShellCommands({
         icon: 'alert-triangle',
         category: 'action',
         action: () => openQueueView('at_risk'),
+        disabled: !queueFirstInboxEnabled,
       },
       {
         id: 'queue-open-in-progress',
@@ -274,6 +278,7 @@ export function buildAppShellCommands({
         icon: 'play',
         category: 'action',
         action: () => openQueueView('in_progress'),
+        disabled: !queueFirstInboxEnabled,
       },
       {
         id: 'queue-open-resolved',
@@ -282,6 +287,7 @@ export function buildAppShellCommands({
         icon: 'check',
         category: 'action',
         action: () => openQueueView('resolved'),
+        disabled: !queueFirstInboxEnabled,
       },
     );
   }

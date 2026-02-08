@@ -77,6 +77,7 @@ function AppContent() {
     activeTab,
     sidebarCollapsed,
     revampCommandPaletteV2Enabled: revampFlags.ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2,
+    queueFirstInboxEnabled: revampFlags.ASSISTSUPPORT_REVAMP_INBOX,
     setActiveTab,
     openQueueView: handleNavigateToQueue,
     handleGenerate,

@@ -13,8 +13,11 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 4. Added queue-first inbox triage model with SLA risk/priority routing behind `ASSISTSUPPORT_REVAMP_INBOX`.
 5. Added revamp command-palette queue jump actions behind `ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2`.
 6. Added queue model and command routing tests to reduce migration regression risk.
+7. Added keyboard-first queue actions (`J/K`, `C`, `X`, `O`, `Enter`) for triage operations.
+8. Added queue analytics/shift handoff snapshot module to support operator workload balancing.
+9. Replaced static workspace guidance rail with live queue-context modules in revamp workspace mode.
 
 ## Next
-1. Replace static workspace guidance rail with actionable queue context modules.
-2. Add queue workload analytics snapshots to support shift handoffs.
-3. Add keyboard shortcuts for queue claim/resolve workflows in revamp mode.
+1. Add queue workload trend deltas (current snapshot vs previous snapshot) for handoff quality checks.
+2. Add workspace quick-actions to open queue deep-links directly from context modules.
+3. Add end-to-end revamp flag rehearsal script for queue-first workflows.

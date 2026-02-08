@@ -6,6 +6,7 @@ function createParams(activeTab: 'draft' | 'sources' = 'draft') {
     activeTab,
     sidebarCollapsed: false,
     revampCommandPaletteV2Enabled: false,
+    queueFirstInboxEnabled: true,
     setActiveTab: vi.fn(),
     openQueueView: vi.fn(),
     handleGenerate: vi.fn(),
@@ -62,5 +63,15 @@ describe('buildAppShellCommands', () => {
 
     commands.find((c) => c.id === 'queue-open-at-risk')?.action();
     expect(params.openQueueView).toHaveBeenCalledWith('at_risk');
+  });
+
+  it('disables queue commands when inbox queue-first mode is disabled', () => {
+    const params = createParams('sources');
+    params.revampCommandPaletteV2Enabled = true;
+    params.queueFirstInboxEnabled = false;
+    const commands = buildAppShellCommands(params);
+
+    expect(commands.find((c) => c.id === 'queue-open-unassigned')?.disabled).toBe(true);
+    expect(commands.find((c) => c.id === 'queue-open-at-risk')?.disabled).toBe(true);
   });
 });

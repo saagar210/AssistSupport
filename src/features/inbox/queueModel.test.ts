@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedDraft } from '../../types';
 import {
+  buildQueueHandoffSnapshot,
   buildQueueItems,
   filterQueueItems,
   inferPriorityFromDraft,
   loadQueueMeta,
   persistQueueMeta,
   summarizeQueue,
+  summarizeQueueByOwner,
+  summarizeQueueByPriority,
   type QueueMetaMap,
 } from './queueModel';
 
@@ -102,5 +105,36 @@ describe('queueModel', () => {
 
     storage.setItem('assistsupport.queue.meta.v1', '{broken-json');
     expect(loadQueueMeta(storage)).toEqual({});
+  });
+
+  it('builds queue analytics and handoff snapshot', () => {
+    const drafts = [
+      makeDraft({ id: 'a', input_text: 'sev1 outage', ticket_id: 'INC-1', updated_at: '2026-02-08T00:00:00Z' }),
+      makeDraft({ id: 'b', input_text: 'routine issue', ticket_id: 'INC-2', updated_at: '2026-02-08T01:00:00Z' }),
+      makeDraft({ id: 'c', input_text: 'blocked deployment', ticket_id: 'INC-3', updated_at: '2026-02-08T02:00:00Z' }),
+    ];
+
+    const meta: QueueMetaMap = {
+      a: { owner: 'unassigned', priority: 'urgent', state: 'open', updatedAt: '2026-02-08T00:00:00Z' },
+      b: { owner: 'agent-a', priority: 'normal', state: 'in_progress', updatedAt: '2026-02-08T01:00:00Z' },
+      c: { owner: 'agent-a', priority: 'high', state: 'resolved', updatedAt: '2026-02-08T02:00:00Z' },
+    };
+
+    const items = buildQueueItems(drafts, meta, Date.parse('2026-02-08T12:00:00Z'));
+    const byPriority = summarizeQueueByPriority(items);
+    const byOwner = summarizeQueueByOwner(items);
+    const snapshot = buildQueueHandoffSnapshot(items, '2026-02-08T13:00:00Z');
+
+    expect(byPriority.urgent).toBe(1);
+    expect(byPriority.high).toBe(0);
+    expect(byOwner[0]).toEqual({
+      owner: 'agent-a',
+      openCount: 0,
+      inProgressCount: 1,
+      atRiskCount: 1,
+    });
+    expect(snapshot.generatedAt).toBe('2026-02-08T13:00:00Z');
+    expect(snapshot.summary.total).toBe(3);
+    expect(snapshot.topAtRisk[0]?.ticketLabel).toBe('INC-1');
   });
 });
