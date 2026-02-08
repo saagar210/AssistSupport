@@ -175,6 +175,8 @@ fn initialize_schema(conn: &Connection) -> Result<(), AppError> {
         INSERT OR IGNORE INTO settings (key, value) VALUES ('context_chunks', '5');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('similarity_threshold', '0.75');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('rrf_k', '60');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('context_token_budget', '4096');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('history_token_budget', '2048');
         ",
     )?;
 
@@ -287,6 +289,8 @@ mod tests {
             ("context_chunks", "5"),
             ("similarity_threshold", "0.75"),
             ("rrf_k", "60"),
+            ("context_token_budget", "4096"),
+            ("history_token_budget", "2048"),
         ];
 
         for (key, expected_value) in expected_settings {

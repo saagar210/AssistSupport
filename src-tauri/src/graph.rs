@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -429,6 +429,276 @@ pub fn get_graph_data(
     Ok(GraphData { nodes, links })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphTraversalNode {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_title: String,
+    pub depth: usize,
+    pub path_weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Community {
+    pub id: usize,
+    pub members: Vec<String>,
+    pub size: usize,
+}
+
+/// Load the adjacency list for a collection from graph_edges, filtering by min_weight.
+/// Returns a map: chunk_id -> Vec<(neighbor_chunk_id, weight)>.
+/// Edges are treated as undirected.
+fn load_adjacency(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    min_weight: f64,
+) -> Result<HashMap<String, Vec<(String, f64)>>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT source_chunk_id, target_chunk_id, weight
+         FROM graph_edges
+         WHERE collection_id = ?1 AND weight >= ?2",
+    )?;
+
+    let mut adj: HashMap<String, Vec<(String, f64)>> = HashMap::new();
+
+    let rows = stmt.query_map(rusqlite::params![collection_id, min_weight], |row| {
+        let src: String = row.get(0)?;
+        let tgt: String = row.get(1)?;
+        let w: f64 = row.get(2)?;
+        Ok((src, tgt, w))
+    })?;
+
+    for row in rows {
+        let (src, tgt, w) = row?;
+        adj.entry(src.clone())
+            .or_default()
+            .push((tgt.clone(), w));
+        adj.entry(tgt).or_default().push((src, w));
+    }
+
+    Ok(adj)
+}
+
+/// BFS traversal from a start node, up to max_depth, filtering edges by min_weight.
+pub fn traverse_graph(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    start_chunk_id: &str,
+    max_depth: usize,
+    min_weight: f64,
+) -> Result<Vec<GraphTraversalNode>, AppError> {
+    let adj = load_adjacency(conn, collection_id, min_weight)?;
+
+    // Build a lookup of chunk_id -> (document_id, document_title)
+    let mut meta_stmt = conn.prepare(
+        "SELECT c.id, c.document_id, d.title
+         FROM chunks c
+         JOIN documents d ON d.id = c.document_id
+         WHERE c.collection_id = ?1",
+    )?;
+    let chunk_meta: HashMap<String, (String, String)> = meta_stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            let cid: String = row.get(0)?;
+            let did: String = row.get(1)?;
+            let title: String = row.get(2)?;
+            Ok((cid, did, title))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(cid, did, title)| (cid, (did, title)))
+        .collect();
+
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<(String, usize, f64)> = VecDeque::new();
+    let mut results: Vec<GraphTraversalNode> = Vec::new();
+
+    visited.insert(start_chunk_id.to_string());
+    queue.push_back((start_chunk_id.to_string(), 0, 1.0));
+
+    while let Some((current, depth, path_weight)) = queue.pop_front() {
+        let (doc_id, doc_title) = chunk_meta
+            .get(&current)
+            .cloned()
+            .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
+
+        results.push(GraphTraversalNode {
+            chunk_id: current.clone(),
+            document_id: doc_id,
+            document_title: doc_title,
+            depth,
+            path_weight,
+        });
+
+        if depth >= max_depth {
+            continue;
+        }
+
+        if let Some(neighbors) = adj.get(&current) {
+            for (neighbor_id, weight) in neighbors {
+                if !visited.contains(neighbor_id) {
+                    visited.insert(neighbor_id.clone());
+                    queue.push_back((
+                        neighbor_id.clone(),
+                        depth + 1,
+                        path_weight * weight,
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Find shortest path between two chunks using BFS.
+/// Returns the list of chunk_ids from source to target, or empty if no path exists.
+pub fn find_path(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    from_chunk_id: &str,
+    to_chunk_id: &str,
+) -> Result<Vec<String>, AppError> {
+    // Load all edges (min_weight=0 to consider all connections)
+    let adj = load_adjacency(conn, collection_id, 0.0)?;
+
+    let mut visited: HashSet<String> = HashSet::new();
+    // Store (node, parent) for path reconstruction
+    let mut queue: VecDeque<String> = VecDeque::new();
+    let mut parent: HashMap<String, String> = HashMap::new();
+
+    visited.insert(from_chunk_id.to_string());
+    queue.push_back(from_chunk_id.to_string());
+
+    let mut found = false;
+
+    while let Some(current) = queue.pop_front() {
+        if current == to_chunk_id {
+            found = true;
+            break;
+        }
+
+        if let Some(neighbors) = adj.get(&current) {
+            for (neighbor_id, _) in neighbors {
+                if !visited.contains(neighbor_id) {
+                    visited.insert(neighbor_id.clone());
+                    parent.insert(neighbor_id.clone(), current.clone());
+                    queue.push_back(neighbor_id.clone());
+                }
+            }
+        }
+    }
+
+    if !found {
+        return Ok(Vec::new());
+    }
+
+    // Reconstruct path from to_chunk_id back to from_chunk_id
+    let mut path = Vec::new();
+    let mut current = to_chunk_id.to_string();
+    path.push(current.clone());
+
+    while current != from_chunk_id {
+        match parent.get(&current) {
+            Some(p) => {
+                current = p.clone();
+                path.push(current.clone());
+            }
+            None => return Ok(Vec::new()),
+        }
+    }
+
+    path.reverse();
+    Ok(path)
+}
+
+/// Detect communities using label propagation algorithm.
+///
+/// 1. Assign each node its own label
+/// 2. In each iteration, each node adopts the most frequent label among its neighbors (weighted)
+/// 3. Repeat until convergence (max 100 iterations)
+/// 4. Group nodes by final label
+pub fn detect_communities(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    min_weight: f64,
+) -> Result<Vec<Community>, AppError> {
+    let adj = load_adjacency(conn, collection_id, min_weight)?;
+
+    let nodes: Vec<String> = adj.keys().cloned().collect();
+    if nodes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Step 1: each node gets a unique label (its index)
+    let node_to_idx: HashMap<&str, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str(), i))
+        .collect();
+
+    let mut labels: Vec<usize> = (0..nodes.len()).collect();
+
+    // Step 2-3: iterate label propagation
+    let max_iterations = 100;
+    for _ in 0..max_iterations {
+        let mut changed = false;
+
+        for (i, node) in nodes.iter().enumerate() {
+            if let Some(neighbors) = adj.get(node) {
+                if neighbors.is_empty() {
+                    continue;
+                }
+
+                // Accumulate weighted votes for each neighbor label
+                let mut label_weights: HashMap<usize, f64> = HashMap::new();
+                for (neighbor_id, weight) in neighbors {
+                    if let Some(&idx) = node_to_idx.get(neighbor_id.as_str()) {
+                        *label_weights.entry(labels[idx]).or_insert(0.0) += weight;
+                    }
+                }
+
+                // Pick the label with the highest total weight
+                if let Some((&best_label, _)) = label_weights
+                    .iter()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                {
+                    if labels[i] != best_label {
+                        labels[i] = best_label;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    // Step 4: group nodes by final label
+    let mut groups: HashMap<usize, Vec<String>> = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        groups.entry(labels[i]).or_default().push(node.clone());
+    }
+
+    let mut communities: Vec<Community> = groups
+        .into_iter()
+        .enumerate()
+        .map(|(id, (_label, members))| {
+            let size = members.len();
+            Community { id, members, size }
+        })
+        .collect();
+
+    // Sort by size descending for consistent output
+    communities.sort_by(|a, b| b.size.cmp(&a.size));
+
+    // Re-assign IDs after sorting
+    for (i, community) in communities.iter_mut().enumerate() {
+        community.id = i;
+    }
+
+    Ok(communities)
+}
 
 #[cfg(test)]
 mod tests {
@@ -759,5 +1029,134 @@ mod tests {
             )
             .unwrap();
         assert_eq!(total, edge_count as i64, "DB edge count should match returned count");
+    }
+
+    /// Helper: seed a graph with known structure for algorithm tests.
+    /// Creates two clusters:
+    ///   Cluster A: a1 -- a2 -- a3  (all weight 0.9)
+    ///   Cluster B: b1 -- b2        (weight 0.8)
+    ///   Cross-link: a3 -- b1       (weight 0.4)
+    fn seed_graph_for_algorithms(conn: &rusqlite::Connection) {
+        let now = "2025-01-01T00:00:00Z";
+        conn.execute(
+            "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES ('col1', 'Test', '', ?1, ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+
+        // Two documents
+        for (doc_id, title) in &[("docA", "Doc A"), ("docB", "Doc B")] {
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, word_count, chunk_count, created_at, updated_at)
+                 VALUES (?1, 'col1', 'f.txt', '/f.txt', 'txt', 100, 'hash', ?2, 50, 3, ?3, ?3)",
+                rusqlite::params![doc_id, title, now],
+            ).unwrap();
+        }
+
+        // Chunks
+        let chunks = vec![
+            ("a1", "docA", 0), ("a2", "docA", 1), ("a3", "docA", 2),
+            ("b1", "docB", 0), ("b2", "docB", 1),
+        ];
+        for (cid, did, idx) in &chunks {
+            conn.execute(
+                "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, created_at) VALUES (?1, ?2, 'col1', 'text', ?3, ?4)",
+                rusqlite::params![cid, did, idx, now],
+            ).unwrap();
+        }
+
+        // Manually insert graph edges
+        let edges = vec![
+            ("e1", "a1", "a2", 0.9),
+            ("e2", "a2", "a3", 0.9),
+            ("e3", "a3", "b1", 0.4),
+            ("e4", "b1", "b2", 0.8),
+        ];
+        for (eid, src, tgt, weight) in &edges {
+            conn.execute(
+                "INSERT INTO graph_edges (id, source_chunk_id, target_chunk_id, collection_id, weight, relationship_type, created_at)
+                 VALUES (?1, ?2, ?3, 'col1', ?4, 'semantic', ?5)",
+                rusqlite::params![eid, src, tgt, weight, now],
+            ).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_traverse_graph_bfs() {
+        let conn = setup_graph_db();
+        seed_graph_for_algorithms(&conn);
+
+        // Traverse from a1 with max_depth=2, min_weight=0.5 (excludes a3->b1 edge at 0.4)
+        let result = traverse_graph(&conn, "col1", "a1", 2, 0.5).unwrap();
+
+        // Should find a1 (depth 0), a2 (depth 1), a3 (depth 2)
+        assert_eq!(result.len(), 3, "BFS with depth=2 from a1 should find 3 nodes");
+        assert_eq!(result[0].chunk_id, "a1");
+        assert_eq!(result[0].depth, 0);
+        assert_eq!(result[1].chunk_id, "a2");
+        assert_eq!(result[1].depth, 1);
+        assert_eq!(result[2].chunk_id, "a3");
+        assert_eq!(result[2].depth, 2);
+
+        // b1 and b2 should NOT be included (edge a3->b1 is 0.4, below min_weight 0.5)
+        let chunk_ids: Vec<&str> = result.iter().map(|n| n.chunk_id.as_str()).collect();
+        assert!(!chunk_ids.contains(&"b1"), "b1 should be excluded by min_weight filter");
+
+        // Verify document metadata is populated
+        assert_eq!(result[0].document_id, "docA");
+        assert_eq!(result[0].document_title, "Doc A");
+    }
+
+    #[test]
+    fn test_find_path_direct_connection() {
+        let conn = setup_graph_db();
+        seed_graph_for_algorithms(&conn);
+
+        // Direct neighbors a1 -> a2
+        let path = find_path(&conn, "col1", "a1", "a2").unwrap();
+        assert_eq!(path, vec!["a1", "a2"]);
+
+        // Multi-hop a1 -> a2 -> a3 -> b1 -> b2
+        let path = find_path(&conn, "col1", "a1", "b2").unwrap();
+        assert_eq!(path, vec!["a1", "a2", "a3", "b1", "b2"]);
+    }
+
+    #[test]
+    fn test_find_path_no_connection() {
+        let conn = setup_graph_db();
+        seed_graph_for_algorithms(&conn);
+
+        // Add an isolated chunk
+        let now = "2025-01-01T00:00:00Z";
+        conn.execute(
+            "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, created_at) VALUES ('isolated', 'docA', 'col1', 'text', 99, ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+
+        let path = find_path(&conn, "col1", "a1", "isolated").unwrap();
+        assert!(path.is_empty(), "Path to disconnected chunk should be empty");
+    }
+
+    #[test]
+    fn test_detect_communities_simple() {
+        let conn = setup_graph_db();
+        seed_graph_for_algorithms(&conn);
+
+        // Use min_weight=0.5 to cut the weak a3->b1 edge (0.4)
+        let communities = detect_communities(&conn, "col1", 0.5).unwrap();
+
+        assert_eq!(communities.len(), 2, "Should detect 2 communities with min_weight=0.5");
+
+        // Largest community should have 3 members (a1, a2, a3)
+        assert_eq!(communities[0].size, 3);
+        let cluster_a: HashSet<&str> = communities[0].members.iter().map(|s| s.as_str()).collect();
+        assert!(cluster_a.contains("a1"));
+        assert!(cluster_a.contains("a2"));
+        assert!(cluster_a.contains("a3"));
+
+        // Smaller community should have 2 members (b1, b2)
+        assert_eq!(communities[1].size, 2);
+        let cluster_b: HashSet<&str> = communities[1].members.iter().map(|s| s.as_str()).collect();
+        assert!(cluster_b.contains("b1"));
+        assert!(cluster_b.contains("b2"));
     }
 }

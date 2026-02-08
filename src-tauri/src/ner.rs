@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
@@ -168,6 +170,240 @@ pub fn save_entities_to_db(
     Ok(total_mentions)
 }
 
+// --- Relationship Extraction ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractedRelationship {
+    pub source_entity: String,
+    pub target_entity: String,
+    pub relationship_type: String,
+    #[serde(default)]
+    pub confidence: f64,
+}
+
+const RELATIONSHIP_PROMPT: &str = "Given these known entities: [{entities}]. Extract relationships between them from the following text. Return a JSON array of objects with: source_entity, target_entity, relationship_type (one of: works_at, located_in, authored, related_to, part_of, manages, uses, created_by), confidence (0.0-1.0). Return ONLY the JSON array.";
+
+/// LLM-based relationship extraction between known entities.
+pub async fn extract_relationships(
+    host: &str,
+    port: &str,
+    model: &str,
+    text: &str,
+    known_entities: &[String],
+) -> Result<Vec<ExtractedRelationship>, AppError> {
+    if known_entities.is_empty() || text.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let entity_list = known_entities.join(", ");
+    let system_prompt = RELATIONSHIP_PROMPT.replace("{entities}", &entity_list);
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt,
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: text.to_string(),
+        },
+    ];
+
+    let response = ollama::chat_once(host, port, model, &messages).await?;
+    Ok(parse_relationship_response(&response))
+}
+
+/// Parse the LLM response into a list of extracted relationships.
+/// If parsing fails, returns an empty vec rather than erroring.
+pub fn parse_relationship_response(response: &str) -> Vec<ExtractedRelationship> {
+    let trimmed = response.trim();
+
+    // Try parsing the full response first
+    if let Ok(rels) = serde_json::from_str::<Vec<ExtractedRelationship>>(trimmed) {
+        return rels;
+    }
+
+    // Strip markdown code fences
+    let stripped = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed);
+    let stripped = stripped
+        .strip_suffix("```")
+        .unwrap_or(stripped)
+        .trim();
+
+    if let Ok(rels) = serde_json::from_str::<Vec<ExtractedRelationship>>(stripped) {
+        return rels;
+    }
+
+    // Try to find a JSON array within the response
+    if let Some(start) = stripped.find('[') {
+        if let Some(end) = stripped.rfind(']') {
+            let json_slice = &stripped[start..=end];
+            if let Ok(rels) = serde_json::from_str::<Vec<ExtractedRelationship>>(json_slice) {
+                return rels;
+            }
+        }
+    }
+
+    tracing::warn!(
+        "Failed to parse relationship extraction response as JSON, returning empty: {}",
+        trimmed
+    );
+    Vec::new()
+}
+
+/// Chunk-level relationship extraction result.
+pub struct ChunkRelationships {
+    pub chunk_id: String,
+    pub relationships: Vec<ExtractedRelationship>,
+}
+
+/// Load entities and chunks for a collection from the database.
+/// Returns (entity_rows as (id, name), chunks as (id, content)).
+#[allow(clippy::type_complexity)]
+pub fn load_collection_data(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+) -> Result<(Vec<(String, String)>, Vec<(String, String)>), AppError> {
+    let mut entity_stmt = conn.prepare(
+        "SELECT id, name FROM entities WHERE collection_id = ?1",
+    )?;
+    let entity_rows: Vec<(String, String)> = entity_stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if entity_rows.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    let mut chunk_stmt = conn.prepare(
+        "SELECT id, content FROM chunks WHERE collection_id = ?1 ORDER BY chunk_index",
+    )?;
+    let chunks: Vec<(String, String)> = chunk_stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok((entity_rows, chunks))
+}
+
+/// Extract relationships for all chunks via LLM. Pure async, no DB access.
+pub async fn extract_relationships_for_chunks(
+    host: &str,
+    port: &str,
+    model: &str,
+    chunks: &[(String, String)],
+    entity_names: &[String],
+) -> Result<Vec<ChunkRelationships>, AppError> {
+    let mut results = Vec::new();
+
+    for (chunk_id, content) in chunks {
+        let relationships =
+            extract_relationships(host, port, model, content, entity_names).await?;
+        results.push(ChunkRelationships {
+            chunk_id: chunk_id.clone(),
+            relationships,
+        });
+    }
+
+    Ok(results)
+}
+
+/// Save extracted relationships to the database, deduplicating by source+target+type.
+/// Returns total number of new relationships stored.
+pub fn save_relationships_to_db(
+    conn: &rusqlite::Connection,
+    chunk_relationships: &[ChunkRelationships],
+    entity_rows: &[(String, String)],
+    collection_id: &str,
+) -> Result<usize, AppError> {
+    // Build name -> id lookup (case-insensitive)
+    let mut name_to_id: HashMap<String, String> = HashMap::new();
+    for (id, name) in entity_rows {
+        name_to_id.insert(name.to_lowercase(), id.clone());
+    }
+
+    // Track existing relationships for deduplication
+    let mut existing: HashMap<(String, String, String), (String, f64)> = HashMap::new();
+    {
+        let mut rel_stmt = conn.prepare(
+            "SELECT id, source_entity_id, target_entity_id, relationship_type, confidence
+             FROM entity_relationships WHERE collection_id = ?1",
+        )?;
+        let rows = rel_stmt
+            .query_map(rusqlite::params![collection_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, f64>(4)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, src, tgt, rtype, conf) in rows {
+            existing.insert((src, tgt, rtype), (id, conf));
+        }
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut total_stored: usize = 0;
+
+    for chunk_result in chunk_relationships {
+        for rel in &chunk_result.relationships {
+            let source_id = match name_to_id.get(&rel.source_entity.to_lowercase()) {
+                Some(id) => id.clone(),
+                None => continue,
+            };
+            let target_id = match name_to_id.get(&rel.target_entity.to_lowercase()) {
+                Some(id) => id.clone(),
+                None => continue,
+            };
+
+            let key = (
+                source_id.clone(),
+                target_id.clone(),
+                rel.relationship_type.clone(),
+            );
+
+            if let Some((existing_id, existing_conf)) = existing.get(&key) {
+                if rel.confidence > *existing_conf {
+                    conn.execute(
+                        "UPDATE entity_relationships SET confidence = ?1, evidence_chunk_id = ?2 WHERE id = ?3",
+                        rusqlite::params![rel.confidence, chunk_result.chunk_id, existing_id],
+                    )?;
+                    existing.insert(key, (existing_id.clone(), rel.confidence));
+                }
+            } else {
+                let rel_id = uuid::Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO entity_relationships (id, source_entity_id, target_entity_id, relationship_type, confidence, evidence_chunk_id, collection_id, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    rusqlite::params![
+                        rel_id,
+                        source_id,
+                        target_id,
+                        rel.relationship_type,
+                        rel.confidence,
+                        chunk_result.chunk_id,
+                        collection_id,
+                        now,
+                    ],
+                )?;
+                existing.insert(key, (rel_id, rel.confidence));
+                total_stored += 1;
+            }
+        }
+    }
+
+    Ok(total_stored)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +525,47 @@ mod tests {
             )
             .ok();
         assert_eq!(found, Some(entity_id));
+    }
+
+    #[test]
+    fn test_parse_relationship_extraction_response() {
+        let json = r#"[
+            {"source_entity": "John Smith", "target_entity": "Acme Corp", "relationship_type": "works_at", "confidence": 0.95},
+            {"source_entity": "Acme Corp", "target_entity": "New York", "relationship_type": "located_in", "confidence": 0.8}
+        ]"#;
+
+        let rels = parse_relationship_response(json);
+        assert_eq!(rels.len(), 2);
+        assert_eq!(rels[0].source_entity, "John Smith");
+        assert_eq!(rels[0].target_entity, "Acme Corp");
+        assert_eq!(rels[0].relationship_type, "works_at");
+        assert!((rels[0].confidence - 0.95).abs() < f64::EPSILON);
+        assert_eq!(rels[1].source_entity, "Acme Corp");
+        assert_eq!(rels[1].target_entity, "New York");
+        assert_eq!(rels[1].relationship_type, "located_in");
+    }
+
+    #[test]
+    fn test_parse_relationship_response_with_code_fences() {
+        let json = "```json\n[{\"source_entity\": \"Alice\", \"target_entity\": \"Bob\", \"relationship_type\": \"manages\", \"confidence\": 0.7}]\n```";
+        let rels = parse_relationship_response(json);
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].relationship_type, "manages");
+    }
+
+    #[test]
+    fn test_parse_relationship_response_returns_empty_on_invalid() {
+        let invalid = "No relationships found in this text.";
+        let rels = parse_relationship_response(invalid);
+        assert!(rels.is_empty());
+    }
+
+    #[test]
+    fn test_parse_relationship_response_default_confidence() {
+        // confidence is missing -- serde default should give 0.0
+        let json = r#"[{"source_entity": "A", "target_entity": "B", "relationship_type": "related_to"}]"#;
+        let rels = parse_relationship_response(json);
+        assert_eq!(rels.len(), 1);
+        assert!((rels[0].confidence - 0.0).abs() < f64::EPSILON);
     }
 }

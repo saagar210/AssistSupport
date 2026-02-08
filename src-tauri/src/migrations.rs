@@ -37,8 +37,32 @@ fn migrate_v3(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Migration v4: Add entity_relationships table for relationship type detection.
+fn migrate_v4(conn: &Connection) -> Result<(), AppError> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS entity_relationships (
+            id TEXT PRIMARY KEY,
+            source_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            target_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            relationship_type TEXT NOT NULL,
+            confidence REAL DEFAULT 0.0,
+            evidence_chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_rel_source ON entity_relationships(source_entity_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_rel_target ON entity_relationships(target_entity_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_rel_collection ON entity_relationships(collection_id);",
+    )?;
+    set_schema_version(&tx, 4)?;
+    tx.commit()?;
+    tracing::info!("Migration v4 applied (entity_relationships table)");
+    Ok(())
+}
+
 #[cfg(test)]
-const CURRENT_VERSION: i64 = 3;
+const CURRENT_VERSION: i64 = 4;
 
 /// Run all pending migrations. Called after initial schema creation.
 pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
@@ -52,6 +76,9 @@ pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
     }
     if version < 3 {
         migrate_v3(conn)?;
+    }
+    if version < 4 {
+        migrate_v4(conn)?;
     }
 
     Ok(())
@@ -223,6 +250,33 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_entit%'", [], |row| row.get(0))
             .unwrap();
         assert!(idx_count >= 5, "Should have at least 5 entity-related indexes");
+    }
+
+    #[test]
+    fn test_migration_v4_creates_entity_relationships_table() {
+        let conn = setup_db();
+        let version = get_schema_version(&conn).unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entity_relationships'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(exists, "entity_relationships table should exist after migration v4");
+
+        // Verify indexes exist
+        let idx_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_entity_rel%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(idx_count >= 3, "Should have at least 3 entity_rel indexes");
     }
 
     #[test]

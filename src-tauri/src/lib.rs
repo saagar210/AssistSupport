@@ -7,6 +7,7 @@ mod error;
 mod graph;
 mod metrics;
 mod migrations;
+mod model_registry;
 mod models;
 mod ner;
 mod ollama;
@@ -86,6 +87,8 @@ pub fn run() {
             commands::ollama::pull_ollama_model,
             commands::ollama::delete_ollama_model,
             commands::ollama::show_ollama_model,
+            commands::ollama::get_recommended_models,
+            commands::ollama::get_models_by_use_case,
             commands::documents::ingest_files,
             commands::documents::list_documents,
             commands::documents::get_document,
@@ -122,6 +125,9 @@ pub fn run() {
             // Graph commands
             commands::graph::build_graph,
             commands::graph::get_graph,
+            commands::graph::traverse_graph_cmd,
+            commands::graph::find_graph_path,
+            commands::graph::detect_graph_communities,
             // Audit commands
             commands::audit::get_audit_log,
             commands::audit::export_audit_log,
@@ -129,6 +135,10 @@ pub fn run() {
             commands::ner::extract_document_entities,
             commands::ner::list_entities,
             commands::ner::get_entity_mentions,
+            // Relationship commands
+            commands::ner::extract_collection_relationships,
+            commands::ner::get_entity_relationships,
+            commands::ner::get_entity_graph,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running VaultMind");

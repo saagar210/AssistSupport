@@ -162,6 +162,83 @@ pub fn multi_rrf(result_sets: Vec<Vec<SearchResult>>, k: f64, top_k: usize) -> V
         .collect()
 }
 
+/// Estimate token count for a string using words * 1.3 heuristic.
+pub fn estimate_tokens(text: &str) -> usize {
+    let word_count = text.split_whitespace().count();
+    (word_count as f64 * 1.3).ceil() as usize
+}
+
+/// Dynamic relevance threshold: mean(scores) - 1*stddev, minimum 0.3.
+/// Returns only results above the computed threshold.
+pub fn filter_by_relevance(results: &[SearchResult]) -> Vec<SearchResult> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+
+    let scores: Vec<f64> = results.iter().map(|r| r.score).collect();
+    let n = scores.len() as f64;
+    let mean = scores.iter().sum::<f64>() / n;
+
+    let variance = scores.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / n;
+    let stddev = variance.sqrt();
+
+    let threshold = (mean - stddev).max(0.3);
+
+    results
+        .iter()
+        .filter(|r| r.score >= threshold)
+        .cloned()
+        .collect()
+}
+
+/// Select chunks fitting token budget (prioritizing high scores) and trim
+/// conversation history to fit within its own budget.
+///
+/// Returns (selected_chunks, trimmed_history) where:
+/// - selected_chunks: highest-scoring results that fit in `max_tokens`
+/// - trimmed_history: most recent (role, content) pairs fitting `history_token_budget`
+pub fn build_adaptive_context(
+    results: &[SearchResult],
+    max_tokens: usize,
+    conversation_history: &[(String, String)],
+    history_token_budget: usize,
+) -> (Vec<SearchResult>, Vec<(String, String)>) {
+    // 1. Filter by relevance first
+    let mut relevant = filter_by_relevance(results);
+
+    // 2. Sort by score descending (highest first)
+    relevant.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    // 3. Greedily add chunks until token budget exhausted
+    let mut selected_chunks = Vec::new();
+    let mut tokens_used: usize = 0;
+    for result in &relevant {
+        let chunk_tokens = estimate_tokens(&result.content);
+        if tokens_used + chunk_tokens > max_tokens {
+            break;
+        }
+        tokens_used += chunk_tokens;
+        selected_chunks.push(result.clone());
+    }
+
+    // 4. Trim history: keep most recent messages that fit within budget
+    let mut selected_history: Vec<(String, String)> = Vec::new();
+    let mut history_tokens_used: usize = 0;
+    // Iterate from most recent to oldest
+    for (role, content) in conversation_history.iter().rev() {
+        let msg_tokens = estimate_tokens(content) + estimate_tokens(role);
+        if history_tokens_used + msg_tokens > history_token_budget {
+            break;
+        }
+        history_tokens_used += msg_tokens;
+        selected_history.push((role.clone(), content.clone()));
+    }
+    // Reverse to restore chronological order
+    selected_history.reverse();
+
+    (selected_chunks, selected_history)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +347,132 @@ mod tests {
             expected_c2_score,
             fused[0].score
         );
+    }
+
+    fn make_result(chunk_id: &str, content: &str, score: f64) -> SearchResult {
+        SearchResult {
+            chunk_id: chunk_id.to_string(),
+            document_id: "d1".to_string(),
+            document_title: "Doc".to_string(),
+            section_title: None,
+            page_number: None,
+            content: content.to_string(),
+            score,
+        }
+    }
+
+    #[test]
+    fn test_estimate_tokens() {
+        // Empty string -> 0 tokens
+        assert_eq!(estimate_tokens(""), 0);
+
+        // Single word -> ceil(1 * 1.3) = 2
+        assert_eq!(estimate_tokens("hello"), 2);
+
+        // 10 words -> ceil(10 * 1.3) = 13
+        let ten_words = "one two three four five six seven eight nine ten";
+        assert_eq!(estimate_tokens(ten_words), 13);
+
+        // 100 words -> ceil(100 * 1.3) = 130
+        let hundred_words: String = (0..100).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
+        assert_eq!(estimate_tokens(&hundred_words), 130);
+    }
+
+    #[test]
+    fn test_filter_by_relevance_removes_low_scores() {
+        let results = vec![
+            make_result("c1", "high score content", 0.9),
+            make_result("c2", "medium score content", 0.7),
+            make_result("c3", "low score content", 0.2),
+            make_result("c4", "very low score content", 0.1),
+        ];
+
+        let filtered = filter_by_relevance(&results);
+
+        // Low scores (0.2, 0.1) should be filtered out
+        // mean = (0.9+0.7+0.2+0.1)/4 = 0.475
+        // variance = ((0.425^2 + 0.225^2 + 0.275^2 + 0.375^2))/4 = 0.104375
+        // stddev = ~0.323
+        // threshold = max(0.475 - 0.323, 0.3) = max(0.152, 0.3) = 0.3
+        // So 0.9 and 0.7 pass, 0.2 and 0.1 do not
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|r| r.score >= 0.3));
+        assert!(filtered.iter().any(|r| r.chunk_id == "c1"));
+        assert!(filtered.iter().any(|r| r.chunk_id == "c2"));
+    }
+
+    #[test]
+    fn test_filter_by_relevance_minimum_threshold() {
+        // All identical high scores: stddev=0, threshold = max(0.9 - 0, 0.3) = 0.9
+        // All results equal the threshold so all pass (>= check)
+        let results = vec![
+            make_result("c1", "content a", 0.9),
+            make_result("c2", "content b", 0.9),
+            make_result("c3", "content c", 0.9),
+        ];
+
+        let filtered = filter_by_relevance(&results);
+        assert_eq!(filtered.len(), 3);
+
+        // With low uniform scores above 0.3, all pass
+        let low_results = vec![
+            make_result("c1", "content a", 0.35),
+            make_result("c2", "content b", 0.35),
+        ];
+        let filtered_low = filter_by_relevance(&low_results);
+        // mean=0.35, stddev=0, threshold=max(0.35, 0.3)=0.35, all pass
+        assert_eq!(filtered_low.len(), 2);
+
+        // When all scores are below 0.3, minimum threshold of 0.3 filters everything
+        let very_low = vec![
+            make_result("c1", "content a", 0.2),
+            make_result("c2", "content b", 0.1),
+        ];
+        let filtered_vlow = filter_by_relevance(&very_low);
+        assert!(filtered_vlow.is_empty());
+    }
+
+    #[test]
+    fn test_build_adaptive_context_respects_budget() {
+        // Each chunk ~13 tokens ("one two three four five six seven eight nine ten" = 10 words * 1.3)
+        let ten_words = "one two three four five six seven eight nine ten";
+        let results = vec![
+            make_result("c1", ten_words, 0.9),
+            make_result("c2", ten_words, 0.8),
+            make_result("c3", ten_words, 0.7),
+            make_result("c4", ten_words, 0.6),
+        ];
+
+        // Budget of 30 tokens should fit ~2 chunks (each ~13 tokens)
+        let (chunks, _) = build_adaptive_context(&results, 30, &[], 0);
+
+        let total_tokens: usize = chunks.iter().map(|c| estimate_tokens(&c.content)).sum();
+        assert!(total_tokens <= 30, "Total tokens {} should be <= 30", total_tokens);
+        assert_eq!(chunks.len(), 2);
+    }
+
+    #[test]
+    fn test_build_adaptive_context_prioritizes_high_scores() {
+        let results = vec![
+            make_result("c_low", "some low scoring content here", 0.5),
+            make_result("c_high", "some high scoring content here", 0.95),
+            make_result("c_mid", "some medium scoring content here", 0.75),
+        ];
+
+        // Large budget so all relevant results fit
+        let (chunks, _) = build_adaptive_context(&results, 10000, &[], 0);
+
+        // The first chunk should be the highest scored
+        if !chunks.is_empty() {
+            assert_eq!(chunks[0].chunk_id, "c_high");
+        }
+
+        // If there are multiple, they should be in score-descending order
+        for i in 1..chunks.len() {
+            assert!(
+                chunks[i - 1].score >= chunks[i].score,
+                "Chunks should be ordered by score descending"
+            );
+        }
     }
 }

@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::error::AppError;
-use crate::models::{Entity, EntityMention};
+use crate::models::{Entity, EntityGraph, EntityGraphEdge, EntityGraphNode, EntityMention, EntityRelationship};
 use crate::ner;
 use crate::state::{get_conn, AppState};
 
@@ -122,6 +122,138 @@ pub fn get_entity_mentions(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(mentions)
+}
+
+/// Extract relationships between entities in a collection using LLM.
+/// Returns the total number of new relationships stored.
+#[tauri::command]
+pub async fn extract_collection_relationships(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> Result<usize, AppError> {
+    // Phase 1: Read settings (sync scope -- connection dropped before await)
+    let (host, port, model) = {
+        let conn = get_conn(state.inner())?;
+
+        let host: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'ollama_host'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "localhost".to_string());
+
+        let port: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'ollama_port'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "11434".to_string());
+
+        let model: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'chat_model'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "llama3.2".to_string());
+
+        (host, port, model)
+    }; // conn dropped here
+
+    // Phase 2: Load collection data from DB (sync scope -- connection dropped before await)
+    let (entity_rows, chunks, entity_names) = {
+        let conn = get_conn(state.inner())?;
+        let (entity_rows, chunks) = ner::load_collection_data(&conn, &collection_id)?;
+        let entity_names: Vec<String> = entity_rows.iter().map(|(_, name)| name.clone()).collect();
+        (entity_rows, chunks, entity_names)
+    }; // conn dropped here
+
+    if entity_rows.is_empty() {
+        return Ok(0);
+    }
+
+    // Phase 3: Call LLM for relationship extraction (async -- no DB held)
+    let chunk_relationships =
+        ner::extract_relationships_for_chunks(&host, &port, &model, &chunks, &entity_names).await?;
+
+    // Phase 4: Write results back to DB (sync scope)
+    let conn = get_conn(state.inner())?;
+    ner::save_relationships_to_db(&conn, &chunk_relationships, &entity_rows, &collection_id)
+}
+
+/// Get all relationships in a collection.
+#[tauri::command]
+pub fn get_entity_relationships(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> Result<Vec<EntityRelationship>, AppError> {
+    let conn = get_conn(state.inner())?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, source_entity_id, target_entity_id, relationship_type, confidence, evidence_chunk_id, collection_id, created_at
+         FROM entity_relationships WHERE collection_id = ?1 ORDER BY confidence DESC",
+    )?;
+
+    let relationships = stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            Ok(EntityRelationship {
+                id: row.get(0)?,
+                source_entity_id: row.get(1)?,
+                target_entity_id: row.get(2)?,
+                relationship_type: row.get(3)?,
+                confidence: row.get(4)?,
+                evidence_chunk_id: row.get(5)?,
+                collection_id: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(relationships)
+}
+
+/// Get the entity graph (nodes + edges) for a collection, suitable for visualization.
+#[tauri::command]
+pub fn get_entity_graph(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> Result<EntityGraph, AppError> {
+    let conn = get_conn(state.inner())?;
+
+    // Load nodes (entities)
+    let mut entity_stmt = conn.prepare(
+        "SELECT id, name, entity_type, mention_count FROM entities WHERE collection_id = ?1",
+    )?;
+    let nodes: Vec<EntityGraphNode> = entity_stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            Ok(EntityGraphNode {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: row.get(2)?,
+                mention_count: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Load edges (relationships)
+    let mut rel_stmt = conn.prepare(
+        "SELECT source_entity_id, target_entity_id, relationship_type, confidence
+         FROM entity_relationships WHERE collection_id = ?1",
+    )?;
+    let edges: Vec<EntityGraphEdge> = rel_stmt
+        .query_map(rusqlite::params![collection_id], |row| {
+            Ok(EntityGraphEdge {
+                source_entity_id: row.get(0)?,
+                target_entity_id: row.get(1)?,
+                relationship_type: row.get(2)?,
+                confidence: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(EntityGraph { nodes, edges })
 }
 
 #[cfg(test)]

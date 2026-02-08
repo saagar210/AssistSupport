@@ -127,6 +127,40 @@ pub struct EntityMention {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityRelationship {
+    pub id: String,
+    pub source_entity_id: String,
+    pub target_entity_id: String,
+    pub relationship_type: String,
+    pub confidence: f64,
+    pub evidence_chunk_id: Option<String>,
+    pub collection_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraphNode {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub mention_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraphEdge {
+    pub source_entity_id: String,
+    pub target_entity_id: String,
+    pub relationship_type: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraph {
+    pub nodes: Vec<EntityGraphNode>,
+    pub edges: Vec<EntityGraphEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaModel {
     pub name: String,
     pub size: i64,

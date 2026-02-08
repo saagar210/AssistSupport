@@ -1,6 +1,7 @@
 use tauri::State;
 
 use crate::error::AppError;
+use crate::model_registry::{self, RecommendedModel};
 use crate::models::OllamaModel;
 use crate::ollama;
 use crate::ollama::ModelInfo;
@@ -141,4 +142,14 @@ pub async fn show_ollama_model(
     };
 
     ollama::show_model(&host, &port, &model_name).await
+}
+
+#[tauri::command]
+pub fn get_recommended_models() -> Vec<RecommendedModel> {
+    model_registry::get_recommended_models()
+}
+
+#[tauri::command]
+pub fn get_models_by_use_case(use_case: String) -> Vec<RecommendedModel> {
+    model_registry::get_models_by_use_case(&use_case)
 }

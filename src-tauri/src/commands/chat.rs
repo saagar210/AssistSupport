@@ -31,7 +31,7 @@ pub async fn send_chat_message(
     let user_msg_id = uuid::Uuid::new_v4().to_string();
 
     // 1. Save user message to DB + read all settings we need, then drop connection
-    let (host, port, embedding_model, chat_model, context_chunks, rrf_k, vector_top_k, keyword_top_k) = {
+    let (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget) = {
         let conn = get_conn(state.inner())?;
 
         conn.execute(
@@ -63,9 +63,6 @@ pub async fn send_chat_message(
         let chat_model: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'chat_model'", [], |row: &rusqlite::Row| row.get(0),
         )?;
-        let context_chunks: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'context_chunks'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "5".to_string());
         let rrf_k: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'rrf_k'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "60".to_string());
@@ -75,50 +72,69 @@ pub async fn send_chat_message(
         let keyword_top_k: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'keyword_top_k'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "20".to_string());
+        let context_token_budget: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'context_token_budget'", [], |row: &rusqlite::Row| row.get(0),
+        ).unwrap_or_else(|_| "4096".to_string());
+        let history_token_budget: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'history_token_budget'", [], |row: &rusqlite::Row| row.get(0),
+        ).unwrap_or_else(|_| "2048".to_string());
 
-        (host, port, embedding_model, chat_model, context_chunks, rrf_k, vector_top_k, keyword_top_k)
+        (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget)
     };
 
-    let context_k: usize = context_chunks.parse().unwrap_or(5);
     let rrf_k_val: f64 = rrf_k.parse().unwrap_or(60.0);
     let vec_top_k: usize = vector_top_k.parse().unwrap_or(20);
     let kw_top_k: usize = keyword_top_k.parse().unwrap_or(20);
+    let ctx_token_budget: usize = context_token_budget.parse().unwrap_or(4096);
+    let hist_token_budget: usize = history_token_budget.parse().unwrap_or(2048);
 
     // 2. Run hybrid search — needs embedding (async), then DB queries
     //    We need the lock again for the DB portion of search, but generate_embedding is async
     let query_embedding =
         ollama::generate_embedding(&host, &port, &embedding_model, &user_message).await?;
 
-    let context_results: Vec<SearchResult> = {
+    // Fetch candidate results (use vec_top_k as upper bound for RRF fusion)
+    let candidate_results: Vec<SearchResult> = {
         let conn = get_conn(state.inner())?;
-        // Use the internal search that works on a Connection directly
-        // We inline the search here since hybrid_search_internal is async but we only
-        // need the DB parts (we already have the embedding)
         let vr = crate::commands::search::vector_search_in_db_with_embedding(
             &conn, &collection_id, &query_embedding, vec_top_k,
         )?;
         let kr = crate::commands::search::keyword_search_in_db(
             &conn, &collection_id, &user_message, kw_top_k,
         )?;
-        crate::commands::search::reciprocal_rank_fusion_pub(vr, kr, rrf_k_val, context_k)
+        crate::commands::search::reciprocal_rank_fusion_pub(vr, kr, rrf_k_val, vec_top_k)
     };
 
-    // 3. Build system prompt with context
+    // 3. Load raw conversation history (generous limit, adaptive trimming handles budget)
+    let raw_history: Vec<(String, String)> = {
+        let conn = get_conn(state.inner())?;
+        load_conversation_history_pairs(&conn, &conversation_id, 50)?
+    };
+
+    // 4. Apply adaptive context window: filter by relevance + token budget
+    let (context_results, trimmed_history) = crate::rag::build_adaptive_context(
+        &candidate_results,
+        ctx_token_budget,
+        &raw_history,
+        hist_token_budget,
+    );
+
+    // 5. Build system prompt with adaptively selected context
     let system_prompt = build_system_prompt(&context_results);
 
-    // 4. Load conversation history (last 10 messages)
-    let history: Vec<ChatMessage> = {
-        let conn = get_conn(state.inner())?;
-        load_conversation_history(&conn, &conversation_id, 10)?
-    };
-
-    // 5. Build full messages array
+    // 6. Build full messages array
     let mut messages: Vec<ChatMessage> = Vec::new();
     messages.push(ChatMessage {
         role: "system".to_string(),
         content: system_prompt,
     });
-    messages.extend(history);
+    // Add trimmed conversation history
+    for (role, content) in &trimmed_history {
+        messages.push(ChatMessage {
+            role: role.clone(),
+            content: content.clone(),
+        });
+    }
     messages.push(ChatMessage {
         role: "user".to_string(),
         content: user_message.clone(),
@@ -291,13 +307,12 @@ fn build_system_prompt(context: &[SearchResult]) -> String {
     prompt
 }
 
-/// Load the last N messages from a conversation as ChatMessages.
-/// Uses a subquery to fetch the last N by created_at DESC, then re-orders ASC.
-fn load_conversation_history(
+/// Load the last N messages as (role, content) pairs for adaptive context trimming.
+fn load_conversation_history_pairs(
     conn: &rusqlite::Connection,
     conversation_id: &str,
     limit: usize,
-) -> Result<Vec<ChatMessage>, AppError> {
+) -> Result<Vec<(String, String)>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT role, content FROM (
             SELECT role, content, created_at FROM messages
@@ -307,16 +322,13 @@ fn load_conversation_history(
         ) sub ORDER BY created_at ASC",
     )?;
 
-    let messages: Vec<ChatMessage> = stmt
+    let pairs: Vec<(String, String)> = stmt
         .query_map(rusqlite::params![conversation_id, limit as i64], |row| {
-            Ok(ChatMessage {
-                role: row.get(0)?,
-                content: row.get(1)?,
-            })
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(messages)
+    Ok(pairs)
 }
 
 /// Cancel an active chat generation for a conversation.
