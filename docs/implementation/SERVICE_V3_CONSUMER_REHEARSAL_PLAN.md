@@ -17,14 +17,17 @@ Planning-only rehearsal for service.v3 adoption. No runtime cutover in this phas
 
 ## Rehearsal Checklist
 1. Update pin + matrix + mirrored producer manifest in one PR.
-2. Ensure non-2xx policy assertions remain true:
+2. Validate producer service.v3 candidate handoff payload in rehearsal mode.
+   - `pnpm run check:memorykernel-handoff:service-v3-candidate`
+   - no runtime cutover and no pin update in this step
+3. Ensure non-2xx policy assertions remain true:
    - include `service_contract_version`
    - include `error.code` and `error.message`
    - exclude `api_contract_version`
    - `legacy_error` behavior aligned to service.v3 policy
-3. Validate deterministic fallback for offline/timeout/malformed/version-mismatch/non-2xx.
-4. Run full consumer verification suite.
-5. Execute rollback rehearsal to prior approved baseline and verify no Draft-flow regression.
+4. Validate deterministic fallback for offline/timeout/malformed/version-mismatch/non-2xx.
+5. Run full consumer verification suite.
+6. Execute rollback rehearsal to prior approved baseline and verify no Draft-flow regression.
 
 ## Required Commands
 ```bash
@@ -32,6 +35,7 @@ pnpm run typecheck
 pnpm run test
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
+pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```

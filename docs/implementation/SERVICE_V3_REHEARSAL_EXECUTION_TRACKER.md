@@ -9,6 +9,14 @@ Owner: AssistSupport
 
 ## Phase Execution Tasks
 
+### Task C0: Cutover gates package
+- Status: Complete
+- Owner: AssistSupport
+- Evidence:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
+- Definition of done:
+  - explicit producer artifact requirements, consumer evidence, commands, rollback conditions, and joint sign-off checklist are published
+
 ### Task C1: Baseline rehearsal branch setup
 - Status: Pending
 - Owner: AssistSupport
@@ -29,6 +37,7 @@ Owner: AssistSupport
 - Definition of done:
   - `pnpm run check:memorykernel-pin` green
   - `pnpm run check:memorykernel-governance` green
+  - `pnpm run check:memorykernel-handoff:service-v3-candidate` green
   - hash-integrity validation green
 
 ### Task C4: Cutover rehearsal + rollback drill
@@ -44,6 +53,7 @@ pnpm run typecheck
 pnpm run test
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
+pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```

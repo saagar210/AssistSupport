@@ -101,6 +101,15 @@ function main() {
         'pnpm run check:memorykernel-handoff',
       ],
     },
+    {
+      relPath: 'docs/implementation/SERVICE_V3_CUTOVER_GATES.md',
+      snippets: [
+        'Required Producer Artifacts',
+        'Required Consumer Evidence',
+        'Fail-Fast Rollback Conditions',
+        'Sign-Off Checklist (AssistSupport + MemoryKernel)',
+      ],
+    },
   ];
 
   for (const doc of requiredDocs) {
@@ -116,6 +125,7 @@ function main() {
     'pnpm run check:memorykernel-pin',
     'pnpm run check:memorykernel-governance',
     'pnpm run check:memorykernel-handoff',
+    'pnpm run check:memorykernel-handoff:service-v3-candidate',
     'pnpm run test:memorykernel-contract',
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);

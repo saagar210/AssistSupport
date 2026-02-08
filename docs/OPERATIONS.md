@@ -110,6 +110,12 @@ Use this to validate producer handoff payload + consumer governance + contract p
 pnpm run test:memorykernel-phase3-dry-run
 ```
 
+### MemoryKernel service.v3 candidate rehearsal command (consumer)
+Use this to validate a producer service.v3 handoff candidate payload without pinning/cutover.
+```bash
+pnpm run check:memorykernel-handoff:service-v3-candidate
+```
+
 ## 3) Backup/Restore Validation
 
 Use this flow before releases and after backup/import logic changes.

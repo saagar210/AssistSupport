@@ -104,7 +104,7 @@ Sprint target: Week 4.
 | Dependencies | Phase 3 exit; no unresolved high-severity integration issues. |
 | Entry Criteria | Producer publishes service.v3 RFC draft with overlap and deprecation policy. |
 | Exit Criteria | Joint-approved migration plan with acceptance tests, repin criteria, and rollback strategy signed by both sides. |
-| Deliverables | Service.v3 migration spec, compatibility test plan, rollout timeline, deprecation communication protocol, and consumer rehearsal plan (`docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md`). |
+| Deliverables | Service.v3 migration spec, compatibility test plan, rollout timeline, deprecation communication protocol, consumer rehearsal plan (`docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md`), and cutover gates package (`docs/implementation/SERVICE_V3_CUTOVER_GATES.md`). |
 | Verification Commands | RFC checklist pass; contract test matrix drafted for v2-only, v2+v3 overlap, and v3-final states. |
 
 Sprint target: Week 5+ (planning gate only in this playbook).

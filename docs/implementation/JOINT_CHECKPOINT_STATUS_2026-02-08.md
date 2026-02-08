@@ -38,4 +38,4 @@ Updated: 2026-02-08
 - Phase 1: Governed steady-state service.v2 operation (consumer closeout evidence captured).
 - Phase 2: Consumer runtime hardening and diagnostics maturity (complete).
 - Phase 3: Cross-repo automation (including manifest-hash validation gate, handoff payload validation, and consumer dry-run evidence).
-- Phase 4: service.v3 migration readiness and pre-cutover rehearsal.
+- Phase 4: service.v3 migration readiness and pre-cutover rehearsal (consumer cutover-gates package published).

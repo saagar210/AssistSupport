@@ -14,6 +14,7 @@
     "check:memorykernel-pin": "node scripts/validate_memorykernel_pin_sync.mjs",
     "check:memorykernel-governance": "node scripts/validate_memorykernel_governance_bundle.mjs",
     "check:memorykernel-handoff": "node scripts/validate_memorykernel_handoff_payload.mjs",
+    "check:memorykernel-handoff:service-v3-candidate": "ASSISTSUPPORT_REQUIRE_HANDOFF_PAYLOAD=1 ASSISTSUPPORT_HANDOFF_REQUIRE_PIN_MATCH=0 MEMORYKERNEL_EXPECTED_SERVICE_CONTRACT_VERSION=service.v3 node scripts/validate_memorykernel_handoff_payload.mjs",
     "test:memorykernel-contract": "pnpm run check:memorykernel-pin && pnpm run check:memorykernel-governance && vitest run src/hooks/useInitialize.test.ts src/hooks/useMemoryKernelEnrichment.test.ts && (cd src-tauri && cargo test memory_kernel -- --nocapture) && node scripts/generate_memorykernel_contract_evidence.mjs",
     "test:memorykernel-phase3-dry-run": "ASSISTSUPPORT_REQUIRE_HANDOFF_PAYLOAD=1 pnpm run check:memorykernel-handoff && pnpm run test:memorykernel-contract",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts --grep @smoke",
