@@ -1,7 +1,7 @@
 {
   "manifest_contract_version": "producer-contract-manifest.v1",
   "release_tag": "v0.4.0",
-  "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
+  "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
   "expected_service_contract_version": "service.v3",
   "expected_api_contract_version": "api.v1",
   "integration_baseline": "integration/v1",

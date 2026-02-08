@@ -1,15 +1,15 @@
 {
-  "handoff_generated_at_utc": "2026-02-08T11:34:03Z",
-  "handoff_mode": "service-v3-candidate",
-  "release_tag": "v0.3.2",
-  "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
+  "handoff_generated_at_utc": "2026-02-08T13:19:53Z",
+  "handoff_mode": "stable",
+  "release_tag": "v0.4.0",
+  "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
   "expected_service_contract_version": "service.v3",
   "expected_api_contract_version": "api.v1",
   "integration_baseline": "integration/v1",
   "active_runtime_baseline": {
-    "release_tag": "v0.3.2",
-    "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
-    "expected_service_contract_version": "service.v2",
+    "release_tag": "v0.4.0",
+    "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
+    "expected_service_contract_version": "service.v3",
     "expected_api_contract_version": "api.v1",
     "integration_baseline": "integration/v1"
   },
@@ -26,14 +26,17 @@
     "internal_error"
   ],
   "non_2xx_envelope_policy": {
-    "service_v2_stable": {
+    "service_v3_stable": {
       "requires": [
         "service_contract_version",
         "error.code",
-        "error.message",
-        "legacy_error"
+        "error.message"
+      ],
+      "optional": [
+        "error.details"
       ],
       "forbids": [
+        "legacy_error",
         "api_contract_version"
       ]
     },
@@ -71,29 +74,5 @@
     "required_test_updates": "<none|describe>",
     "repin_required": "<yes/no>",
     "rollback_instruction": "repin to <previous tag/sha>"
-  },
-  "rehearsal_candidate": {
-    "requires_runtime_cutover": false,
-    "service_v2_runtime_stability_required": true,
-    "migration_overlap_days": 14,
-    "consumer_non_blocking_fallback_required": true
-  },
-  "compatibility_expectations": {
-    "candidate_values_override_release_baseline_fields": [
-      "expected_service_contract_version"
-    ],
-    "fields_that_must_match_active_runtime_baseline": [
-      "release_tag",
-      "commit_sha",
-      "expected_api_contract_version",
-      "integration_baseline",
-      "error_code_enum"
-    ]
-  },
-  "required_consumer_validation_commands": [
-    "pnpm run check:memorykernel-handoff:service-v3-candidate",
-    "pnpm run check:memorykernel-pin",
-    "pnpm run test:memorykernel-contract",
-    "pnpm run test:ci"
-  ]
+  }
 }
