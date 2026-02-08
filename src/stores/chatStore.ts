@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
-import type { Conversation, Message, Citation } from "../types";
+import type { Conversation, Message, Citation, PaginatedResponse } from "../types";
 
 interface ChatState {
   conversations: Conversation[];
@@ -47,11 +47,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchConversations: async (collectionId: string) => {
     try {
-      const conversations = await invoke<Conversation[]>(
+      const response = await invoke<PaginatedResponse<Conversation>>(
         "list_conversations",
         { collectionId },
       );
-      set({ conversations });
+      set({ conversations: response.items });
     } catch (error) {
       console.error("Failed to fetch conversations:", error);
       useToastStore.getState().addToast("error", "Failed to fetch conversations: " + String(error));
@@ -61,10 +61,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveConversation: async (id: string) => {
     set({ activeConversationId: id, messages: [], citations: {} });
     try {
-      const messages = await invoke<Message[]>("get_conversation_messages", {
+      const response = await invoke<PaginatedResponse<Message>>("get_conversation_messages", {
         conversationId: id,
       });
-      set({ messages });
+      set({ messages: response.items });
     } catch (error) {
       console.error("Failed to fetch messages:", error);
       useToastStore.getState().addToast("error", "Failed to fetch messages: " + String(error));

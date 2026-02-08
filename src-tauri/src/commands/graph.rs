@@ -23,7 +23,21 @@ pub fn build_graph(
 
     let threshold_val: f64 = threshold.parse().unwrap_or(0.75);
 
-    graph::build_graph_edges(&conn, &collection_id, threshold_val)?;
+    // Use HNSW-based rebuild if index is available (O(n * k log n)),
+    // otherwise fall back to the original O(n^2) approach
+    let used_hnsw = if let Ok(vi) = state.inner().vector_index.read() {
+        if vi.has_index(&collection_id) {
+            graph::rebuild_graph_edges(&conn, &vi, &collection_id, threshold_val)?;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    if !used_hnsw {
+        graph::build_graph_edges(&conn, &collection_id, threshold_val)?;
+    }
 
     let _ = audit::log_audit(
         &conn,

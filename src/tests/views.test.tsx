@@ -27,11 +27,13 @@ const defaultCollection = {
   updated_at: "2025-01-01",
 };
 
+const emptyPaginatedResponse = { items: [], total: 0, page: 1, page_size: 50, has_more: false };
+
 describe("DocumentsView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Make invoke return proper data for any call
-    mockedInvoke.mockResolvedValue([] as never);
+    // Make invoke return proper paginated data for any call
+    mockedInvoke.mockResolvedValue(emptyPaginatedResponse as never);
 
     useAppStore.setState({ activeView: "documents", selectedDocumentId: null });
     useCollectionStore.setState({
@@ -61,7 +63,7 @@ describe("DocumentsView", () => {
 describe("SearchView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedInvoke.mockResolvedValue([] as never);
+    mockedInvoke.mockResolvedValue(emptyPaginatedResponse as never);
     useCollectionStore.setState({
       collections: [defaultCollection],
       activeCollectionId: "col1",
@@ -81,7 +83,7 @@ describe("SearchView", () => {
 describe("ChatView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedInvoke.mockResolvedValue([] as never);
+    mockedInvoke.mockResolvedValue(emptyPaginatedResponse as never);
     useCollectionStore.setState({
       collections: [defaultCollection],
       activeCollectionId: "col1",

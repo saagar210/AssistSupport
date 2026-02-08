@@ -7,8 +7,9 @@ use crate::audit::{self, AuditAction};
 use crate::chunker;
 use crate::embedder;
 use crate::error::AppError;
+use crate::graph;
 use crate::metrics::MetricCounter;
-use crate::models::{Chunk, Document};
+use crate::models::{Chunk, Document, PaginatedResponse};
 use crate::parsers;
 use crate::state::{get_conn, AppState};
 use crate::vector_store;
@@ -207,6 +208,35 @@ async fn ingest_single_file(
         }
 
         vector_store::store_embeddings(&conn, &embedding_data)?;
+
+        // Rebuild HNSW index so incremental graph build can use it
+        if let Ok(mut vi) = app_state.vector_index.write() {
+            let _ = vi.rebuild_collection_index(&conn, collection_id);
+        }
+
+        // Build incremental graph edges for the newly ingested chunks
+        let new_chunk_ids: Vec<String> = chunk_rows.iter().map(|(id, _)| id.clone()).collect();
+        if let Ok(vi) = app_state.vector_index.read() {
+            match graph::build_graph_edges_incremental(
+                &conn,
+                &vi,
+                collection_id,
+                &new_chunk_ids,
+                0.5, // default similarity threshold
+            ) {
+                Ok(edges) => {
+                    tracing::info!(
+                        "Incremental graph: added {} edges for {} new chunks in collection {}",
+                        edges.len(),
+                        new_chunk_ids.len(),
+                        collection_id
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Incremental graph build failed (non-fatal): {}", e);
+                }
+            }
+        }
 
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -532,16 +562,27 @@ pub async fn reingest_collection(
 pub fn list_documents(
     state: tauri::State<'_, AppState>,
     collection_id: String,
-) -> Result<Vec<Document>, AppError> {
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<PaginatedResponse<Document>, AppError> {
     let conn = get_conn(state.inner())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(50).max(1);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM documents WHERE collection_id = ?1",
+        rusqlite::params![collection_id],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at
-         FROM documents WHERE collection_id = ?1 ORDER BY created_at DESC",
+         FROM documents WHERE collection_id = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
     )?;
 
     let documents = stmt
-        .query_map(rusqlite::params![collection_id], |row: &rusqlite::Row| {
+        .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row: &rusqlite::Row| {
             Ok(Document {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
@@ -563,7 +604,15 @@ pub fn list_documents(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(documents)
+    let has_more = (offset + documents.len()) < total as usize;
+
+    Ok(PaginatedResponse {
+        items: documents,
+        total,
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 #[tauri::command]
@@ -655,16 +704,27 @@ pub fn delete_document(
 pub fn get_document_chunks(
     state: tauri::State<'_, AppState>,
     document_id: String,
-) -> Result<Vec<Chunk>, AppError> {
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<PaginatedResponse<Chunk>, AppError> {
     let conn = get_conn(state.inner())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).max(1);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM chunks WHERE document_id = ?1",
+        rusqlite::params![document_id],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT id, document_id, collection_id, content, chunk_index, start_offset, end_offset, page_number, section_title, token_count, created_at
-         FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC",
+         FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC LIMIT ?2 OFFSET ?3",
     )?;
 
     let chunks = stmt
-        .query_map(rusqlite::params![document_id], |row: &rusqlite::Row| {
+        .query_map(rusqlite::params![document_id, page_size as i64, offset as i64], |row: &rusqlite::Row| {
             Ok(Chunk {
                 id: row.get(0)?,
                 document_id: row.get(1)?,
@@ -681,7 +741,15 @@ pub fn get_document_chunks(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(chunks)
+    let has_more = (offset + chunks.len()) < total as usize;
+
+    Ok(PaginatedResponse {
+        items: chunks,
+        total,
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 #[tauri::command]
@@ -819,4 +887,184 @@ pub fn list_all_tags(
     result.sort();
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db;
+    use crate::models::PaginatedResponse;
+
+    fn setup_db() -> rusqlite::Connection {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let pool = db::create_pool(dir.path()).expect("failed to create pool");
+        let conn = pool.get().expect("failed to get connection");
+        std::mem::forget(dir);
+        let path = conn.path().expect("no path").to_owned();
+        drop(conn);
+        let c = rusqlite::Connection::open(path).expect("failed to open connection");
+        db::configure_connection(&c).expect("failed to configure connection");
+        c
+    }
+
+    fn insert_document(conn: &rusqlite::Connection, collection_id: &str, filename: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let hash = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at)
+             VALUES (?1, ?2, ?3, '/tmp/test', 'txt', 100, ?4, ?5, NULL, NULL, 0, 0, 'completed', NULL, ?6, ?7)",
+            rusqlite::params![id, collection_id, filename, hash, filename, now, now],
+        ).expect("failed to insert document");
+        id
+    }
+
+    fn list_documents_paginated(
+        conn: &rusqlite::Connection,
+        collection_id: &str,
+        page: usize,
+        page_size: usize,
+    ) -> PaginatedResponse<crate::models::Document> {
+        let offset = (page - 1) * page_size;
+
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM documents WHERE collection_id = ?1",
+            rusqlite::params![collection_id],
+            |row| row.get(0),
+        ).expect("failed to count documents");
+
+        let mut stmt = conn.prepare(
+            "SELECT id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at
+             FROM documents WHERE collection_id = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+        ).expect("failed to prepare statement");
+
+        let documents: Vec<crate::models::Document> = stmt
+            .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row| {
+                Ok(crate::models::Document {
+                    id: row.get(0)?,
+                    collection_id: row.get(1)?,
+                    filename: row.get(2)?,
+                    file_path: row.get(3)?,
+                    file_type: row.get(4)?,
+                    file_size: row.get(5)?,
+                    file_hash: row.get(6)?,
+                    title: row.get(7)?,
+                    author: row.get(8)?,
+                    page_count: row.get(9)?,
+                    word_count: row.get(10)?,
+                    chunk_count: row.get(11)?,
+                    status: row.get(12)?,
+                    error_message: row.get(13)?,
+                    created_at: row.get(14)?,
+                    updated_at: row.get(15)?,
+                })
+            })
+            .expect("failed to query documents")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("failed to collect documents");
+
+        let has_more = (offset + documents.len()) < total as usize;
+
+        PaginatedResponse {
+            items: documents,
+            total,
+            page,
+            page_size,
+            has_more,
+        }
+    }
+
+    #[test]
+    fn test_list_documents_pagination_defaults() {
+        let conn = setup_db();
+        let col_id: String = conn.query_row(
+            "SELECT id FROM collections WHERE name = 'General'",
+            [],
+            |row| row.get(0),
+        ).expect("General collection not found");
+
+        for i in 0..3 {
+            insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
+        }
+
+        let result = list_documents_paginated(&conn, &col_id, 1, 50);
+        assert_eq!(result.items.len(), 3);
+        assert_eq!(result.total, 3);
+        assert_eq!(result.page, 1);
+        assert_eq!(result.page_size, 50);
+        assert!(!result.has_more);
+    }
+
+    #[test]
+    fn test_list_documents_pagination_page_2() {
+        let conn = setup_db();
+        let col_id: String = conn.query_row(
+            "SELECT id FROM collections WHERE name = 'General'",
+            [],
+            |row| row.get(0),
+        ).expect("General collection not found");
+
+        for i in 0..5 {
+            insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
+        }
+
+        let page1 = list_documents_paginated(&conn, &col_id, 1, 2);
+        assert_eq!(page1.items.len(), 2);
+        assert_eq!(page1.total, 5);
+        assert!(page1.has_more);
+
+        let page2 = list_documents_paginated(&conn, &col_id, 2, 2);
+        assert_eq!(page2.items.len(), 2);
+        assert_eq!(page2.total, 5);
+        assert_eq!(page2.page, 2);
+        assert!(page2.has_more);
+
+        let page3 = list_documents_paginated(&conn, &col_id, 3, 2);
+        assert_eq!(page3.items.len(), 1);
+        assert_eq!(page3.total, 5);
+        assert!(!page3.has_more);
+    }
+
+    #[test]
+    fn test_paginated_response_has_more() {
+        let conn = setup_db();
+        let col_id: String = conn.query_row(
+            "SELECT id FROM collections WHERE name = 'General'",
+            [],
+            |row| row.get(0),
+        ).expect("General collection not found");
+
+        for i in 0..3 {
+            insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
+        }
+
+        let exact_fit = list_documents_paginated(&conn, &col_id, 1, 3);
+        assert_eq!(exact_fit.items.len(), 3);
+        assert!(!exact_fit.has_more, "has_more should be false when items fill exactly one page");
+
+        insert_document(&conn, &col_id, "doc_extra.txt");
+
+        let with_more = list_documents_paginated(&conn, &col_id, 1, 3);
+        assert_eq!(with_more.items.len(), 3);
+        assert!(with_more.has_more, "has_more should be true when more pages exist");
+    }
+
+    #[test]
+    fn test_pagination_beyond_last_page() {
+        let conn = setup_db();
+        let col_id: String = conn.query_row(
+            "SELECT id FROM collections WHERE name = 'General'",
+            [],
+            |row| row.get(0),
+        ).expect("General collection not found");
+
+        for i in 0..3 {
+            insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
+        }
+
+        let result = list_documents_paginated(&conn, &col_id, 10, 50);
+        assert_eq!(result.items.len(), 0);
+        assert_eq!(result.total, 3);
+        assert!(!result.has_more);
+        assert_eq!(result.page, 10);
+    }
 }

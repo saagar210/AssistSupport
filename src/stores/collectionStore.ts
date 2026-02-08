@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
-import type { Collection } from "../types";
+import type { Collection, PaginatedResponse } from "../types";
 
 interface CollectionState {
   collections: Collection[];
@@ -26,7 +26,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   fetchCollections: async () => {
     set({ loading: true });
     try {
-      const collections = await invoke<Collection[]>("list_collections");
+      const response = await invoke<PaginatedResponse<Collection>>("list_collections");
+      const collections = response.items;
       const currentActive = get().activeCollectionId;
       const activeId =
         currentActive &&

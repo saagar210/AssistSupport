@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::audit::{self, AuditAction};
 use crate::error::AppError;
-use crate::models::{Citation, Conversation, Message};
+use crate::models::{Citation, Conversation, Message, PaginatedResponse};
 use crate::ollama::{self, ChatMessage};
 use crate::state::{get_conn, AppState};
 
@@ -397,18 +397,30 @@ pub async fn create_conversation(
 pub fn list_conversations(
     state: State<'_, AppState>,
     collection_id: String,
-) -> Result<Vec<Conversation>, AppError> {
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<PaginatedResponse<Conversation>, AppError> {
     let conn = get_conn(state.inner())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(30).max(1);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM conversations WHERE collection_id = ?1",
+        rusqlite::params![collection_id],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT id, collection_id, title, created_at, updated_at
          FROM conversations
          WHERE collection_id = ?1
-         ORDER BY updated_at DESC",
+         ORDER BY updated_at DESC
+         LIMIT ?2 OFFSET ?3",
     )?;
 
     let conversations = stmt
-        .query_map(rusqlite::params![collection_id], |row| {
+        .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row| {
             Ok(Conversation {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
@@ -419,25 +431,45 @@ pub fn list_conversations(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(conversations)
+    let has_more = (offset + conversations.len()) < total as usize;
+
+    Ok(PaginatedResponse {
+        items: conversations,
+        total,
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 #[tauri::command]
 pub fn get_conversation_messages(
     state: State<'_, AppState>,
     conversation_id: String,
-) -> Result<Vec<Message>, AppError> {
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<PaginatedResponse<Message>, AppError> {
     let conn = get_conn(state.inner())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(50).max(1);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1",
+        rusqlite::params![conversation_id],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, created_at
          FROM messages
          WHERE conversation_id = ?1
-         ORDER BY created_at ASC",
+         ORDER BY created_at ASC
+         LIMIT ?2 OFFSET ?3",
     )?;
 
     let messages = stmt
-        .query_map(rusqlite::params![conversation_id], |row| {
+        .query_map(rusqlite::params![conversation_id, page_size as i64, offset as i64], |row| {
             Ok(Message {
                 id: row.get(0)?,
                 conversation_id: row.get(1)?,
@@ -448,7 +480,15 @@ pub fn get_conversation_messages(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(messages)
+    let has_more = (offset + messages.len()) < total as usize;
+
+    Ok(PaginatedResponse {
+        items: messages,
+        total,
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 #[tauri::command]

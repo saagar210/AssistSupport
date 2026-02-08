@@ -16,7 +16,7 @@ import { useCollectionStore } from "../stores/collectionStore";
 import { useDocumentStore } from "../stores/documentStore";
 import { useToastStore } from "../stores/toastStore";
 import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
-import type { Document, Chunk } from "../types";
+import type { Document, Chunk, PaginatedResponse } from "../types";
 
 export function DocumentDetailView() {
   const selectedDocumentId = useAppStore((s) => s.selectedDocumentId);
@@ -44,10 +44,10 @@ export function DocumentDetailView() {
         });
         setDocument(doc);
 
-        const docChunks = await invoke<Chunk[]>("get_document_chunks", {
+        const chunkResponse = await invoke<PaginatedResponse<Chunk>>("get_document_chunks", {
           documentId: selectedDocumentId,
         });
-        setChunks(docChunks);
+        setChunks(chunkResponse.items);
       } catch (error) {
         console.error("Failed to load document:", error);
         addToast("error", "Failed to load document details");

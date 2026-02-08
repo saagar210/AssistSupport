@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::audit::{self, AuditAction};
 use crate::error::AppError;
-use crate::models::Collection;
+use crate::models::{Collection, PaginatedResponse};
 use crate::state::{get_conn, AppState};
 
 #[tauri::command]
@@ -44,15 +44,28 @@ pub fn create_collection(
 }
 
 #[tauri::command]
-pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, AppError> {
+pub fn list_collections(
+    state: State<'_, AppState>,
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<PaginatedResponse<Collection>, AppError> {
     let conn = get_conn(state.inner())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(50).max(1);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM collections",
+        [],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC",
+        "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC LIMIT ?1 OFFSET ?2",
     )?;
 
     let collections = stmt
-        .query_map([], |row| {
+        .query_map(rusqlite::params![page_size as i64, offset as i64], |row| {
             Ok(Collection {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -63,7 +76,15 @@ pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, A
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(collections)
+    let has_more = (offset + collections.len()) < total as usize;
+
+    Ok(PaginatedResponse {
+        items: collections,
+        total,
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 #[tauri::command]

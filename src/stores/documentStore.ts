@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
-import type { Document } from "../types";
+import type { Document, PaginatedResponse } from "../types";
 
 interface DocumentState {
   documents: Document[];
@@ -22,10 +22,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   fetchDocuments: async (collectionId: string) => {
     set({ loading: true });
     try {
-      const documents = await invoke<Document[]>("list_documents", {
+      const response = await invoke<PaginatedResponse<Document>>("list_documents", {
         collectionId,
       });
-      set({ documents, loading: false });
+      set({ documents: response.items, loading: false });
     } catch (error) {
       console.error("Failed to fetch documents:", error);
       useToastStore.getState().addToast("error", "Failed to fetch documents: " + String(error));
