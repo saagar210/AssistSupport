@@ -14,6 +14,7 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 5. Kept existing UI behavior and navigation semantics unchanged.
 6. Added unit tests for app-shell command and shortcut contracts.
 7. Re-ran MemoryKernel contract and full CI suites with green results.
+8. Introduced `workspace` and `inbox` feature wrappers and routed tab rendering through these domain modules.
 
 ## Rationale
 1. Reduce `App.tsx` orchestration complexity.

@@ -1,6 +1,5 @@
 import { ErrorBoundary } from '../../components/shared/ErrorBoundary';
-import { DraftTab, type DraftTabHandle } from '../../components/Draft/DraftTab';
-import { FollowUpsTab } from '../../components/FollowUps/FollowUpsTab';
+import { type DraftTabHandle } from '../../components/Draft/DraftTab';
 import { SourcesTab } from '../../components/Sources/SourcesTab';
 import { IngestTab } from '../../components/Ingest/IngestTab';
 import { KnowledgeBrowser } from '../../components/Knowledge';
@@ -9,6 +8,8 @@ import { PilotTab } from '../../components/Pilot';
 import { HybridSearchTab } from '../../components/Search';
 import { SettingsTab } from '../../components/Settings/SettingsTab';
 import { OpsTab } from '../../components/Ops';
+import { WorkspacePage } from '../workspace';
+import { InboxPage } from '../inbox';
 import type { SavedDraft } from '../../types';
 import type { TabId } from './types';
 import type { RefObject } from 'react';
@@ -34,13 +35,13 @@ export function renderActiveTab({
     case 'draft':
       return (
         <ErrorBoundary fallbackTitle="Draft tab encountered an error">
-          <DraftTab ref={draftRef} onNavigateToSource={onNavigateToSource} />
+          <WorkspacePage ref={draftRef} onNavigateToSource={onNavigateToSource} />
         </ErrorBoundary>
       );
     case 'followups':
       return (
         <ErrorBoundary fallbackTitle="Follow-ups tab encountered an error">
-          <FollowUpsTab onLoadDraft={onLoadDraft} />
+          <InboxPage onLoadDraft={onLoadDraft} />
         </ErrorBoundary>
       );
     case 'sources':
