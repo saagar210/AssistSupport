@@ -61,6 +61,30 @@ function validateCommonDocs(pin) {
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);
   }
+
+  const activeStatus = readText('docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md');
+  requireIncludes(
+    activeStatus,
+    'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md',
+    `- MemoryKernel release tag: \`${pin.release_tag}\``
+  );
+  requireIncludes(
+    activeStatus,
+    'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md',
+    `- MemoryKernel commit SHA: \`${pin.commit_sha}\``
+  );
+  requireIncludes(
+    activeStatus,
+    'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md',
+    `- Service/API/baseline: \`${pin.expected_service_contract_version}\` / \`${pin.expected_api_contract_version}\` / \`${pin.expected_integration_baseline}\``
+  );
+  requireIncludes(
+    activeStatus,
+    'docs/implementation/ACTIVE_RUNTIME_STATUS_2026-02-08.md',
+    'Canonical producer runtime/service contract source of truth: `/Users/d/Projects/MemoryKernel` on `main`.'
+  );
+
+  readText('docs/implementation/NEXT_EXECUTION_QUEUE.md');
 }
 
 function validatePhaseMode(pin) {
