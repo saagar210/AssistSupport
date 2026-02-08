@@ -1,0 +1,7 @@
+.DS_Store
+/target
+**/*.sqlite3
+**/*.db
+**/*.db-shm
+**/*.db-wal
+/trace-*.jsonl

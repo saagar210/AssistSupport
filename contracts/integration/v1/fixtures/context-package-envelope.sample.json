@@ -1,0 +1,28 @@
+{
+  "package_slot": 0,
+  "source": "memory_kernel.sqlite",
+  "package_hash": "sha256:fixture",
+  "context_package": {
+    "context_package_id": "ctx_01",
+    "generated_at": "2026-02-07T12:00:00Z",
+    "query": {
+      "text": "Am I allowed to use a USB drive?",
+      "actor": "user",
+      "action": "use",
+      "resource": "usb_drive",
+      "as_of": "2026-02-07T12:00:00Z"
+    },
+    "determinism": {
+      "ruleset_version": "memory_kernel.v1",
+      "snapshot_id": "snapshot-1",
+      "tie_breakers": ["memory_id", "memory_version_id"]
+    },
+    "answer": {
+      "result": "deny",
+      "why": "top precedence deny constraint"
+    },
+    "selected_items": [],
+    "excluded_items": [],
+    "ordering_trace": []
+  }
+}

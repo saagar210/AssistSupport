@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://memorykernel.dev/contracts/integration/v1/trust-gate-attachment.schema.json",
+  "title": "TrustGateAttachment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memory_id",
+    "version",
+    "memory_version_id",
+    "include",
+    "trust_status",
+    "confidence_effective",
+    "capped",
+    "reason_codes",
+    "evaluated_at",
+    "source"
+  ],
+  "properties": {
+    "memory_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "memory_version_id": { "type": "string", "minLength": 1 },
+    "include": { "type": "boolean" },
+    "trust_status": { "type": "string", "minLength": 1 },
+    "confidence_effective": { "type": "number", "minimum": 0, "maximum": 1 },
+    "capped": { "type": "boolean" },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "ruleset_version": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "evaluated_at": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 }
+  }
+}

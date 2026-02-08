@@ -1,0 +1,13 @@
+{
+  "memory_id": "01J0SQQP7M70P6Y3R4T8D8G8M2",
+  "version": 1,
+  "memory_version_id": "01J0SQQP7M70P6Y3R4T8D8G8M3",
+  "include": true,
+  "trust_status": "validated",
+  "confidence_effective": 0.82,
+  "capped": false,
+  "reason_codes": ["included.safe.validated_threshold"],
+  "ruleset_version": 1,
+  "evaluated_at": "2026-02-07T12:00:00Z",
+  "source": "outcome_memory.live"
+}

@@ -1,0 +1,29 @@
+[package]
+name = "multi-agent-center-orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+memory-kernel-core.workspace = true
+memory-kernel-outcome-core.workspace = true
+memory-kernel-store-sqlite.workspace = true
+memory-kernel-api.workspace = true
+multi-agent-center-domain = { path = "../multi-agent-center-domain" }
+multi-agent-center-policy = { path = "../multi-agent-center-policy" }
+multi-agent-center-provider = { path = "../multi-agent-center-provider" }
+multi-agent-center-trace-core = { path = "../multi-agent-center-trace-core" }
+multi-agent-center-workflow = { path = "../multi-agent-center-workflow" }
+rusqlite.workspace = true
+serde_json.workspace = true
+time.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+multi-agent-center-trace-sqlite = { path = "../multi-agent-center-trace-sqlite" }

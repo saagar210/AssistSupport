@@ -1,0 +1,46 @@
+[workspace]
+members = [
+  "crates/multi-agent-center-domain",
+  "crates/multi-agent-center-workflow",
+  "crates/multi-agent-center-policy",
+  "crates/multi-agent-center-provider",
+  "crates/multi-agent-center-trace-core",
+  "crates/multi-agent-center-trace-sqlite",
+  "crates/multi-agent-center-orchestrator",
+  "crates/multi-agent-center-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["MultiAgentCenter Contributors"]
+rust-version = "1.78"
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+hex = "0.4"
+memory-kernel-core = { path = "../MemoryKernel/crates/memory-kernel-core" }
+memory-kernel-store-sqlite = { path = "../MemoryKernel/crates/memory-kernel-store-sqlite" }
+memory-kernel-api = { path = "../MemoryKernel/crates/memory-kernel-api" }
+memory-kernel-outcome-core = { path = "../OutcomeMemory/crates/memory-kernel-outcome-core" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2.0"
+time = { version = "0.3", features = ["formatting", "parsing", "serde"] }
+ulid = { version = "1.1", features = ["serde"] }
+ureq = { version = "2.12", features = ["json"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

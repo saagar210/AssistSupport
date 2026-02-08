@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://memorykernel.dev/contracts/integration/v1/proposed-memory-write.schema.json",
+  "title": "ProposedMemoryWrite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal_index",
+    "payload",
+    "justification"
+  ],
+  "properties": {
+    "proposal_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object"
+    },
+    "justification": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
