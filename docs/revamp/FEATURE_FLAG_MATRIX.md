@@ -1,0 +1,31 @@
+# Feature Flag Matrix (Revamp)
+
+Status: Active  
+Date: 2026-02-08
+
+## Purpose
+Define existing and planned feature toggles so revamp rollout is reversible and low-risk.
+
+## Existing Flags / Runtime Controls
+| Control | Type | Default | Scope | Purpose |
+|---|---|---:|---|---|
+| MemoryKernel integration enabled (settings) | Runtime setting | true | App runtime | Enable/disable enrichment behavior |
+| `ASSISTSUPPORT_REQUIRE_HANDOFF_PAYLOAD` | Env var | 0 | Governance scripts | Require handoff payload validation |
+| `ASSISTSUPPORT_HANDOFF_REQUIRE_PIN_MATCH` | Env var | 1 | Governance scripts | Enforce pin and handoff SHA alignment |
+| `MEMORYKERNEL_EXPECTED_SERVICE_CONTRACT_VERSION` | Env var | from pin | Governance scripts | Candidate/stable contract validation |
+| `ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST` | Env var | 0 | Governance scripts | Optional remote producer manifest validation |
+
+## Planned Revamp Flags (to implement in Phase 3/4)
+| Flag | Default | Owner | Controlled Surface | Rollback Action |
+|---|---:|---|---|---|
+| `ASSISTSUPPORT_REVAMP_APP_SHELL` | 0 | Frontend | New global shell/nav | Revert to legacy shell |
+| `ASSISTSUPPORT_REVAMP_INBOX` | 0 | Frontend | Queue-first inbox | Revert to legacy draft landing |
+| `ASSISTSUPPORT_REVAMP_WORKSPACE` | 0 | Frontend | New tri-pane workspace | Revert to legacy draft panel |
+| `ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2` | 0 | Frontend | New command system | Revert to current palette |
+| `ASSISTSUPPORT_LLM_ROUTER_V2` | 0 | Runtime | Model routing/prompt contracts | Revert to legacy LLM path |
+
+## Flag Governance Rules
+1. New revamp surface cannot replace legacy by default until phase gate exit criteria pass.
+2. Every flag must have a documented rollback command path.
+3. Flag defaults can only flip in release-candidate phase with evidence.
+4. Flag removal requires successful stabilization window and closure ADR.

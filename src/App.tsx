@@ -1,19 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sidebar, Header, TabBar } from './components/Layout';
-import { DraftTab, DraftTabHandle } from './components/Draft/DraftTab';
-import { FollowUpsTab } from './components/FollowUps/FollowUpsTab';
-import { SourcesTab } from './components/Sources/SourcesTab';
-import { IngestTab } from './components/Ingest/IngestTab';
-import { KnowledgeBrowser } from './components/Knowledge';
-import { SettingsTab } from './components/Settings/SettingsTab';
-import { AnalyticsTab } from './components/Analytics/AnalyticsTab';
-import { PilotTab } from './components/Pilot';
-import { HybridSearchTab } from './components/Search';
-import { OpsTab } from './components/Ops';
+import { type DraftTabHandle } from './components/Draft/DraftTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
-import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { Button } from './components/shared/Button';
-import { CommandPalette, useCommandPalette, type Command } from './components/shared/CommandPalette';
+import { CommandPalette, useCommandPalette } from './components/shared/CommandPalette';
 import { KeyboardShortcuts, useKeyboardShortcutsHelp } from './components/shared/KeyboardShortcuts';
 import { OnboardingWizard } from './components/shared/OnboardingWizard';
 import { useInitialize } from './hooks/useInitialize';
@@ -21,9 +11,13 @@ import { useToastContext } from './contexts/ToastContext';
 import { AppStatusProvider } from './contexts/AppStatusContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboard';
 import type { SavedDraft } from './types';
+import {
+  buildAppShellCommands,
+  mapShortcutIndexToTab,
+  renderActiveTab,
+  type TabId,
+} from './features/app-shell';
 import './App.css';
-
-type TabId = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'ops' | 'settings';
 
 function AppContent() {
   const { initResult, loading, error } = useInitialize();
@@ -98,8 +92,10 @@ function AppContent() {
     onCancelGeneration: handleCancelGeneration,
     onExport: handleExport,
     onSwitchTab: (n) => {
-      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'pilot', 'search', 'ops', 'settings'];
-      if (n >= 1 && n <= 10) setActiveTab(tabs[n - 1]);
+      const tab = mapShortcutIndexToTab(n);
+      if (tab) {
+        setActiveTab(tab);
+      }
     },
   });
 
@@ -142,229 +138,32 @@ function AppContent() {
   }, []);
 
   // Command palette commands
-  const commands: Command[] = useMemo(() => [
-    // Navigation commands
-    {
-      id: 'nav-draft',
-      label: 'Go to Draft',
-      description: 'Create and edit support responses',
-      icon: 'draft',
-      shortcut: 'Cmd+1',
-      category: 'navigation',
-      action: () => setActiveTab('draft'),
-    },
-    {
-      id: 'nav-followups',
-      label: 'Go to Follow-ups',
-      description: 'View saved drafts and history',
-      icon: 'followups',
-      shortcut: 'Cmd+2',
-      category: 'navigation',
-      action: () => setActiveTab('followups'),
-    },
-    {
-      id: 'nav-sources',
-      label: 'Go to Sources',
-      description: 'Search knowledge base',
-      icon: 'sources',
-      shortcut: 'Cmd+3',
-      category: 'navigation',
-      action: () => setActiveTab('sources'),
-    },
-    {
-      id: 'nav-ingest',
-      label: 'Go to Ingest',
-      description: 'Add content to knowledge base',
-      icon: 'ingest',
-      shortcut: 'Cmd+4',
-      category: 'navigation',
-      action: () => setActiveTab('ingest'),
-    },
-    {
-      id: 'nav-knowledge',
-      label: 'Go to Knowledge',
-      description: 'Browse indexed documents',
-      icon: 'knowledge',
-      shortcut: 'Cmd+5',
-      category: 'navigation',
-      action: () => setActiveTab('knowledge'),
-    },
-    {
-      id: 'nav-analytics',
-      label: 'Go to Analytics',
-      description: 'View usage analytics and statistics',
-      icon: 'sparkles',
-      shortcut: 'Cmd+6',
-      category: 'navigation',
-      action: () => setActiveTab('analytics'),
-    },
-    {
-      id: 'nav-pilot',
-      label: 'Go to Pilot',
-      description: 'View pilot feedback dashboard',
-      icon: 'sparkles',
-      shortcut: 'Cmd+7',
-      category: 'navigation',
-      action: () => setActiveTab('pilot'),
-    },
-    {
-      id: 'nav-search',
-      label: 'Go to Search',
-      description: 'Hybrid PostgreSQL search',
-      icon: 'database',
-      shortcut: 'Cmd+8',
-      category: 'navigation',
-      action: () => setActiveTab('search'),
-    },
-    {
-      id: 'nav-settings',
-      label: 'Go to Settings',
-      description: 'Configure app preferences',
-      icon: 'settings',
-      shortcut: 'Cmd+0',
-      category: 'navigation',
-      action: () => setActiveTab('settings'),
-    },
-    {
-      id: 'nav-ops',
-      label: 'Go to Operations',
-      description: 'Deployment, eval, triage, and runbooks',
-      icon: 'terminal',
-      shortcut: 'Cmd+9',
-      category: 'navigation',
-      action: () => setActiveTab('ops'),
-    },
-    // Quick actions
-    {
-      id: 'action-new-draft',
-      label: 'New Draft',
-      description: 'Clear current draft and start fresh',
-      icon: 'plus',
-      shortcut: 'Cmd+N',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        // Clear draft via ref if available
-        if (draftRef.current) {
-          draftRef.current.clearDraft?.();
-        }
-      },
-    },
-    {
-      id: 'action-focus-search',
-      label: 'Focus Search',
-      description: 'Jump to knowledge base search',
-      icon: 'search',
-      shortcut: 'Cmd+/',
-      category: 'action',
-      action: () => {
-        setActiveTab('sources');
-      },
-    },
-    // Draft actions
-    {
-      id: 'action-generate',
-      label: 'Generate Response',
-      description: 'Generate AI response for current draft',
-      icon: 'sparkles',
-      shortcut: 'Cmd+Enter',
-      category: 'draft',
-      action: handleGenerate,
-      disabled: activeTab !== 'draft',
-    },
-    {
-      id: 'action-save',
-      label: 'Save Draft',
-      description: 'Save current draft to history',
-      icon: 'save',
-      shortcut: 'Cmd+S',
-      category: 'draft',
-      action: handleSaveDraft,
-      disabled: activeTab !== 'draft',
-    },
-    {
-      id: 'action-copy',
-      label: 'Copy Response',
-      description: 'Copy generated response to clipboard',
-      icon: 'copy',
-      shortcut: 'Cmd+Shift+C',
-      category: 'draft',
-      action: handleCopyResponse,
-      disabled: activeTab !== 'draft',
-    },
-    {
-      id: 'action-export',
-      label: 'Export Response',
-      description: 'Export response as file',
-      icon: 'download',
-      shortcut: 'Cmd+E',
-      category: 'draft',
-      action: handleExport,
-      disabled: activeTab !== 'draft',
-    },
-    {
-      id: 'action-cancel',
-      label: 'Cancel Generation',
-      description: 'Stop current AI generation',
-      icon: 'x',
-      shortcut: 'Escape',
-      category: 'draft',
-      action: handleCancelGeneration,
-      disabled: activeTab !== 'draft',
-    },
-    // Settings actions
-    {
-      id: 'settings-toggle-sidebar',
-      label: sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar',
-      description: 'Toggle sidebar visibility',
-      icon: sidebarCollapsed ? 'panelLeftOpen' : 'panelLeftClose',
-      category: 'settings',
-      action: handleToggleSidebar,
-    },
-    {
-      id: 'settings-shortcuts',
-      label: 'Keyboard Shortcuts',
-      description: 'View all keyboard shortcuts',
-      icon: 'command',
-      shortcut: 'Cmd+Shift+/',
-      category: 'settings',
-      action: shortcutsHelp.open,
-    },
-    // Feature discovery commands
-    {
-      id: 'feature-templates',
-      label: 'Open Templates',
-      description: 'Use response templates for common scenarios',
-      icon: 'draft',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Templates quick-launch is not available yet. Use Save Draft/History for now.', 'info');
-      },
-    },
-    {
-      id: 'feature-batch',
-      label: 'Start Batch Processing',
-      description: 'Process multiple queries at once',
-      icon: 'list',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Batch processing is planned but not available in this release.', 'info');
-      },
-    },
-    {
-      id: 'feature-voice',
-      label: 'Start Voice Input',
-      description: 'Use voice dictation for input',
-      icon: 'play',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Voice input is planned but not available in this release.', 'info');
-      },
-    },
-  ], [activeTab, sidebarCollapsed, handleGenerate, handleSaveDraft, handleCopyResponse, handleExport, handleCancelGeneration, handleToggleSidebar, shortcutsHelp.open, addToast]);
+  const commands = useMemo(() => buildAppShellCommands({
+    activeTab,
+    sidebarCollapsed,
+    setActiveTab,
+    handleGenerate,
+    handleSaveDraft,
+    handleCopyResponse,
+    handleExport,
+    handleCancelGeneration,
+    handleToggleSidebar,
+    onOpenShortcuts: shortcutsHelp.open,
+    addToast,
+    clearDraft: () => draftRef.current?.clearDraft?.(),
+  }), [
+    activeTab,
+    sidebarCollapsed,
+    setActiveTab,
+    handleGenerate,
+    handleSaveDraft,
+    handleCopyResponse,
+    handleExport,
+    handleCancelGeneration,
+    handleToggleSidebar,
+    shortcutsHelp.open,
+    addToast,
+  ]);
 
   if (loading) {
     return (
@@ -390,74 +189,6 @@ function AppContent() {
     );
   }
 
-  function renderTab() {
-    switch (activeTab) {
-      case 'draft':
-        return (
-          <ErrorBoundary fallbackTitle="Draft tab encountered an error">
-            <DraftTab ref={draftRef} onNavigateToSource={handleNavigateToSource} />
-          </ErrorBoundary>
-        );
-      case 'followups':
-        return (
-          <ErrorBoundary fallbackTitle="Follow-ups tab encountered an error">
-            <FollowUpsTab onLoadDraft={handleLoadDraft} />
-          </ErrorBoundary>
-        );
-      case 'sources':
-        return (
-          <ErrorBoundary fallbackTitle="Sources tab encountered an error">
-            <SourcesTab
-              initialSearchQuery={sourceSearchQuery}
-              onSearchQueryConsumed={() => setSourceSearchQuery(null)}
-            />
-          </ErrorBoundary>
-        );
-      case 'ingest':
-        return (
-          <ErrorBoundary fallbackTitle="Ingest tab encountered an error">
-            <IngestTab />
-          </ErrorBoundary>
-        );
-      case 'knowledge':
-        return (
-          <ErrorBoundary fallbackTitle="Knowledge tab encountered an error">
-            <KnowledgeBrowser />
-          </ErrorBoundary>
-        );
-      case 'analytics':
-        return (
-          <ErrorBoundary fallbackTitle="Analytics tab encountered an error">
-            <AnalyticsTab />
-          </ErrorBoundary>
-        );
-      case 'pilot':
-        return (
-          <ErrorBoundary fallbackTitle="Pilot tab encountered an error">
-            <PilotTab />
-          </ErrorBoundary>
-        );
-      case 'search':
-        return (
-          <ErrorBoundary fallbackTitle="Search tab encountered an error">
-            <HybridSearchTab />
-          </ErrorBoundary>
-        );
-      case 'settings':
-        return (
-          <ErrorBoundary fallbackTitle="Settings tab encountered an error">
-            <SettingsTab />
-          </ErrorBoundary>
-        );
-      case 'ops':
-        return (
-          <ErrorBoundary fallbackTitle="Operations tab encountered an error">
-            <OpsTab />
-          </ErrorBoundary>
-        );
-    }
-  }
-
   return (
     <div className="app">
       {/* Mobile navigation - visible only on small screens */}
@@ -480,7 +211,14 @@ function AppContent() {
           onOpenShortcuts={shortcutsHelp.open}
         />
         <main className="app-main">
-          {renderTab()}
+          {renderActiveTab({
+            activeTab,
+            draftRef,
+            sourceSearchQuery,
+            onSearchQueryConsumed: () => setSourceSearchQuery(null),
+            onNavigateToSource: handleNavigateToSource,
+            onLoadDraft: handleLoadDraft,
+          })}
         </main>
       </div>
 
