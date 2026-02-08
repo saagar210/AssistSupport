@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::audit::{self, AuditAction};
 use crate::error::AppError;
+use crate::metrics::{LatencyMetric, MetricCounter};
 use crate::ollama;
 use crate::state::{get_conn, AppState};
 use crate::utils::{bytes_to_f64_vec, cosine_similarity};
@@ -38,6 +40,8 @@ pub async fn vector_search(
     query: String,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
+    let search_start = Instant::now();
+
     // 1. Read ollama settings inside connection scope, then drop
     let (host, port, embedding_model) = {
         let conn = get_conn(state.inner())?;
@@ -63,14 +67,31 @@ pub async fn vector_search(
     let query_embedding =
         ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
 
-    // 3. Load all chunk embeddings for the collection from the DB,
-    //    compute cosine similarity in Rust, and return top_k.
-    //    NOTE: The other agent is building a vector_store module. For now we do
-    //    an in-process brute-force search so this module compiles independently.
+    // 3. Try HNSW index first (fast path), fallback to brute-force
     let results = {
-        let conn = get_conn(state.inner())?;
-        vector_search_in_db(&conn, &collection_id, &query_embedding, top_k)?
+        let index = state
+            .inner()
+            .vector_index
+            .read()
+            .map_err(|e| AppError::LockFailed(e.to_string()))?;
+        if index.has_index(&collection_id) {
+            let scored = index.search(&collection_id, &query_embedding, top_k)?;
+            drop(index); // Release read lock before acquiring DB connection
+            let conn = get_conn(state.inner())?;
+            enrich_search_results(&conn, &scored)?
+        } else {
+            drop(index);
+            // Fallback to brute-force for collections without index
+            let conn = get_conn(state.inner())?;
+            vector_search_in_db(&conn, &collection_id, &query_embedding, top_k)?
+        }
     };
+
+    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state.inner().metrics.record_latency(
+        LatencyMetric::SearchLatency,
+        search_start.elapsed().as_secs_f64() * 1000.0,
+    );
 
     Ok(results)
 }
@@ -170,6 +191,42 @@ fn vector_search_in_db(
     Ok(results)
 }
 
+/// Enrich (chunk_id, score) pairs from HNSW index with full metadata from DB.
+fn enrich_search_results(
+    conn: &rusqlite::Connection,
+    scored: &[(String, f64)],
+) -> Result<Vec<SearchResult>, AppError> {
+    let mut results = Vec::with_capacity(scored.len());
+    for (chunk_id, score) in scored {
+        let result = conn.query_row(
+            "SELECT c.id, c.document_id, c.content, c.section_title, c.page_number,
+                    d.title
+             FROM chunks c
+             JOIN documents d ON d.id = c.document_id
+             WHERE c.id = ?1",
+            rusqlite::params![chunk_id],
+            |row| {
+                Ok(SearchResult {
+                    chunk_id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    content: row.get(2)?,
+                    section_title: row.get(3)?,
+                    page_number: row.get(4)?,
+                    document_title: row.get(5)?,
+                    score: *score,
+                })
+            },
+        );
+
+        match result {
+            Ok(sr) => results.push(sr),
+            Err(rusqlite::Error::QueryReturnedNoRows) => continue,
+            Err(e) => return Err(AppError::Database(e)),
+        }
+    }
+    Ok(results)
+}
+
 /// Full-text keyword search using FTS5 with BM25 ranking.
 #[tauri::command]
 pub fn keyword_search(
@@ -178,8 +235,17 @@ pub fn keyword_search(
     query: String,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
+    let search_start = Instant::now();
     let conn = get_conn(state.inner())?;
-    keyword_search_in_db(&conn, &collection_id, &query, top_k)
+    let results = keyword_search_in_db(&conn, &collection_id, &query, top_k)?;
+
+    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state.inner().metrics.record_latency(
+        LatencyMetric::SearchLatency,
+        search_start.elapsed().as_secs_f64() * 1000.0,
+    );
+
+    Ok(results)
 }
 
 pub(crate) fn keyword_search_in_db(
@@ -258,6 +324,8 @@ pub async fn hybrid_search(
     query: String,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
+    let search_start = Instant::now();
+
     // Read settings
     let (host, port, embedding_model, rrf_k, vector_top_k, keyword_top_k) = {
         let conn = get_conn(state.inner())?;
@@ -308,16 +376,39 @@ pub async fn hybrid_search(
     let query_embedding =
         ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
 
-    // Run both searches under a single connection acquisition
+    // Run both searches: HNSW for vector (if available), keyword from DB
     let (vector_results, keyword_results) = {
+        let vr = {
+            let index = state
+                .inner()
+                .vector_index
+                .read()
+                .map_err(|e| AppError::LockFailed(e.to_string()))?;
+            if index.has_index(&collection_id) {
+                let scored = index.search(&collection_id, &query_embedding, vec_top_k)?;
+                drop(index);
+                let conn = get_conn(state.inner())?;
+                enrich_search_results(&conn, &scored)?
+            } else {
+                drop(index);
+                let conn = get_conn(state.inner())?;
+                vector_search_in_db(&conn, &collection_id, &query_embedding, vec_top_k)?
+            }
+        };
         let conn = get_conn(state.inner())?;
-        let vr = vector_search_in_db(&conn, &collection_id, &query_embedding, vec_top_k)?;
         let kr = keyword_search_in_db(&conn, &collection_id, &query, kw_top_k)?;
         (vr, kr)
     };
 
     // Apply Reciprocal Rank Fusion
     let fused = reciprocal_rank_fusion(vector_results, keyword_results, rrf_k_val, top_k);
+
+    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state.inner().metrics.record_latency(
+        LatencyMetric::SearchLatency,
+        search_start.elapsed().as_secs_f64() * 1000.0,
+    );
+
     Ok(fused)
 }
 

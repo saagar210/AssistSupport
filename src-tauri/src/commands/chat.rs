@@ -48,6 +48,9 @@ pub async fn send_chat_message(
         // Audit log for user message
         let _ = audit::log_audit(&conn, AuditAction::ChatMessage, Some("conversation"), Some(&conversation_id), &serde_json::json!({"role": "user"}));
 
+        // Track chat message metric
+        state.inner().metrics.increment(crate::metrics::MetricCounter::ChatMessagesSent);
+
         let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'", [], |row: &rusqlite::Row| row.get(0),
         )?;

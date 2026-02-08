@@ -1,10 +1,16 @@
+use std::sync::RwLock;
+
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::error::AppError;
+use crate::metrics::AppMetrics;
+use crate::vector_index::VectorIndex;
 
 pub struct AppState {
     pub db_pool: Pool<SqliteConnectionManager>,
+    pub vector_index: RwLock<VectorIndex>,
+    pub metrics: AppMetrics,
 }
 
 /// Get a connection from the pool, returning a clean AppError on failure.

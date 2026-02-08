@@ -7,6 +7,7 @@ use crate::audit::{self, AuditAction};
 use crate::chunker;
 use crate::embedder;
 use crate::error::AppError;
+use crate::metrics::MetricCounter;
 use crate::models::{Chunk, Document};
 use crate::parsers;
 use crate::state::{get_conn, AppState};
@@ -224,6 +225,11 @@ async fn ingest_single_file(
 
     // Stage: complete
     emit_progress(app, doc_id, filename, "complete", chunks_total, chunks_total, None);
+
+    // Track metrics
+    app_state.metrics.increment(MetricCounter::DocumentsIngested);
+    app_state.metrics.increment_by(MetricCounter::ChunksCreated, chunks_total as u64);
+
     Ok(())
 }
 
@@ -353,6 +359,12 @@ pub async fn ingest_files(
                 tracing::error!("Ingestion failed for {}: {}", filename, e);
             }
         }
+        // Rebuild HNSW index after ingestion
+        if let Ok(conn) = crate::state::get_conn(app_state.inner()) {
+            if let Ok(mut index) = app_state.inner().vector_index.write() {
+                let _ = index.rebuild_collection_index(&conn, &cid);
+            }
+        }
         // Signal all files done
         let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
     });
@@ -404,6 +416,7 @@ pub async fn reingest_document(
 
     let app = app_handle.clone();
     let did = document_id.clone();
+    let cid_for_rebuild = collection_id.clone();
     tauri::async_runtime::spawn(async move {
         let app_state: tauri::State<'_, AppState> = app.state();
         if let Err(e) = ingest_single_file(
@@ -418,6 +431,12 @@ pub async fn reingest_document(
         .await
         {
             tracing::error!("Re-ingestion failed for {}: {}", filename, e);
+        }
+        // Rebuild HNSW index after re-ingestion
+        if let Ok(conn) = crate::state::get_conn(app_state.inner()) {
+            if let Ok(mut index) = app_state.inner().vector_index.write() {
+                let _ = index.rebuild_collection_index(&conn, &cid_for_rebuild);
+            }
         }
     });
 
@@ -497,6 +516,12 @@ pub async fn reingest_collection(
                 "documents_total": total_docs,
             }),
         );
+        // Rebuild HNSW index after collection re-ingestion
+        if let Ok(conn) = crate::state::get_conn(app_state.inner()) {
+            if let Ok(mut index) = app_state.inner().vector_index.write() {
+                let _ = index.rebuild_collection_index(&conn, &cid);
+            }
+        }
         let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
     });
 
@@ -591,6 +616,20 @@ pub fn delete_document(
 ) -> Result<(), AppError> {
     let conn = get_conn(state.inner())?;
 
+    // Get collection_id before deleting (needed for HNSW rebuild)
+    let collection_id: String = conn
+        .query_row(
+            "SELECT collection_id FROM documents WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Document '{}' not found", id))
+            }
+            other => AppError::Database(other),
+        })?;
+
     let _ = audit::log_audit(&conn, AuditAction::DocumentDelete, Some("document"), Some(&id), &serde_json::json!({}));
 
     clear_document_data(&conn, &id)?;
@@ -602,6 +641,11 @@ pub fn delete_document(
 
     if rows == 0 {
         return Err(AppError::NotFound(format!("Document '{}' not found", id)));
+    }
+
+    // Rebuild HNSW index after deletion
+    if let Ok(mut index) = state.inner().vector_index.write() {
+        let _ = index.rebuild_collection_index(&conn, &collection_id);
     }
 
     Ok(())

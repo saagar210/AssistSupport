@@ -5,16 +5,21 @@ mod db;
 mod embedder;
 mod error;
 mod graph;
+mod metrics;
 mod migrations;
 mod models;
 mod ollama;
 mod parsers;
 mod state;
 pub mod utils;
+mod vector_index;
 mod vector_store;
+
+use std::sync::RwLock;
 
 use state::AppState;
 use tauri::Manager;
+use vector_index::VectorIndex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,7 +37,36 @@ pub fn run() {
             let db_pool = db::create_pool(&app_data_dir)
                 .expect("Failed to create database pool");
 
-            app.manage(AppState { db_pool });
+            app.manage(AppState {
+                db_pool: db_pool.clone(),
+                vector_index: RwLock::new(VectorIndex::new()),
+                metrics: metrics::AppMetrics::new(),
+            });
+
+            // Build HNSW indices for all collections
+            {
+                let conn = db_pool.get().expect("Failed to get connection for index build");
+                let mut stmt = conn
+                    .prepare("SELECT id FROM collections")
+                    .expect("Failed to prepare collections query");
+                let collection_ids: Vec<String> = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .expect("Failed to query collections")
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap_or_default();
+
+                let app_state: &AppState = &app.state::<AppState>();
+                let mut index = app_state
+                    .vector_index
+                    .write()
+                    .expect("Failed to acquire vector index write lock");
+                for cid in &collection_ids {
+                    if let Err(e) = index.build_collection_index(&conn, cid) {
+                        tracing::warn!("Failed to build index for collection {}: {}", cid, e);
+                    }
+                }
+                tracing::info!("Built HNSW indices for {} collections", collection_ids.len());
+            }
 
             Ok(())
         })
@@ -77,6 +111,8 @@ pub fn run() {
             commands::chat::cancel_chat_generation,
             commands::chat::delete_last_assistant_message,
             commands::chat::export_conversation_markdown,
+            // Metrics commands
+            commands::settings::get_metrics,
             // Graph commands
             commands::graph::build_graph,
             commands::graph::get_graph,

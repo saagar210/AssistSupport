@@ -44,6 +44,13 @@ pub fn update_setting(
     Ok(())
 }
 
+#[tauri::command]
+pub fn get_metrics(
+    state: State<'_, AppState>,
+) -> Result<crate::metrics::MetricsSnapshot, AppError> {
+    Ok(state.inner().metrics.snapshot())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
