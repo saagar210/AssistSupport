@@ -80,12 +80,16 @@ export function Header({ activeTab, onOpenCommandPalette, onOpenShortcuts }: Hea
   const [showStatusPanel, setShowStatusPanel] = useState(false);
 
   // Compute overall health
-  const healthyCount = [
+  const checks = [
     appStatus.llmLoaded,
     appStatus.embeddingsLoaded,
     appStatus.kbIndexed,
-  ].filter(Boolean).length;
-  const totalChecks = 3;
+  ];
+  if (appStatus.memoryKernelFeatureEnabled) {
+    checks.push(appStatus.memoryKernelReady);
+  }
+  const healthyCount = checks.filter(Boolean).length;
+  const totalChecks = checks.length;
   const overallHealth = healthyCount === totalChecks ? 'good' : healthyCount > 0 ? 'partial' : 'none';
 
   return (
@@ -166,6 +170,11 @@ export function Header({ activeTab, onOpenCommandPalette, onOpenShortcuts }: Hea
                 label="Knowledge Base"
                 status={appStatus.kbIndexed}
                 detail={`${appStatus.kbDocumentCount} docs, ${appStatus.kbChunkCount} chunks`}
+              />
+              <StatusItem
+                label="MemoryKernel"
+                status={appStatus.memoryKernelReady}
+                detail={appStatus.memoryKernelFeatureEnabled ? appStatus.memoryKernelDetail : 'Feature disabled'}
               />
             </div>
           </div>

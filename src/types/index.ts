@@ -26,6 +26,42 @@ export interface VectorConsent {
   encryption_supported: boolean | null;
 }
 
+export interface MemoryKernelIntegrationPin {
+  memorykernel_repo: string;
+  release_tag: string;
+  commit_sha: string;
+  expected_service_contract_version: string;
+  expected_api_contract_version: string;
+  expected_integration_baseline: string;
+  default_base_url: string;
+  default_timeout_ms: number;
+}
+
+export interface MemoryKernelPreflightStatus {
+  enabled: boolean;
+  ready: boolean;
+  enrichment_enabled: boolean;
+  status: string;
+  message: string;
+  base_url: string;
+  service_contract_version: string | null;
+  api_contract_version: string | null;
+  expected_service_contract_version: string;
+  expected_api_contract_version: string;
+  integration_baseline: string;
+  release_tag: string;
+  commit_sha: string;
+}
+
+export interface MemoryKernelEnrichmentResult {
+  applied: boolean;
+  status: string;
+  message: string;
+  context_package_id: string | null;
+  enrichment_text: string | null;
+  preflight: MemoryKernelPreflightStatus;
+}
+
 // LLM types
 export interface ModelInfo {
   id: string;

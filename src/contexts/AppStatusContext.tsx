@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { ModelInfo } from '../types';
+import type { MemoryKernelPreflightStatus, ModelInfo } from '../types';
 
 export interface AppStatusState {
   // LLM status
@@ -21,6 +21,12 @@ export interface AppStatusState {
   kbIndexed: boolean;
   kbDocumentCount: number;
   kbChunkCount: number;
+
+  // MemoryKernel integration status
+  memoryKernelFeatureEnabled: boolean;
+  memoryKernelReady: boolean;
+  memoryKernelStatus: string;
+  memoryKernelDetail: string;
 
   // Overall
   initialized: boolean;
@@ -45,6 +51,10 @@ const defaultState: AppStatusState = {
   kbIndexed: false,
   kbDocumentCount: 0,
   kbChunkCount: 0,
+  memoryKernelFeatureEnabled: false,
+  memoryKernelReady: false,
+  memoryKernelStatus: 'unknown',
+  memoryKernelDetail: 'Not checked',
   initialized: false,
   lastUpdated: null,
 };
@@ -126,19 +136,41 @@ export function AppStatusProvider({ children, pollInterval = 10000 }: Props) {
     }
   }, []);
 
+  const refreshMemoryKernel = useCallback(async () => {
+    try {
+      const preflight = await invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status');
+      setState(prev => ({
+        ...prev,
+        memoryKernelFeatureEnabled: preflight.enabled,
+        memoryKernelReady: preflight.ready && preflight.enrichment_enabled,
+        memoryKernelStatus: preflight.status,
+        memoryKernelDetail: preflight.message,
+      }));
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        memoryKernelFeatureEnabled: false,
+        memoryKernelReady: false,
+        memoryKernelStatus: 'error',
+        memoryKernelDetail: `Preflight unavailable: ${String(err)}`,
+      }));
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     await Promise.all([
       refreshLlm(),
       refreshEmbeddings(),
       refreshVector(),
       refreshKb(),
+      refreshMemoryKernel(),
     ]);
     setState(prev => ({
       ...prev,
       initialized: true,
       lastUpdated: new Date(),
     }));
-  }, [refreshLlm, refreshEmbeddings, refreshVector, refreshKb]);
+  }, [refreshLlm, refreshEmbeddings, refreshVector, refreshKb, refreshMemoryKernel]);
 
   // Initial load and polling
   useEffect(() => {

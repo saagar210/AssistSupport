@@ -12,6 +12,7 @@ pub mod diagnostics;
 pub mod draft_commands;
 pub mod jira_commands;
 pub mod kb_commands;
+pub mod memory_kernel;
 pub mod model_commands;
 pub mod search_api;
 pub mod security_commands;
@@ -23,6 +24,10 @@ pub use diagnostics::{
     get_resource_metrics_cmd, get_system_health, get_vector_maintenance_info_cmd,
     rebuild_vector_store, repair_database_cmd, run_database_maintenance_cmd,
     run_quick_health_check, set_llm_resource_limits, QuickHealthResult,
+};
+pub use memory_kernel::{
+    get_memory_kernel_integration_pin, get_memory_kernel_preflight_status, memory_kernel_query_ask,
+    MemoryKernelEnrichmentResult, MemoryKernelIntegrationPin, MemoryKernelPreflightStatus,
 };
 pub use search_api::{
     check_search_api_health, get_search_api_health_status, get_search_api_stats, hybrid_search,

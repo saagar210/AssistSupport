@@ -319,6 +319,10 @@ pub fn run() {
             commands::search_api::get_search_api_stats,
             commands::search_api::get_search_api_health_status,
             commands::search_api::check_search_api_health,
+            // MemoryKernel service integration
+            commands::memory_kernel::get_memory_kernel_integration_pin,
+            commands::memory_kernel::get_memory_kernel_preflight_status,
+            commands::memory_kernel::memory_kernel_query_ask,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

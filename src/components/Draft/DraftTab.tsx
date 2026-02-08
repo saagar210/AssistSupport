@@ -14,6 +14,7 @@ import { useKb } from '../../hooks/useKb';
 import { useAnalytics } from '../../hooks/useAnalytics';
 import { useAlternatives } from '../../hooks/useAlternatives';
 import { useSavedResponses } from '../../hooks/useSavedResponses';
+import { useMemoryKernelEnrichment } from '../../hooks/useMemoryKernelEnrichment';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useAppStatus } from '../../contexts/AppStatusContext';
 import type { JiraTicket } from '../../hooks/useJira';
@@ -61,6 +62,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   } = useLlm();
   const { saveDraft, triggerAutosave, cancelAutosave, templates, loadTemplates } = useDrafts();
   const { search: searchKb } = useKb();
+  const { enrichDiagnosticNotes } = useMemoryKernelEnrichment();
   const { logEvent } = useAnalytics();
   const appStatus = useAppStatus();
 
@@ -128,6 +130,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setGrounding([]);
     try {
       const combinedInput = ocrText ? `${input}\n\n[Screenshot OCR Text]:\n${ocrText}` : input;
+      const enrichment = await enrichDiagnosticNotes(combinedInput, diagnosticNotes || undefined);
+      if (!enrichment.enrichmentApplied) {
+        console.info('MemoryKernel enrichment skipped:', enrichment.message);
+      }
 
       // Build tree decisions if available
       const treeDecisions = treeResult ? {
@@ -137,7 +143,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
 
       const result = await generateStreaming(combinedInput, responseLength, {
         treeDecisions,
-        diagnosticNotes: diagnosticNotes || undefined,
+        diagnosticNotes: enrichment.diagnosticNotes,
         jiraTicket: currentTicket || undefined,
       });
       setResponse(result.text);
@@ -159,7 +165,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     } finally {
       setGenerating(false);
     }
-  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError, logEvent]);
+  }, [input, ocrText, responseLength, generating, modelLoaded, treeResult, diagnosticNotes, currentTicket, generateStreaming, clearStreamingText, showError, logEvent, enrichDiagnosticNotes]);
 
   const handleGenerateFirstResponse = useCallback(async () => {
     if (firstResponseGenerating) return;

@@ -27,6 +27,22 @@ function installInvokeMocks(overrides: InvokeOverrides = {}) {
         return true;
       case 'get_vector_consent':
         return { enabled: true, consented_at: '2026-01-01T00:00:00Z', encryption_supported: true };
+      case 'get_memory_kernel_preflight_status':
+        return {
+          enabled: true,
+          ready: true,
+          enrichment_enabled: true,
+          status: 'ready',
+          message: 'MemoryKernel preflight passed',
+          base_url: 'http://127.0.0.1:4010',
+          service_contract_version: 'service.v1',
+          api_contract_version: 'api.v1',
+          expected_service_contract_version: 'service.v1',
+          expected_api_contract_version: 'api.v1',
+          integration_baseline: 'integration/v1',
+          release_tag: 'v0.1.0',
+          commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+        };
       case 'create_session_token':
         return 'session-token-new';
       case 'validate_session_token':
@@ -77,6 +93,7 @@ describe('useInitialize', () => {
     await waitFor(() => expect(result.current.enginesReady).toBe(true));
     expect(mockInvoke).toHaveBeenCalledWith('initialize_app');
     expect(mockInvoke).toHaveBeenCalledWith('check_fts5_enabled');
+    expect(mockInvoke).toHaveBeenCalledWith('get_memory_kernel_preflight_status');
     expect(mockInvoke).toHaveBeenCalledWith('init_llm_engine');
     expect(mockInvoke).toHaveBeenCalledWith('init_embedding_engine');
   });
@@ -139,5 +156,20 @@ describe('useInitialize', () => {
     expect(result.current.initialized).toBe(true);
     expect(result.current.error).toBeNull();
     expect(localStorage.getItem('assistsupport_session_token')).toBeNull();
+  });
+
+  it('continues initialization when MemoryKernel preflight fails', async () => {
+    installInvokeMocks({
+      get_memory_kernel_preflight_status: () => {
+        throw new Error('service unavailable');
+      },
+    });
+
+    const { result } = renderHook(() => useInitialize());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.initialized).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.memoryKernelPreflight).toBeNull();
   });
 });

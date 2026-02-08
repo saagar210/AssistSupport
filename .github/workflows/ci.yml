@@ -70,6 +70,60 @@ jobs:
             echo "- Status: ✅ Passed"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  memorykernel-contract:
+    name: MemoryKernel Contract Gate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce pin + compatibility matrix update
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [[ -z "$BASE_SHA" ]]; then
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            echo "No valid base SHA available; skipping pin diff policy check."
+            exit 0
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")"
+          if echo "$CHANGED_FILES" | grep -Eq "^config/memorykernel-integration-pin.json$"; then
+            if ! echo "$CHANGED_FILES" | grep -Eq "^docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md$"; then
+              echo "MemoryKernel pin changed without compatibility matrix update."
+              echo "Please update docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md in the same PR."
+              exit 1
+            fi
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create frontend dist stub
+        run: mkdir -p dist && echo '<html></html>' > dist/index.html
+
+      - name: Run MemoryKernel contract tests
+        run: pnpm run test:memorykernel-contract
+
   test-e2e-smoke:
     name: E2E Smoke
     runs-on: ubuntu-latest
@@ -427,7 +481,7 @@ jobs:
   build:
     name: Build (macOS)
     runs-on: macos-latest
-    needs: [lint-frontend, test-frontend, test-e2e-smoke, coverage-frontend, check-backend, coverage-backend, security-audit, test-search-api]
+    needs: [lint-frontend, test-frontend, memorykernel-contract, test-e2e-smoke, coverage-frontend, check-backend, coverage-backend, security-audit, test-search-api]
     steps:
       - uses: actions/checkout@v4
 

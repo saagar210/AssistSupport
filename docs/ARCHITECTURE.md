@@ -211,3 +211,16 @@ const results = await invoke<SearchResult[]>('search_kb', {
 1. Create component in `src/components/Settings/`
 2. Add tab in `SettingsTab.tsx`
 3. Add Tauri commands for persistence
+
+### MemoryKernel Service Integration
+
+AssistSupport uses a service-first integration boundary for MemoryKernel.
+
+- Tauri adapter boundary: `src-tauri/src/commands/memory_kernel.rs`
+- Pin manifest: `config/memorykernel-integration-pin.json`
+- Compatibility matrix: `docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md`
+
+Operational rules:
+- Frontend must call Tauri MemoryKernel commands only.
+- No direct frontend calls to MemoryKernel service endpoints.
+- Startup preflight checks enforce contract/version compatibility before enrichment is enabled.

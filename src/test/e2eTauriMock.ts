@@ -139,6 +139,56 @@ export function setupE2eTauriMock(): void {
           };
         case 'check_fts5_enabled':
           return true;
+        case 'get_memory_kernel_integration_pin':
+          return {
+            memorykernel_repo: 'https://github.com/saagar210/MemoryKernel',
+            release_tag: 'v0.1.0',
+            commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+            expected_service_contract_version: 'service.v1',
+            expected_api_contract_version: 'api.v1',
+            expected_integration_baseline: 'integration/v1',
+            default_base_url: 'http://127.0.0.1:4010',
+            default_timeout_ms: 2500,
+          };
+        case 'get_memory_kernel_preflight_status':
+          return {
+            enabled: true,
+            ready: false,
+            enrichment_enabled: false,
+            status: 'offline',
+            message: 'MemoryKernel service is unavailable at http://127.0.0.1:4010',
+            base_url: 'http://127.0.0.1:4010',
+            service_contract_version: null,
+            api_contract_version: null,
+            expected_service_contract_version: 'service.v1',
+            expected_api_contract_version: 'api.v1',
+            integration_baseline: 'integration/v1',
+            release_tag: 'v0.1.0',
+            commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+          };
+        case 'memory_kernel_query_ask':
+          return {
+            applied: false,
+            status: 'fallback',
+            message: 'MemoryKernel enrichment currently unavailable',
+            context_package_id: null,
+            enrichment_text: null,
+            preflight: {
+              enabled: true,
+              ready: false,
+              enrichment_enabled: false,
+              status: 'offline',
+              message: 'MemoryKernel service is unavailable at http://127.0.0.1:4010',
+              base_url: 'http://127.0.0.1:4010',
+              service_contract_version: null,
+              api_contract_version: null,
+              expected_service_contract_version: 'service.v1',
+              expected_api_contract_version: 'api.v1',
+              integration_baseline: 'integration/v1',
+              release_tag: 'v0.1.0',
+              commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+            },
+          };
         case 'check_db_integrity':
           return true;
         case 'init_llm_engine':

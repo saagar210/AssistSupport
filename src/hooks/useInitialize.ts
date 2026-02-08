@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { InitResult, VectorConsent, ModelStateResult } from '../types';
+import type { InitResult, MemoryKernelPreflightStatus, VectorConsent, ModelStateResult } from '../types';
 
 export interface AppInitState {
   initialized: boolean;
@@ -8,6 +8,7 @@ export interface AppInitState {
   error: string | null;
   initResult: InitResult | null;
   vectorConsent: VectorConsent | null;
+  memoryKernelPreflight: MemoryKernelPreflightStatus | null;
   enginesReady: boolean;
 }
 
@@ -43,6 +44,7 @@ export function useInitialize() {
     error: null,
     initResult: null,
     vectorConsent: null,
+    memoryKernelPreflight: null,
     enginesReady: false,
   });
 
@@ -113,6 +115,14 @@ export function useInitialize() {
           consent = { enabled: false, consented_at: null, encryption_supported: false };
         }
 
+        // NON-CRITICAL: MemoryKernel preflight gate (enrichment must not block startup)
+        let memoryKernelPreflight: MemoryKernelPreflightStatus | null = null;
+        try {
+          memoryKernelPreflight = await invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status');
+        } catch (e) {
+          console.warn('MemoryKernel preflight failed (enrichment disabled):', e);
+        }
+
         // Create or validate session token for auto-unlock
         try {
           const savedToken = localStorage.getItem(SESSION_TOKEN_KEY);
@@ -139,6 +149,7 @@ export function useInitialize() {
           error: null,
           initResult: result,
           vectorConsent: consent,
+          memoryKernelPreflight,
           enginesReady: false,
         });
 

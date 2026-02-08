@@ -3,8 +3,8 @@
 //! These commands proxy requests to the Python Flask API running on localhost:3000,
 //! which performs hybrid BM25 + HNSW vector search against PostgreSQL.
 
-use serde::{Deserialize, Serialize};
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 
 const SEARCH_API_BASE: &str = "http://localhost:3000";
 const DEFAULT_TOP_K: usize = 10;
@@ -143,9 +143,7 @@ fn is_html_payload(content_type: Option<&str>, body: &str) -> bool {
         .map(|ct| ct.to_ascii_lowercase().contains("text/html"))
         .unwrap_or(false);
     let body_trimmed = body.trim_start();
-    ct_has_html
-        || body_trimmed.starts_with("<!DOCTYPE html")
-        || body_trimmed.starts_with("<html")
+    ct_has_html || body_trimmed.starts_with("<!DOCTYPE html") || body_trimmed.starts_with("<html")
 }
 
 fn classify_health_response(
@@ -343,11 +341,7 @@ pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, Str
         Err(e) => Ok(SearchApiHealthStatus {
             healthy: false,
             status: "offline".to_string(),
-            message: format!(
-                "Search API unavailable at {}: {}",
-                base_url,
-                e
-            ),
+            message: format!("Search API unavailable at {}: {}", base_url, e),
             base_url,
         }),
     }
