@@ -63,6 +63,7 @@
 - `TCON-003` Successful CLI outputs include top-level `contract_version` and match the active schema version.
 - `TTRI-001` Trilogy integration contract parity checker succeeds and reports no drift when sibling repos are present.
 - `TTRI-002` Trilogy compatibility artifacts from OutcomeMemory and MultiAgentCenter pass MemoryKernel consumer validation.
+- `TTRI-003` Producer contract manifest validates service/api baselines, canonical error-code enum, and notice-policy guardrails.
 
 ## API and Service
 

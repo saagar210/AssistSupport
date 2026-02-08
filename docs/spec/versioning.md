@@ -16,6 +16,7 @@ This policy applies to:
 5. Integration contract changes under `contracts/integration/v1/*` MUST pass cross-repo parity checks.
 6. Trilogy compatibility artifacts from sibling repos MUST pass MemoryKernel consumer validation before release.
 7. While `service.v2` is active, non-2xx service envelopes MUST preserve `legacy_error` and MUST NOT add `api_contract_version`.
+8. Producer baseline metadata in `contracts/integration/v1/producer-contract-manifest.json` MUST be kept current and validated in CI/release gates.
 
 ## Version Bump Required
 
@@ -46,3 +47,10 @@ Each contract-affecting change MUST include:
 - `legacy_error` is transitional but mandatory for `service.v2`.
 - Consumers may rely on `error.code` as primary and `legacy_error` as compatibility fallback during `service.v2`.
 - Any removal of `legacy_error` or addition of `api_contract_version` to non-2xx envelopes requires `service.v3` and explicit migration notes.
+
+## Consumer Coordination Policy
+
+- `service.v2` producer baseline SHOULD remain stable for at least one sprint (`14` days).
+- Additive `service.v2` error-code changes require:
+  - standard notice: `10` business days before release
+  - emergency exception: `24` hour notice with same-day docs/spec/tests updates
