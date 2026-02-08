@@ -60,6 +60,26 @@ function safeParseJson<T>(raw: string, fallback: T): T {
   }
 }
 
+function normalizeIntegrationConfigDraft(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error('Integration config must be valid JSON');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Integration config must be a JSON object');
+  }
+
+  return JSON.stringify(parsed);
+}
+
 export function OpsTab() {
   const { success: showSuccess, error: showError } = useToastContext();
   const {
@@ -315,7 +335,10 @@ export function OpsTab() {
   const saveIntegration = useCallback(async (integrationType: string, enabled: boolean) => {
     setIntegrationBusyType(integrationType);
     try {
-      await configureIntegration(integrationType, enabled, integrationConfigDraft[integrationType] || undefined);
+      const normalizedConfig = normalizeIntegrationConfigDraft(
+        integrationConfigDraft[integrationType] || '',
+      );
+      await configureIntegration(integrationType, enabled, normalizedConfig);
       await refreshIntegrations();
       showSuccess(`${integrationType} integration updated`);
     } catch (e) {

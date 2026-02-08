@@ -66,10 +66,10 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       return;
     }
 
-    // Cmd/Ctrl + 1-7 - Switch tabs
-    if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '7') {
+    // Cmd/Ctrl + 1-9 or 0 - Switch tabs
+    if ((e.metaKey || e.ctrlKey) && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
       e.preventDefault();
-      handlers.onSwitchTab?.(parseInt(e.key));
+      handlers.onSwitchTab?.(e.key === '0' ? 10 : parseInt(e.key, 10));
       return;
     }
   }, [handlers]);

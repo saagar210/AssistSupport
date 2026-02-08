@@ -34,6 +34,8 @@ pub enum DbError {
     Fts5NotAvailable,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 /// Database manager for AssistSupport
@@ -4356,6 +4358,23 @@ impl Database {
         enabled: bool,
         config_json: Option<&str>,
     ) -> Result<(), DbError> {
+        let normalized_config = match config_json
+            .map(str::trim)
+            .filter(|raw| !raw.is_empty())
+        {
+            Some(raw) => {
+                let parsed: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
+                    DbError::InvalidInput(format!("integration config must be valid JSON: {}", e))
+                })?;
+                if !parsed.is_object() {
+                    return Err(DbError::InvalidInput(
+                        "integration config must be a JSON object".to_string(),
+                    ));
+                }
+                Some(parsed.to_string())
+            }
+            None => None,
+        };
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO integration_configs (id, integration_type, enabled, config_json, updated_at)
@@ -4368,7 +4387,7 @@ impl Database {
                 uuid::Uuid::new_v4().to_string(),
                 integration_type,
                 if enabled { 1 } else { 0 },
-                config_json,
+                normalized_config.as_deref(),
                 &now
             ],
         )?;
@@ -5721,6 +5740,35 @@ mod tests {
         let consent = db.get_vector_consent().unwrap();
         assert!(consent.enabled);
         assert_eq!(consent.encryption_supported, Some(true));
+    }
+
+    #[test]
+    fn test_set_integration_config_accepts_json_object() {
+        let (db, _dir) = create_test_db();
+
+        db.set_integration_config(
+            "slack",
+            true,
+            Some(r#"{"endpoint":"https://example.test/hook","channel":"it-support"}"#),
+        )
+        .expect("integration config object should be accepted");
+
+        let integrations = db.list_integration_configs().expect("list integrations");
+        assert_eq!(integrations.len(), 1);
+        assert_eq!(integrations[0].integration_type, "slack");
+        assert!(integrations[0].enabled);
+        assert!(integrations[0].config_json.is_some());
+    }
+
+    #[test]
+    fn test_set_integration_config_rejects_non_object_json() {
+        let (db, _dir) = create_test_db();
+
+        let err = db
+            .set_integration_config("slack", true, Some(r#"["not","an","object"]"#))
+            .expect_err("array config should be rejected");
+
+        assert!(err.to_string().contains("JSON object"));
     }
 
     #[test]

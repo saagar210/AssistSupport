@@ -689,7 +689,15 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
       setConfidence(null);
       setGrounding([]);
     }
-    setCurrentTicketId(draft.ticket_id);
+    const draftTicketId = draft.ticket_id?.trim() || null;
+    setCurrentTicketId(draftTicketId);
+    if (draftTicketId) {
+      void invoke<JiraTicket>('get_jira_ticket', { ticketKey: draftTicketId })
+        .then((ticket) => setCurrentTicket(ticket))
+        .catch(() => setCurrentTicket(null));
+    } else {
+      setCurrentTicket(null);
+    }
     if (draft.kb_sources_json) {
       try {
         setSources(JSON.parse(draft.kb_sources_json));

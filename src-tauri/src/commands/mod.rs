@@ -4982,12 +4982,33 @@ pub async fn configure_integration(
     enabled: bool,
     config_json: Option<String>,
 ) -> Result<(), String> {
+    let normalized_type = integration_type.trim().to_ascii_lowercase();
+    if !matches!(normalized_type.as_str(), "servicenow" | "slack" | "teams") {
+        return Err(format!(
+            "unsupported integration type '{}'; expected one of: servicenow, slack, teams",
+            integration_type
+        ));
+    }
+
+    let normalized_config = match config_json.map(|raw| raw.trim().to_string()) {
+        Some(raw) if raw.is_empty() => None,
+        Some(raw) => {
+            let parsed: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|e| format!("integration config must be valid JSON: {}", e))?;
+            if !parsed.is_object() {
+                return Err("integration config must be a JSON object".to_string());
+            }
+            Some(parsed.to_string())
+        }
+        None => None,
+    };
+
     let db_guard = state
         .db
         .lock()
         .map_err(|e| format!("DB lock error: {}", e))?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.set_integration_config(&integration_type, enabled, config_json.as_deref())
+    db.set_integration_config(&normalized_type, enabled, normalized_config.as_deref())
         .map_err(|e| e.to_string())
 }
 

@@ -25,7 +25,10 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ['⌘', '4'], description: 'Go to Ingest' },
       { keys: ['⌘', '5'], description: 'Go to Knowledge' },
       { keys: ['⌘', '6'], description: 'Go to Analytics' },
-      { keys: ['⌘', '7'], description: 'Go to Settings' },
+      { keys: ['⌘', '7'], description: 'Go to Pilot' },
+      { keys: ['⌘', '8'], description: 'Go to Search' },
+      { keys: ['⌘', '9'], description: 'Go to Operations' },
+      { keys: ['⌘', '0'], description: 'Go to Settings' },
     ],
   },
   {

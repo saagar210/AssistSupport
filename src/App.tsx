@@ -98,8 +98,8 @@ function AppContent() {
     onCancelGeneration: handleCancelGeneration,
     onExport: handleExport,
     onSwitchTab: (n) => {
-      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'pilot', 'search', 'settings'];
-      if (n >= 1 && n <= 9) setActiveTab(tabs[n - 1]);
+      const tabs: TabId[] = ['draft', 'followups', 'sources', 'ingest', 'knowledge', 'analytics', 'pilot', 'search', 'ops', 'settings'];
+      if (n >= 1 && n <= 10) setActiveTab(tabs[n - 1]);
     },
   });
 
@@ -221,7 +221,7 @@ function AppContent() {
       label: 'Go to Settings',
       description: 'Configure app preferences',
       icon: 'settings',
-      shortcut: 'Cmd+9',
+      shortcut: 'Cmd+0',
       category: 'navigation',
       action: () => setActiveTab('settings'),
     },
@@ -230,6 +230,7 @@ function AppContent() {
       label: 'Go to Operations',
       description: 'Deployment, eval, triage, and runbooks',
       icon: 'terminal',
+      shortcut: 'Cmd+9',
       category: 'navigation',
       action: () => setActiveTab('ops'),
     },
@@ -336,7 +337,10 @@ function AppContent() {
       description: 'Use response templates for common scenarios',
       icon: 'draft',
       category: 'action',
-      action: () => setActiveTab('draft'),
+      action: () => {
+        setActiveTab('draft');
+        addToast('Templates quick-launch is not available yet. Use Save Draft/History for now.', 'info');
+      },
     },
     {
       id: 'feature-batch',
@@ -344,7 +348,10 @@ function AppContent() {
       description: 'Process multiple queries at once',
       icon: 'list',
       category: 'action',
-      action: () => setActiveTab('draft'),
+      action: () => {
+        setActiveTab('draft');
+        addToast('Batch processing is planned but not available in this release.', 'info');
+      },
     },
     {
       id: 'feature-voice',
@@ -352,9 +359,12 @@ function AppContent() {
       description: 'Use voice dictation for input',
       icon: 'play',
       category: 'action',
-      action: () => setActiveTab('draft'),
+      action: () => {
+        setActiveTab('draft');
+        addToast('Voice input is planned but not available in this release.', 'info');
+      },
     },
-  ], [activeTab, sidebarCollapsed, handleGenerate, handleSaveDraft, handleCopyResponse, handleExport, handleCancelGeneration, handleToggleSidebar, shortcutsHelp.open]);
+  ], [activeTab, sidebarCollapsed, handleGenerate, handleSaveDraft, handleCopyResponse, handleExport, handleCancelGeneration, handleToggleSidebar, shortcutsHelp.open, addToast]);
 
   if (loading) {
     return (

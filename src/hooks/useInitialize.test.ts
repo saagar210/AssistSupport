@@ -90,10 +90,12 @@ describe('useInitialize', () => {
     expect(result.current.vectorConsent?.enabled).toBe(true);
     expect(localStorage.getItem('assistsupport_session_token')).toBe('session-token-new');
 
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('get_memory_kernel_preflight_status')
+    );
     await waitFor(() => expect(result.current.enginesReady).toBe(true));
     expect(mockInvoke).toHaveBeenCalledWith('initialize_app');
     expect(mockInvoke).toHaveBeenCalledWith('check_fts5_enabled');
-    expect(mockInvoke).toHaveBeenCalledWith('get_memory_kernel_preflight_status');
     expect(mockInvoke).toHaveBeenCalledWith('init_llm_engine');
     expect(mockInvoke).toHaveBeenCalledWith('init_embedding_engine');
   });
@@ -163,6 +165,19 @@ describe('useInitialize', () => {
       get_memory_kernel_preflight_status: () => {
         throw new Error('service unavailable');
       },
+    });
+
+    const { result } = renderHook(() => useInitialize());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.initialized).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.memoryKernelPreflight).toBeNull();
+  });
+
+  it('does not block initialization when MemoryKernel preflight never resolves', async () => {
+    installInvokeMocks({
+      get_memory_kernel_preflight_status: () => new Promise(() => undefined),
     });
 
     const { result } = renderHook(() => useInitialize());

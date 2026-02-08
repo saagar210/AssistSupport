@@ -5,6 +5,8 @@
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const MEMORY_KERNEL_ENABLE_ENV: &str = "ASSISTSUPPORT_ENABLE_MEMORY_KERNEL";
 const MEMORY_KERNEL_BASE_URL_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_BASE_URL";
@@ -21,6 +23,7 @@ const FALLBACK_REASON_NETWORK_ERROR: &str = "network-error";
 const FALLBACK_REASON_QUERY_ERROR: &str = "query-error";
 const FALLBACK_REASON_EMPTY_CONTEXT: &str = "empty-context";
 const FALLBACK_REASON_UNKNOWN: &str = "unknown";
+const PREFLIGHT_CACHE_TTL_SECONDS: u64 = 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryKernelIntegrationPin {
@@ -108,6 +111,15 @@ static INTEGRATION_PIN: Lazy<MemoryKernelIntegrationPin> = Lazy::new(|| {
     .expect("invalid memorykernel integration pin manifest")
 });
 
+#[derive(Clone)]
+struct PreflightCacheEntry {
+    cache_key: String,
+    status: MemoryKernelPreflightStatus,
+    cached_at: Instant,
+}
+
+static PREFLIGHT_CACHE: Lazy<Mutex<Option<PreflightCacheEntry>>> = Lazy::new(|| Mutex::new(None));
+
 fn parse_bool_env(var: &str, default: bool) -> bool {
     std::env::var(var)
         .ok()
@@ -155,6 +167,53 @@ fn preflight_status_template(
         integration_baseline: pin.expected_integration_baseline.clone(),
         release_tag: pin.release_tag.clone(),
         commit_sha: pin.commit_sha.clone(),
+    }
+}
+
+fn preflight_cache_key(
+    pin: &MemoryKernelIntegrationPin,
+    enabled: bool,
+    base_url: &str,
+    timeout_ms: u64,
+) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        enabled,
+        base_url,
+        timeout_ms,
+        pin.expected_service_contract_version,
+        pin.expected_api_contract_version,
+        pin.expected_integration_baseline
+    )
+}
+
+fn get_cached_preflight(cache_key: &str) -> Option<MemoryKernelPreflightStatus> {
+    let mut guard = PREFLIGHT_CACHE.lock().ok()?;
+    if let Some(entry) = guard.as_ref() {
+        let is_expired = entry.cached_at.elapsed() > Duration::from_secs(PREFLIGHT_CACHE_TTL_SECONDS);
+        let key_mismatch = entry.cache_key != cache_key;
+        if !is_expired && !key_mismatch {
+            return Some(entry.status.clone());
+        }
+    }
+    *guard = None;
+    None
+}
+
+fn set_cached_preflight(cache_key: String, status: MemoryKernelPreflightStatus) {
+    if let Ok(mut guard) = PREFLIGHT_CACHE.lock() {
+        *guard = Some(PreflightCacheEntry {
+            cache_key,
+            status,
+            cached_at: Instant::now(),
+        });
+    }
+}
+
+#[cfg(test)]
+fn clear_preflight_cache_for_tests() {
+    if let Ok(mut guard) = PREFLIGHT_CACHE.lock() {
+        *guard = None;
     }
 }
 
@@ -312,6 +371,26 @@ async fn run_preflight_internal(
     status.enrichment_enabled = true;
     status.status = "ready".to_string();
     status.message = "MemoryKernel preflight passed (health + schema checks)".to_string();
+    status
+}
+
+async fn run_preflight_with_cache(
+    client: &reqwest::Client,
+    pin: &MemoryKernelIntegrationPin,
+    enabled: bool,
+    base_url: &str,
+    timeout_ms: u64,
+    force_refresh: bool,
+) -> MemoryKernelPreflightStatus {
+    let cache_key = preflight_cache_key(pin, enabled, base_url, timeout_ms);
+    if !force_refresh {
+        if let Some(cached) = get_cached_preflight(&cache_key) {
+            return cached;
+        }
+    }
+
+    let status = run_preflight_internal(client, pin, enabled, base_url).await;
+    set_cached_preflight(cache_key, status.clone());
     status
 }
 
@@ -493,7 +572,10 @@ pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPrefligh
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    Ok(run_preflight_internal(&client, &pin, enabled, &base_url).await)
+    Ok(run_preflight_with_cache(
+        &client, &pin, enabled, &base_url, timeout_ms, false,
+    )
+    .await)
 }
 
 #[tauri::command]
@@ -513,7 +595,8 @@ pub async fn memory_kernel_query_ask(
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    let preflight = run_preflight_internal(&client, &pin, enabled, &base_url).await;
+    let preflight =
+        run_preflight_with_cache(&client, &pin, enabled, &base_url, timeout_ms, false).await;
 
     if !preflight.enrichment_enabled {
         return Ok(fallback_result(
@@ -734,6 +817,7 @@ mod tests {
     }
 
     fn set_test_env(base_url: &str, timeout_ms: u64, enabled: bool) {
+        clear_preflight_cache_for_tests();
         std::env::set_var(MEMORY_KERNEL_BASE_URL_ENV, base_url);
         std::env::set_var(MEMORY_KERNEL_TIMEOUT_MS_ENV, timeout_ms.to_string());
         std::env::set_var(
@@ -743,6 +827,7 @@ mod tests {
     }
 
     fn clear_test_env() {
+        clear_preflight_cache_for_tests();
         std::env::remove_var(MEMORY_KERNEL_BASE_URL_ENV);
         std::env::remove_var(MEMORY_KERNEL_TIMEOUT_MS_ENV);
         std::env::remove_var(MEMORY_KERNEL_ENABLE_ENV);
@@ -979,6 +1064,61 @@ mod tests {
             .unwrap_or_default()
             .contains("Policy decision"));
         assert!(result.preflight.ready);
+
+        handle.join().expect("server thread panicked");
+        clear_test_env();
+    }
+
+    #[tokio::test]
+    async fn query_ask_reuses_cached_preflight_between_calls() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let health_body = fixture_health_ok();
+        let schema_body = fixture_schema_ok();
+        let query_body = fixture_query_allow();
+        let (base_url, handle) = spawn_mock_server(vec![
+            MockResponse {
+                method: "GET",
+                path: "/v1/health",
+                status: 200,
+                body: health_body,
+                content_type: "application/json",
+                delay_ms: 0,
+            },
+            MockResponse {
+                method: "POST",
+                path: "/v1/db/schema-version",
+                status: 200,
+                body: schema_body,
+                content_type: "application/json",
+                delay_ms: 0,
+            },
+            MockResponse {
+                method: "POST",
+                path: "/v1/query/ask",
+                status: 200,
+                body: query_body.clone(),
+                content_type: "application/json",
+                delay_ms: 0,
+            },
+            MockResponse {
+                method: "POST",
+                path: "/v1/query/ask",
+                status: 200,
+                body: query_body,
+                content_type: "application/json",
+                delay_ms: 0,
+            },
+        ]);
+        set_test_env(&base_url, 750, true);
+
+        let first = memory_kernel_query_ask("Need decision support".to_string())
+            .await
+            .expect("first query ask command should not fail");
+        assert!(first.applied);
+        let second = memory_kernel_query_ask("Need decision support again".to_string())
+            .await
+            .expect("second query ask command should not fail");
+        assert!(second.applied);
 
         handle.join().expect("server thread panicked");
         clear_test_env();

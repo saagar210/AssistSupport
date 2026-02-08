@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { useLlm } from '../../hooks/useLlm';
@@ -60,6 +60,8 @@ const CONTEXT_WINDOW_OPTIONS = [
   { value: 16384, label: '16K (16,384 tokens)' },
   { value: 32768, label: '32K (32,768 tokens)' },
 ];
+
+const AUDIT_PAGE_SIZE = 50;
 
 // Helper to format bytes for display
 function formatBytes(bytes: number): string {
@@ -123,6 +125,9 @@ export function SettingsTab() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditExporting, setAuditExporting] = useState(false);
+  const [auditSeverityFilter, setAuditSeverityFilter] = useState<'all' | 'info' | 'warning' | 'error' | 'critical'>('all');
+  const [auditSearchQuery, setAuditSearchQuery] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
 
   // Startup metrics and session state
   const [startupMetrics, setStartupMetrics] = useState<StartupMetricsResult | null>(null);
@@ -143,12 +148,42 @@ export function SettingsTab() {
     try {
       const entries = await invoke<AuditEntry[]>('get_audit_entries', { limit: 200 });
       setAuditEntries(entries ?? []);
+      setAuditPage(1);
     } catch (err) {
       showError(`Failed to load audit logs: ${err}`);
     } finally {
       setAuditLoading(false);
     }
   }, [showError]);
+
+  const filteredAuditEntries = useMemo(() => {
+    const normalized = auditEntries.slice().reverse();
+    const query = auditSearchQuery.trim().toLowerCase();
+    return normalized.filter((entry) => {
+      if (auditSeverityFilter !== 'all' && entry.severity !== auditSeverityFilter) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      const eventText = formatAuditEvent(entry.event).toLowerCase();
+      return eventText.includes(query) || entry.message.toLowerCase().includes(query);
+    });
+  }, [auditEntries, auditSearchQuery, auditSeverityFilter]);
+
+  const auditTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredAuditEntries.length / AUDIT_PAGE_SIZE)),
+    [filteredAuditEntries.length],
+  );
+
+  useEffect(() => {
+    setAuditPage(prev => Math.min(prev, auditTotalPages));
+  }, [auditTotalPages]);
+
+  const pagedAuditEntries = useMemo(() => {
+    const start = (auditPage - 1) * AUDIT_PAGE_SIZE;
+    return filteredAuditEntries.slice(start, start + AUDIT_PAGE_SIZE);
+  }, [filteredAuditEntries, auditPage]);
 
   useEffect(() => {
     Promise.resolve(loadInitialState()).catch(err => console.error('Settings init failed:', err));
@@ -702,6 +737,7 @@ export function SettingsTab() {
         <div className="context-window-config">
           <select
             className="context-window-select"
+            aria-label="Context window size"
             value={contextWindowSize ?? ''}
             onChange={(e) => handleContextWindowChange(e.target.value)}
             disabled={!loadedModel}
@@ -1152,22 +1188,70 @@ export function SettingsTab() {
             {auditExporting ? 'Exporting...' : 'Export JSON'}
           </Button>
         </div>
+        <div className="audit-filters">
+          <label className="audit-filter-label">
+            Severity
+            <select
+              aria-label="Audit severity filter"
+              value={auditSeverityFilter}
+              onChange={(e) => {
+                setAuditSeverityFilter(e.target.value as typeof auditSeverityFilter);
+                setAuditPage(1);
+              }}
+            >
+              <option value="all">All</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+          <input
+            className="input"
+            value={auditSearchQuery}
+            onChange={(e) => {
+              setAuditSearchQuery(e.target.value);
+              setAuditPage(1);
+            }}
+            placeholder="Search event/message"
+          />
+        </div>
         <div className="audit-list">
-          {auditEntries.length === 0 ? (
+          {pagedAuditEntries.length === 0 ? (
             <p className="audit-empty">No audit entries yet.</p>
           ) : (
-            auditEntries
-              .slice()
-              .reverse()
-              .map((entry, index) => (
-                <div className="audit-row" key={`${entry.timestamp}-${index}`}>
-                  <span className={`audit-severity ${entry.severity}`}>{entry.severity}</span>
-                  <span className="audit-event">{formatAuditEvent(entry.event)}</span>
-                  <span className="audit-message">{entry.message}</span>
-                  <span className="audit-time">{new Date(entry.timestamp).toLocaleString()}</span>
-                </div>
-              ))
+            pagedAuditEntries.map((entry, index) => (
+              <div className="audit-row" key={`${entry.timestamp}-${index}`}>
+                <span className={`audit-severity ${entry.severity}`}>{entry.severity}</span>
+                <span className="audit-event">{formatAuditEvent(entry.event)}</span>
+                <span className="audit-message">{entry.message}</span>
+                <span className="audit-time">{new Date(entry.timestamp).toLocaleString()}</span>
+              </div>
+            ))
           )}
+        </div>
+        <div className="audit-pagination">
+          <span className="text-sm text-secondary">
+            {filteredAuditEntries.length} entries • Page {auditPage} of {auditTotalPages}
+          </span>
+          <div className="audit-pagination-actions">
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+              disabled={auditPage <= 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
+              disabled={auditPage >= auditTotalPages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </section>
 

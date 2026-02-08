@@ -143,7 +143,7 @@ describe('SettingsTab', () => {
 
     it('context window selector is disabled without loaded model', async () => {
       await renderWithProviders(<SettingsTab />);
-      const select = screen.getByRole('combobox');
+      const select = screen.getByLabelText('Context window size');
       expect(select).toBeDisabled();
     });
   });

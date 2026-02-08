@@ -94,6 +94,21 @@ export function useInitialize() {
     }
   }, []);
 
+  // Refresh MemoryKernel preflight in background (non-blocking)
+  const refreshMemoryKernelPreflightInBackground = useCallback(async () => {
+    try {
+      const status = await withTimeout(
+        invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status'),
+        INIT_TIMEOUT,
+        'MemoryKernel preflight',
+      );
+      setState(prev => ({ ...prev, memoryKernelPreflight: status }));
+    } catch (e) {
+      console.warn('MemoryKernel preflight failed (enrichment disabled):', e);
+      setState(prev => ({ ...prev, memoryKernelPreflight: null }));
+    }
+  }, []);
+
   useEffect(() => {
     async function initialize() {
       try {
@@ -113,14 +128,6 @@ export function useInitialize() {
         } catch (e) {
           console.warn('Vector consent check failed (using defaults):', e);
           consent = { enabled: false, consented_at: null, encryption_supported: false };
-        }
-
-        // NON-CRITICAL: MemoryKernel preflight gate (enrichment must not block startup)
-        let memoryKernelPreflight: MemoryKernelPreflightStatus | null = null;
-        try {
-          memoryKernelPreflight = await invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status');
-        } catch (e) {
-          console.warn('MemoryKernel preflight failed (enrichment disabled):', e);
         }
 
         // Create or validate session token for auto-unlock
@@ -149,9 +156,13 @@ export function useInitialize() {
           error: null,
           initResult: result,
           vectorConsent: consent,
-          memoryKernelPreflight,
+          memoryKernelPreflight: null,
           enginesReady: false,
         });
+
+        // Refresh optional MemoryKernel status after startup is complete.
+        // This must never block the UI from becoming interactive.
+        refreshMemoryKernelPreflightInBackground();
 
         // Start background initialization of LLM/embedding engines
         // This runs AFTER the UI is ready, so users see the app immediately
@@ -168,7 +179,7 @@ export function useInitialize() {
     }
 
     initialize();
-  }, [initEnginesInBackground]);
+  }, [initEnginesInBackground, refreshMemoryKernelPreflightInBackground]);
 
   return state;
 }
