@@ -57,6 +57,7 @@ The service emits machine-readable error codes with stable semantics:
 ## Endpoints
 
 - `GET /v1/health`
+- `GET /v1/ready`
 - `GET /v1/openapi`
 - `POST /v1/db/schema-version`
 - `POST /v1/db/migrate`
@@ -70,3 +71,10 @@ The service emits machine-readable error codes with stable semantics:
 ## OpenAPI Source of Truth
 
 - `openapi/openapi.yaml` is the versioned artifact for `service.v3`.
+
+## Health vs Readiness
+
+- `GET /v1/health` is a liveness probe only (`status: ok`).
+- `GET /v1/ready` is a schema readiness probe:
+  - returns `200` with `data.status=ready` only when schema is current and no migrations are pending.
+  - returns `503 schema_unavailable` when database/schema is unavailable or pending migrations prevent readiness.

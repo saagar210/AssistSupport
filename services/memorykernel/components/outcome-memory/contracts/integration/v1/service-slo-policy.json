@@ -1,0 +1,12 @@
+{
+  "slo_policy_version": "service-slo-policy.v1",
+  "benchmark_command": "cargo run -p memory-kernel-cli -- outcome benchmark run",
+  "workloads": [100, 500, 2000],
+  "repetitions": 3,
+  "thresholds_ms": {
+    "append_p95_max": 8,
+    "replay_p95_max": 250,
+    "gate_p95_max": 8
+  },
+  "required_output": "json"
+}

@@ -35,12 +35,15 @@ if [[ "$MODE" == "full" ]]; then
   run_step cargo clippy --workspace --all-targets --all-features -- -D warnings
   run_step cargo test --workspace --all-targets --all-features
   run_step ./scripts/verify_service_contract_alignment.sh --memorykernel-root "$(pwd)"
+  run_step ./scripts/verify_service_contract_source_of_truth.sh --memorykernel-root "$(pwd)"
   run_step ./scripts/verify_contract_parity.sh --canonical-root "$(pwd)"
   run_step ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$(pwd)"
   run_step ./scripts/run_trilogy_smoke.sh --memorykernel-root "$(pwd)"
   run_step ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$(pwd)" --skip-baseline
+  run_step ./scripts/verify_service_slo_policy.sh --memorykernel-root "$(pwd)"
   run_step ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$(pwd)"
   run_step ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$(pwd)"
+  run_step ./scripts/verify_release_evidence_bundle.sh --memorykernel-root "$(pwd)"
   popd >/dev/null
 fi
 

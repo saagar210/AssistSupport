@@ -214,6 +214,22 @@ run_step "Compatibility Artifact Validation" \
   "$memorykernel_root/scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root '$memorykernel_root' --outcome-root '$outcome_root' --multi-agent-root '$multi_agent_root'" \
   "$tmp_dir/artifact_validation.log"
 
+run_step "Service Contract Alignment" \
+  "$memorykernel_root/scripts/verify_service_contract_alignment.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/service_contract_alignment.log"
+
+run_step "Service Contract Source-of-Truth Alignment" \
+  "$memorykernel_root/scripts/verify_service_contract_source_of_truth.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/service_contract_source.log"
+
+run_step "Producer Contract Manifest Alignment" \
+  "$memorykernel_root/scripts/verify_producer_contract_manifest.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/producer_manifest.log"
+
+run_step "Producer Handoff Payload Alignment" \
+  "$memorykernel_root/scripts/verify_producer_handoff_payload.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/producer_handoff.log"
+
 run_step "Trilogy Smoke Gate" \
   "$memorykernel_root/scripts/run_trilogy_smoke.sh --memorykernel-root '$memorykernel_root' --outcome-root '$outcome_root' --multi-agent-root '$multi_agent_root'" \
   "$tmp_dir/smoke.log"
@@ -243,9 +259,17 @@ run_step "Outcome Benchmark Threshold Gate" \
   "cargo run --manifest-path '$memorykernel_root/Cargo.toml' -p memory-kernel-cli -- outcome benchmark run --volume 100 --volume 500 --volume 2000 --repetitions 3 --append-p95-max-ms 8 --replay-p95-max-ms 250 --gate-p95-max-ms 8 --json" \
   "$tmp_dir/benchmark.log"
 
+run_step "Service SLO Policy Alignment" \
+  "$memorykernel_root/scripts/verify_service_slo_policy.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/slo_policy.log"
+
 run_step "Seven-Standard Compliance Suite" \
   "$memorykernel_root/scripts/run_trilogy_compliance_suite.sh --memorykernel-root '$memorykernel_root' --skip-baseline" \
   "$tmp_dir/compliance_suite.log"
+
+run_step "Release Evidence Bundle Alignment" \
+  "$memorykernel_root/scripts/verify_release_evidence_bundle.sh --memorykernel-root '$memorykernel_root'" \
+  "$tmp_dir/release_evidence_bundle.log"
 
 append_section "Hosted Evidence Checks"
 hosted_failures=0

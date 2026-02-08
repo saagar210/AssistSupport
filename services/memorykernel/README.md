@@ -101,6 +101,8 @@ Top-level command groups:
 - API crate: `crates/memory-kernel-api`
 - Service binary: `crates/memory-kernel-service`
 - OpenAPI: `openapi/openapi.yaml`
+- Liveness endpoint: `GET /v1/health`
+- Readiness endpoint: `GET /v1/ready`
 
 ## Trilogy Integration
 
@@ -117,8 +119,14 @@ MemoryKernel is the canonical source for `contracts/integration/v1/*`.
 
 ```bash
 ./scripts/run_trilogy_phase_8_11_closeout.sh --soak-iterations 1
+./scripts/verify_service_contract_alignment.sh
+./scripts/verify_service_contract_source_of_truth.sh
 ./scripts/verify_contract_parity.sh
 ./scripts/verify_trilogy_compatibility_artifacts.sh
+./scripts/verify_service_slo_policy.sh
+./scripts/verify_producer_contract_manifest.sh
+./scripts/verify_producer_handoff_payload.sh
+./scripts/verify_release_evidence_bundle.sh
 ./scripts/run_trilogy_smoke.sh
 ./scripts/run_trilogy_soak.sh --iterations 3
 ./scripts/run_trilogy_compliance_suite.sh

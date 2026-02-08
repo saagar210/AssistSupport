@@ -17,6 +17,9 @@ This policy applies to:
 6. Trilogy compatibility artifacts from sibling repos MUST pass MemoryKernel consumer validation before release.
 7. In `service.v3`, non-2xx service envelopes MUST omit both `legacy_error` and `api_contract_version`.
 8. Producer baseline metadata in `contracts/integration/v1/producer-contract-manifest.json` MUST be kept current and validated in CI/release gates.
+9. `contracts/integration/v1/service-contract-source-of-truth.json` is the canonical service contract metadata artifact and MUST align with runtime constants, OpenAPI, manifest, and handoff payloads.
+10. `contracts/integration/v1/service-slo-policy.json` is the canonical benchmark SLO policy and MUST align with CI/release benchmark guardrails.
+11. Release evidence bundles (`docs/implementation/RELEASE_EVIDENCE_BUNDLE_LATEST.json`) MUST be regenerated and validated whenever baseline governance artifacts change.
 
 ## Version Bump Required
 

@@ -66,6 +66,20 @@ struct HealthResponse {
     status: &'static str,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ReadinessChecks {
+    current_schema_version: i64,
+    target_schema_version: i64,
+    pending_migrations: usize,
+    inferred_from_legacy: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReadinessResponse {
+    status: &'static str,
+    checks: ReadinessChecks,
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "memory-kernel-service")]
 #[command(about = "Local HTTP service for Memory Kernel")]
@@ -174,6 +188,7 @@ where
 fn app(state: ServiceState) -> Router {
     Router::new()
         .route("/v1/health", get(health))
+        .route("/v1/ready", get(ready))
         .route("/v1/openapi", get(openapi))
         .route("/v1/db/schema-version", post(db_schema_version))
         .route("/v1/db/migrate", post(db_migrate))
@@ -197,6 +212,43 @@ async fn main() -> Result<()> {
 
 async fn health() -> Json<ServiceEnvelope<HealthResponse>> {
     Json(envelope(HealthResponse { status: "ok" }))
+}
+
+async fn ready(
+    State(state): State<ServiceState>,
+) -> Result<Json<ServiceEnvelope<ReadinessResponse>>, ServiceFailure> {
+    let schema_status = state.api.schema_status().map_err(|err| {
+        ServiceState::classify_api_error(
+            &err,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "schema_unavailable",
+        )
+    })?;
+
+    let is_ready = schema_status.pending_versions.is_empty()
+        && schema_status.current_version == schema_status.target_version;
+    let checks = ReadinessChecks {
+        current_schema_version: schema_status.current_version,
+        target_schema_version: schema_status.target_version,
+        pending_migrations: schema_status.pending_versions.len(),
+        inferred_from_legacy: schema_status.inferred_from_legacy,
+    };
+
+    if is_ready {
+        return Ok(Json(envelope(ReadinessResponse { status: "ready", checks })));
+    }
+
+    Err(ServiceState::failure(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "schema_unavailable",
+        "database schema is not ready; run /v1/db/migrate before serving traffic",
+        Some(json!({
+            "current_version": schema_status.current_version,
+            "target_version": schema_status.target_version,
+            "pending_versions": schema_status.pending_versions,
+            "inferred_from_legacy": schema_status.inferred_from_legacy
+        })),
+    ))
 }
 
 async fn openapi() -> impl IntoResponse {
@@ -387,7 +439,90 @@ mod tests {
         assert!(body.contains("version: service.v3"));
         assert!(body.contains("/v1/memory/add/summary"));
         assert!(body.contains("/v1/query/recall"));
+        assert!(body.contains("/v1/ready"));
         assert!(body.contains("ServiceErrorEnvelope"));
+    }
+
+    // Test IDs: TSVC-010
+    #[tokio::test]
+    async fn ready_endpoint_reports_ready_when_schema_is_current() {
+        let db_path = unique_temp_db_path();
+        let api = MemoryKernelApi::new(db_path.clone());
+        if let Err(err) = api.migrate(false) {
+            panic!("failed to migrate schema before readiness test: {err:#}");
+        }
+        let router = app(ServiceState { api });
+
+        let response = match router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/ready")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap_or_else(|err| panic!("failed to build ready request: {err}")),
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => panic!("ready request failed: {err}"),
+        };
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let value = response_json(response).await;
+        assert_eq!(
+            value
+                .get("data")
+                .and_then(|data| data.get("status"))
+                .and_then(serde_json::Value::as_str),
+            Some("ready")
+        );
+        assert_eq!(
+            value
+                .get("data")
+                .and_then(|data| data.get("checks"))
+                .and_then(|checks| checks.get("pending_migrations"))
+                .and_then(serde_json::Value::as_u64),
+            Some(0)
+        );
+
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    // Test IDs: TSVC-011
+    #[tokio::test]
+    async fn ready_endpoint_returns_schema_unavailable_when_db_is_unreachable() {
+        let db_path = std::env::temp_dir()
+            .join(format!("memorykernel-service-missing-parent-{}/db.sqlite3", ulid::Ulid::new()));
+        let state = ServiceState { api: MemoryKernelApi::new(db_path) };
+        let router = app(state);
+
+        let response = match router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/ready")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap_or_else(|err| panic!("failed to build ready request: {err}")),
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => panic!("ready request failed: {err}"),
+        };
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let value = response_json(response).await;
+        assert_eq!(
+            value
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(serde_json::Value::as_str),
+            Some("schema_unavailable")
+        );
+        assert!(
+            value.get("api_contract_version").is_none(),
+            "error envelope must not include api_contract_version: {value}"
+        );
     }
 
     // Test IDs: TSVC-002

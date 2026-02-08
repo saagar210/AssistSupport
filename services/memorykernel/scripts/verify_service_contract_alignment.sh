@@ -89,9 +89,14 @@ require_grep 'ServiceErrorEnvelope' "$openapi"
 echo "[check] openapi includes non-2xx responses on query endpoints"
 require_grep '/v1/query/ask:' "$openapi"
 require_grep '/v1/query/recall:' "$openapi"
+require_grep '/v1/ready:' "$openapi"
 require_grep '"400":' "$openapi"
 require_grep '"500":' "$openapi"
 require_grep '"503":' "$openapi"
+
+echo "[check] readiness policy documented"
+require_grep '`GET /v1/health` is a liveness probe only' "$service_contract_doc"
+require_grep '`GET /v1/ready` is a schema readiness probe' "$service_contract_doc"
 
 echo "[check] error code taxonomy present"
 for code in \

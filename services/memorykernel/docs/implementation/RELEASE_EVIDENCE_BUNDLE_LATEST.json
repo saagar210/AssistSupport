@@ -1,0 +1,88 @@
+{
+  "evidence_bundle_version": "release-evidence-bundle.v1",
+  "generated_at_utc": "2026-02-08T15:21:29.617133Z",
+  "generator": "scripts/generate_release_evidence_bundle.sh",
+  "git_commit_head": "498cf627938ba2d35718f4d3b7b319bcd394626a",
+  "runtime_baseline": {
+    "release_tag": "v0.4.0",
+    "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
+    "expected_service_contract_version": "service.v3",
+    "expected_api_contract_version": "api.v1",
+    "integration_baseline": "integration/v1"
+  },
+  "policy_assertions": {
+    "error_code_enum": [
+      "invalid_json",
+      "validation_error",
+      "context_package_not_found",
+      "write_conflict",
+      "write_failed",
+      "schema_unavailable",
+      "migration_failed",
+      "query_failed",
+      "context_lookup_failed",
+      "internal_error"
+    ],
+    "service_contract_source_version": "service-contract-source.v1",
+    "slo_policy_version": "service-slo-policy.v1"
+  },
+  "artifacts": [
+    {
+      "path": "contracts/integration/v1/producer-contract-manifest.json",
+      "sha256": "79970ec83f37fe0a272cbb62e998ab35628125dbaedaa50c2b9d370d3c53d772"
+    },
+    {
+      "path": "docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json",
+      "sha256": "fee9c91cd01746ffa30cab94d391186f232fbcb57f7a6257251f82f67c40dd28"
+    },
+    {
+      "path": "contracts/integration/v1/service-contract-source-of-truth.json",
+      "sha256": "95d096230ebd7e8df0f4b2dd54de2a0de7664a250cf7f1435e093673ceccea51"
+    },
+    {
+      "path": "contracts/integration/v1/service-slo-policy.json",
+      "sha256": "a2df38a152032cd1a180afe61a64bf3b7de92c8555bcee3860f8f93f1fa5438c"
+    },
+    {
+      "path": "openapi/openapi.yaml",
+      "sha256": "823c94f9464608e51668ab2ac1765f83121103c39302358003cd8793f2feeefd"
+    },
+    {
+      "path": "docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN_PRODUCER.md",
+      "sha256": "f9df239288c20fa2a5096836f6bc3a88f3019cbdbd420c3449180722e3a5efc5"
+    },
+    {
+      "path": "docs/implementation/SERVICE_V3_CUTOVER_DAY_CHECKLIST.md",
+      "sha256": "c707416af3eb0e55f8a5cd93d7aaf6b5b639a78cceea13cee6434c29650c2226"
+    },
+    {
+      "path": "docs/implementation/SERVICE_V3_ROLLBACK_COMMUNICATION_PROTOCOL.md",
+      "sha256": "3955f1f5481f9be163dc07bda671f818320111e90a402b7964728da842e0c8e7"
+    }
+  ],
+  "required_validation_commands": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-targets --all-features",
+    "./scripts/verify_service_contract_alignment.sh --memorykernel-root <repo>",
+    "./scripts/verify_service_contract_source_of_truth.sh --memorykernel-root <repo>",
+    "./scripts/verify_producer_contract_manifest.sh --memorykernel-root <repo>",
+    "./scripts/verify_producer_handoff_payload.sh --memorykernel-root <repo>",
+    "./scripts/verify_service_slo_policy.sh --memorykernel-root <repo>",
+    "./scripts/verify_release_evidence_bundle.sh --memorykernel-root <repo>",
+    "./scripts/run_trilogy_compliance_suite.sh --memorykernel-root <repo> --skip-baseline"
+  ],
+  "compliance_suite": {
+    "standards": [
+      "FISMA/FedRAMP High",
+      "GDPR",
+      "HIPAA",
+      "ISO 27001",
+      "NIST 800-53",
+      "PCI DSS",
+      "SOC 2"
+    ],
+    "entrypoint": "scripts/run_trilogy_compliance_suite.sh"
+  },
+  "handoff_mode": "stable"
+}

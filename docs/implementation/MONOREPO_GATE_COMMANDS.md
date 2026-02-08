@@ -24,12 +24,15 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
 cd services/memorykernel
 ./scripts/verify_service_contract_alignment.sh --memorykernel-root "$(pwd)"
+./scripts/verify_service_contract_source_of_truth.sh --memorykernel-root "$(pwd)"
 ./scripts/verify_contract_parity.sh --canonical-root "$(pwd)"
 ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$(pwd)"
 ./scripts/run_trilogy_smoke.sh --memorykernel-root "$(pwd)"
 ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$(pwd)" --skip-baseline
+./scripts/verify_service_slo_policy.sh --memorykernel-root "$(pwd)"
 ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$(pwd)"
 ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$(pwd)"
+./scripts/verify_release_evidence_bundle.sh --memorykernel-root "$(pwd)"
 ```
 
 ## Required Evidence Artifacts Per Gate

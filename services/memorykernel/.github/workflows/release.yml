@@ -43,11 +43,17 @@ jobs:
       - name: Service contract alignment
         run: ./scripts/verify_service_contract_alignment.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
+      - name: Service contract source-of-truth alignment
+        run: ./scripts/verify_service_contract_source_of_truth.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
       - name: Producer contract manifest alignment
         run: ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
       - name: Producer handoff payload alignment
         run: ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Release evidence bundle alignment
+        run: ./scripts/verify_release_evidence_bundle.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -67,6 +73,9 @@ jobs:
           --replay-p95-max-ms 250
           --gate-p95-max-ms 8
           --json
+
+      - name: Service SLO policy alignment
+        run: ./scripts/verify_service_slo_policy.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
       - name: Seven-standard compliance suite
         run: ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$GITHUB_WORKSPACE" --skip-baseline

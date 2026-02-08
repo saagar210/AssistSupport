@@ -15,6 +15,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServiceEnvelopeHealth"
+  /v1/ready:
+    get:
+      summary: Readiness check
+      responses:
+        "200":
+          description: Service readiness envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeReadiness"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
   /v1/openapi:
     get:
       summary: OpenAPI artifact
@@ -264,6 +276,52 @@ components:
         status:
           type: string
           enum: [ok]
+    ServiceEnvelopeReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/ReadinessData"
+    ReadinessData:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - checks
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          $ref: "#/components/schemas/ReadinessChecks"
+    ReadinessChecks:
+      type: object
+      additionalProperties: false
+      required:
+        - current_schema_version
+        - target_schema_version
+        - pending_migrations
+        - inferred_from_legacy
+      properties:
+        current_schema_version:
+          type: integer
+        target_schema_version:
+          type: integer
+        pending_migrations:
+          type: integer
+          minimum: 0
+        inferred_from_legacy:
+          type: boolean
     ServiceEnvelopeSchemaStatus:
       type: object
       additionalProperties: false
