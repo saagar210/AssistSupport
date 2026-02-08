@@ -102,6 +102,30 @@ pub struct Setting {
     pub value: String,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entity {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub collection_id: String,
+    pub first_seen_at: String,
+    pub mention_count: i32,
+    pub metadata: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityMention {
+    pub id: String,
+    pub entity_id: String,
+    pub chunk_id: String,
+    pub document_id: String,
+    pub start_offset: i32,
+    pub end_offset: i32,
+    pub context: Option<String>,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaModel {
     pub name: String,

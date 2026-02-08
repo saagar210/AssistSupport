@@ -8,8 +8,15 @@ use crate::audit::{self, AuditAction};
 use crate::error::AppError;
 use crate::metrics::{LatencyMetric, MetricCounter};
 use crate::ollama;
+use crate::rag;
 use crate::state::{get_conn, AppState};
 use crate::utils::{bytes_to_f64_vec, cosine_similarity};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedSearchResponse {
+    pub results: Vec<SearchResult>,
+    pub rewritten_queries: Option<Vec<String>>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchHistoryEntry {
@@ -412,6 +419,178 @@ pub async fn hybrid_search(
     Ok(fused)
 }
 
+/// Advanced search combining query rewriting, HyDE, or both.
+/// All async LLM/embedding calls happen first, then sync DB search runs after.
+#[tauri::command]
+pub async fn advanced_search(
+    state: State<'_, AppState>,
+    collection_id: String,
+    query: String,
+    top_k: Option<usize>,
+    use_query_rewriting: Option<bool>,
+    use_hyde: Option<bool>,
+) -> Result<AdvancedSearchResponse, AppError> {
+    let search_start = Instant::now();
+    let top_k = top_k.unwrap_or(10);
+    let use_qr = use_query_rewriting.unwrap_or(false);
+    let use_hyde_flag = use_hyde.unwrap_or(false);
+
+    // Phase 1: Read settings (sync, scoped so conn is dropped before awaits)
+    let (host, port, embedding_model, chat_model) = {
+        let conn = get_conn(state.inner())?;
+        let host: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'ollama_host'",
+            [],
+            |row| row.get(0),
+        )?;
+        let port: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'ollama_port'",
+            [],
+            |row| row.get(0),
+        )?;
+        let embedding_model: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'embedding_model'",
+            [],
+            |row| row.get(0),
+        )?;
+        let chat_model: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'chat_model'",
+            [],
+            |row| row.get(0),
+        )?;
+        (host, port, embedding_model, chat_model)
+    };
+
+    // Phase 2: All async LLM/embedding work (no DB locks held)
+    let mut rewritten_queries: Option<Vec<String>> = None;
+    let mut all_embeddings: Vec<Vec<f64>> = Vec::new();
+    let mut hyde_embedding: Option<Vec<f64>> = None;
+
+    match (use_qr, use_hyde_flag) {
+        (false, false) => {
+            let emb =
+                ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
+            all_embeddings.push(emb);
+        }
+        (true, false) => {
+            let (rq, embs) = rag::generate_multi_query_embeddings(
+                &host,
+                &port,
+                &embedding_model,
+                &chat_model,
+                &query,
+            )
+            .await?;
+            rewritten_queries = Some(rq);
+            all_embeddings = embs;
+        }
+        (false, true) => {
+            let emb = rag::generate_hyde_embedding(
+                &host,
+                &port,
+                &chat_model,
+                &embedding_model,
+                &query,
+            )
+            .await?;
+            hyde_embedding = Some(emb);
+        }
+        (true, true) => {
+            let (rq, embs) = rag::generate_multi_query_embeddings(
+                &host,
+                &port,
+                &embedding_model,
+                &chat_model,
+                &query,
+            )
+            .await?;
+            rewritten_queries = Some(rq);
+            all_embeddings = embs;
+
+            let emb = rag::generate_hyde_embedding(
+                &host,
+                &port,
+                &chat_model,
+                &embedding_model,
+                &query,
+            )
+            .await?;
+            hyde_embedding = Some(emb);
+        }
+    }
+
+    // Phase 3: Sync DB search using pre-computed embeddings (no awaits here)
+    let fetch_top_k = if use_qr || use_hyde_flag {
+        top_k * 2
+    } else {
+        top_k
+    };
+
+    let results = {
+        let index = state
+            .inner()
+            .vector_index
+            .read()
+            .map_err(|e| AppError::LockFailed(e.to_string()))?;
+        let conn = get_conn(state.inner())?;
+
+        let do_search =
+            |embedding: &[f64], k: usize| -> Result<Vec<SearchResult>, AppError> {
+                if index.has_index(&collection_id) {
+                    let scored = index.search(&collection_id, embedding, k)?;
+                    enrich_search_results(&conn, &scored)
+                } else {
+                    vector_search_in_db(&conn, &collection_id, embedding, k)
+                }
+            };
+
+        match (use_qr, use_hyde_flag) {
+            (false, false) => do_search(&all_embeddings[0], top_k)?,
+            (true, false) => {
+                let mut result_sets = Vec::with_capacity(all_embeddings.len());
+                for emb in &all_embeddings {
+                    result_sets.push(do_search(emb, fetch_top_k)?);
+                }
+                rag::multi_rrf(result_sets, 60.0, top_k)
+            }
+            (false, true) => {
+                let emb = hyde_embedding
+                    .as_ref()
+                    .ok_or_else(|| AppError::Ollama("HyDE embedding missing".to_string()))?;
+                do_search(emb, top_k)?
+            }
+            (true, true) => {
+                let mut mq_result_sets = Vec::with_capacity(all_embeddings.len());
+                for emb in &all_embeddings {
+                    mq_result_sets.push(do_search(emb, fetch_top_k)?);
+                }
+                let mq_fused = rag::multi_rrf(mq_result_sets, 60.0, fetch_top_k);
+
+                let emb = hyde_embedding
+                    .as_ref()
+                    .ok_or_else(|| AppError::Ollama("HyDE embedding missing".to_string()))?;
+                let hyde_results = do_search(emb, fetch_top_k)?;
+
+                reciprocal_rank_fusion(mq_fused, hyde_results, 60.0, top_k)
+            }
+        }
+    };
+
+    state
+        .inner()
+        .metrics
+        .increment(MetricCounter::SearchesExecuted);
+    state.inner().metrics.record_latency(
+        LatencyMetric::SearchLatency,
+        search_start.elapsed().as_secs_f64() * 1000.0,
+    );
+
+    Ok(AdvancedSearchResponse {
+        results,
+        rewritten_queries,
+    })
+}
+
 /// Public wrapper for chat module.
 pub(crate) fn reciprocal_rank_fusion_pub(
     vector_results: Vec<SearchResult>,
@@ -642,4 +821,52 @@ fn reciprocal_rank_fusion(
             result
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_advanced_search_response_serialization() {
+        let response = AdvancedSearchResponse {
+            results: vec![SearchResult {
+                chunk_id: "chunk_1".to_string(),
+                document_id: "doc_1".to_string(),
+                document_title: "Test Doc".to_string(),
+                section_title: Some("Section 1".to_string()),
+                page_number: Some(1),
+                content: "Some content here".to_string(),
+                score: 0.95,
+            }],
+            rewritten_queries: Some(vec![
+                "Alternative query 1".to_string(),
+                "Alternative query 2".to_string(),
+            ]),
+        };
+
+        let json = serde_json::to_string(&response);
+        assert!(json.is_ok(), "AdvancedSearchResponse should serialize");
+        let json_str = json.expect("serialization succeeded");
+        assert!(json_str.contains("chunk_1"));
+        assert!(json_str.contains("Alternative query 1"));
+        assert!(json_str.contains("rewritten_queries"));
+
+        let response_no_rewrite = AdvancedSearchResponse {
+            results: vec![],
+            rewritten_queries: None,
+        };
+
+        let json2 = serde_json::to_string(&response_no_rewrite);
+        assert!(json2.is_ok());
+        let json2_str = json2.expect("serialization succeeded");
+        assert!(json2_str.contains("rewritten_queries"));
+
+        let deserialized: Result<AdvancedSearchResponse, _> = serde_json::from_str(&json_str);
+        assert!(deserialized.is_ok(), "AdvancedSearchResponse should deserialize");
+        let deser = deserialized.expect("deserialization succeeded");
+        assert_eq!(deser.results.len(), 1);
+        assert_eq!(deser.results[0].chunk_id, "chunk_1");
+        assert_eq!(deser.rewritten_queries.as_ref().map(|q| q.len()), Some(2));
+    }
 }

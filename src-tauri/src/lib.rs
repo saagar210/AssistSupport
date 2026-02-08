@@ -8,8 +8,10 @@ mod graph;
 mod metrics;
 mod migrations;
 mod models;
+mod ner;
 mod ollama;
 mod parsers;
+mod rag;
 mod state;
 pub mod utils;
 mod vector_index;
@@ -81,6 +83,9 @@ pub fn run() {
             commands::ollama::check_ollama_connection,
             commands::ollama::list_ollama_models,
             commands::ollama::test_ollama_connection,
+            commands::ollama::pull_ollama_model,
+            commands::ollama::delete_ollama_model,
+            commands::ollama::show_ollama_model,
             commands::documents::ingest_files,
             commands::documents::list_documents,
             commands::documents::get_document,
@@ -100,6 +105,7 @@ pub fn run() {
             commands::search::get_search_history,
             commands::search::clear_search_history,
             commands::search::find_similar_chunks,
+            commands::search::advanced_search,
             // Chat commands
             commands::chat::send_chat_message,
             commands::chat::create_conversation,
@@ -119,6 +125,10 @@ pub fn run() {
             // Audit commands
             commands::audit::get_audit_log,
             commands::audit::export_audit_log,
+            // NER commands
+            commands::ner::extract_document_entities,
+            commands::ner::list_entities,
+            commands::ner::get_entity_mentions,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running VaultMind");

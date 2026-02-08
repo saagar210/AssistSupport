@@ -2,9 +2,43 @@ use rusqlite::Connection;
 
 use crate::error::AppError;
 
-/// Current schema version. Increment this when adding new migrations.
+/// Migration v3: Add entities and entity_mentions tables for Named Entity Recognition.
+fn migrate_v3(conn: &Connection) -> Result<(), AppError> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS entities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            first_seen_at TEXT NOT NULL,
+            mention_count INTEGER DEFAULT 1,
+            metadata TEXT DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_entities_collection ON entities(collection_id);
+        CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
+        CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
+        CREATE TABLE IF NOT EXISTS entity_mentions (
+            id TEXT PRIMARY KEY,
+            entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            chunk_id TEXT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            start_offset INTEGER DEFAULT 0,
+            end_offset INTEGER DEFAULT 0,
+            context TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_mentions_entity ON entity_mentions(entity_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_mentions_chunk ON entity_mentions(chunk_id);",
+    )?;
+    set_schema_version(&tx, 3)?;
+    tx.commit()?;
+    tracing::info!("Migration v3 applied (entities, entity_mentions tables)");
+    Ok(())
+}
+
 #[cfg(test)]
-const CURRENT_VERSION: i64 = 2;
+const CURRENT_VERSION: i64 = 3;
 
 /// Run all pending migrations. Called after initial schema creation.
 pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
@@ -15,6 +49,9 @@ pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
     }
     if version < 2 {
         migrate_v2(conn)?;
+    }
+    if version < 3 {
+        migrate_v3(conn)?;
     }
 
     Ok(())
@@ -167,6 +204,25 @@ mod tests {
             .map(|c| c > 0)
             .unwrap();
         assert!(exists, "audit_log table should exist after migration v2");
+    }
+
+    #[test]
+    fn test_migration_v3_creates_entities_tables() {
+        let conn = setup_db();
+        let version = get_schema_version(&conn).unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+        let entities_exist: bool = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entities'", [], |row| row.get::<_, i64>(0))
+            .map(|c| c > 0).unwrap();
+        assert!(entities_exist, "entities table should exist after migration v3");
+        let mentions_exist: bool = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entity_mentions'", [], |row| row.get::<_, i64>(0))
+            .map(|c| c > 0).unwrap();
+        assert!(mentions_exist, "entity_mentions table should exist after migration v3");
+        let idx_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_entit%'", [], |row| row.get(0))
+            .unwrap();
+        assert!(idx_count >= 5, "Should have at least 5 entity-related indexes");
     }
 
     #[test]

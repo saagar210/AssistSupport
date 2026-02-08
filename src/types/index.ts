@@ -96,6 +96,16 @@ export interface OllamaModel {
   family: string | null;
 }
 
+export interface ModelInfo {
+  name: string;
+  size: number;
+  parameter_size: string | null;
+  quantization_level: string | null;
+  family: string | null;
+  format: string | null;
+  modified_at: string | null;
+}
+
 export interface SearchResult {
   chunk_id: string;
   document_id: string;
