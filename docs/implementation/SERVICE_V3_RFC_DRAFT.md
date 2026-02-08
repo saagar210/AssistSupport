@@ -36,6 +36,7 @@ Define a safe, testable transition from `service.v2` to `service.v3` where
 ## Rehearsal handoff artifact
 Producer publishes a rehearsal candidate payload at:
 - `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
+- `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json` (generated in `service-v3-candidate` mode)
 
 This artifact is intended for immediate consumer CI validation and must include:
 1. Active runtime baseline (`v0.3.2` and associated immutable commit).
@@ -44,6 +45,11 @@ This artifact is intended for immediate consumer CI validation and must include:
 4. Error-code validation mode and current enum.
 5. Required producer and consumer verification command sets.
 6. Rollback triggers and rollback action.
+
+Compatibility expectation (candidate payload vs pinned runtime baseline):
+1. Candidate payload sets `expected_service_contract_version = service.v3`.
+2. The same payload must retain active runtime baseline references (`release_tag`, `commit_sha`, and `active_runtime_baseline`) pointing at current pinned `service.v2` release until cutover.
+3. Consumer validation treats this as rehearsal metadata only, not runtime cutover authorization.
 
 ## Migration stages
 

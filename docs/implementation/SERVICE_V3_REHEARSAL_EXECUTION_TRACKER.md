@@ -54,7 +54,8 @@ cargo test --workspace --all-targets --all-features
 ## Evidence Artifacts
 1. `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
 2. `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
-3. Producer verification outputs from required commands
+3. `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json` (service.v3 candidate mode)
+4. Producer verification outputs from required commands
 
 ## Exit Criteria
 1. P1-P3 are completed and verified green.

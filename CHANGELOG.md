@@ -32,3 +32,8 @@
   - `docs/implementation/PRODUCER_RELEASE_HANDOFF_PACKET_TEMPLATE.md`
   - `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
 - Added `scripts/generate_producer_handoff_payload.sh` to generate deterministic producer handoff payloads from the canonical manifest.
+- Extended producer handoff payload generation with `--mode service-v3-candidate` for rehearsal-only consumer validation while keeping runtime baseline unchanged.
+- Added Phase 4 rehearsal governance artifacts:
+  - `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
+  - `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
+  - `docs/implementation/SERVICE_V3_REHEARSAL_VERIFICATION_EVIDENCE.md`

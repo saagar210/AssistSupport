@@ -1,10 +1,18 @@
 {
-  "handoff_generated_at_utc": "2026-02-08T10:59:43Z",
+  "handoff_generated_at_utc": "2026-02-08T11:34:03Z",
+  "handoff_mode": "service-v3-candidate",
   "release_tag": "v0.3.2",
   "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
-  "expected_service_contract_version": "service.v2",
+  "expected_service_contract_version": "service.v3",
   "expected_api_contract_version": "api.v1",
   "integration_baseline": "integration/v1",
+  "active_runtime_baseline": {
+    "release_tag": "v0.3.2",
+    "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
+    "expected_service_contract_version": "service.v2",
+    "expected_api_contract_version": "api.v1",
+    "integration_baseline": "integration/v1"
+  },
   "error_code_enum": [
     "invalid_json",
     "validation_error",
@@ -17,6 +25,33 @@
     "context_lookup_failed",
     "internal_error"
   ],
+  "non_2xx_envelope_policy": {
+    "service_v2_stable": {
+      "requires": [
+        "service_contract_version",
+        "error.code",
+        "error.message",
+        "legacy_error"
+      ],
+      "forbids": [
+        "api_contract_version"
+      ]
+    },
+    "service_v3_candidate": {
+      "requires": [
+        "service_contract_version",
+        "error.code",
+        "error.message"
+      ],
+      "optional": [
+        "error.details"
+      ],
+      "forbids": [
+        "legacy_error",
+        "api_contract_version"
+      ]
+    }
+  },
   "manifest_contract_version": "producer-contract-manifest.v1",
   "manifest_path": "/Users/d/Projects/MemoryKernel/contracts/integration/v1/producer-contract-manifest.json",
   "changelog_path": "/Users/d/Projects/MemoryKernel/CHANGELOG.md",
@@ -36,5 +71,29 @@
     "required_test_updates": "<none|describe>",
     "repin_required": "<yes/no>",
     "rollback_instruction": "repin to <previous tag/sha>"
-  }
+  },
+  "rehearsal_candidate": {
+    "requires_runtime_cutover": false,
+    "service_v2_runtime_stability_required": true,
+    "migration_overlap_days": 14,
+    "consumer_non_blocking_fallback_required": true
+  },
+  "compatibility_expectations": {
+    "candidate_values_override_release_baseline_fields": [
+      "expected_service_contract_version"
+    ],
+    "fields_that_must_match_active_runtime_baseline": [
+      "release_tag",
+      "commit_sha",
+      "expected_api_contract_version",
+      "integration_baseline",
+      "error_code_enum"
+    ]
+  },
+  "required_consumer_validation_commands": [
+    "pnpm run check:memorykernel-handoff:service-v3-candidate",
+    "pnpm run check:memorykernel-pin",
+    "pnpm run test:memorykernel-contract",
+    "pnpm run test:ci"
+  ]
 }

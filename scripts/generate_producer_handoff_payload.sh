@@ -8,6 +8,8 @@ Usage: generate_producer_handoff_payload.sh [options]
 Generate a producer release handoff payload JSON from the canonical manifest.
 
 Options:
+  --mode <stable|service-v3-candidate>
+                            Payload mode (default: stable)
   --memorykernel-root <path>  Path to MemoryKernel root (default: script/..)
   --out-json <path>           Output JSON path (default: stdout only)
   -h, --help                  Show this help
@@ -25,11 +27,16 @@ resolve_path() {
 
 memorykernel_root=""
 out_json=""
+mode="stable"
 
 while (($# > 0)); do
   case "$1" in
     --memorykernel-root)
       memorykernel_root="${2:-}"
+      shift 2
+      ;;
+    --mode)
+      mode="${2:-}"
       shift 2
       ;;
     --out-json)
@@ -47,6 +54,11 @@ while (($# > 0)); do
       ;;
   esac
 done
+
+if [[ "$mode" != "stable" && "$mode" != "service-v3-candidate" ]]; then
+  echo "invalid --mode value: $mode (expected stable|service-v3-candidate)" >&2
+  exit 2
+fi
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 if [[ -z "$memorykernel_root" ]]; then
@@ -69,7 +81,7 @@ if [[ ! -f "$changelog_path" ]]; then
 fi
 
 payload=$(
-  python3 - "$manifest_path" "$changelog_path" <<'PY'
+  python3 - "$manifest_path" "$changelog_path" "$mode" <<'PY'
 import json
 import pathlib
 import sys
@@ -77,6 +89,7 @@ from datetime import datetime, timezone
 
 manifest_path = pathlib.Path(sys.argv[1])
 changelog_path = pathlib.Path(sys.argv[2])
+mode = sys.argv[3]
 
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -92,14 +105,53 @@ for key in required:
     if key not in manifest:
         raise SystemExit(f"manifest missing required key: {key}")
 
-payload = {
-    "handoff_generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+active_runtime_baseline = {
     "release_tag": manifest["release_tag"],
     "commit_sha": manifest["commit_sha"],
     "expected_service_contract_version": manifest["expected_service_contract_version"],
     "expected_api_contract_version": manifest["expected_api_contract_version"],
     "integration_baseline": manifest["integration_baseline"],
+}
+
+non_2xx_envelope_policy = {
+    "service_v2_stable": {
+        "requires": [
+            "service_contract_version",
+            "error.code",
+            "error.message",
+            "legacy_error",
+        ],
+        "forbids": [
+            "api_contract_version",
+        ],
+    },
+    "service_v3_candidate": {
+        "requires": [
+            "service_contract_version",
+            "error.code",
+            "error.message",
+        ],
+        "optional": [
+            "error.details",
+        ],
+        "forbids": [
+            "legacy_error",
+            "api_contract_version",
+        ],
+    },
+}
+
+payload = {
+    "handoff_generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "handoff_mode": mode,
+    "release_tag": manifest["release_tag"],
+    "commit_sha": manifest["commit_sha"],
+    "expected_service_contract_version": manifest["expected_service_contract_version"],
+    "expected_api_contract_version": manifest["expected_api_contract_version"],
+    "integration_baseline": manifest["integration_baseline"],
+    "active_runtime_baseline": active_runtime_baseline,
     "error_code_enum": manifest["error_code_enum"],
+    "non_2xx_envelope_policy": non_2xx_envelope_policy,
     "manifest_contract_version": manifest.get("manifest_contract_version", "producer-contract-manifest.v1"),
     "manifest_path": str(manifest_path),
     "changelog_path": str(changelog_path),
@@ -121,6 +173,33 @@ payload = {
         "rollback_instruction": "repin to <previous tag/sha>",
     },
 }
+
+if mode == "service-v3-candidate":
+    payload["expected_service_contract_version"] = "service.v3"
+    payload["rehearsal_candidate"] = {
+        "requires_runtime_cutover": False,
+        "service_v2_runtime_stability_required": True,
+        "migration_overlap_days": 14,
+        "consumer_non_blocking_fallback_required": True,
+    }
+    payload["compatibility_expectations"] = {
+        "candidate_values_override_release_baseline_fields": [
+            "expected_service_contract_version",
+        ],
+        "fields_that_must_match_active_runtime_baseline": [
+            "release_tag",
+            "commit_sha",
+            "expected_api_contract_version",
+            "integration_baseline",
+            "error_code_enum",
+        ],
+    }
+    payload["required_consumer_validation_commands"] = [
+        "pnpm run check:memorykernel-handoff:service-v3-candidate",
+        "pnpm run check:memorykernel-pin",
+        "pnpm run test:memorykernel-contract",
+        "pnpm run test:ci",
+    ]
 
 print(json.dumps(payload, indent=2))
 PY

@@ -14,6 +14,16 @@ Until all cutover gates pass, runtime compatibility baseline remains:
 - `api_contract_version`: `api.v1`
 - `integration_baseline`: `integration/v1`
 
+## Explicit Non-2xx Envelope Policy
+Current stable (`service.v2`) policy:
+1. Required fields: `service_contract_version`, `error.code`, `error.message`, `legacy_error`
+2. Forbidden field: `api_contract_version`
+
+Service.v3 rehearsal candidate policy:
+1. Required fields: `service_contract_version`, `error.code`, `error.message`
+2. Optional field: `error.details`
+3. Forbidden fields: `legacy_error`, `api_contract_version`
+
 ## Producer prerequisites
 1. Immutable release candidate prepared with:
    - release tag

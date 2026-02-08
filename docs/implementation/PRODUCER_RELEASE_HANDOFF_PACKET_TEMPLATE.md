@@ -12,6 +12,8 @@ Use this template to produce a deterministic handoff packet for AssistSupport wi
 - `manifest_contract_version`
 - `manifest_path`
 - `changelog_path`
+- `handoff_mode` (`stable` or `service-v3-candidate`)
+- `active_runtime_baseline` (always reflects currently pinned runtime release)
 
 ## Required evidence
 - Full producer verification command set and outcomes:
@@ -34,9 +36,19 @@ Consumer impact:
 - Rollback instruction: repin to <previous tag/sha>
 ```
 
-## Generation command
+## Generation commands
+Stable release handoff:
 ```bash
 ./scripts/generate_producer_handoff_payload.sh \
+  --mode stable \
+  --memorykernel-root /Users/d/Projects/MemoryKernel \
+  --out-json /Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json
+```
+
+Service.v3 rehearsal candidate handoff (no runtime cutover):
+```bash
+./scripts/generate_producer_handoff_payload.sh \
+  --mode service-v3-candidate \
   --memorykernel-root /Users/d/Projects/MemoryKernel \
   --out-json /Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json
 ```

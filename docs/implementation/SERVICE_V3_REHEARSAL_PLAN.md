@@ -29,8 +29,10 @@ Create a consumer-validatable `service.v3` rehearsal package while keeping live 
    - `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
 3. Consumer-ready rehearsal handoff payload:
    - `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
+   - `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json` (generated in `service-v3-candidate` mode)
 4. Deterministic payload generator:
    - `scripts/generate_service_v3_rehearsal_payload.sh`
+   - `scripts/generate_producer_handoff_payload.sh --mode service-v3-candidate`
 
 ## Rehearsal Exit Criteria
 All must pass:
@@ -38,6 +40,9 @@ All must pass:
 2. Rehearsal payload JSON matches current baseline manifest and cutover gate policy.
 3. AssistSupport can run pin/contract CI checks against rehearsal payload (no runtime cutover required).
 4. Joint cutover dependencies are explicit (producer prerequisites, consumer prerequisites, rollback triggers, evidence checklist).
+5. Compatibility mapping is explicit:
+   - `expected_service_contract_version` in candidate payload is `service.v3`.
+   - runtime baseline fields still reflect pinned `v0.3.2` / `service.v2` state.
 
 ## Verification Commands
 ```bash
