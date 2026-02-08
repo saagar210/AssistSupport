@@ -5,6 +5,7 @@
   "expected_service_contract_version": "service.v2",
   "expected_api_contract_version": "api.v1",
   "expected_integration_baseline": "integration/v1",
+  "expected_producer_manifest_sha256": "72875c06ead43446ccaff636f9d8aae51999b661f178872db51ad125e7bdbb81",
   "default_base_url": "http://127.0.0.1:4010",
   "default_timeout_ms": 2500
 }

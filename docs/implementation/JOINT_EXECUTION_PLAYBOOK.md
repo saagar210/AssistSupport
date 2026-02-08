@@ -1,6 +1,6 @@
 # Joint Execution Playbook: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (Checkpoint C GO, Checkpoint D planning GO)  
+Updated: 2026-02-08 (Checkpoint C GO, Checkpoint D planning GO, hash-gate active)  
 Owners: AssistSupport + MemoryKernel (Joint)
 
 ## 1) Executive Summary
@@ -46,7 +46,7 @@ Operational state (as of this playbook):
 ### Locked joint decisions
 1. `error_code_enum` validation mode is set equality (order-independent).
 2. `service.v3` keeps non-2xx `api_contract_version` absent unless a future RFC explicitly changes this.
-3. Producer-manifest hash validation in AssistSupport CI is deferred from A/B and becomes mandatory by end of Phase 3.
+3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks.
 4. Pin + compatibility matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## 3) Phase Plan (Next 4 Phases)
@@ -74,7 +74,7 @@ Sprint target: Week 1-2.
 | Dependencies | Phase 1 exit; producer envelope policy unchanged. |
 | Entry Criteria | Deterministic fallback tests green. |
 | Exit Criteria | Enrichment lifecycle states and failure reasons are observable and triage-ready; rollback drill completed once. |
-| Deliverables | Enhanced runtime lifecycle docs, diagnostics mapping table, incident runbook evidence, updated test evidence artifact policy. |
+| Deliverables | Enhanced runtime lifecycle docs, diagnostics mapping table (`docs/implementation/MEMORYKERNEL_RUNTIME_DIAGNOSTICS_MATRIX.md`), incident runbook evidence (`docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md`), updated test evidence artifact policy. |
 | Verification Commands | `pnpm run test:memorykernel-contract`, `pnpm run test:ci`, plus manual runbook validation from `/Users/d/Projects/AssistSupport/docs/OPERATIONS.md`. |
 
 Sprint target: Week 3.
@@ -87,8 +87,8 @@ Sprint target: Week 3.
 | Owner | Joint |
 | Dependencies | Phase 2 exit; producer manifest stable for at least one sprint. |
 | Entry Criteria | Both repos aligned on producer manifest schema and policy fields. |
-| Exit Criteria | Repin workflow can be completed with one standard PR template and no ad hoc coordination steps. |
-| Deliverables | Cross-repo validation design, release handoff template, expected evidence manifest for every baseline update. |
+| Exit Criteria | Repin workflow can be completed with one standard PR template and no ad hoc coordination steps; manifest hash enforcement remains green for two consecutive baseline validations. |
+| Deliverables | Cross-repo validation design, release handoff template, expected evidence manifest for every baseline update, and hash-enforced producer-manifest parity checks. |
 | Verification Commands | AssistSupport CI with governance gate; MemoryKernel parity/alignment scripts; one full dry-run of repin handoff from producer release tag to consumer merge. |
 
 Sprint target: Week 4.
@@ -102,7 +102,7 @@ Sprint target: Week 4.
 | Dependencies | Phase 3 exit; no unresolved high-severity integration issues. |
 | Entry Criteria | Producer publishes service.v3 RFC draft with overlap and deprecation policy. |
 | Exit Criteria | Joint-approved migration plan with acceptance tests, repin criteria, and rollback strategy signed by both sides. |
-| Deliverables | Service.v3 migration spec, compatibility test plan, rollout timeline, deprecation communication protocol. |
+| Deliverables | Service.v3 migration spec, compatibility test plan, rollout timeline, deprecation communication protocol, and consumer rehearsal plan (`docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md`). |
 | Verification Commands | RFC checklist pass; contract test matrix drafted for v2-only, v2+v3 overlap, and v3-final states. |
 
 Sprint target: Week 5+ (planning gate only in this playbook).
@@ -165,7 +165,7 @@ Sprint target: Week 5+ (planning gate only in this playbook).
 
 | Risk | Severity | Trigger Signal | Mitigation | Owner |
 |---|---|---|---|---|
-| Contract drift between producer manifest and consumer mirror | High | CI pin/manifest sync failure | Keep atomic update gate and reject partial updates | AssistSupport |
+| Contract drift between producer manifest and consumer mirror | High | CI pin/manifest sync failure | Keep atomic update gate and hash-validated parity checks | AssistSupport |
 | Unannounced additive error codes | High | Unknown `error.code` appears in producer artifacts | Enforce notice policy + consumer pre-adoption test updates | MemoryKernel |
 | Core Draft flow regression due to enrichment coupling | Critical | Draft generation blocked when MemoryKernel offline | Preserve non-blocking fallback invariants and continuous chaos-path testing | AssistSupport |
 | Policy drift in non-2xx envelope shape | High | Contract tests fail on envelope fields | Keep producer alignment gate + consumer envelope assertions | Joint |

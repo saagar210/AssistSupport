@@ -12,6 +12,7 @@ This document defines the immutable consumer-side integration baseline for Memor
 - Expected service contract version: `service.v2`
 - Expected API contract version: `api.v1`
 - Expected integration baseline: `integration/v1`
+- Expected producer manifest SHA-256: `72875c06ead43446ccaff636f9d8aae51999b661f178872db51ad125e7bdbb81`
 - Pin manifest (source of truth): `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
 - Producer manifest mirror: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
 
@@ -39,6 +40,9 @@ This document defines the immutable consumer-side integration baseline for Memor
 4. Producer error-code governance:
    - Consumer validates producer `error_code_enum` via set-equality (order-independent).
    - Drift fails CI until consumer mapping/tests and governance artifacts are updated together.
+5. Producer manifest integrity governance:
+   - Consumer validates mirrored manifest SHA-256 against pin metadata.
+   - Optional strict mode can validate remote producer manifest hash from pinned release tag (`ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1`) in environments with repo access.
 
 ## Pin Update Policy
 

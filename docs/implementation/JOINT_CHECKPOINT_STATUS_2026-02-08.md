@@ -16,7 +16,7 @@ Updated: 2026-02-08
 ## Locked Decisions
 1. `error_code_enum` validation is set equality (order-independent).
 2. Non-2xx envelopes keep `api_contract_version` absent in service.v3 unless a future joint RFC changes this.
-3. Producer-manifest hash validation in AssistSupport CI is deferred from A/B and must be in place by end of Phase 3.
+3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks.
 4. Pin + matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## Service.v3 Cutover Gate (Consumer Criteria)
@@ -30,7 +30,6 @@ Updated: 2026-02-08
 
 ## Joint Risks to Track
 - Dual-compat drift risk during v2/v3 overlap.
-- Manifest integrity risk until hash-validation gate is activated in Phase 3.
 - Release-cadence mismatch risk reducing overlap rehearsal time.
 - Error taxonomy growth risk if lead-time notice policy slips.
 

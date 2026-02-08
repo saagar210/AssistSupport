@@ -83,6 +83,10 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
    ```bash
    pnpm run check:memorykernel-pin
    ```
+   Optional strict mode (environments with direct producer repo access):
+   ```bash
+   ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1 pnpm run check:memorykernel-pin
+   ```
 5. Run MemoryKernel contract suite:
    ```bash
    pnpm run test:memorykernel-contract
