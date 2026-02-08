@@ -39,7 +39,7 @@ function parseGitHubRepo(repoUrl) {
 
 function buildManifestApiUrl(pin) {
   const { owner, repo } = parseGitHubRepo(pin.memorykernel_repo);
-  return `https://api.github.com/repos/${owner}/${repo}/contents/contracts/integration/v1/producer-contract-manifest.json?ref=${pin.commit_sha}`;
+  return `https://api.github.com/repos/${owner}/${repo}/contents/contracts/integration/v1/producer-contract-manifest.json?ref=${pin.release_tag}`;
 }
 
 function validateProducerManifestFields(pin, producerManifest) {

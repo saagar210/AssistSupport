@@ -40,7 +40,7 @@ function installInvokeMocks(overrides: InvokeOverrides = {}) {
           expected_service_contract_version: 'service.v2',
           expected_api_contract_version: 'api.v1',
           integration_baseline: 'integration/v1',
-          release_tag: 'v0.3.1',
+          release_tag: 'v0.3.2',
           commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
         };
       case 'create_session_token':

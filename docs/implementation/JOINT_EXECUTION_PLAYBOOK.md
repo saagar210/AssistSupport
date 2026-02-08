@@ -10,7 +10,7 @@ This playbook is the canonical execution blueprint for the next integration phas
 Current locked baseline:
 - AssistSupport repo: `/Users/d/Projects/AssistSupport`
 - MemoryKernel pin (consumer-validated):
-  - release tag: `v0.3.1`
+  - release tag: `v0.3.2`
   - commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
   - service contract: `service.v2`
   - API contract: `api.v1`
@@ -57,7 +57,7 @@ Operational state (as of this playbook):
 |---|---|
 | Objective | Stabilize day-to-day integration with no drift and no regression in core Draft flow. |
 | Owner | Joint |
-| Dependencies | Current baseline pinned and green (`v0.3.1`, `service.v2`, `api.v1`). |
+| Dependencies | Current baseline pinned and green (`v0.3.2`, `service.v2`, `api.v1`). |
 | Entry Criteria | Consumer CI green; producer CI green; manifest parity active. |
 | Exit Criteria | Two consecutive weekly cycles with no unsignaled contract drift and no core Draft fallback regressions. |
 | Deliverables | Weekly evidence bundle, drift-free pin/matrix/manifest state, signed integration review notes. |

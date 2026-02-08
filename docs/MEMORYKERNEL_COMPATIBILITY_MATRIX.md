@@ -7,12 +7,12 @@ This document defines the immutable consumer-side integration baseline for Memor
 ## Baseline Pin
 
 - MemoryKernel repo: `https://github.com/saagar210/MemoryKernel`
-- MemoryKernel release tag: `v0.3.1`
+- MemoryKernel release tag: `v0.3.2`
 - MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
 - Expected service contract version: `service.v2`
 - Expected API contract version: `api.v1`
 - Expected integration baseline: `integration/v1`
-- Expected producer manifest SHA-256: `72875c06ead43446ccaff636f9d8aae51999b661f178872db51ad125e7bdbb81`
+- Expected producer manifest SHA-256: `67408e0bcf7d9e88c27c9e54c996c32d23aa915eb572ede46dd5ee6e3728c6f6`
 - Pin manifest (source of truth): `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
 - Producer manifest mirror: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
 
@@ -20,7 +20,7 @@ This document defines the immutable consumer-side integration baseline for Memor
 
 | AssistSupport version | AssistSupport commit | MemoryKernel tag | MemoryKernel commit | Service contract | API contract | Integration baseline | Status |
 |---|---|---|---|---|---|---|---|
-| 1.0.0 | af2679b | v0.3.1 | cf331449e1589581a5dcbb3adecd3e9ae4509277 | service.v2 | api.v1 | integration/v1 | Approved |
+| 1.0.0 | fd56b4b | v0.3.2 | cf331449e1589581a5dcbb3adecd3e9ae4509277 | service.v2 | api.v1 | integration/v1 | Approved |
 
 ## Forward Readiness Note
 
@@ -42,7 +42,7 @@ This document defines the immutable consumer-side integration baseline for Memor
    - Drift fails CI until consumer mapping/tests and governance artifacts are updated together.
 5. Producer manifest integrity governance:
    - Consumer validates mirrored manifest SHA-256 against pin metadata.
-   - Optional strict mode can validate remote producer manifest hash from pinned commit SHA (`ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1`).
+   - Optional strict mode can validate remote producer manifest hash from pinned release tag (`ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1`).
    - In GitHub Actions, remote validation runs automatically when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 
 ## Pin Update Policy

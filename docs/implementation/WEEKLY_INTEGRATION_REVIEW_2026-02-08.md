@@ -11,7 +11,7 @@ Review Type: Week 1 checkpoint (service.v2 steady-state window)
 - [x] Owners and next actions confirmed.
 
 ## Baseline Reviewed
-- MemoryKernel release tag: `v0.3.1`
+- MemoryKernel release tag: `v0.3.2`
 - MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
 - Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
 

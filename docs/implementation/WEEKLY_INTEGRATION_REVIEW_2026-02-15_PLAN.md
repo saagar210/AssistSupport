@@ -14,7 +14,7 @@ Confirm service.v2 remains stable through the 14-day window with no drift/regres
 3. Open change list affecting integration contracts since 2026-02-08.
 
 ## Checklist
-- [ ] Baseline unchanged (`v0.3.1` / `cf331449...`) or intentionally repinned with full governance evidence.
+- [ ] Baseline unchanged (`v0.3.2` / `cf331449...`) or intentionally repinned with full governance evidence.
 - [ ] `pin + matrix + mirrored manifest` remain synchronized.
 - [ ] Local manifest hash validation in consumer CI green.
 - [ ] Remote manifest hash validation green when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.

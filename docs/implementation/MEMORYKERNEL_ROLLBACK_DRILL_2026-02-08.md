@@ -8,7 +8,7 @@ Scenario: Validate rollback readiness while preserving Draft flow and contract g
 Prove that AssistSupport can safely hold/revert integration baseline without losing core Draft functionality.
 
 ## Baseline Under Test
-- release_tag: `v0.3.1`
+- release_tag: `v0.3.2`
 - commit_sha: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
 - service/api/baseline: `service.v2` / `api.v1` / `integration/v1`
 

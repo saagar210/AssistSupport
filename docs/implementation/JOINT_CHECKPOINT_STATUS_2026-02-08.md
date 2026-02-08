@@ -3,7 +3,7 @@
 Updated: 2026-02-08
 
 ## Baseline
-- MemoryKernel release tag: `v0.3.1`
+- MemoryKernel release tag: `v0.3.2`
 - MemoryKernel commit: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
 - Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
 
