@@ -24,6 +24,7 @@
     "test:memorykernel-cutover-dry-run": "pnpm run check:memorykernel-handoff:service-v3-candidate && pnpm run check:memorykernel-pin && pnpm run test:memorykernel-contract && pnpm run test:ci",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts --grep @smoke",
     "test:e2e:ops": "playwright test --config=playwright.config.ts e2e/ops.spec.ts",
+    "test:revamp-queue-rehearsal": "bash scripts/run_revamp_queue_rehearsal.sh",
     "test:ci": "vitest run && cd src-tauri && cargo test",
     "check:monorepo-readiness": "bash scripts/run_monorepo_readiness.sh quick",
     "check:monorepo-readiness:full": "bash scripts/run_monorepo_readiness.sh full",

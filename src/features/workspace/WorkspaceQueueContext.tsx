@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/shared/Button';
+import { useAnalytics } from '../../hooks/useAnalytics';
 import { useDrafts } from '../../hooks/useDrafts';
 import {
   buildQueueHandoffSnapshot,
@@ -8,9 +9,15 @@ import {
   loadQueueMeta,
   summarizeQueue,
   type QueueMetaMap,
+  type QueueView,
 } from '../inbox/queueModel';
 
-export function WorkspaceQueueContext() {
+interface WorkspaceQueueContextProps {
+  onNavigateToQueue?: (queueView: QueueView) => void;
+}
+
+export function WorkspaceQueueContext({ onNavigateToQueue }: WorkspaceQueueContextProps) {
+  const { logEvent } = useAnalytics();
   const { drafts, loading, loadDrafts } = useDrafts();
   const [queueMetaMap, setQueueMetaMap] = useState<QueueMetaMap>(() => loadQueueMeta());
 
@@ -34,7 +41,14 @@ export function WorkspaceQueueContext() {
     <section className="workspace-queue-context" aria-label="Queue context">
       <div className="workspace-queue-context__header">
         <h2>Live queue context</h2>
-        <Button size="small" variant="ghost" onClick={() => loadDrafts(100)}>
+        <Button
+          size="small"
+          variant="ghost"
+          onClick={() => {
+            loadDrafts(100);
+            void logEvent('workspace_queue_context_refreshed');
+          }}
+        >
           Refresh
         </Button>
       </div>
@@ -74,6 +88,40 @@ export function WorkspaceQueueContext() {
       <div className="workspace-queue-context__footer">
         Snapshot updated {formatQueueTimestamp(handoffSnapshot.generatedAt)}
       </div>
+      {onNavigateToQueue && (
+        <div className="workspace-queue-context__quick-actions">
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={() => {
+              onNavigateToQueue('at_risk');
+              void logEvent('workspace_queue_quick_action_used', { queue_view: 'at_risk' });
+            }}
+          >
+            Open At-Risk Queue
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
+            onClick={() => {
+              onNavigateToQueue('unassigned');
+              void logEvent('workspace_queue_quick_action_used', { queue_view: 'unassigned' });
+            }}
+          >
+            Open Unassigned Queue
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
+            onClick={() => {
+              onNavigateToQueue('in_progress');
+              void logEvent('workspace_queue_quick_action_used', { queue_view: 'in_progress' });
+            }}
+          >
+            Open In-Progress Queue
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

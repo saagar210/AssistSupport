@@ -38,6 +38,12 @@ vi.mock('../../hooks/useDrafts', () => ({
   }),
 }));
 
+vi.mock('../../hooks/useAnalytics', () => ({
+  useAnalytics: () => ({
+    logEvent: vi.fn(),
+  }),
+}));
+
 vi.mock('../../components/FollowUps/FollowUpsTab', () => ({
   FollowUpsTab: () => <div data-testid="queue-history-tab">History</div>,
 }));

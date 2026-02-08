@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedDraft } from '../../types';
 import {
+  buildQueueHandoffDelta,
   buildQueueHandoffSnapshot,
   buildQueueItems,
   filterQueueItems,
   inferPriorityFromDraft,
+  loadQueueHandoffSnapshot,
   loadQueueMeta,
+  persistQueueHandoffSnapshot,
   persistQueueMeta,
   summarizeQueue,
   summarizeQueueByOwner,
@@ -136,5 +139,70 @@ describe('queueModel', () => {
     expect(snapshot.generatedAt).toBe('2026-02-08T13:00:00Z');
     expect(snapshot.summary.total).toBe(3);
     expect(snapshot.topAtRisk[0]?.ticketLabel).toBe('INC-1');
+  });
+
+  it('persists handoff snapshots and calculates trend deltas', () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+
+    const previous = {
+      generatedAt: '2026-02-08T10:00:00Z',
+      summary: {
+        total: 5,
+        unassigned: 2,
+        inProgress: 1,
+        resolved: 1,
+        atRisk: 3,
+      },
+      prioritySummary: { low: 0, normal: 2, high: 2, urgent: 0 },
+      ownerWorkload: [
+        { owner: 'agent-a', openCount: 1, inProgressCount: 1, atRiskCount: 1 },
+        { owner: 'unassigned', openCount: 2, inProgressCount: 0, atRiskCount: 2 },
+      ],
+      topAtRisk: [],
+    } as const;
+
+    const current = {
+      generatedAt: '2026-02-08T11:00:00Z',
+      summary: {
+        total: 6,
+        unassigned: 1,
+        inProgress: 3,
+        resolved: 1,
+        atRisk: 2,
+      },
+      prioritySummary: { low: 0, normal: 1, high: 2, urgent: 2 },
+      ownerWorkload: [
+        { owner: 'agent-a', openCount: 1, inProgressCount: 2, atRiskCount: 0 },
+        { owner: 'unassigned', openCount: 1, inProgressCount: 0, atRiskCount: 1 },
+      ],
+      topAtRisk: [],
+    } as const;
+
+    persistQueueHandoffSnapshot(previous, storage);
+    expect(loadQueueHandoffSnapshot(storage)).toEqual(previous);
+
+    const delta = buildQueueHandoffDelta(current, previous);
+    expect(delta.previousGeneratedAt).toBe('2026-02-08T10:00:00Z');
+    expect(delta.summaryDelta).toEqual({
+      open: 1,
+      inProgress: 2,
+      resolved: 0,
+      atRisk: -1,
+      unassigned: -1,
+    });
+    expect(delta.ownerDelta[0]).toEqual({
+      owner: 'agent-a',
+      workloadDelta: 1,
+      atRiskDelta: -1,
+    });
+
+    storage.setItem('assistsupport.queue.handoff.latest.v1', '{broken-json');
+    expect(loadQueueHandoffSnapshot(storage)).toBeNull();
   });
 });

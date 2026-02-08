@@ -24,6 +24,7 @@ export interface RenderActiveTabProps {
   onSearchQueryConsumed: () => void;
   onQueueViewConsumed: () => void;
   onNavigateToSource: (searchQuery: string) => void;
+  onNavigateToQueue: (queueView: QueueView) => void;
   onLoadDraft: (draft: SavedDraft) => void;
   revampFlags: RevampFlags;
 }
@@ -36,6 +37,7 @@ export function renderActiveTab({
   onSearchQueryConsumed,
   onQueueViewConsumed,
   onNavigateToSource,
+  onNavigateToQueue,
   onLoadDraft,
   revampFlags,
 }: RenderActiveTabProps) {
@@ -46,6 +48,7 @@ export function renderActiveTab({
           <WorkspacePage
             ref={draftRef}
             onNavigateToSource={onNavigateToSource}
+            onNavigateToQueue={onNavigateToQueue}
             revampModeEnabled={revampFlags.ASSISTSUPPORT_REVAMP_WORKSPACE}
           />
         </ErrorBoundary>

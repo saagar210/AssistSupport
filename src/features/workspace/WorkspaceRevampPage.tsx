@@ -1,18 +1,20 @@
 import { forwardRef } from 'react';
 import { DraftTab, type DraftTabHandle } from '../../components/Draft/DraftTab';
 import { WorkspaceQueueContext } from './WorkspaceQueueContext';
+import type { QueueView } from '../inbox/queueModel';
 import './WorkspaceRevampPage.css';
 
 interface WorkspaceRevampPageProps {
   onNavigateToSource: (searchQuery: string) => void;
+  onNavigateToQueue?: (queueView: QueueView) => void;
 }
 
 export const WorkspaceRevampPage = forwardRef<DraftTabHandle, WorkspaceRevampPageProps>(
-  function WorkspaceRevampPage({ onNavigateToSource }, ref) {
+  function WorkspaceRevampPage({ onNavigateToSource, onNavigateToQueue }, ref) {
     return (
       <div className="workspace-revamp" data-testid="workspace-revamp-shell">
         <section className="workspace-revamp__rail" aria-label="Draft workflow guidance">
-          <WorkspaceQueueContext />
+          <WorkspaceQueueContext onNavigateToQueue={onNavigateToQueue} />
           <div className="workspace-revamp__playbook">
             <h3>Response playbook</h3>
             <ol>

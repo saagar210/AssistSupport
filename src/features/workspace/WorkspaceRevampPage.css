@@ -97,6 +97,13 @@
   color: var(--color-text-secondary, #a6adbb);
 }
 
+.workspace-queue-context__quick-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .workspace-revamp__main {
   min-width: 0;
 }

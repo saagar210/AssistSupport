@@ -145,6 +145,7 @@ function AppContent() {
             onSearchQueryConsumed: consumeSourceSearchQuery,
             onQueueViewConsumed: consumePendingQueueView,
             onNavigateToSource: handleNavigateToSource,
+            onNavigateToQueue: handleNavigateToQueue,
             onLoadDraft: handleLoadDraft,
             revampFlags,
           })}

@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/shared/Button';
 import { FollowUpsTab } from '../../components/FollowUps/FollowUpsTab';
+import { useAnalytics } from '../../hooks/useAnalytics';
 import { useDrafts } from '../../hooks/useDrafts';
 import type { SavedDraft } from '../../types';
 import {
+  buildQueueHandoffDelta,
   buildQueueHandoffSnapshot,
   buildQueueItems,
   filterQueueItems,
   formatQueueTimestamp,
+  loadQueueHandoffSnapshot,
   loadQueueMeta,
+  persistQueueHandoffSnapshot,
   persistQueueMeta,
   summarizeQueue,
   summarizeQueueByOwner,
   summarizeQueueByPriority,
+  type QueueHandoffSnapshot,
   type QueueMetaMap,
   type QueueItem,
   type QueuePriority,
@@ -60,13 +65,22 @@ function loadOperatorName(): string {
   }
 }
 
+function formatSignedDelta(value: number): string {
+  if (value === 0) {
+    return '0';
+  }
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
 export function QueueFirstInboxPage({
   onLoadDraft,
   initialQueueView = null,
   onQueueViewConsumed,
 }: QueueFirstInboxPageProps) {
+  const { logEvent } = useAnalytics();
   const { drafts, loading, loadDrafts } = useDrafts();
   const [queueMetaMap, setQueueMetaMap] = useState<QueueMetaMap>(() => loadQueueMeta());
+  const [previousSnapshot, setPreviousSnapshot] = useState<QueueHandoffSnapshot | null>(() => loadQueueHandoffSnapshot());
   const [queueView, setQueueView] = useState<QueueView>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [operatorName, setOperatorName] = useState(loadOperatorName);
@@ -99,6 +113,10 @@ export function QueueFirstInboxPage({
   const queuePrioritySummary = useMemo(() => summarizeQueueByPriority(queueItems), [queueItems]);
   const queueOwnerSummary = useMemo(() => summarizeQueueByOwner(queueItems), [queueItems]);
   const queueHandoffSnapshot = useMemo(() => buildQueueHandoffSnapshot(queueItems), [queueItems]);
+  const queueHandoffDelta = useMemo(
+    () => buildQueueHandoffDelta(queueHandoffSnapshot, previousSnapshot),
+    [queueHandoffSnapshot, previousSnapshot],
+  );
 
   const filteredItems = useMemo(() => {
     const scoped = filterQueueItems(queueItems, queueView);
@@ -149,19 +167,27 @@ export function QueueFirstInboxPage({
 
   const handleClaim = useCallback((draftId: string) => {
     updateQueueMeta(draftId, { owner: operatorName, state: 'in_progress' });
-  }, [operatorName, updateQueueMeta]);
+    void logEvent('queue_item_claimed', { draft_id: draftId, operator: operatorName });
+  }, [logEvent, operatorName, updateQueueMeta]);
 
   const handleResolve = useCallback((draftId: string) => {
     updateQueueMeta(draftId, { state: 'resolved' });
-  }, [updateQueueMeta]);
+    void logEvent('queue_item_resolved', { draft_id: draftId, operator: operatorName });
+  }, [logEvent, operatorName, updateQueueMeta]);
 
   const handleReopen = useCallback((draftId: string) => {
     updateQueueMeta(draftId, { state: 'open' });
-  }, [updateQueueMeta]);
+    void logEvent('queue_item_reopened', { draft_id: draftId, operator: operatorName });
+  }, [logEvent, operatorName, updateQueueMeta]);
 
   const handlePriorityChange = useCallback((draftId: string, priority: QueuePriority) => {
     updateQueueMeta(draftId, { priority });
-  }, [updateQueueMeta]);
+    void logEvent('queue_item_priority_changed', {
+      draft_id: draftId,
+      operator: operatorName,
+      priority,
+    });
+  }, [logEvent, operatorName, updateQueueMeta]);
 
   const currentItem = filteredItems[selectedIndex] ?? null;
 
@@ -182,10 +208,17 @@ export function QueueFirstInboxPage({
     try {
       await navigator.clipboard.writeText(payload);
       setHandoffStatus('Shift handoff snapshot copied.');
+      void logEvent('queue_handoff_snapshot_copied', {
+        operator: operatorName,
+        queue_view: queueView,
+        at_risk: queueHandoffSnapshot.summary.atRisk,
+      });
+      persistQueueHandoffSnapshot(queueHandoffSnapshot);
+      setPreviousSnapshot(queueHandoffSnapshot);
     } catch {
       setHandoffStatus('Failed to copy handoff snapshot.');
     }
-  }, [queueHandoffSnapshot]);
+  }, [logEvent, operatorName, queueHandoffSnapshot, queueView]);
 
   const handleQueueKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
@@ -207,7 +240,14 @@ export function QueueFirstInboxPage({
         break;
       case 'enter':
         event.preventDefault();
-        withCurrentItem((item) => onLoadDraft(item.draft));
+        withCurrentItem((item) => {
+          onLoadDraft(item.draft);
+          void logEvent('queue_item_opened', {
+            draft_id: item.draft.id,
+            operator: operatorName,
+            entrypoint: 'keyboard',
+          });
+        });
         break;
       case 'c':
         event.preventDefault();
@@ -236,7 +276,7 @@ export function QueueFirstInboxPage({
       default:
         break;
     }
-  }, [filteredItems.length, handleClaim, handleReopen, handleResolve, onLoadDraft, withCurrentItem]);
+  }, [filteredItems.length, handleClaim, handleReopen, handleResolve, logEvent, onLoadDraft, operatorName, withCurrentItem]);
 
   return (
     <div className="queue-inbox-page" data-testid="queue-first-inbox" onKeyDown={handleQueueKeyDown}>
@@ -292,10 +332,32 @@ export function QueueFirstInboxPage({
         <div className="queue-analytics-card">
           <h3>Shift Handoff</h3>
           <p>Generated: {formatQueueTimestamp(queueHandoffSnapshot.generatedAt)}</p>
+          <p>
+            Trend vs previous snapshot
+            {queueHandoffDelta.previousGeneratedAt
+              ? ` (${formatQueueTimestamp(queueHandoffDelta.previousGeneratedAt)})`
+              : ' (no baseline yet)'}
+          </p>
+          <div className="queue-priority-grid queue-trend-grid">
+            <span>Open: <strong>{formatSignedDelta(queueHandoffDelta.summaryDelta.open)}</strong></span>
+            <span>In Progress: <strong>{formatSignedDelta(queueHandoffDelta.summaryDelta.inProgress)}</strong></span>
+            <span>At Risk: <strong>{formatSignedDelta(queueHandoffDelta.summaryDelta.atRisk)}</strong></span>
+            <span>Unassigned: <strong>{formatSignedDelta(queueHandoffDelta.summaryDelta.unassigned)}</strong></span>
+          </div>
           <Button size="small" variant="secondary" onClick={handleCopyHandoffSnapshot}>
             Copy Handoff Snapshot
           </Button>
           {handoffStatus && <p className="queue-handoff-status">{handoffStatus}</p>}
+          {queueHandoffDelta.ownerDelta.length > 0 && (
+            <ul>
+              {queueHandoffDelta.ownerDelta.map((entry) => (
+                <li key={entry.owner}>
+                  {entry.owner}: workload {formatSignedDelta(entry.workloadDelta)}
+                  {entry.atRiskDelta !== 0 ? ` · at-risk ${formatSignedDelta(entry.atRiskDelta)}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
           {queueHandoffSnapshot.topAtRisk.length > 0 && (
             <ul>
               {queueHandoffSnapshot.topAtRisk.slice(0, 3).map((riskItem) => (
@@ -314,7 +376,10 @@ export function QueueFirstInboxPage({
             key={view.id}
             variant={queueView === view.id ? 'primary' : 'ghost'}
             size="small"
-            onClick={() => setQueueView(view.id)}
+            onClick={() => {
+              setQueueView(view.id);
+              void logEvent('queue_view_changed', { queue_view: view.id, operator: operatorName });
+            }}
           >
             {view.label}
           </Button>
@@ -375,7 +440,18 @@ export function QueueFirstInboxPage({
                 </div>
 
                 <div className="queue-item-actions">
-                  <Button size="small" variant="secondary" onClick={() => onLoadDraft(item.draft)}>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    onClick={() => {
+                      onLoadDraft(item.draft);
+                      void logEvent('queue_item_opened', {
+                        draft_id: item.draft.id,
+                        operator: operatorName,
+                        entrypoint: 'button',
+                      });
+                    }}
+                  >
                     Open Draft
                   </Button>
                   {item.meta.owner === 'unassigned' && item.meta.state !== 'resolved' && (

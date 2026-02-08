@@ -79,6 +79,10 @@
   color: var(--color-text-secondary, #a6adbb);
 }
 
+.queue-trend-grid strong {
+  font-variant-numeric: tabular-nums;
+}
+
 .queue-handoff-status {
   margin-top: 8px;
   color: var(--color-text-secondary, #a6adbb);

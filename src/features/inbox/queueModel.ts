@@ -56,7 +56,24 @@ export interface QueueHandoffSnapshot {
   }>;
 }
 
+export interface QueueHandoffDelta {
+  previousGeneratedAt: string | null;
+  summaryDelta: {
+    open: number;
+    inProgress: number;
+    resolved: number;
+    atRisk: number;
+    unassigned: number;
+  };
+  ownerDelta: Array<{
+    owner: string;
+    workloadDelta: number;
+    atRiskDelta: number;
+  }>;
+}
+
 const QUEUE_META_STORAGE_KEY = 'assistsupport.queue.meta.v1';
+const QUEUE_HANDOFF_SNAPSHOT_STORAGE_KEY = 'assistsupport.queue.handoff.latest.v1';
 
 const PRIORITY_RANK: Record<QueuePriority, number> = {
   urgent: 4,
@@ -301,4 +318,116 @@ export function formatQueueTimestamp(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function calculateOpen(summary: QueueSummary): number {
+  return Math.max(summary.total - summary.resolved, 0);
+}
+
+function parseHandoffSnapshot(raw: string | null): QueueHandoffSnapshot | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as QueueHandoffSnapshot;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    if (!parsed.generatedAt || !parsed.summary || !parsed.prioritySummary || !Array.isArray(parsed.ownerWorkload)) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function loadQueueHandoffSnapshot(
+  storage: Pick<Storage, 'getItem'> | null = typeof window !== 'undefined' ? window.localStorage : null,
+): QueueHandoffSnapshot | null {
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    return parseHandoffSnapshot(storage.getItem(QUEUE_HANDOFF_SNAPSHOT_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function persistQueueHandoffSnapshot(
+  snapshot: QueueHandoffSnapshot,
+  storage: Pick<Storage, 'setItem'> | null = typeof window !== 'undefined' ? window.localStorage : null,
+): void {
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(QUEUE_HANDOFF_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore storage failures so handoff workflows remain usable.
+  }
+}
+
+export function buildQueueHandoffDelta(
+  current: QueueHandoffSnapshot,
+  previous: QueueHandoffSnapshot | null,
+): QueueHandoffDelta {
+  if (!previous) {
+    return {
+      previousGeneratedAt: null,
+      summaryDelta: {
+        open: 0,
+        inProgress: 0,
+        resolved: 0,
+        atRisk: 0,
+        unassigned: 0,
+      },
+      ownerDelta: [],
+    };
+  }
+
+  const previousOwners = new Map(previous.ownerWorkload.map((owner) => [owner.owner, owner]));
+  const currentOwners = new Map(current.ownerWorkload.map((owner) => [owner.owner, owner]));
+  const ownerKeys = new Set([...previousOwners.keys(), ...currentOwners.keys()]);
+
+  const ownerDelta = Array.from(ownerKeys)
+    .map((owner) => {
+      const previousOwner = previousOwners.get(owner);
+      const currentOwner = currentOwners.get(owner);
+      const previousWorkload = (previousOwner?.openCount ?? 0) + (previousOwner?.inProgressCount ?? 0);
+      const currentWorkload = (currentOwner?.openCount ?? 0) + (currentOwner?.inProgressCount ?? 0);
+      return {
+        owner,
+        workloadDelta: currentWorkload - previousWorkload,
+        atRiskDelta: (currentOwner?.atRiskCount ?? 0) - (previousOwner?.atRiskCount ?? 0),
+      };
+    })
+    .filter((entry) => entry.workloadDelta !== 0 || entry.atRiskDelta !== 0)
+    .sort((a, b) => {
+      const aWeight = Math.abs(a.atRiskDelta) * 10 + Math.abs(a.workloadDelta);
+      const bWeight = Math.abs(b.atRiskDelta) * 10 + Math.abs(b.workloadDelta);
+      if (bWeight !== aWeight) {
+        return bWeight - aWeight;
+      }
+      return a.owner.localeCompare(b.owner);
+    })
+    .slice(0, 5);
+
+  return {
+    previousGeneratedAt: previous.generatedAt,
+    summaryDelta: {
+      open: calculateOpen(current.summary) - calculateOpen(previous.summary),
+      inProgress: current.summary.inProgress - previous.summary.inProgress,
+      resolved: current.summary.resolved - previous.summary.resolved,
+      atRisk: current.summary.atRisk - previous.summary.atRisk,
+      unassigned: current.summary.unassigned - previous.summary.unassigned,
+    },
+    ownerDelta,
+  };
 }

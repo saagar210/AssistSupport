@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceQueueContext } from './WorkspaceQueueContext';
 
@@ -35,13 +35,23 @@ vi.mock('../../hooks/useDrafts', () => ({
   }),
 }));
 
+vi.mock('../../hooks/useAnalytics', () => ({
+  useAnalytics: () => ({
+    logEvent: vi.fn(),
+  }),
+}));
+
 describe('WorkspaceQueueContext', () => {
   it('renders live queue metrics and at-risk tickets', () => {
-    render(<WorkspaceQueueContext />);
+    const onNavigateToQueue = vi.fn();
+    render(<WorkspaceQueueContext onNavigateToQueue={onNavigateToQueue} />);
 
     expect(screen.getByText(/Live queue context/i)).toBeInTheDocument();
     expect(screen.getByText(/Open Queue/i)).toBeInTheDocument();
     expect(screen.getByText(/At Risk/i)).toBeInTheDocument();
     expect(screen.getByText(/INC-9001/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Open At-Risk Queue/i }));
+    expect(onNavigateToQueue).toHaveBeenCalledWith('at_risk');
   });
 });
