@@ -90,7 +90,7 @@ Sprint target: Week 3.
 | Dependencies | Phase 2 exit; producer manifest stable for at least one sprint. |
 | Entry Criteria | Both repos aligned on producer manifest schema and policy fields. |
 | Exit Criteria | Repin workflow can be completed with one standard PR template and no ad hoc coordination steps; manifest hash enforcement remains green for two consecutive baseline validations. |
-| Deliverables | Cross-repo validation design, release handoff template (`/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_RELEASE_HANDOFF_TEMPLATE.md`), expected evidence manifest for every baseline update, and hash-enforced producer-manifest parity checks. |
+| Deliverables | Cross-repo validation design, release handoff template (`/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_RELEASE_HANDOFF_TEMPLATE.md`), expected evidence manifest for every baseline update, handoff payload validation check (`pnpm run check:memorykernel-handoff`), and hash-enforced producer-manifest parity checks. |
 | Verification Commands | AssistSupport CI with governance gate; MemoryKernel parity/alignment scripts; one full dry-run of repin handoff from producer release tag to consumer merge. |
 
 Sprint target: Week 4.
@@ -115,6 +115,7 @@ Sprint target: Week 5+ (planning gate only in this playbook).
 - Consumer pin: `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
 - Consumer compatibility matrix: `/Users/d/Projects/AssistSupport/docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md`
 - Consumer mirrored producer manifest: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
+- Producer handoff payload consumed for dry-runs: `/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
 - Producer canonical manifest: `contracts/integration/v1/producer-contract-manifest.json` (MemoryKernel repo)
 
 ### Standard baseline update protocol

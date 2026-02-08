@@ -83,6 +83,7 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
    ```bash
    pnpm run check:memorykernel-pin
    pnpm run check:memorykernel-governance
+   pnpm run check:memorykernel-handoff
    ```
    Optional strict mode (environments with direct producer repo access):
    ```bash
@@ -102,6 +103,12 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
    ```
 8. Rollback policy:
    - If contract gate fails on pin bump, revert pin+matrix+producer manifest mirror to last approved pair and re-run tests.
+
+### MemoryKernel Phase 3 dry-run command (consumer)
+Use this to validate producer handoff payload + consumer governance + contract paths together.
+```bash
+pnpm run test:memorykernel-phase3-dry-run
+```
 
 ## 3) Backup/Restore Validation
 

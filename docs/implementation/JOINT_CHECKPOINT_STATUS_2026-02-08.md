@@ -35,7 +35,7 @@ Updated: 2026-02-08
 - Error taxonomy growth risk if lead-time notice policy slips.
 
 ## Next Execution Window
-- Phase 1: Governed steady-state service.v2 operation and weekly checkpoints.
-- Phase 2: Consumer runtime hardening and diagnostics maturity.
-- Phase 3: Cross-repo automation (including manifest-hash validation gate in AssistSupport CI and release handoff template adoption).
+- Phase 1: Governed steady-state service.v2 operation (consumer closeout evidence captured).
+- Phase 2: Consumer runtime hardening and diagnostics maturity (complete).
+- Phase 3: Cross-repo automation (including manifest-hash validation gate, handoff payload validation, and consumer dry-run evidence).
 - Phase 4: service.v3 migration readiness and pre-cutover rehearsal.

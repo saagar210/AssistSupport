@@ -85,6 +85,22 @@ function main() {
         '| Phase 2: Consumer runtime hardening + observability |',
       ],
     },
+    {
+      relPath: 'docs/implementation/PHASE1_STEADY_STATE_CLOSEOUT_2026-02-08.md',
+      snippets: [
+        `- MemoryKernel release tag: \`${pin.release_tag}\``,
+        `- MemoryKernel commit SHA: \`${pin.commit_sha}\``,
+        'Phase 1 steady-state execution closeout (consumer scope): `COMPLETE`',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/PHASE3_CONSUMER_DRY_RUN_2026-02-08.md',
+      snippets: [
+        `- MemoryKernel release tag: \`${pin.release_tag}\``,
+        `- MemoryKernel commit SHA: \`${pin.commit_sha}\``,
+        'pnpm run check:memorykernel-handoff',
+      ],
+    },
   ];
 
   for (const doc of requiredDocs) {
@@ -99,6 +115,7 @@ function main() {
     '## 2.1) MemoryKernel Runtime Lifecycle',
     'pnpm run check:memorykernel-pin',
     'pnpm run check:memorykernel-governance',
+    'pnpm run check:memorykernel-handoff',
     'pnpm run test:memorykernel-contract',
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);
