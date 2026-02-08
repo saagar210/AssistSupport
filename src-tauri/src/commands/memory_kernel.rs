@@ -772,22 +772,55 @@ mod tests {
         )
     }
 
-    fn fixture_legacy_error(message: &str) -> String {
-        format!("{{\"error\":\"{}\"}}", message)
-    }
-
     fn fixture_transitional_legacy_error(code: &str, message: &str, legacy_message: &str) -> String {
         format!(
-            "{{\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
-            code, message, legacy_message
+            "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
+            INTEGRATION_PIN.expected_service_contract_version, code, message, legacy_message
         )
     }
 
     fn fixture_typed_error(code: &str, message: &str) -> String {
         format!(
-            "{{\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}}}}",
-            code, message
+            "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
+            INTEGRATION_PIN.expected_service_contract_version, code, message, message
         )
+    }
+
+    fn assert_non_2xx_envelope_policy(body: &str, expected_code: &str) {
+        let value: serde_json::Value =
+            serde_json::from_str(body).expect("error fixture should be valid JSON");
+        assert_eq!(
+            value
+                .get("service_contract_version")
+                .and_then(serde_json::Value::as_str),
+            Some(INTEGRATION_PIN.expected_service_contract_version.as_str())
+        );
+        assert!(
+            value.get("api_contract_version").is_none(),
+            "non-2xx envelope must not include api_contract_version"
+        );
+        let error = value
+            .get("error")
+            .and_then(serde_json::Value::as_object)
+            .expect("error object missing");
+        assert_eq!(
+            error.get("code").and_then(serde_json::Value::as_str),
+            Some(expected_code)
+        );
+        assert!(
+            error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .is_some(),
+            "error.message must be present"
+        );
+        assert!(
+            value
+                .get("legacy_error")
+                .and_then(serde_json::Value::as_str)
+                .is_some(),
+            "legacy_error must be present for service.v2 compatibility"
+        );
     }
 
     #[tokio::test]
@@ -960,7 +993,8 @@ mod tests {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
-        let error_body = fixture_legacy_error("validation failed");
+        let error_body = fixture_typed_error("validation_error", "validation failed");
+        assert_non_2xx_envelope_policy(&error_body, "validation_error");
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1008,6 +1042,7 @@ mod tests {
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");
+        assert_non_2xx_envelope_policy(&error_body, "validation_failed");
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1060,6 +1095,7 @@ mod tests {
         let schema_body = fixture_schema_ok();
         let error_body =
             fixture_transitional_legacy_error("validation_error", "Invalid query", "validation failed");
+        assert_non_2xx_envelope_policy(&error_body, "validation_error");
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1106,6 +1142,7 @@ mod tests {
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");
+        assert_non_2xx_envelope_policy(&error_body, "validation_failed");
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",

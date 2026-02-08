@@ -78,7 +78,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Enforce pin + compatibility matrix update
+      - name: Enforce pin/matrix/manifest sync updates
         shell: bash
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
@@ -92,10 +92,33 @@ jobs:
           fi
 
           CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")"
-          if echo "$CHANGED_FILES" | grep -Eq "^config/memorykernel-integration-pin.json$"; then
-            if ! echo "$CHANGED_FILES" | grep -Eq "^docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md$"; then
-              echo "MemoryKernel pin changed without compatibility matrix update."
-              echo "Please update docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md in the same PR."
+          PIN_FILE="config/memorykernel-integration-pin.json"
+          MATRIX_FILE="docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md"
+          MANIFEST_FILE="config/memorykernel-producer-manifest.json"
+
+          PIN_CHANGED=0
+          MATRIX_CHANGED=0
+          MANIFEST_CHANGED=0
+
+          if echo "$CHANGED_FILES" | grep -Eq "^${PIN_FILE}$"; then
+            PIN_CHANGED=1
+          fi
+          if echo "$CHANGED_FILES" | grep -Eq "^${MATRIX_FILE}$"; then
+            MATRIX_CHANGED=1
+          fi
+          if echo "$CHANGED_FILES" | grep -Eq "^${MANIFEST_FILE}$"; then
+            MANIFEST_CHANGED=1
+          fi
+
+          if [[ "$PIN_CHANGED" -eq 1 || "$MATRIX_CHANGED" -eq 1 || "$MANIFEST_CHANGED" -eq 1 ]]; then
+            if [[ "$PIN_CHANGED" -ne 1 || "$MATRIX_CHANGED" -ne 1 || "$MANIFEST_CHANGED" -ne 1 ]]; then
+              echo "MemoryKernel governance files must be updated together in the same PR:"
+              echo "- ${PIN_FILE}"
+              echo "- ${MATRIX_FILE}"
+              echo "- ${MANIFEST_FILE}"
+              echo
+              echo "Changed files were:"
+              echo "$CHANGED_FILES"
               exit 1
             fi
           fi
@@ -121,7 +144,7 @@ jobs:
       - name: Create frontend dist stub
         run: mkdir -p dist && echo '<html></html>' > dist/index.html
 
-      - name: Validate MemoryKernel pin + matrix sync
+      - name: Validate MemoryKernel pin + matrix + producer manifest sync
         run: pnpm run check:memorykernel-pin
 
       - name: Run MemoryKernel contract tests

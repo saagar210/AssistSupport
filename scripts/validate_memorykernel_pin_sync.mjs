@@ -4,6 +4,20 @@ import path from 'node:path';
 const root = process.cwd();
 const pinPath = path.join(root, 'config', 'memorykernel-integration-pin.json');
 const matrixPath = path.join(root, 'docs', 'MEMORYKERNEL_COMPATIBILITY_MATRIX.md');
+const producerManifestPath = path.join(root, 'config', 'memorykernel-producer-manifest.json');
+const EXPECTED_PRODUCER_MANIFEST_CONTRACT_VERSION = 'producer-contract-manifest.v1';
+const EXPECTED_SERVICE_V2_ERROR_CODES = [
+  'invalid_json',
+  'validation_error',
+  'context_package_not_found',
+  'write_conflict',
+  'write_failed',
+  'schema_unavailable',
+  'migration_failed',
+  'query_failed',
+  'context_lookup_failed',
+  'internal_error',
+];
 
 function fail(message) {
   console.error(`MemoryKernel pin validation failed: ${message}`);
@@ -16,9 +30,13 @@ if (!fs.existsSync(pinPath)) {
 if (!fs.existsSync(matrixPath)) {
   fail(`missing compatibility matrix at ${matrixPath}`);
 }
+if (!fs.existsSync(producerManifestPath)) {
+  fail(`missing producer manifest mirror at ${producerManifestPath}`);
+}
 
 const pin = JSON.parse(fs.readFileSync(pinPath, 'utf8'));
 const matrix = fs.readFileSync(matrixPath, 'utf8');
+const producerManifest = JSON.parse(fs.readFileSync(producerManifestPath, 'utf8'));
 
 const requiredStringFields = [
   'memorykernel_repo',
@@ -48,6 +66,84 @@ if (!/^[0-9a-f]{40}$/.test(pin.commit_sha)) {
   fail(`commit_sha must be a 40-character SHA, got ${pin.commit_sha}`);
 }
 
+if (
+  producerManifest.manifest_contract_version !== EXPECTED_PRODUCER_MANIFEST_CONTRACT_VERSION
+) {
+  fail(
+    `producer manifest contract version must be ${EXPECTED_PRODUCER_MANIFEST_CONTRACT_VERSION}, got ${producerManifest.manifest_contract_version}`
+  );
+}
+
+const producerManifestStringFields = [
+  'release_tag',
+  'commit_sha',
+  'expected_service_contract_version',
+  'expected_api_contract_version',
+  'integration_baseline',
+];
+
+for (const field of producerManifestStringFields) {
+  if (
+    typeof producerManifest[field] !== 'string' ||
+    producerManifest[field].trim() === ''
+  ) {
+    fail(`producer manifest field ${field} must be a non-empty string`);
+  }
+}
+
+if (!Array.isArray(producerManifest.error_code_enum) || producerManifest.error_code_enum.length === 0) {
+  fail('producer manifest field error_code_enum must be a non-empty array');
+}
+
+const producerErrorCodes = producerManifest.error_code_enum;
+if (producerErrorCodes.some((code) => typeof code !== 'string' || code.trim() === '')) {
+  fail('producer manifest error_code_enum entries must be non-empty strings');
+}
+
+if (new Set(producerErrorCodes).size !== producerErrorCodes.length) {
+  fail('producer manifest error_code_enum contains duplicate values');
+}
+
+const expectedErrorCodeSet = new Set(EXPECTED_SERVICE_V2_ERROR_CODES);
+const producerErrorCodeSet = new Set(producerErrorCodes);
+const missingExpectedCodes = EXPECTED_SERVICE_V2_ERROR_CODES.filter(
+  (code) => !producerErrorCodeSet.has(code)
+);
+const unexpectedCodes = producerErrorCodes.filter((code) => !expectedErrorCodeSet.has(code));
+
+if (missingExpectedCodes.length > 0 || unexpectedCodes.length > 0) {
+  fail(
+    `producer manifest error_code_enum mismatch; missing=[${missingExpectedCodes.join(
+      ','
+    )}] unexpected=[${unexpectedCodes.join(',')}]`
+  );
+}
+
+if (producerManifest.release_tag !== pin.release_tag) {
+  fail('producer manifest release_tag does not match pin release_tag');
+}
+if (producerManifest.commit_sha !== pin.commit_sha) {
+  fail('producer manifest commit_sha does not match pin commit_sha');
+}
+if (
+  producerManifest.expected_service_contract_version !==
+  pin.expected_service_contract_version
+) {
+  fail(
+    'producer manifest expected_service_contract_version does not match pin expected_service_contract_version'
+  );
+}
+if (
+  producerManifest.expected_api_contract_version !== pin.expected_api_contract_version
+) {
+  fail(
+    'producer manifest expected_api_contract_version does not match pin expected_api_contract_version'
+  );
+}
+if (producerManifest.integration_baseline !== pin.expected_integration_baseline) {
+  fail('producer manifest integration_baseline does not match pin expected_integration_baseline');
+}
+
 const expectedBaselineTagLine = `- MemoryKernel release tag: \`${pin.release_tag}\``;
 const expectedBaselineShaLine = `- MemoryKernel commit SHA: \`${pin.commit_sha}\``;
 if (!matrix.includes(expectedBaselineTagLine)) {
@@ -74,4 +170,4 @@ if (!matrix.includes(pin.expected_integration_baseline)) {
   fail('compatibility matrix does not mention expected integration baseline from pin');
 }
 
-console.log('MemoryKernel pin + compatibility matrix validation passed.');
+console.log('MemoryKernel pin + compatibility matrix + producer manifest validation passed.');

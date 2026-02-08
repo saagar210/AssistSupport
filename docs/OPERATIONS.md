@@ -78,24 +78,25 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
 ### MemoryKernel pin upgrade runbook
 1. Update `config/memorykernel-integration-pin.json` to the new approved tag and commit SHA.
 2. Update `docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md` with the same tag/SHA pair in baseline and approved row.
-3. Run pin synchronization check:
+3. Mirror producer manifest into `config/memorykernel-producer-manifest.json`.
+4. Run governance synchronization check:
    ```bash
    pnpm run check:memorykernel-pin
    ```
-4. Run MemoryKernel contract suite:
+5. Run MemoryKernel contract suite:
    ```bash
    pnpm run test:memorykernel-contract
    ```
-5. Confirm generated evidence artifact exists locally:
+6. Confirm generated evidence artifact exists locally:
    - `artifacts/memorykernel-contract-evidence.json`
-6. Run full CI parity suite before push:
+7. Run full CI parity suite before push:
    ```bash
    pnpm run typecheck
    pnpm run test
    pnpm run test:ci
    ```
-7. Rollback policy:
-   - If contract gate fails on pin bump, revert pin+matrix to last approved pair and re-run tests.
+8. Rollback policy:
+   - If contract gate fails on pin bump, revert pin+matrix+producer manifest mirror to last approved pair and re-run tests.
 
 ## 3) Backup/Restore Validation
 

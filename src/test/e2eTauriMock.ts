@@ -142,8 +142,8 @@ export function setupE2eTauriMock(): void {
         case 'get_memory_kernel_integration_pin':
           return {
             memorykernel_repo: 'https://github.com/saagar210/MemoryKernel',
-            release_tag: 'v0.3.0',
-            commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
+            release_tag: 'v0.3.1',
+            commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
             expected_service_contract_version: 'service.v2',
             expected_api_contract_version: 'api.v1',
             expected_integration_baseline: 'integration/v1',
@@ -163,8 +163,8 @@ export function setupE2eTauriMock(): void {
             expected_service_contract_version: 'service.v2',
             expected_api_contract_version: 'api.v1',
             integration_baseline: 'integration/v1',
-            release_tag: 'v0.3.0',
-            commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
+            release_tag: 'v0.3.1',
+            commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
           };
         case 'memory_kernel_query_ask':
           return {
@@ -187,8 +187,8 @@ export function setupE2eTauriMock(): void {
               expected_service_contract_version: 'service.v2',
               expected_api_contract_version: 'api.v1',
               integration_baseline: 'integration/v1',
-              release_tag: 'v0.3.0',
-              commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
+              release_tag: 'v0.3.1',
+              commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
             },
           };
         case 'check_db_integrity':
