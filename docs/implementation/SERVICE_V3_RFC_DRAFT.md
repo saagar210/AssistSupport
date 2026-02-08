@@ -154,5 +154,6 @@ cargo test --workspace --all-targets --all-features
 ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline
 ```
 
-## Open decisions
-1. Confirm overlap rehearsal duration remains 14 calendar days (1 sprint).
+## Resolved planning decisions
+1. Overlap rehearsal duration is locked to 14 calendar days (1 sprint).
+2. Consumer manifest-hash validation is active for local mirror integrity and can run authenticated remote validation when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.

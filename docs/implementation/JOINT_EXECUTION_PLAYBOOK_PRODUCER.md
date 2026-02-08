@@ -23,7 +23,7 @@
 
 ### Confirmed joint decisions (AssistSupport + MemoryKernel)
 - `error_code_enum` validation mode: set equality (order-independent).
-- Producer-manifest hash validation in consumer CI: not required for Checkpoint A/B; now active post-checkpoint as part of early Phase 3 hardening.
+- Producer-manifest hash validation in consumer CI: local hash integrity is mandatory; authenticated remote validation runs when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 - Consumer governance rule: pin + matrix + manifest updates must be atomic in one PR.
 
 ### Checkpoint status (as of 2026-02-08)
@@ -289,7 +289,7 @@ Consumer impact:
   - fail on mismatch for tag/sha/service/api/integration baseline.
   - enforce `error_code_enum` set equality (order-independent).
   - enforce atomic pin+matrix+manifest updates in one PR.
-  - producer-manifest hash validation is now active in consumer CI (remote fetch from pinned release tag).
+  - producer-manifest hash validation is now active in consumer CI via pinned local mirror hash; optional authenticated remote verification uses pinned commit SHA.
 
 ## 8) Copy/Paste Prompt for AssistSupport Codex
 
@@ -319,24 +319,21 @@ What MemoryKernel already implemented:
 - CI/release/compliance wiring for manifest validation.
 
 Exact asks for AssistSupport (next execution block):
-1) Mirror producer manifest to:
-   - config/memorykernel-producer-manifest.json
-2) Add/confirm CI checks for:
-   - pin <-> matrix sync
-   - pin <-> mirrored manifest sync
-   - service/api/integration baseline equality
-   - error_code_enum consistency check
-3) Keep deterministic fallback + optional/non-blocking enrichment unchanged.
+1) Execute service.v3 consumer rehearsal branch using:
+   - /Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md
+   - /Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_REHEARSAL_EXECUTION_TRACKER.md
+2) Keep deterministic fallback + optional/non-blocking enrichment unchanged.
+3) Keep manifest hash governance active and report any token-gated remote validation behavior.
 
 Proposed joint timeline/checkpoints:
 - Checkpoint A (complete): manifest mirrored + CI checks implemented
 - Checkpoint B (complete): full consumer suite green with manifest governance
-- Checkpoint C (next): joint sign-off for steady-state service.v2 execution window (2 weeks)
-- Checkpoint D (next): start service.v3 RFC review (no runtime changes yet)
+- Checkpoint C (complete): joint sign-off for steady-state service.v2 execution window (2 weeks)
+- Checkpoint D (active): service.v3 RFC and rehearsal planning (no runtime changes yet)
 
 Please return:
 1) files changed
 2) exact command outputs
 3) blockers/risks
-4) readiness verdict for Checkpoint A and B
+4) readiness verdict for service.v3 rehearsal entry
 ```
