@@ -11,28 +11,23 @@ Scope: Bilateral runtime-cutover closure alignment after service.v3 promotion.
 ## Bilateral Decision Status
 1. Rehearsal continuation: **GO**
 2. Runtime cutover execution: **GO**
+3. Week-1 stabilization checkpoint: **GO**
 
 ## Bilateral Evidence Links
 1. Consumer runtime decision record:
    - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
 2. Producer runtime decision record:
    - `/Users/d/Projects/MemoryKernel/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_PRODUCER_2026-02-08.md`
-3. Consumer checkpoint status:
-   - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md`
-4. Producer checkpoint status:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
+3. Consumer stabilization closeout:
+   - `/Users/d/Projects/AssistSupport/docs/implementation/STABILIZATION_WEEK1_CLOSEOUT_2026-02-08.md`
+4. Producer stabilization closeout:
+   - `/Users/d/Projects/MemoryKernel/docs/implementation/STABILIZATION_WEEK1_CLOSEOUT_PRODUCER_2026-02-08.md`
 
-## Risk/Blocker Resolution (Closed)
-The previously open runtime blockers are now closed:
-1. Immutable runtime target publication: **Closed** (`v0.4.0`, `7e4806a...`).
-2. Bilateral runtime GO/NO-GO record completion: **Closed** (both repos updated).
-3. Runtime-target evidence bundle capture: **Closed** (producer handoff + consumer repin/governance evidence).
-4. Bilateral rollback execution evidence: **Closed** (see rollback refresh docs).
+## Blocker Closure
+All previously open runtime blockers are closed in repository evidence.
 
-## Phase Closure Recommendation
-- Phase 7 (cutover-decision checkpoint): **CLOSED**
-- Phase 8 (runtime cutover execution): **CLOSED / COMPLETE**
-- Phase 9 (post-cutover stabilization window): **ACTIVE**
-
-## Next Control Point
-Operate under the post-cutover stabilization window with strict fallback safety and rollback readiness checks before any service.v4 planning begins.
+## Phase Closure
+- Phase 7 (cutover decision): **CLOSED**
+- Phase 8 (runtime cutover): **CLOSED / COMPLETE**
+- Phase 9 (stabilization): **CLOSED / COMPLETE**
+- Phase 10 (program delivery closeout): **CLOSED / COMPLETE**

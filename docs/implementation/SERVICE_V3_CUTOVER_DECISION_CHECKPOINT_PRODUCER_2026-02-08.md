@@ -17,24 +17,10 @@ Scope: Archived decision checkpoint for Phase 7 -> Phase 8 transition.
 - Rehearsal posture: **GO**
 - Runtime cutover decision: **GO**
 
-## Required Evidence (Captured)
-1. Producer handoff payload for stable runtime baseline:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
-2. Producer manifest alignment evidence:
-   - `/Users/d/Projects/MemoryKernel/contracts/integration/v1/producer-contract-manifest.json`
-3. Consumer repin/governance evidence:
-   - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md`
-4. Bilateral runtime decision records:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_PRODUCER_2026-02-08.md`
-   - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
-5. Rollback readiness evidence:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_ROLLBACK_READINESS_REFRESH_2026-02-08.md`
-   - `/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md`
-
 ## Checkpoint Closure State
 - Phase 7 decision checkpoint: `CLOSED`
 - Phase 8 runtime cutover: `COMPLETE`
 - Runtime posture: `GO`
 
 ## Next Phase Control
-Proceed under Phase 9 stabilization controls; runtime contract is fixed at `service.v3` unless a new bilateral governance cycle is opened.
+This checkpoint is closed and superseded by stabilization + program closeout artifacts.

@@ -24,27 +24,14 @@ Producer-side mirror of the bilateral Phase 8 runtime cutover decision.
 - AssistSupport rollback owner role: AssistSupport Runtime Integrations Owner
 - Joint decision log owner role: Integration Program Owner
 
-## Decision Inputs
-- Producer checkpoint packet:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
-- Consumer checkpoint packet:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_2026-02-08.md`
-- Consumer decision record:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
-- Producer addendum:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
-
 ## Runtime Cutover Completion Evidence
 1. Immutable producer runtime baseline published (`v0.4.0`).
 2. Consumer repin and governance bundle aligned to the same baseline.
 3. Producer and consumer verification suites are green at cutover close.
 4. Rollback readiness evidence refreshed against the new runtime baseline.
 
-## Residual Risks (Non-blocking)
-1. Standard post-cutover regression risk mitigated by deterministic fallback and rollback readiness.
-2. Future additive error-code changes still require lead-time policy and manifest updates.
-
-## Phase Status Mapping
+## Program State
 - Phase 7: **Closed**
 - Phase 8: **Complete**
-- Phase 9: **Active (stabilization window)**
+- Phase 9 stabilization window: **Complete**
+- Phase 10 program delivery closeout: **Complete**
