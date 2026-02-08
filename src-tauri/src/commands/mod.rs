@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod chat;
 pub mod collections;
 pub mod documents;

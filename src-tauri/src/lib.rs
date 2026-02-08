@@ -1,3 +1,4 @@
+mod audit;
 mod chunker;
 mod commands;
 mod db;
@@ -13,7 +14,6 @@ pub mod utils;
 mod vector_store;
 
 use state::AppState;
-use std::sync::Mutex;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,12 +29,10 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
 
-            let conn = db::initialize(&app_data_dir)
-                .expect("Failed to initialize database");
+            let db_pool = db::create_pool(&app_data_dir)
+                .expect("Failed to create database pool");
 
-            app.manage(AppState {
-                db: Mutex::new(conn),
-            });
+            app.manage(AppState { db_pool });
 
             Ok(())
         })
@@ -82,6 +80,9 @@ pub fn run() {
             // Graph commands
             commands::graph::build_graph,
             commands::graph::get_graph,
+            // Audit commands
+            commands::audit::get_audit_log,
+            commands::audit::export_audit_log,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running VaultMind");

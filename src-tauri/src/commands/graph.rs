@@ -1,15 +1,9 @@
 use tauri::State;
 
+use crate::audit::{self, AuditAction};
 use crate::error::AppError;
 use crate::graph::{self, GraphData};
-use crate::state::AppState;
-
-/// Helper to lock the DB mutex.
-fn lock_db<'a>(
-    state: &'a State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    crate::state::lock_db(state.inner())
-}
+use crate::state::{get_conn, AppState};
 
 /// Build knowledge graph edges for a collection using the similarity_threshold from settings.
 #[tauri::command]
@@ -17,9 +11,9 @@ pub fn build_graph(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> Result<(), AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let threshold: String = db
+    let threshold: String = conn
         .query_row(
             "SELECT value FROM settings WHERE key = 'similarity_threshold'",
             [],
@@ -29,7 +23,16 @@ pub fn build_graph(
 
     let threshold_val: f64 = threshold.parse().unwrap_or(0.75);
 
-    graph::build_graph_edges(&db, &collection_id, threshold_val)?;
+    graph::build_graph_edges(&conn, &collection_id, threshold_val)?;
+
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::GraphBuild,
+        Some("collection"),
+        Some(&collection_id),
+        &serde_json::json!({}),
+    );
+
     Ok(())
 }
 
@@ -39,6 +42,6 @@ pub fn get_graph(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> Result<GraphData, AppError> {
-    let db = lock_db(&state)?;
-    graph::get_graph_data(&db, &collection_id)
+    let conn = get_conn(state.inner())?;
+    graph::get_graph_data(&conn, &collection_id)
 }

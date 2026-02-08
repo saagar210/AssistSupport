@@ -3,22 +3,22 @@ use tauri::State;
 use crate::error::AppError;
 use crate::models::OllamaModel;
 use crate::ollama;
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 
 #[tauri::command]
 pub async fn check_ollama_connection(
     state: State<'_, AppState>,
 ) -> Result<(bool, String), AppError> {
     let (host, port) = {
-        let db = crate::state::lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
 
-        let host: String = db.query_row(
+        let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",
             [],
             |row| row.get(0),
         )?;
 
-        let port: String = db.query_row(
+        let port: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_port'",
             [],
             |row| row.get(0),
@@ -35,15 +35,15 @@ pub async fn list_ollama_models(
     state: State<'_, AppState>,
 ) -> Result<Vec<OllamaModel>, AppError> {
     let (host, port) = {
-        let db = crate::state::lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
 
-        let host: String = db.query_row(
+        let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",
             [],
             |row| row.get(0),
         )?;
 
-        let port: String = db.query_row(
+        let port: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_port'",
             [],
             |row| row.get(0),

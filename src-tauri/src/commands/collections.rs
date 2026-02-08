@@ -1,8 +1,9 @@
 use tauri::State;
 
+use crate::audit::{self, AuditAction};
 use crate::error::AppError;
 use crate::models::Collection;
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 
 #[tauri::command]
 pub fn create_collection(
@@ -18,12 +19,20 @@ pub fn create_collection(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    db.execute(
+    conn.execute(
         "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, name, description, now, now],
     )?;
+
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::CollectionCreate,
+        Some("collection"),
+        Some(&id),
+        &serde_json::json!({"name": name}),
+    );
 
     Ok(Collection {
         id,
@@ -36,9 +45,9 @@ pub fn create_collection(
 
 #[tauri::command]
 pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, AppError> {
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC",
     )?;
 
@@ -59,9 +68,9 @@ pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, A
 
 #[tauri::command]
 pub fn get_collection(state: State<'_, AppState>, id: String) -> Result<Collection, AppError> {
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let collection = db.query_row(
+    let collection = conn.query_row(
         "SELECT id, name, description, created_at, updated_at FROM collections WHERE id = ?1",
         rusqlite::params![id],
         |row| {
@@ -95,9 +104,9 @@ pub fn update_collection(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let rows_updated = db.execute(
+    let rows_updated = conn.execute(
         "UPDATE collections SET name = ?1, description = ?2, updated_at = ?3 WHERE id = ?4",
         rusqlite::params![name, description, now, id],
     )?;
@@ -105,6 +114,14 @@ pub fn update_collection(
     if rows_updated == 0 {
         return Err(AppError::NotFound(format!("Collection '{}' not found", id)));
     }
+
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::CollectionUpdate,
+        Some("collection"),
+        Some(&id),
+        &serde_json::json!({"name": name}),
+    );
 
     Ok(Collection {
         id,
@@ -117,10 +134,10 @@ pub fn update_collection(
 
 #[tauri::command]
 pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
     // Check if this is the "General" collection
-    let name: String = db.query_row(
+    let name: String = conn.query_row(
         "SELECT name FROM collections WHERE id = ?1",
         rusqlite::params![id],
         |row| row.get(0),
@@ -133,7 +150,15 @@ pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), A
         return Err(AppError::Validation("Cannot delete the default 'General' collection".into()));
     }
 
-    db.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![id])?;
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::CollectionDelete,
+        Some("collection"),
+        Some(&id),
+        &serde_json::json!({"name": name}),
+    );
+
+    conn.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![id])?;
 
     Ok(())
 }
@@ -145,7 +170,16 @@ mod tests {
 
     fn setup_db() -> rusqlite::Connection {
         let dir = tempfile::tempdir().unwrap();
-        db::initialize(dir.path()).unwrap()
+        let pool = db::create_pool(dir.path()).unwrap();
+        let conn = pool.get().unwrap();
+        std::mem::forget(dir);
+        // Return a new connection from the same DB file
+        // For unit tests we just need a Connection, not pool
+        let path = conn.path().unwrap().to_owned();
+        drop(conn);
+        let c = rusqlite::Connection::open(path).unwrap();
+        db::configure_connection(&c).unwrap();
+        c
     }
 
     fn create_collection_direct(conn: &rusqlite::Connection, name: &str, desc: &str) -> Collection {

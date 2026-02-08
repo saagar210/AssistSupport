@@ -1,18 +1,57 @@
 use std::path::Path;
+use std::time::Duration;
 
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
 
 use crate::error::AppError;
 
-pub fn initialize(app_data_dir: &Path) -> Result<Connection, AppError> {
+/// Configure a SQLite connection with required PRAGMAs.
+/// Called for every connection checked out of the pool.
+pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+    Ok(())
+}
+
+/// Create and return an r2d2 connection pool for the SQLite database.
+pub fn create_pool(app_data_dir: &Path) -> Result<Pool<SqliteConnectionManager>, AppError> {
     std::fs::create_dir_all(app_data_dir)?;
 
     let db_path = app_data_dir.join("vaultmind.db");
-    let conn = Connection::open(db_path)?;
+    let manager = SqliteConnectionManager::file(db_path);
 
-    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    let pool = Pool::builder()
+        .max_size(8)
+        .min_idle(Some(2))
+        .connection_timeout(Duration::from_secs(5))
+        .connection_customizer(Box::new(ConnectionCustomizer))
+        .build(manager)
+        .map_err(|e| AppError::LockFailed(format!("Failed to create connection pool: {}", e)))?;
 
+    // Initialize schema using first connection
+    let conn = pool.get().map_err(|e| {
+        AppError::LockFailed(format!("Failed to get initial connection: {}", e))
+    })?;
+    initialize_schema(&conn)?;
+
+    Ok(pool)
+}
+
+/// r2d2 connection customizer that applies PRAGMAs on each new connection.
+#[derive(Debug)]
+struct ConnectionCustomizer;
+
+impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for ConnectionCustomizer {
+    fn on_acquire(&self, conn: &mut Connection) -> Result<(), rusqlite::Error> {
+        configure_connection(conn)
+    }
+}
+
+/// Initialize the database schema and seed data.
+fn initialize_schema(conn: &Connection) -> Result<(), AppError> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS collections (
@@ -148,9 +187,9 @@ pub fn initialize(app_data_dir: &Path) -> Result<Connection, AppError> {
     )?;
 
     // Run pending migrations
-    crate::migrations::run_pending(&conn)?;
+    crate::migrations::run_pending(conn)?;
 
-    Ok(conn)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -167,14 +206,15 @@ mod tests {
     #[test]
     fn test_initialize_creates_db_file() {
         let (_dir, path) = temp_db_dir();
-        let _conn = initialize(&path).unwrap();
+        let _pool = create_pool(&path).unwrap();
         assert!(path.join("vaultmind.db").exists());
     }
 
     #[test]
     fn test_initialize_creates_all_tables() {
         let (_dir, path) = temp_db_dir();
-        let conn = initialize(&path).unwrap();
+        let pool = create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
 
         let expected_tables = vec![
             "collections",
@@ -215,7 +255,8 @@ mod tests {
     #[test]
     fn test_general_collection_seeded() {
         let (_dir, path) = temp_db_dir();
-        let conn = initialize(&path).unwrap();
+        let pool = create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
 
         let name: String = conn
             .query_row(
@@ -230,7 +271,8 @@ mod tests {
     #[test]
     fn test_default_settings_seeded() {
         let (_dir, path) = temp_db_dir();
-        let conn = initialize(&path).unwrap();
+        let pool = create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
 
         let expected_settings = vec![
             ("ollama_host", "localhost"),
@@ -262,8 +304,9 @@ mod tests {
     #[test]
     fn test_initialize_idempotent() {
         let (_dir, path) = temp_db_dir();
-        let _conn1 = initialize(&path).unwrap();
-        let conn2 = initialize(&path).unwrap();
+        let _pool1 = create_pool(&path).unwrap();
+        let pool2 = create_pool(&path).unwrap();
+        let conn2 = pool2.get().unwrap();
 
         // Should still have exactly one General collection
         let count: i64 = conn2
@@ -274,5 +317,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_pool_returns_connections() {
+        let (_dir, path) = temp_db_dir();
+        let pool = create_pool(&path).unwrap();
+
+        // Should be able to get multiple connections
+        let _conn1 = pool.get().unwrap();
+        let _conn2 = pool.get().unwrap();
+        let _conn3 = pool.get().unwrap();
+    }
+
+    #[test]
+    fn test_connection_has_wal_mode() {
+        let (_dir, path) = temp_db_dir();
+        let pool = create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
+
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal_mode, "wal");
+    }
+
+    #[test]
+    fn test_connection_has_foreign_keys() {
+        let (_dir, path) = temp_db_dir();
+        let pool = create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
+
+        let fk: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk, 1);
     }
 }

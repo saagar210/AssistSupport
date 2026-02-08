@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use tauri::State;
 
 use crate::error::AppError;
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, AppError> {
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare("SELECT key, value FROM settings")?;
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
 
     let settings = stmt
         .query_map([], |row| {
@@ -26,12 +26,20 @@ pub fn update_setting(
     key: String,
     value: String,
 ) -> Result<(), AppError> {
-    let db = crate::state::lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    db.execute(
+    conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![key, value],
+        rusqlite::params![&key, &value],
     )?;
+
+    let _ = crate::audit::log_audit(
+        &conn,
+        crate::audit::AuditAction::SettingUpdate,
+        Some("setting"),
+        Some(&key),
+        &serde_json::json!({"key": key, "value": value}),
+    );
 
     Ok(())
 }
@@ -44,7 +52,14 @@ mod tests {
 
     fn setup_db() -> rusqlite::Connection {
         let dir = tempfile::tempdir().unwrap();
-        db::initialize(dir.path()).unwrap()
+        let pool = db::create_pool(dir.path()).unwrap();
+        let conn = pool.get().unwrap();
+        std::mem::forget(dir);
+        let path = conn.path().unwrap().to_owned();
+        drop(conn);
+        let c = rusqlite::Connection::open(path).unwrap();
+        db::configure_connection(&c).unwrap();
+        c
     }
 
     fn get_all_settings(conn: &rusqlite::Connection) -> HashMap<String, String> {

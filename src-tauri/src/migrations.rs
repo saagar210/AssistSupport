@@ -4,7 +4,7 @@ use crate::error::AppError;
 
 /// Current schema version. Increment this when adding new migrations.
 #[cfg(test)]
-const CURRENT_VERSION: i64 = 1;
+const CURRENT_VERSION: i64 = 2;
 
 /// Run all pending migrations. Called after initial schema creation.
 pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
@@ -12,6 +12,9 @@ pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
 
     if version < 1 {
         migrate_v1(conn)?;
+    }
+    if version < 2 {
+        migrate_v2(conn)?;
     }
 
     Ok(())
@@ -78,6 +81,33 @@ fn migrate_v1(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Migration v2: Add audit_log table for SOC 2 / GDPR compliance.
+fn migrate_v2(conn: &Connection) -> Result<(), AppError> {
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS audit_log (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            action TEXT NOT NULL,
+            entity_type TEXT,
+            entity_id TEXT,
+            details TEXT DEFAULT '{}',
+            ip_address TEXT,
+            user_agent TEXT DEFAULT 'desktop'
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);",
+    )?;
+
+    set_schema_version(&tx, 2)?;
+    tx.commit()?;
+
+    tracing::info!("Migration v2 applied (audit_log table)");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,19 +116,22 @@ mod tests {
     fn setup_db() -> Connection {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_path_buf();
-        let conn = db::initialize(&path).unwrap();
-        // Leak dir to keep temp directory alive
+        let pool = db::create_pool(&path).unwrap();
+        let conn = pool.get().unwrap();
+        // We need to return an owned Connection for tests, so open a new one
         std::mem::forget(dir);
-        conn
+        let conn2 = Connection::open(path.join("vaultmind.db")).unwrap();
+        db::configure_connection(&conn2).unwrap();
+        drop(conn);
+        conn2
     }
 
     #[test]
     fn test_migration_v1_applies_correctly() {
         let conn = setup_db();
 
-        // db::initialize calls run_pending, so migration should already be at v1
         let version = get_schema_version(&conn).unwrap();
-        assert_eq!(version, 1);
+        assert!(version >= 1);
 
         // search_history table should exist
         let exists: bool = conn
@@ -119,10 +152,27 @@ mod tests {
     }
 
     #[test]
+    fn test_migration_v2_creates_audit_log() {
+        let conn = setup_db();
+
+        let version = get_schema_version(&conn).unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='audit_log'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(exists, "audit_log table should exist after migration v2");
+    }
+
+    #[test]
     fn test_migration_idempotent_on_rerun() {
         let conn = setup_db();
 
-        // Already at v1 from initialize. Run again — should not error.
         let version1 = get_schema_version(&conn).unwrap();
         run_pending(&conn).unwrap();
         let version2 = get_schema_version(&conn).unwrap();
@@ -134,7 +184,6 @@ mod tests {
     #[test]
     fn test_schema_version_updates() {
         let conn = setup_db();
-        // initialize already ran migrations, so version should be at CURRENT_VERSION
         assert_eq!(get_schema_version(&conn).unwrap(), CURRENT_VERSION);
     }
 }

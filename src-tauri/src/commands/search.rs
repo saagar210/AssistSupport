@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::audit::{self, AuditAction};
 use crate::error::AppError;
 use crate::ollama;
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 use crate::utils::{bytes_to_f64_vec, cosine_similarity};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,13 +29,6 @@ pub struct SearchResult {
     pub score: f64,
 }
 
-/// Helper to lock the DB mutex.
-fn lock_db<'a>(
-    state: &'a State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    crate::state::lock_db(state.inner())
-}
-
 /// Perform vector (semantic) search: embed the query, search vector store,
 /// then enrich results with chunk/document metadata.
 #[tauri::command]
@@ -44,20 +38,20 @@ pub async fn vector_search(
     query: String,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
-    // 1. Read ollama settings inside lock, then drop
+    // 1. Read ollama settings inside connection scope, then drop
     let (host, port, embedding_model) = {
-        let db = lock_db(&state)?;
-        let host: String = db.query_row(
+        let conn = get_conn(state.inner())?;
+        let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",
             [],
             |row| row.get(0),
         )?;
-        let port: String = db.query_row(
+        let port: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_port'",
             [],
             |row| row.get(0),
         )?;
-        let embedding_model: String = db.query_row(
+        let embedding_model: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'embedding_model'",
             [],
             |row| row.get(0),
@@ -74,8 +68,8 @@ pub async fn vector_search(
     //    NOTE: The other agent is building a vector_store module. For now we do
     //    an in-process brute-force search so this module compiles independently.
     let results = {
-        let db = lock_db(&state)?;
-        vector_search_in_db(&db, &collection_id, &query_embedding, top_k)?
+        let conn = get_conn(state.inner())?;
+        vector_search_in_db(&conn, &collection_id, &query_embedding, top_k)?
     };
 
     Ok(results)
@@ -184,8 +178,8 @@ pub fn keyword_search(
     query: String,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
-    let db = lock_db(&state)?;
-    keyword_search_in_db(&db, &collection_id, &query, top_k)
+    let conn = get_conn(state.inner())?;
+    keyword_search_in_db(&conn, &collection_id, &query, top_k)
 }
 
 pub(crate) fn keyword_search_in_db(
@@ -266,37 +260,37 @@ pub async fn hybrid_search(
 ) -> Result<Vec<SearchResult>, AppError> {
     // Read settings
     let (host, port, embedding_model, rrf_k, vector_top_k, keyword_top_k) = {
-        let db = lock_db(&state)?;
-        let host: String = db.query_row(
+        let conn = get_conn(state.inner())?;
+        let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",
             [],
             |row| row.get(0),
         )?;
-        let port: String = db.query_row(
+        let port: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_port'",
             [],
             |row| row.get(0),
         )?;
-        let embedding_model: String = db.query_row(
+        let embedding_model: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'embedding_model'",
             [],
             |row| row.get(0),
         )?;
-        let rrf_k: String = db
+        let rrf_k: String = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = 'rrf_k'",
                 [],
                 |row| row.get(0),
             )
             .unwrap_or_else(|_| "60".to_string());
-        let vector_top_k: String = db
+        let vector_top_k: String = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = 'vector_top_k'",
                 [],
                 |row| row.get(0),
             )
             .unwrap_or_else(|_| "20".to_string());
-        let keyword_top_k: String = db
+        let keyword_top_k: String = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = 'keyword_top_k'",
                 [],
@@ -314,11 +308,11 @@ pub async fn hybrid_search(
     let query_embedding =
         ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
 
-    // Run both searches under a single lock acquisition
+    // Run both searches under a single connection acquisition
     let (vector_results, keyword_results) = {
-        let db = lock_db(&state)?;
-        let vr = vector_search_in_db(&db, &collection_id, &query_embedding, vec_top_k)?;
-        let kr = keyword_search_in_db(&db, &collection_id, &query, kw_top_k)?;
+        let conn = get_conn(state.inner())?;
+        let vr = vector_search_in_db(&conn, &collection_id, &query_embedding, vec_top_k)?;
+        let kr = keyword_search_in_db(&conn, &collection_id, &query, kw_top_k)?;
         (vr, kr)
     };
 
@@ -346,11 +340,11 @@ pub fn save_search_query(
     query: String,
     result_count: i32,
 ) -> Result<(), AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
     let now = chrono::Utc::now().to_rfc3339();
 
     // Upsert: if same query exists for collection, update timestamp + result_count
-    let existing: Option<String> = db
+    let existing: Option<String> = conn
         .query_row(
             "SELECT id FROM search_history WHERE collection_id = ?1 AND query = ?2",
             rusqlite::params![collection_id, query],
@@ -359,17 +353,29 @@ pub fn save_search_query(
         .ok();
 
     if let Some(id) = existing {
-        db.execute(
+        conn.execute(
             "UPDATE search_history SET result_count = ?1, created_at = ?2 WHERE id = ?3",
             rusqlite::params![result_count, now, id],
         )?;
     } else {
         let id = uuid::Uuid::new_v4().to_string();
-        db.execute(
+        conn.execute(
             "INSERT INTO search_history (id, collection_id, query, result_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![id, collection_id, query, result_count, now],
         )?;
     }
+
+    // Add audit logging
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::SearchExecute,
+        Some("search"),
+        None,
+        &serde_json::json!({
+            "query": query,
+            "result_count": result_count
+        }),
+    );
 
     Ok(())
 }
@@ -380,10 +386,10 @@ pub fn get_search_history(
     collection_id: String,
     limit: Option<i32>,
 ) -> Result<Vec<SearchHistoryEntry>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
     let limit = limit.unwrap_or(10);
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, collection_id, query, result_count, created_at FROM search_history WHERE collection_id = ?1 ORDER BY created_at DESC LIMIT ?2",
     )?;
 
@@ -407,8 +413,8 @@ pub fn clear_search_history(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> Result<(), AppError> {
-    let db = lock_db(&state)?;
-    db.execute(
+    let conn = get_conn(state.inner())?;
+    conn.execute(
         "DELETE FROM search_history WHERE collection_id = ?1",
         rusqlite::params![collection_id],
     )?;
@@ -424,11 +430,11 @@ pub fn find_similar_chunks(
     collection_id: String,
     top_k: Option<usize>,
 ) -> Result<Vec<SearchResult>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
     let top_k = top_k.unwrap_or(10);
 
     // Load the source chunk's embedding
-    let source_blob: Vec<u8> = db
+    let source_blob: Vec<u8> = conn
         .query_row(
             "SELECT embedding FROM chunk_embeddings WHERE chunk_id = ?1",
             rusqlite::params![chunk_id],
@@ -444,14 +450,14 @@ pub fn find_similar_chunks(
     let source_embedding = bytes_to_f64_vec(&source_blob);
 
     // Get the source chunk's document_id to exclude it
-    let source_doc_id: String = db.query_row(
+    let source_doc_id: String = conn.query_row(
         "SELECT document_id FROM chunks WHERE id = ?1",
         rusqlite::params![chunk_id],
         |row| row.get(0),
     )?;
 
     // Search all embeddings in collection, excluding the source document
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT ce.chunk_id, ce.embedding
          FROM chunk_embeddings ce
          JOIN chunks c ON c.id = ce.chunk_id
@@ -481,7 +487,7 @@ pub fn find_similar_chunks(
     // Enrich results
     let mut results = Vec::with_capacity(scored.len());
     for (cid, score) in scored {
-        let result = db.query_row(
+        let result = conn.query_row(
             "SELECT c.id, c.document_id, c.content, c.section_title, c.page_number, d.title
              FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?1",
             rusqlite::params![cid],
@@ -546,4 +552,3 @@ fn reciprocal_rank_fusion(
         })
         .collect()
 }
-

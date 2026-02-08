@@ -1,12 +1,17 @@
-use std::sync::Mutex;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::error::AppError;
 
 pub struct AppState {
-    pub db: Mutex<rusqlite::Connection>,
+    pub db_pool: Pool<SqliteConnectionManager>,
 }
 
-/// Lock the database mutex, returning a clean AppError on poisoned mutex.
-pub fn lock_db(state: &AppState) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, AppError> {
-    state.db.lock().map_err(|e| AppError::LockFailed(format!("DB mutex lock failed: {}", e)))
+/// Get a connection from the pool, returning a clean AppError on failure.
+pub fn get_conn(
+    state: &AppState,
+) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, AppError> {
+    state.db_pool.get().map_err(|e| {
+        AppError::LockFailed(format!("Failed to get DB connection from pool: {}", e))
+    })
 }

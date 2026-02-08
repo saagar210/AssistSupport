@@ -3,24 +3,19 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
 
+use crate::audit::{self, AuditAction};
 use crate::chunker;
 use crate::embedder;
 use crate::error::AppError;
 use crate::models::{Chunk, Document};
 use crate::parsers;
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 use crate::vector_store;
 
-fn lock_db<'a>(
-    state: &'a tauri::State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    crate::state::lock_db(state.inner())
-}
-
-fn lock_db_arc(
+fn get_conn_arc(
     state: &AppState,
-) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, AppError> {
-    crate::state::lock_db(state)
+) -> Result<r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>, AppError> {
+    crate::state::get_conn(state)
 }
 
 fn detect_file_type(path: &Path) -> Option<String> {
@@ -83,9 +78,9 @@ async fn ingest_single_file(
     let parsed = match parsers::parse_document(path, file_type) {
         Ok(p) => p,
         Err(e) => {
-            let db = lock_db_arc(app_state)?;
+            let conn = get_conn_arc(app_state)?;
             let now = chrono::Utc::now().to_rfc3339();
-            let _ = db.execute(
+            let _ = conn.execute(
                 "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![e.to_string(), now, doc_id],
             );
@@ -96,13 +91,13 @@ async fn ingest_single_file(
 
     // Read settings
     let (chunk_size, chunk_overlap, ollama_host, ollama_port, embedding_model) = {
-        let db = lock_db_arc(app_state)?;
+        let conn = get_conn_arc(app_state)?;
         (
-            get_setting(&db, "chunk_size", "512").parse::<usize>().unwrap_or(512),
-            get_setting(&db, "chunk_overlap", "64").parse::<usize>().unwrap_or(64),
-            get_setting(&db, "ollama_host", "localhost"),
-            get_setting(&db, "ollama_port", "11434"),
-            get_setting(&db, "embedding_model", "nomic-embed-text"),
+            get_setting(&conn, "chunk_size", "512").parse::<usize>().unwrap_or(512),
+            get_setting(&conn, "chunk_overlap", "64").parse::<usize>().unwrap_or(64),
+            get_setting(&conn, "ollama_host", "localhost"),
+            get_setting(&conn, "ollama_port", "11434"),
+            get_setting(&conn, "embedding_model", "nomic-embed-text"),
         )
     };
 
@@ -118,13 +113,13 @@ async fn ingest_single_file(
 
     // Insert chunks into DB
     {
-        let db = lock_db_arc(app_state)?;
+        let conn = get_conn_arc(app_state)?;
         let now = chrono::Utc::now().to_rfc3339();
 
         for chunk in &chunks {
             let chunk_id = uuid::Uuid::new_v4().to_string();
 
-            db.execute(
+            conn.execute(
                 "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, start_offset, end_offset, page_number, section_title, token_count, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10)",
                 rusqlite::params![
@@ -141,7 +136,7 @@ async fn ingest_single_file(
                 ],
             )?;
 
-            db.execute(
+            conn.execute(
                 "INSERT INTO chunks_fts (content, chunk_id, document_id, collection_id) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![chunk.content, chunk_id, doc_id, collection_id],
             )?;
@@ -167,9 +162,9 @@ async fn ingest_single_file(
     {
         Ok(e) => e,
         Err(e) => {
-            let db = lock_db_arc(app_state)?;
+            let conn = get_conn_arc(app_state)?;
             let now = chrono::Utc::now().to_rfc3339();
-            let _ = db.execute(
+            let _ = conn.execute(
                 "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![e.to_string(), now, doc_id],
             );
@@ -181,9 +176,9 @@ async fn ingest_single_file(
     // Stage: indexing
     emit_progress(app, doc_id, filename, "indexing", chunks_total, chunks_total, None);
     {
-        let db = lock_db_arc(app_state)?;
+        let conn = get_conn_arc(app_state)?;
 
-        let mut stmt = db.prepare(
+        let mut stmt = conn.prepare(
             "SELECT id, content FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC",
         )?;
         let chunk_rows: Vec<(String, String)> = stmt
@@ -210,10 +205,10 @@ async fn ingest_single_file(
             }
         }
 
-        vector_store::store_embeddings(&db, &embedding_data)?;
+        vector_store::store_embeddings(&conn, &embedding_data)?;
 
         let now = chrono::Utc::now().to_rfc3339();
-        db.execute(
+        conn.execute(
             "UPDATE documents SET status = 'completed', word_count = ?1, chunk_count = ?2, title = ?3, author = ?4, page_count = ?5, updated_at = ?6 WHERE id = ?7",
             rusqlite::params![
                 parsed.metadata.word_count,
@@ -297,10 +292,10 @@ pub async fn ingest_files(
         let now = chrono::Utc::now().to_rfc3339();
 
         {
-            let db = lock_db(&state)?;
+            let conn = get_conn(state.inner())?;
 
             // Check duplicate hash
-            let existing: Option<String> = db
+            let existing: Option<String> = conn
                 .query_row(
                     "SELECT id FROM documents WHERE file_hash = ?1 AND collection_id = ?2",
                     rusqlite::params![file_hash, collection_id],
@@ -313,7 +308,7 @@ pub async fn ingest_files(
                 continue;
             }
 
-            db.execute(
+            conn.execute(
                 "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, 0, 0, 'processing', NULL, ?9, ?10)",
                 rusqlite::params![
@@ -329,6 +324,8 @@ pub async fn ingest_files(
                     now,
                 ],
             )?;
+
+            let _ = audit::log_audit(&conn, AuditAction::DocumentIngest, Some("document"), Some(&doc_id), &serde_json::json!({"filename": filename}));
         }
 
         doc_entries.push((doc_id, file_path_str.clone(), filename, file_type));
@@ -371,8 +368,8 @@ pub async fn reingest_document(
 ) -> Result<(), AppError> {
     // Load document info
     let (collection_id, file_path, filename, file_type) = {
-        let db = lock_db(&state)?;
-        let row = db.query_row(
+        let conn = get_conn(state.inner())?;
+        let row = conn.query_row(
             "SELECT collection_id, file_path, filename, file_type FROM documents WHERE id = ?1",
             rusqlite::params![document_id],
             |row: &rusqlite::Row| {
@@ -391,14 +388,16 @@ pub async fn reingest_document(
         })?;
 
         // Clear old data
-        clear_document_data(&db, &document_id)?;
+        clear_document_data(&conn, &document_id)?;
 
         // Reset status
         let now = chrono::Utc::now().to_rfc3339();
-        db.execute(
+        conn.execute(
             "UPDATE documents SET status = 'processing', error_message = NULL, word_count = 0, chunk_count = 0, updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, document_id],
         )?;
+
+        let _ = audit::log_audit(&conn, AuditAction::DocumentReingest, Some("document"), Some(&document_id), &serde_json::json!({}));
 
         row
     };
@@ -433,8 +432,8 @@ pub async fn reingest_collection(
 ) -> Result<(), AppError> {
     // Load all documents for collection
     let docs: Vec<(String, String, String, String)> = {
-        let db = lock_db(&state)?;
-        let mut stmt = db.prepare(
+        let conn = get_conn(state.inner())?;
+        let mut stmt = conn.prepare(
             "SELECT id, file_path, filename, file_type FROM documents WHERE collection_id = ?1 AND status != 'failed'",
         )?;
         let rows = stmt.query_map(rusqlite::params![collection_id], |row: &rusqlite::Row| {
@@ -452,11 +451,11 @@ pub async fn reingest_collection(
 
     // Clear and reset all documents
     {
-        let db = lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
         let now = chrono::Utc::now().to_rfc3339();
         for (doc_id, _, _, _) in &docs {
-            clear_document_data(&db, doc_id)?;
-            db.execute(
+            clear_document_data(&conn, doc_id)?;
+            conn.execute(
                 "UPDATE documents SET status = 'processing', error_message = NULL, word_count = 0, chunk_count = 0, updated_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, doc_id],
             )?;
@@ -509,9 +508,9 @@ pub fn list_documents(
     state: tauri::State<'_, AppState>,
     collection_id: String,
 ) -> Result<Vec<Document>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at
          FROM documents WHERE collection_id = ?1 ORDER BY created_at DESC",
     )?;
@@ -547,9 +546,9 @@ pub fn get_document(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<Document, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let document = db
+    let document = conn
         .query_row(
             "SELECT id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at
              FROM documents WHERE id = ?1",
@@ -590,11 +589,13 @@ pub fn delete_document(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    clear_document_data(&db, &id)?;
+    let _ = audit::log_audit(&conn, AuditAction::DocumentDelete, Some("document"), Some(&id), &serde_json::json!({}));
 
-    let rows = db.execute(
+    clear_document_data(&conn, &id)?;
+
+    let rows = conn.execute(
         "DELETE FROM documents WHERE id = ?1",
         rusqlite::params![id],
     )?;
@@ -611,9 +612,9 @@ pub fn get_document_chunks(
     state: tauri::State<'_, AppState>,
     document_id: String,
 ) -> Result<Vec<Chunk>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, document_id, collection_id, content, chunk_index, start_offset, end_offset, page_number, section_title, token_count, created_at
          FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC",
     )?;
@@ -644,15 +645,15 @@ pub fn get_stats(
     state: tauri::State<'_, AppState>,
     collection_id: String,
 ) -> Result<(i64, i64), AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let doc_count: i64 = db.query_row(
+    let doc_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM documents WHERE collection_id = ?1 AND status = 'completed'",
         rusqlite::params![collection_id],
         |row: &rusqlite::Row| row.get(0),
     )?;
 
-    let chunk_count: i64 = db.query_row(
+    let chunk_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM chunks WHERE collection_id = ?1",
         rusqlite::params![collection_id],
         |row: &rusqlite::Row| row.get(0),
@@ -672,9 +673,9 @@ pub fn add_document_tag(
         return Err(AppError::Validation("Tag cannot be empty".into()));
     }
 
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let tags_json: String = db
+    let tags_json: String = conn
         .query_row(
             "SELECT COALESCE(tags, '[]') FROM documents WHERE id = ?1",
             rusqlite::params![document_id],
@@ -698,7 +699,7 @@ pub fn add_document_tag(
         .map_err(|e| AppError::Validation(format!("Failed to serialize tags: {}", e)))?;
 
     let now = chrono::Utc::now().to_rfc3339();
-    db.execute(
+    conn.execute(
         "UPDATE documents SET tags = ?1, updated_at = ?2 WHERE id = ?3",
         rusqlite::params![updated_json, now, document_id],
     )?;
@@ -712,9 +713,9 @@ pub fn remove_document_tag(
     document_id: String,
     tag: String,
 ) -> Result<Vec<String>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let tags_json: String = db
+    let tags_json: String = conn
         .query_row(
             "SELECT COALESCE(tags, '[]') FROM documents WHERE id = ?1",
             rusqlite::params![document_id],
@@ -736,7 +737,7 @@ pub fn remove_document_tag(
         .map_err(|e| AppError::Validation(format!("Failed to serialize tags: {}", e)))?;
 
     let now = chrono::Utc::now().to_rfc3339();
-    db.execute(
+    conn.execute(
         "UPDATE documents SET tags = ?1, updated_at = ?2 WHERE id = ?3",
         rusqlite::params![updated_json, now, document_id],
     )?;
@@ -749,9 +750,9 @@ pub fn list_all_tags(
     state: tauri::State<'_, AppState>,
     collection_id: String,
 ) -> Result<Vec<String>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT COALESCE(tags, '[]') FROM documents WHERE collection_id = ?1",
     )?;
 

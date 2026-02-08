@@ -5,23 +5,17 @@ use tauri::{AppHandle, Manager, State};
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
+use crate::audit::{self, AuditAction};
 use crate::error::AppError;
 use crate::models::{Citation, Conversation, Message};
 use crate::ollama::{self, ChatMessage};
-use crate::state::AppState;
+use crate::state::{get_conn, AppState};
 
 use super::search::SearchResult;
 
 // Global map of active generation cancel tokens
 static CANCEL_TOKENS: std::sync::LazyLock<StdMutex<HashMap<String, CancellationToken>>> =
     std::sync::LazyLock::new(|| StdMutex::new(HashMap::new()));
-
-/// Helper to lock the DB mutex.
-fn lock_db<'a>(
-    state: &'a State<'a, AppState>,
-) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    crate::state::lock_db(state.inner())
-}
 
 /// Send a chat message: run RAG pipeline (search + context + stream LLM response).
 #[tauri::command]
@@ -36,43 +30,46 @@ pub async fn send_chat_message(
     let now = chrono::Utc::now().to_rfc3339();
     let user_msg_id = uuid::Uuid::new_v4().to_string();
 
-    // 1. Save user message to DB + read all settings we need, then drop lock
+    // 1. Save user message to DB + read all settings we need, then drop connection
     let (host, port, embedding_model, chat_model, context_chunks, rrf_k, vector_top_k, keyword_top_k) = {
-        let db = lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
 
-        db.execute(
+        conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![user_msg_id, conversation_id, "user", user_message, now],
         )?;
 
         // Update conversation timestamp
-        db.execute(
+        conn.execute(
             "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, conversation_id],
         )?;
 
-        let host: String = db.query_row(
+        // Audit log for user message
+        let _ = audit::log_audit(&conn, AuditAction::ChatMessage, Some("conversation"), Some(&conversation_id), &serde_json::json!({"role": "user"}));
+
+        let host: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'", [], |row: &rusqlite::Row| row.get(0),
         )?;
-        let port: String = db.query_row(
+        let port: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_port'", [], |row: &rusqlite::Row| row.get(0),
         )?;
-        let embedding_model: String = db.query_row(
+        let embedding_model: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'embedding_model'", [], |row: &rusqlite::Row| row.get(0),
         )?;
-        let chat_model: String = db.query_row(
+        let chat_model: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'chat_model'", [], |row: &rusqlite::Row| row.get(0),
         )?;
-        let context_chunks: String = db.query_row(
+        let context_chunks: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'context_chunks'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "5".to_string());
-        let rrf_k: String = db.query_row(
+        let rrf_k: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'rrf_k'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "60".to_string());
-        let vector_top_k: String = db.query_row(
+        let vector_top_k: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'vector_top_k'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "20".to_string());
-        let keyword_top_k: String = db.query_row(
+        let keyword_top_k: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'keyword_top_k'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "20".to_string());
 
@@ -90,15 +87,15 @@ pub async fn send_chat_message(
         ollama::generate_embedding(&host, &port, &embedding_model, &user_message).await?;
 
     let context_results: Vec<SearchResult> = {
-        let db = lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
         // Use the internal search that works on a Connection directly
         // We inline the search here since hybrid_search_internal is async but we only
         // need the DB parts (we already have the embedding)
         let vr = crate::commands::search::vector_search_in_db_with_embedding(
-            &db, &collection_id, &query_embedding, vec_top_k,
+            &conn, &collection_id, &query_embedding, vec_top_k,
         )?;
         let kr = crate::commands::search::keyword_search_in_db(
-            &db, &collection_id, &user_message, kw_top_k,
+            &conn, &collection_id, &user_message, kw_top_k,
         )?;
         crate::commands::search::reciprocal_rank_fusion_pub(vr, kr, rrf_k_val, context_k)
     };
@@ -108,8 +105,8 @@ pub async fn send_chat_message(
 
     // 4. Load conversation history (last 10 messages)
     let history: Vec<ChatMessage> = {
-        let db = lock_db(&state)?;
-        load_conversation_history(&db, &conversation_id, 10)?
+        let conn = get_conn(state.inner())?;
+        load_conversation_history(&conn, &conversation_id, 10)?
     };
 
     // 5. Build full messages array
@@ -147,9 +144,9 @@ pub async fn send_chat_message(
     let msg_now = chrono::Utc::now().to_rfc3339();
 
     let citations: Vec<Citation> = {
-        let db = lock_db(&state)?;
+        let conn = get_conn(state.inner())?;
 
-        db.execute(
+        conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![assistant_msg_id, conversation_id, "assistant", full_response, msg_now],
         )?;
@@ -161,7 +158,7 @@ pub async fn send_chat_message(
             // Truncate snippet to first 200 chars
             let snippet: String = result.content.chars().take(200).collect();
 
-            db.execute(
+            conn.execute(
                 "INSERT INTO citations (id, message_id, chunk_id, document_id, document_title, section_title, page_number, relevance_score, snippet)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
@@ -212,8 +209,8 @@ pub async fn send_chat_message(
 
     // 9. Auto-title: if this is the first exchange (2 messages), generate a title
     let msg_count: i64 = {
-        let db = lock_db(&state)?;
-        db.query_row(
+        let conn = get_conn(state.inner())?;
+        conn.query_row(
             "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1",
             rusqlite::params![conversation_id],
             |row| row.get(0),
@@ -250,8 +247,8 @@ pub async fn send_chat_message(
                 if !title.is_empty() {
                     let now = chrono::Utc::now().to_rfc3339();
                     let state: State<'_, AppState> = app.state();
-                    if let Ok(db) = crate::state::lock_db(state.inner()) {
-                        let _ = db.execute(
+                    if let Ok(conn) = crate::state::get_conn(state.inner()) {
+                        let _ = conn.execute(
                             "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
                             rusqlite::params![title, now, conv_id],
                         );
@@ -337,27 +334,27 @@ pub fn delete_last_assistant_message(
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> Result<String, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
     // Find last assistant message
-    let last_assistant_id: String = db.query_row(
+    let last_assistant_id: String = conn.query_row(
         "SELECT id FROM messages WHERE conversation_id = ?1 AND role = 'assistant' ORDER BY created_at DESC LIMIT 1",
         rusqlite::params![conversation_id],
         |row| row.get(0),
     ).map_err(|_| AppError::NotFound("No assistant message found".to_string()))?;
 
     // Delete its citations then the message
-    db.execute(
+    conn.execute(
         "DELETE FROM citations WHERE message_id = ?1",
         rusqlite::params![last_assistant_id],
     )?;
-    db.execute(
+    conn.execute(
         "DELETE FROM messages WHERE id = ?1",
         rusqlite::params![last_assistant_id],
     )?;
 
     // Return last user message content
-    let last_user_content: String = db.query_row(
+    let last_user_content: String = conn.query_row(
         "SELECT content FROM messages WHERE conversation_id = ?1 AND role = 'user' ORDER BY created_at DESC LIMIT 1",
         rusqlite::params![conversation_id],
         |row| row.get(0),
@@ -375,11 +372,14 @@ pub async fn create_conversation(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
-    let db = lock_db(&state)?;
-    db.execute(
+    let conn = get_conn(state.inner())?;
+    conn.execute(
         "INSERT INTO conversations (id, collection_id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, collection_id, title, now, now],
     )?;
+
+    // Audit log for conversation creation
+    let _ = audit::log_audit(&conn, AuditAction::ConversationCreate, Some("conversation"), Some(&id), &serde_json::json!({"title": title}));
 
     Ok(Conversation {
         id,
@@ -395,9 +395,9 @@ pub fn list_conversations(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> Result<Vec<Conversation>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, collection_id, title, created_at, updated_at
          FROM conversations
          WHERE collection_id = ?1
@@ -424,9 +424,9 @@ pub fn get_conversation_messages(
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> Result<Vec<Message>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, created_at
          FROM messages
          WHERE conversation_id = ?1
@@ -453,9 +453,9 @@ pub fn get_message_citations(
     state: State<'_, AppState>,
     message_id: String,
 ) -> Result<Vec<Citation>, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let mut stmt = db.prepare(
+    let mut stmt = conn.prepare(
         "SELECT id, message_id, chunk_id, document_id, document_title, section_title, page_number, relevance_score, snippet
          FROM citations
          WHERE message_id = ?1
@@ -486,9 +486,12 @@ pub fn delete_conversation(
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> Result<(), AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let rows = db.execute(
+    // Audit log before deletion
+    let _ = audit::log_audit(&conn, AuditAction::ConversationDelete, Some("conversation"), Some(&conversation_id), &serde_json::json!({}));
+
+    let rows = conn.execute(
         "DELETE FROM conversations WHERE id = ?1",
         rusqlite::params![conversation_id],
     )?;
@@ -517,9 +520,12 @@ pub fn rename_conversation(
     }
 
     let now = chrono::Utc::now().to_rfc3339();
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
-    let rows = db.execute(
+    // Audit log for conversation rename
+    let _ = audit::log_audit(&conn, AuditAction::ConversationRename, Some("conversation"), Some(&conversation_id), &serde_json::json!({"title": title}));
+
+    let rows = conn.execute(
         "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
         rusqlite::params![title, now, conversation_id],
     )?;
@@ -539,10 +545,10 @@ pub fn export_conversation_markdown(
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> Result<String, AppError> {
-    let db = lock_db(&state)?;
+    let conn = get_conn(state.inner())?;
 
     // Load conversation title
-    let title: String = db
+    let title: String = conn
         .query_row(
             "SELECT title FROM conversations WHERE id = ?1",
             rusqlite::params![conversation_id],
@@ -556,7 +562,7 @@ pub fn export_conversation_markdown(
         })?;
 
     // Load all messages ordered by created_at ASC
-    let mut msg_stmt = db.prepare(
+    let mut msg_stmt = conn.prepare(
         "SELECT id, role, content FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
     )?;
 
@@ -571,7 +577,7 @@ pub fn export_conversation_markdown(
         .collect::<Result<Vec<_>, _>>()?;
 
     // Prepare citation query
-    let mut citation_stmt = db.prepare(
+    let mut citation_stmt = conn.prepare(
         "SELECT document_title, section_title FROM citations WHERE message_id = ?1 ORDER BY relevance_score DESC",
     )?;
 
