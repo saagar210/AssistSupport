@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-restore-response",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "restored_from",
+    "current_version",
+    "target_version",
+    "pending_versions"
+  ],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "restored_from": { "type": "string" },
+    "current_version": { "type": "integer" },
+    "target_version": { "type": "integer" },
+    "pending_versions": {
+      "type": "array",
+      "items": { "type": "integer" }
+    }
+  },
+  "additionalProperties": false
+}
+

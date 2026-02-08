@@ -1,0 +1,31 @@
+{
+  "contract_version": "benchmark_baseline.v1",
+  "platform": "macos",
+  "captured_at": "2026-02-07T06:57:39.899212Z",
+  "source": "cargo run -p memory-kernel-outcome-cli -- --db /tmp/ignore.sqlite3 outcome benchmark run --volume 100 --volume 500 --volume 2000 --repetitions 3 --json",
+  "volumes": [
+    {
+      "event_count": 100,
+      "append_p95_ms": 0.204625,
+      "replay_p95_ms": 0.7715839999999999,
+      "gate_p95_ms": 0.067625
+    },
+    {
+      "event_count": 500,
+      "append_p95_ms": 0.164542,
+      "replay_p95_ms": 2.327625,
+      "gate_p95_ms": 0.088167
+    },
+    {
+      "event_count": 2000,
+      "append_p95_ms": 0.147584,
+      "replay_p95_ms": 7.983334,
+      "gate_p95_ms": 0.09320800000000001
+    }
+  ],
+  "ci_thresholds": {
+    "append_p95_ms_max": 12.0,
+    "replay_p95_ms_max": 350.0,
+    "gate_p95_ms_max": 12.0
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "contract_version": "benchmark_report.v1",
+  "generated_at": "2026-02-07T13:54:50.792029Z",
+  "repetitions": 5,
+  "volumes": [
+    {
+      "event_count": 5000,
+      "append_p50_ms": 0.105375,
+      "append_p95_ms": 0.131834,
+      "replay_p50_ms": 18.938084,
+      "replay_p95_ms": 19.190208000000002,
+      "gate_p50_ms": 0.068625,
+      "gate_p95_ms": 0.091875
+    },
+    {
+      "event_count": 10000,
+      "append_p50_ms": 0.108417,
+      "append_p95_ms": 0.135292,
+      "replay_p50_ms": 39.15545899999999,
+      "replay_p95_ms": 39.674958000000004,
+      "gate_p50_ms": 0.084375,
+      "gate_p95_ms": 0.0925
+    }
+  ],
+  "thresholds": {
+    "append_p95_ms_max": 25.0,
+    "replay_p95_ms_max": 1500.0,
+    "gate_p95_ms_max": 25.0
+  },
+  "within_thresholds": true,
+  "violations": []
+}

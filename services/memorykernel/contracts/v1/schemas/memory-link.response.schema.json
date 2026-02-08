@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "memory-link-response",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "from_memory_version_id",
+    "to_memory_version_id",
+    "relation",
+    "writer",
+    "justification"
+  ],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "from_memory_version_id": { "type": "string" },
+    "to_memory_version_id": { "type": "string" },
+    "relation": { "enum": ["supersedes", "contradicts"] },
+    "writer": { "type": "string" },
+    "justification": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+

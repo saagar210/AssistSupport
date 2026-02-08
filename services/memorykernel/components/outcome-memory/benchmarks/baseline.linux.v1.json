@@ -1,0 +1,32 @@
+{
+  "contract_version": "benchmark_baseline.v1",
+  "platform": "linux",
+  "captured_at": "bootstrap",
+  "source": "seed baseline prior to first linux CI benchmark artifact",
+  "volumes": [
+    {
+      "event_count": 100,
+      "append_p95_ms": 0.0,
+      "replay_p95_ms": 0.0,
+      "gate_p95_ms": 0.0
+    },
+    {
+      "event_count": 500,
+      "append_p95_ms": 0.0,
+      "replay_p95_ms": 0.0,
+      "gate_p95_ms": 0.0
+    },
+    {
+      "event_count": 2000,
+      "append_p95_ms": 0.0,
+      "replay_p95_ms": 0.0,
+      "gate_p95_ms": 0.0
+    }
+  ],
+  "ci_thresholds": {
+    "append_p95_ms_max": 8.0,
+    "replay_p95_ms_max": 250.0,
+    "gate_p95_ms_max": 8.0
+  },
+  "notes": "Replace volume p95 values from first successful Linux perf workflow artifact."
+}

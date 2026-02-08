@@ -1,0 +1,23 @@
+[package]
+name = "memory-kernel-outcome-store-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+memory-kernel-core.workspace = true
+memory-kernel-outcome-core = { path = "../memory-kernel-outcome-core" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+proptest = "1.5"

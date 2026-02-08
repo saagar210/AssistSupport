@@ -1,0 +1,25 @@
+{
+  "artifact_version": "v1",
+  "project": {
+    "name": "MultiAgentCenter",
+    "version": "0.1.0"
+  },
+  "memory_kernel": {
+    "contract_baseline": "integration/v1",
+    "api_retrieval": {
+      "context_queries_mode": {
+        "supported": ["policy", "recall"],
+        "default": "policy"
+      },
+      "recall": {
+        "default_record_types": ["decision", "preference", "event", "outcome"],
+        "missing_record_types_behavior": "use_default_scope",
+        "empty_record_types_behavior": "use_default_scope",
+        "invalid_record_types_behavior": "validation_error"
+      }
+    }
+  },
+  "trust": {
+    "memory_ref_identity_required_fields": ["memory_id", "version", "memory_version_id"]
+  }
+}

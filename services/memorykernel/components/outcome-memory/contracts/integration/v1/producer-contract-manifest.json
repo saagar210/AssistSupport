@@ -1,0 +1,33 @@
+{
+  "manifest_contract_version": "producer-contract-manifest.v1",
+  "release_tag": "v0.4.0",
+  "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
+  "expected_service_contract_version": "service.v3",
+  "expected_api_contract_version": "api.v1",
+  "integration_baseline": "integration/v1",
+  "error_code_enum": [
+    "invalid_json",
+    "validation_error",
+    "context_package_not_found",
+    "write_conflict",
+    "write_failed",
+    "schema_unavailable",
+    "migration_failed",
+    "query_failed",
+    "context_lookup_failed",
+    "internal_error"
+  ],
+  "stability_window": {
+    "minimum_sprint_days": 14
+  },
+  "additive_error_code_notice_policy": {
+    "standard_business_days": 10,
+    "emergency_notice_hours": 24,
+    "emergency_requires_same_day_docs_spec_tests": true
+  },
+  "service_v3_transition_guard": {
+    "legacy_error_must_remain_in_service_v2": true,
+    "legacy_error_removal_requires_service_v3": true,
+    "consumer_green_repin_required_before_legacy_error_removal": true
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "payload_contract_version": "service-v3-rehearsal-handoff.v1",
+  "generated_at_utc": "2026-02-08T11:34:03Z",
+  "producer": {
+    "repo": "saagar210/MemoryKernel",
+    "planning_commit_seen_by_consumer": "94ba1c391da53d7c27f4131c4fb30d3a1a940bcc",
+    "active_runtime_baseline": {
+      "release_tag": "v0.3.2",
+      "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
+      "service_contract_version": "service.v2",
+      "api_contract_version": "api.v1",
+      "integration_baseline": "integration/v1"
+    }
+  },
+  "rehearsal_candidate": {
+    "mode": "planning_only_no_runtime_cutover",
+    "target_service_contract_version": "service.v3",
+    "target_api_contract_version": "api.v1",
+    "requires_runtime_cutover": false,
+    "cutover_not_before_utc_date": "2026-02-22"
+  },
+  "non_2xx_envelope_policy": {
+    "service_v2_stable": {
+      "requires": [
+        "service_contract_version",
+        "error.code",
+        "error.message",
+        "legacy_error"
+      ],
+      "forbids": [
+        "api_contract_version"
+      ]
+    },
+    "service_v3_candidate": {
+      "requires": [
+        "service_contract_version",
+        "error.code",
+        "error.message"
+      ],
+      "optional": [
+        "error.details"
+      ],
+      "forbids": [
+        "legacy_error",
+        "api_contract_version"
+      ]
+    }
+  },
+  "error_code_expectations": {
+    "validation_mode": "set_equality",
+    "codes": [
+      "invalid_json",
+      "validation_error",
+      "context_package_not_found",
+      "write_conflict",
+      "write_failed",
+      "schema_unavailable",
+      "migration_failed",
+      "query_failed",
+      "context_lookup_failed",
+      "internal_error"
+    ],
+    "additive_change_notice_policy": {
+      "standard_business_days": 10,
+      "emergency_notice_hours": 24,
+      "emergency_requires_same_day_docs_spec_tests": true
+    }
+  },
+  "migration_overlap_assumptions": {
+    "duration_days": 14,
+    "service_v2_stability_required": true,
+    "consumer_enrichment_must_remain_optional_non_blocking": true,
+    "consumer_fallback_must_remain_deterministic": true
+  },
+  "cutover_gates_doc": "/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_GATES.md",
+  "required_producer_checks": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-targets --all-features",
+    "./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel",
+    "./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline"
+  ],
+  "required_consumer_checks": [
+    "pnpm run check:memorykernel-pin",
+    "pnpm run test:memorykernel-contract",
+    "pnpm run test:ci"
+  ],
+  "rollback_policy": {
+    "triggers": [
+      "consumer_contract_suite_red",
+      "non_2xx_envelope_shape_mismatch",
+      "deterministic_fallback_regression"
+    ],
+    "action": "repin consumer to last approved service.v2 tag/sha and reopen overlap window"
+  }
+}

@@ -1,0 +1,34 @@
+[workspace]
+members = [
+  "crates/memory-kernel-outcome-core",
+  "crates/memory-kernel-outcome-store-sqlite",
+  "crates/memory-kernel-outcome-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["OutcomeMemory Contributors"]
+rust-version = "1.78"
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+memory-kernel-core = { path = "../../crates/memory-kernel-core" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+thiserror = "2.0"
+time = { version = "0.3", features = ["formatting", "parsing", "serde"] }
+ulid = { version = "1.1", features = ["serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

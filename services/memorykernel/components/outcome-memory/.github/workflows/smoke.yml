@@ -1,0 +1,52 @@
+name: Smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  cli-contracts-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout MemoryKernel dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/MemoryKernel
+          path: MemoryKernel
+
+      - name: Link sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/MemoryKernel" "$GITHUB_WORKSPACE/../MemoryKernel"
+
+      - name: Checkout MemoryKernel Canonical Contracts
+        if: ${{ vars.MEMORYKERNEL_CANONICAL_REPO != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.MEMORYKERNEL_CANONICAL_REPO }}
+          path: _memorykernel
+          sparse-checkout: contracts/integration/v1
+
+      - name: Verify MemoryKernel Contract Pack Parity
+        run: |
+          canonical_root="../MemoryKernel/contracts/integration"
+          if [[ -d "_memorykernel/contracts/integration" ]]; then
+            canonical_root="_memorykernel/contracts/integration"
+          fi
+          MEMORYKERNEL_CONTRACT_PACK_ROOT="${canonical_root}" ./scripts/check_contract_pack_parity.sh v1
+
+      - name: Verify Trilogy Compatibility Artifact
+        run: ./scripts/check_trilogy_compatibility_artifact.sh trilogy-compatibility.v1.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run CLI Contract Suite
+        run: cargo test -p memory-kernel-outcome-cli --test cli_contracts_v1
+
+      - name: Run Projector Smoke Suite
+        run: cargo test -p memory-kernel-outcome-cli --test projector_smoke

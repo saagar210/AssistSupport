@@ -1,0 +1,25 @@
+[package]
+name = "memory-kernel-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tokio.workspace = true
+tower.workspace = true
+ulid.workspace = true
+memory-kernel-api = { path = "../memory-kernel-api" }
+memory-kernel-core = { path = "../memory-kernel-core" }
+memory-kernel-store-sqlite = { path = "../memory-kernel-store-sqlite" }
+
+[lints]
+workspace = true

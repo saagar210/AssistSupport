@@ -1,0 +1,44 @@
+# Changelog
+
+## Unreleased
+
+### Added
+
+- Contract-governed CLI output envelope with `contract_version`.
+- Versioned CLI output schemas under `contracts/v1/`.
+- Golden fixtures and compatibility tests for key CLI outputs.
+- Deterministic mixed-record recall retrieval (`query recall`) across decision/preference/event/outcome.
+- API and service support for recall query flows and summary-record ingestion.
+- Phase 3 resolver rules, explainability tests, and traceability requirements (`MKR-044`..`MKR-047`).
+- Property-based determinism tests, concurrency integrity tests, and resolver benchmark coverage (`MKR-048`..`MKR-050`).
+- Signed/encrypted snapshot trust controls with explicit import verification flags and security regression tests (`MKR-051`..`MKR-053`).
+- Release workflow automation plus migration/recovery runbooks and pilot adoption docs (`MKR-054`..`MKR-056`).
+- Host-integrated OutcomeMemory command tree under `mk outcome ...` with compatibility coverage from MemoryKernel CLI integration tests.
+
+### Contract
+
+- Active CLI contract version: `cli.v1`.
+- Active service contract version: `service.v3`.
+- Service error responses include machine-readable `error.code` + `error.message` with explicit status mapping.
+- `service.v3` non-2xx envelope policy is locked: includes `service_contract_version` + `error`, excludes `legacy_error` and `api_contract_version`.
+- Added machine-readable producer baseline manifest at `contracts/integration/v1/producer-contract-manifest.json` with CI/release enforcement.
+
+### Governance
+
+- Added producer-side joint execution artifacts for AssistSupport parallel execution:
+  - `docs/implementation/JOINT_EXECUTION_PLAYBOOK_PRODUCER.md`
+  - `docs/implementation/SERVICE_V3_RFC_DRAFT.md`
+  - `docs/implementation/PRODUCER_PHASE1_STABILITY_CLOSEOUT_2026-02-08.md`
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_PACKET_TEMPLATE.md`
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
+- Added `scripts/generate_producer_handoff_payload.sh` to generate deterministic producer handoff payloads from the canonical manifest.
+- Extended producer handoff payload generation with `--mode service-v3-candidate` for rehearsal-only consumer validation while keeping runtime baseline unchanged.
+- Added Phase 4 rehearsal governance artifacts:
+  - `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
+  - `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
+  - `docs/implementation/SERVICE_V3_REHEARSAL_VERIFICATION_EVIDENCE.md`
+- Added producer roadmap and cutover governance scaffolding:
+  - `docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN_PRODUCER.md`
+  - `docs/implementation/SERVICE_V3_CUTOVER_DAY_CHECKLIST.md`
+  - `docs/implementation/SERVICE_V3_ROLLBACK_COMMUNICATION_PROTOCOL.md`
+- Added `scripts/verify_producer_handoff_payload.sh` and wired it into CI/release to enforce handoff payload correctness and policy drift detection.

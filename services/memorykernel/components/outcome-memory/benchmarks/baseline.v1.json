@@ -1,0 +1,30 @@
+{
+  "contract_version": "benchmark_baseline.v1",
+  "captured_at": "2026-02-07T06:56:46.022638Z",
+  "source": "cargo run -p memory-kernel-outcome-cli -- --db /tmp/ignore.sqlite3 outcome benchmark run --volume 100 --volume 500 --volume 2000 --repetitions 3 --json",
+  "volumes": [
+    {
+      "event_count": 100,
+      "append_p95_ms": 0.19129100000000002,
+      "replay_p95_ms": 0.8179590000000001,
+      "gate_p95_ms": 0.074125
+    },
+    {
+      "event_count": 500,
+      "append_p95_ms": 0.170042,
+      "replay_p95_ms": 2.227958,
+      "gate_p95_ms": 0.082958
+    },
+    {
+      "event_count": 2000,
+      "append_p95_ms": 0.15920800000000002,
+      "replay_p95_ms": 8.240625,
+      "gate_p95_ms": 0.105875
+    }
+  ],
+  "ci_thresholds": {
+    "append_p95_ms_max": 5.0,
+    "replay_p95_ms_max": 200.0,
+    "gate_p95_ms_max": 5.0
+  }
+}

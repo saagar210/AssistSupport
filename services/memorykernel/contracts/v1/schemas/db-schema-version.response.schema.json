@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-schema-version-response",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "current_version",
+    "target_version",
+    "pending_versions",
+    "up_to_date",
+    "inferred_from_legacy"
+  ],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "current_version": { "type": "integer" },
+    "target_version": { "type": "integer" },
+    "pending_versions": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "up_to_date": { "type": "boolean" },
+    "inferred_from_legacy": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

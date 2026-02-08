@@ -1,0 +1,33 @@
+[package]
+name = "memory-kernel-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chacha20poly1305 = "0.10"
+clap.workspace = true
+hex = "0.4"
+hmac = "0.12"
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+ulid.workspace = true
+memory-kernel-core = { path = "../memory-kernel-core" }
+memory-kernel-store-sqlite = { path = "../memory-kernel-store-sqlite" }
+memory-kernel-outcome-cli = { path = "../../components/outcome-memory/crates/memory-kernel-outcome-cli" }
+rand = "0.8"
+
+[dev-dependencies]
+jsonschema = "0.18"
+
+[[bin]]
+name = "mk"
+path = "src/main.rs"

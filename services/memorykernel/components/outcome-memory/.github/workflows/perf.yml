@@ -1,0 +1,74 @@
+name: Performance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  benchmark-guardrails:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            append_p95_max_ms: "8"
+            replay_p95_max_ms: "250"
+            gate_p95_max_ms: "8"
+          - os: macos-latest
+            append_p95_max_ms: "12"
+            replay_p95_max_ms: "350"
+            gate_p95_max_ms: "12"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout MemoryKernel dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/MemoryKernel
+          path: MemoryKernel
+
+      - name: Link sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/MemoryKernel" "$GITHUB_WORKSPACE/../MemoryKernel"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Benchmark Guardrails
+        run: |
+          set -euo pipefail
+          cargo run -p memory-kernel-outcome-cli -- \
+            --db /tmp/ignore.sqlite3 \
+            outcome benchmark run \
+            --volume 100 --volume 500 --volume 2000 \
+            --repetitions 3 \
+            --append-p95-max-ms ${{ matrix.append_p95_max_ms }} \
+            --replay-p95-max-ms ${{ matrix.replay_p95_max_ms }} \
+            --gate-p95-max-ms ${{ matrix.gate_p95_max_ms }} \
+            --output benchmark-report-${{ matrix.os }}.json \
+            --json
+
+      - name: Assert Non-Zero Exit On Threshold Violation
+        run: |
+          set -euo pipefail
+          if cargo run -p memory-kernel-outcome-cli -- \
+            --db /tmp/ignore.sqlite3 \
+            outcome benchmark run \
+            --volume 25 \
+            --repetitions 1 \
+            --append-p95-max-ms 0 \
+            --replay-p95-max-ms 0 \
+            --gate-p95-max-ms 0 \
+            --json; then
+            echo "expected benchmark command to fail when any threshold is violated" >&2
+            exit 1
+          fi
+
+      - name: Upload Benchmark Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report-${{ matrix.os }}
+          path: benchmark-report-${{ matrix.os }}.json

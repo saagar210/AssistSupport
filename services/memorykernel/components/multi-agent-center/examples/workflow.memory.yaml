@@ -1,0 +1,42 @@
+workflow_name: memory_orchestration
+workflow_version: v1
+normalization_version: 0
+agents:
+  - agent_name: analyst
+    role: analysis
+    provider:
+      provider_name: mock
+      model_id: mock-model-v1
+    permissions:
+      allowed_record_types: [constraint, decision, outcome]
+      allowed_tools: []
+      max_context_items: 10
+      can_propose_memory_writes: false
+      fail_on_permission_prune: false
+    default_instructions:
+      - Use memory context
+steps:
+  - step_key: step_mem
+    agent_name: analyst
+    task:
+      context_queries:
+        # mode omitted defaults to `policy`
+        - text: "Default policy mode check"
+          actor: "dev"
+          action: "read"
+          resource: "repo"
+        - mode: policy
+          text: "Check access"
+          actor: "dev"
+          action: "read"
+          resource: "repo"
+        - mode: recall
+          text: "recent repo outcomes"
+          # Missing/empty record_types defaults to MemoryKernel recall defaults:
+          # decision, preference, event, outcome
+          record_types: [decision, outcome]
+    depends_on: []
+    gate_points: []
+gates: []
+defaults:
+  non_interactive: true

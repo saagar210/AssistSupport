@@ -1,0 +1,33 @@
+workflow_name: mock_orchestration
+workflow_version: v1
+normalization_version: 0
+agents:
+  - agent_name: planner
+    role: planning
+    provider:
+      provider_name: mock
+      model_id: mock-model-v1
+    permissions:
+      allowed_record_types: []
+      allowed_tools: []
+      max_context_items: 10
+      can_propose_memory_writes: false
+      fail_on_permission_prune: false
+    default_instructions:
+      - Plan first
+steps:
+  - step_key: step_a
+    agent_name: planner
+    task:
+      text: "Draft initial plan"
+    depends_on: []
+    gate_points: []
+  - step_key: step_b
+    agent_name: planner
+    task:
+      text: "Refine plan"
+    depends_on: [step_a]
+    gate_points: []
+gates: []
+defaults:
+  non_interactive: true

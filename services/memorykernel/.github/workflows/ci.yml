@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  trilogy:
+    name: Trilogy Monorepo Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Contract parity (canonical v1 pack)
+        run: ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE"
+
+      - name: Compatibility artifacts (OutcomeMemory + MultiAgentCenter)
+        run: ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Service contract alignment
+        run: ./scripts/verify_service_contract_alignment.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Producer contract manifest alignment
+        run: ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Producer handoff payload alignment
+        run: ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint (deny warnings)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+
+      - name: Outcome benchmark guardrails (host CLI)
+        run: >
+          cargo run -p memory-kernel-cli -- outcome benchmark run
+          --volume 100 --volume 500 --volume 2000
+          --repetitions 3
+          --append-p95-max-ms 8
+          --replay-p95-max-ms 250
+          --gate-p95-max-ms 8
+          --json
+
+      - name: Trilogy smoke gate
+        run: ./scripts/run_trilogy_smoke.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Seven-standard compliance suite
+        run: ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$GITHUB_WORKSPACE"

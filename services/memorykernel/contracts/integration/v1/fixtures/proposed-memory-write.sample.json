@@ -1,0 +1,8 @@
+{
+  "proposal_index": 0,
+  "payload": {
+    "type": "decision",
+    "summary": "Agent suggests clarifying USB policy"
+  },
+  "justification": "Derived from step output and current policy context"
+}

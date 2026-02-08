@@ -1,0 +1,36 @@
+{
+  "artifact_version": "trilogy_compatibility.v1",
+  "project": {
+    "name": "OutcomeMemory",
+    "version": "0.1.0"
+  },
+  "supported_memorykernel_contract_baseline": "integration/v1",
+  "required_stable_embed_api": [
+    "run_cli",
+    "run_outcome_with_db",
+    "run_outcome",
+    "run_benchmark"
+  ],
+  "benchmark_threshold_semantics": {
+    "threshold_triplet_required": true,
+    "required_flags": [
+      "--append-p95-max-ms",
+      "--replay-p95-max-ms",
+      "--gate-p95-max-ms"
+    ],
+    "non_zero_exit_on_any_violation": true
+  },
+  "compatibility": {
+    "memory_kernel": {
+      "workspace_version": "0.1.0",
+      "supported_semver": ">=0.1.0,<0.2.0"
+    },
+    "multi_agent_center": {
+      "workspace_version": "0.1.0",
+      "supported_semver": ">=0.1.0,<0.2.0"
+    }
+  },
+  "notes": [
+    "v1 integration contracts are frozen; drift requires explicit version bump (for example, integration/v2)."
+  ]
+}

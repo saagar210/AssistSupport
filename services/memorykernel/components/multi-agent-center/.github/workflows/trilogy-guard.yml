@@ -1,0 +1,48 @@
+name: trilogy-guard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    env:
+      MEMORYKERNEL_CANONICAL_CONTRACTS: ${{ github.workspace }}/MemoryKernel-dep/contracts/integration
+    steps:
+      - name: Checkout MultiAgentCenter
+        uses: actions/checkout@v4
+
+      - name: Checkout MemoryKernel dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/MemoryKernel
+          path: MemoryKernel-dep
+
+      - name: Checkout OutcomeMemory dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/OutcomeMemory
+          path: OutcomeMemory-dep
+
+      - name: Link sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/MemoryKernel-dep" "$GITHUB_WORKSPACE/../MemoryKernel"
+          ln -sfn "$GITHUB_WORKSPACE/OutcomeMemory-dep" "$GITHUB_WORKSPACE/../OutcomeMemory"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Validate trilogy compatibility artifact and contract parity
+        run: cargo test -p multi-agent-center-cli --test integration_contracts
+
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features

@@ -1,0 +1,48 @@
+name: Nightly Stress
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  stress-suite:
+    runs-on: ubuntu-latest
+    env:
+      PROPTEST_CASES: "256"
+      OUTCOME_PERF_EVENT_COUNT: "10000"
+      OUTCOME_APPEND_BUDGET_MS: "120000"
+      OUTCOME_REPLAY_BUDGET_MS: "120000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Property-Based Fuzz Determinism Tests
+        run: cargo test -p memory-kernel-outcome-store-sqlite prop_ -- --nocapture
+
+      - name: Run Large-Volume Determinism and Guardrail Tests
+        run: |
+          cargo test -p memory-kernel-outcome-store-sqlite long_stream_replay_stays_deterministic -- --nocapture
+          cargo test -p memory-kernel-outcome-store-sqlite scale_guardrails_append_and_replay_within_budget -- --nocapture
+
+      - name: Run Stress Benchmark
+        run: |
+          cargo run -p memory-kernel-outcome-cli -- \
+            --db /tmp/ignore.sqlite3 \
+            outcome benchmark run \
+            --volume 5000 --volume 10000 \
+            --repetitions 5 \
+            --append-p95-max-ms 25 \
+            --replay-p95-max-ms 1500 \
+            --gate-p95-max-ms 25 \
+            --output benchmark-stress-report.json \
+            --json
+
+      - name: Upload Stress Benchmark Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-stress-report
+          path: benchmark-stress-report.json

@@ -1,0 +1,825 @@
+openapi: 3.1.0
+info:
+  title: Memory Kernel Local Service
+  version: service.v3
+servers:
+  - url: http://127.0.0.1:4010
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service health envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeHealth"
+  /v1/openapi:
+    get:
+      summary: OpenAPI artifact
+      responses:
+        "200":
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /v1/db/schema-version:
+    post:
+      summary: Inspect schema status
+      responses:
+        "200":
+          description: Schema status envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeSchemaStatus"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/db/migrate:
+    post:
+      summary: Migrate database or dry-run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrateRequest"
+      responses:
+        "200":
+          description: Migrate response envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeMigrateResult"
+        "400":
+          $ref: "#/components/responses/InvalidJsonError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/memory/add/constraint:
+    post:
+      summary: Add constraint memory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddConstraintRequest"
+      responses:
+        "200":
+          description: Added memory record envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeMemoryRecord"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/WriteConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/memory/add/summary:
+    post:
+      summary: Add summary memory (decision/preference/event/outcome)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSummaryRequest"
+      responses:
+        "200":
+          description: Added memory record envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeMemoryRecord"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/WriteConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/memory/link:
+    post:
+      summary: Add memory link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddLinkRequest"
+      responses:
+        "200":
+          description: Added link envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeAddLinkResult"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/WriteConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/query/ask:
+    post:
+      summary: Query and persist context package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskRequest"
+      responses:
+        "200":
+          description: Context package envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeContextPackage"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/query/recall:
+    post:
+      summary: Recall query and persist mixed-record context package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecallRequest"
+      responses:
+        "200":
+          description: Context package envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeContextPackage"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/context/{context_package_id}:
+    get:
+      summary: Fetch persisted context package
+      parameters:
+        - in: path
+          name: context_package_id
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Context package envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceEnvelopeContextPackage"
+        "404":
+          $ref: "#/components/responses/ContextNotFoundError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  responses:
+    InvalidJsonError:
+      description: JSON request payload could not be parsed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+    ValidationError:
+      description: Request is well-formed JSON but violates service validation rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+    ContextNotFoundError:
+      description: Requested context package was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+    WriteConflictError:
+      description: Write operation conflicted with existing identity or linkage constraints.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+    ServiceUnavailableError:
+      description: Required local database or schema service is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+    InternalError:
+      description: Unexpected internal error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ServiceErrorEnvelope"
+  schemas:
+    ServiceEnvelopeHealth:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/HealthData"
+    HealthData:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ServiceEnvelopeSchemaStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/SchemaStatus"
+    SchemaStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - current_version
+        - target_version
+        - pending_versions
+        - inferred_from_legacy
+      properties:
+        current_version:
+          type: integer
+        target_version:
+          type: integer
+        pending_versions:
+          type: array
+          items:
+            type: integer
+        inferred_from_legacy:
+          type: boolean
+    MigrateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - dry_run
+      properties:
+        dry_run:
+          type: boolean
+    ServiceEnvelopeMigrateResult:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/MigrateResult"
+    MigrateResult:
+      type: object
+      additionalProperties: false
+      required:
+        - dry_run
+        - current_version
+        - target_version
+        - would_apply_versions
+        - inferred_from_legacy
+      properties:
+        dry_run:
+          type: boolean
+        current_version:
+          type: integer
+        target_version:
+          type: integer
+        would_apply_versions:
+          type: array
+          items:
+            type: integer
+        inferred_from_legacy:
+          type: boolean
+        after_version:
+          type:
+            - integer
+            - "null"
+        up_to_date:
+          type:
+            - boolean
+            - "null"
+    AddConstraintRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - actor
+        - action
+        - resource
+        - effect
+        - version
+        - writer
+        - justification
+        - source_uri
+        - evidence
+        - truth_status
+        - authority
+        - supersedes
+        - contradicts
+      properties:
+        actor:
+          type: string
+          minLength: 1
+        action:
+          type: string
+          minLength: 1
+        resource:
+          type: string
+          minLength: 1
+        effect:
+          type: string
+          enum: [allow, deny]
+        note:
+          type:
+            - string
+            - "null"
+        memory_id:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: 1
+        writer:
+          type: string
+          minLength: 1
+        justification:
+          type: string
+          minLength: 1
+        source_uri:
+          type: string
+          minLength: 1
+        source_hash:
+          type:
+            - string
+            - "null"
+        evidence:
+          type: array
+          items:
+            type: string
+        confidence:
+          type:
+            - number
+            - "null"
+        truth_status:
+          type: string
+          enum: [asserted, observed, inferred, speculative, retracted]
+        authority:
+          type: string
+          enum: [authoritative, derived, note]
+        created_at:
+          type:
+            - string
+            - "null"
+        effective_at:
+          type:
+            - string
+            - "null"
+        supersedes:
+          type: array
+          items:
+            type: string
+        contradicts:
+          type: array
+          items:
+            type: string
+    AddSummaryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - record_type
+        - summary
+        - version
+        - writer
+        - justification
+        - source_uri
+        - evidence
+        - truth_status
+        - authority
+        - supersedes
+        - contradicts
+      properties:
+        record_type:
+          type: string
+          enum: [decision, preference, event, outcome]
+        summary:
+          type: string
+          minLength: 1
+        memory_id:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: 1
+        writer:
+          type: string
+          minLength: 1
+        justification:
+          type: string
+          minLength: 1
+        source_uri:
+          type: string
+          minLength: 1
+        source_hash:
+          type:
+            - string
+            - "null"
+        evidence:
+          type: array
+          items:
+            type: string
+        confidence:
+          type:
+            - number
+            - "null"
+        truth_status:
+          type: string
+          enum: [asserted, observed, inferred, speculative, retracted]
+        authority:
+          type: string
+          enum: [authoritative, derived, note]
+        created_at:
+          type:
+            - string
+            - "null"
+        effective_at:
+          type:
+            - string
+            - "null"
+        supersedes:
+          type: array
+          items:
+            type: string
+        contradicts:
+          type: array
+          items:
+            type: string
+    AddLinkRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - relation
+        - writer
+        - justification
+      properties:
+        from:
+          type: string
+          minLength: 1
+        to:
+          type: string
+          minLength: 1
+        relation:
+          type: string
+          enum: [supersedes, contradicts]
+        writer:
+          type: string
+          minLength: 1
+        justification:
+          type: string
+          minLength: 1
+    ServiceEnvelopeAddLinkResult:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          type: object
+          additionalProperties: false
+          required:
+            - from_memory_version_id
+            - to_memory_version_id
+            - relation
+            - writer
+            - justification
+          properties:
+            from_memory_version_id:
+              type: string
+            to_memory_version_id:
+              type: string
+            relation:
+              type: string
+              enum: [supersedes, contradicts]
+            writer:
+              type: string
+            justification:
+              type: string
+    AskRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+        - actor
+        - action
+        - resource
+      properties:
+        text:
+          type: string
+          minLength: 1
+        actor:
+          type: string
+          minLength: 1
+        action:
+          type: string
+          minLength: 1
+        resource:
+          type: string
+          minLength: 1
+        as_of:
+          type:
+            - string
+            - "null"
+    RecallRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+        - record_types
+      properties:
+        text:
+          type: string
+          minLength: 1
+        record_types:
+          type: array
+          items:
+            type: string
+            enum: [constraint, decision, preference, event, outcome]
+        as_of:
+          type:
+            - string
+            - "null"
+    ServiceEnvelopeMemoryRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/MemoryRecord"
+    ServiceEnvelopeContextPackage:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - api_contract_version
+        - data
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        api_contract_version:
+          type: string
+          const: api.v1
+        data:
+          $ref: "#/components/schemas/ContextPackage"
+    MemoryRecord:
+      type: object
+      additionalProperties: true
+      required:
+        - memory_version_id
+        - memory_id
+        - version
+        - created_at
+        - effective_at
+        - truth_status
+        - authority
+        - writer
+        - justification
+        - provenance
+        - payload
+        - supersedes
+        - contradicts
+      properties:
+        memory_version_id:
+          type: string
+        memory_id:
+          type: string
+        version:
+          type: integer
+        created_at:
+          type: string
+        effective_at:
+          type: string
+        truth_status:
+          type: string
+          enum: [asserted, observed, inferred, speculative, retracted]
+        authority:
+          type: string
+          enum: [authoritative, derived, note]
+        confidence:
+          type:
+            - number
+            - "null"
+        writer:
+          type: string
+        justification:
+          type: string
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+        payload:
+          type: object
+        supersedes:
+          type: array
+          items:
+            type: string
+        contradicts:
+          type: array
+          items:
+            type: string
+    Provenance:
+      type: object
+      additionalProperties: false
+      required:
+        - source_uri
+        - evidence
+      properties:
+        source_uri:
+          type: string
+        source_hash:
+          type:
+            - string
+            - "null"
+        evidence:
+          type: array
+          items:
+            type: string
+    ContextPackage:
+      type: object
+      additionalProperties: true
+      required:
+        - context_package_id
+        - generated_at
+        - query
+        - determinism
+        - answer
+        - selected_items
+        - excluded_items
+        - ordering_trace
+      properties:
+        context_package_id:
+          type: string
+        generated_at:
+          type: string
+        query:
+          type: object
+        determinism:
+          type: object
+          required:
+            - ruleset_version
+            - snapshot_id
+            - tie_breakers
+          properties:
+            ruleset_version:
+              type: string
+            snapshot_id:
+              type: string
+            tie_breakers:
+              type: array
+              items:
+                type: string
+        answer:
+          type: object
+          required:
+            - result
+            - why
+          properties:
+            result:
+              type: string
+            why:
+              type: string
+        selected_items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required:
+              - memory_version_id
+              - memory_id
+              - version
+              - record_type
+              - why
+        excluded_items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required:
+              - memory_version_id
+              - memory_id
+              - version
+              - record_type
+              - why
+        ordering_trace:
+          type: array
+          items:
+            type: object
+    ServiceErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - service_contract_version
+        - error
+      properties:
+        service_contract_version:
+          type: string
+          const: service.v3
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_json
+                - validation_error
+                - context_package_not_found
+                - write_conflict
+                - write_failed
+                - schema_unavailable
+                - migration_failed
+                - query_failed
+                - context_lookup_failed
+                - internal_error
+            message:
+              type: string
+            details:
+              type:
+                - object
+                - "null"
+              additionalProperties: true

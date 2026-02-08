@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "memory-add-response",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "memory_version_id",
+    "memory_id",
+    "version",
+    "writer",
+    "justification",
+    "provenance",
+    "payload"
+  ],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "memory_version_id": { "type": "string" },
+    "memory_id": { "type": "string" },
+    "version": { "type": "integer" },
+    "writer": { "type": "string" },
+    "justification": { "type": "string" },
+    "provenance": {
+      "type": "object",
+      "required": ["source_uri", "evidence"],
+      "properties": {
+        "source_uri": { "type": "string" },
+        "source_hash": { "type": ["string", "null"] },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": true
+}
+
