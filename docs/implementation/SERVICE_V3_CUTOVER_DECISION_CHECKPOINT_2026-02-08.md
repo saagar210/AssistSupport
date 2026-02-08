@@ -25,10 +25,10 @@ This checkpoint is planning/validation only and does **not** authorize runtime c
 ## Hard Gate Checklist
 
 ### Technical Gates
-- [ ] `pnpm run check:memorykernel-handoff:service-v3-candidate` passes.
-- [ ] `pnpm run check:memorykernel-pin` passes.
-- [ ] `pnpm run test:memorykernel-contract` passes.
-- [ ] Consumer deterministic fallback behavior remains green for:
+- [x] `pnpm run check:memorykernel-handoff:service-v3-candidate` passes.
+- [x] `pnpm run check:memorykernel-pin` passes.
+- [x] `pnpm run test:memorykernel-contract` passes.
+- [x] Consumer deterministic fallback behavior remains green for:
   - offline
   - timeout
   - malformed payload
@@ -36,16 +36,16 @@ This checkpoint is planning/validation only and does **not** authorize runtime c
   - non-2xx response
 
 ### Governance Gates
-- [ ] Producer manifest, compatibility matrix, and consumer pin remain synchronized.
-- [ ] Producer handoff payload correctness gate evidence is available.
-- [ ] Bilateral sign-off artifacts are linked in status docs.
-- [ ] Runtime cutover remains policy-blocked pending explicit joint approval.
+- [x] Producer manifest, compatibility matrix, and consumer pin remain synchronized.
+- [x] Producer handoff payload correctness gate evidence is available.
+- [x] Bilateral sign-off artifacts are linked in status docs.
+- [x] Runtime cutover remains policy-blocked pending explicit joint approval.
 
 ### Rollback Gates
-- [ ] Prior approved baseline rollback target is documented (`v0.3.2` / `cf331449...`).
-- [ ] Rollback drill evidence remains valid:
+- [x] Prior approved baseline rollback target is documented (`v0.3.2` / `cf331449...`).
+- [x] Rollback drill evidence remains valid:
   - `/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_ROLLBACK_DRILL_2026-02-08.md`
-- [ ] Incident communication protocol references are current on both repos.
+- [x] Incident communication protocol references are current on both repos.
 
 ## Explicit NO-GO Criteria
 Any one of the following is an automatic NO-GO:
@@ -67,6 +67,26 @@ Any one of the following is an automatic NO-GO:
 - Final rehearsal posture: `GO` / `NO-GO`
 - Runtime cutover decision: `GO` / `NO-GO`
 - If `NO-GO`, blockers + owners + target resolution date:
+
+## Decision Log (Current Session)
+- Checkpoint date: 2026-02-08
+- Participants (AssistSupport / MemoryKernel): AssistSupport Codex + MemoryKernel Codex
+- Producer artifact commit/tag reviewed: `fda52ed627648a912f9c17a26f8f65a023e40f42` (producer cutover-decision packet), baseline `v0.3.2` / `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- Consumer artifact commit reviewed: `7b1d1fc` (pre-checkpoint run)
+- Commands executed + result summary:
+  - `pnpm run check:memorykernel-handoff:service-v3-candidate` PASS
+  - `pnpm run check:memorykernel-pin` PASS
+  - `pnpm run test:memorykernel-contract` PASS
+  - `pnpm run test:ci` PASS
+- Technical gate verdict: GO
+- Governance gate verdict: GO
+- Rollback gate verdict: GO
+- Final rehearsal posture: GO
+- Runtime cutover decision: NO-GO
+- If `NO-GO`, blockers + owners + target resolution date:
+  1. Explicit bilateral runtime-cutover approval record is not yet granted (Joint, next cutover decision session).
+  2. Runtime baseline remains intentionally pinned to `service.v2` by governance policy (Joint, unchanged until new approval).
+  3. No immutable service.v3 runtime promotion tag/sha is approved for cutover execution (MemoryKernel + AssistSupport, pending future decision checkpoint).
 
 ## Required Evidence Links
 1. `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md`

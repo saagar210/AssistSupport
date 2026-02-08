@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (cutover-decision checkpoint opened on both repos)
+Updated: 2026-02-08 (cutover-decision checkpoint active; bilateral verification refreshed)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -61,3 +61,24 @@ Updated: 2026-02-08 (cutover-decision checkpoint opened on both repos)
 - Checkpoint mode status:
   - Cutover-decision checkpoint: `OPEN` (bilateral)
 - Next: keep runtime cutover blocked and use bilateral cutover-decision packets for any future decision session.
+
+## Latest Validation Run (Consumer + Producer)
+- Consumer commands:
+  - `pnpm run check:memorykernel-handoff:service-v3-candidate` PASS
+  - `pnpm run check:memorykernel-pin` PASS
+  - `pnpm run test:memorykernel-contract` PASS
+  - `pnpm run test:ci` PASS
+- Producer commands:
+  - `cargo fmt --all -- --check` PASS
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings` PASS
+  - `cargo test --workspace --all-targets --all-features` PASS
+  - `./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
+  - `./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel` PASS
+  - `./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
+  - `./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
+  - `./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline` PASS
+  - `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
+  - `./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
+- Bilateral verdict refresh:
+  - Rehearsal continuation: `GO`
+  - Runtime cutover: `NO-GO` (still intentionally blocked by decision policy)
