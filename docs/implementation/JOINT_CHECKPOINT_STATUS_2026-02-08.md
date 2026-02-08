@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (runtime cutover complete; stabilization window active)
+Updated: 2026-02-08 (runtime cutover complete; stabilization closed)
 
 ## Baseline
 - MemoryKernel release tag: `v0.4.0`
@@ -14,6 +14,7 @@ Updated: 2026-02-08 (runtime cutover complete; stabilization window active)
 - Checkpoint D (service.v3 RFC kickoff): `GO`
 - Rehearsal continuation decision: `GO`
 - Runtime cutover decision: `GO`
+- Week 1 stabilization checkpoint: `GO`
 - Bilateral sign-off status: `CLOSED`
 
 ## Locked Decisions
@@ -24,13 +25,13 @@ Updated: 2026-02-08 (runtime cutover complete; stabilization window active)
 ## Current State
 - Runtime baseline is `service.v3`.
 - AssistSupport fallback behavior remains deterministic and non-blocking.
-- Phase 9 stabilization window is active with rollback readiness maintained.
+- Stabilization window is complete and closed with no regressions.
 
 ## Canonical Runtime Closure Artifacts
 - Consumer closure:
   - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_2026-02-08.md`
 - Producer closure:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_PRODUCER_2026-02-08.md`
 
 ## Historical Note
 Pre-cutover NO-GO rehearsal packets are retained for audit history and are superseded by the runtime closure artifacts listed above.

@@ -1,10 +1,10 @@
 # Post-Cutover Stabilization Window (AssistSupport)
 
 Updated: 2026-02-08
-Window: Day 0 start (first stabilization checkpoint)
+Window: Day 0 start -> Week 1 checkpoint complete
 
 ## Purpose
-Track consumer-side health, fallback safety, and governance conformance immediately after runtime move to `service.v3`.
+Track consumer-side health, fallback safety, and governance conformance after runtime move to `service.v3`.
 
 ## Baseline
 - release_tag: `v0.4.0`
@@ -18,7 +18,8 @@ Track consumer-side health, fallback safety, and governance conformance immediat
 - [x] Rollback drill evidence refreshed.
 - [x] Adapter boundary and optional enrichment invariants preserved.
 
-## Commands Executed
+## Scheduled Checkpoint 1 (Week 1)
+### Commands Executed
 ```bash
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
@@ -26,7 +27,14 @@ pnpm run check:memorykernel-handoff
 pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run test:memorykernel-contract
 pnpm run test:memorykernel-cutover-dry-run
+pnpm run test:ci
 ```
+
+### Outcome
+- Command status: **PASS**
+- Incidents/regressions: **0**
+- Fallback safety: **Preserved**
+- Rollback readiness: **Ready**
 
 ## Monitoring and Incident SLA Controls
 1. Draft flow availability is release-blocking and must remain non-blocking under MemoryKernel failures.
@@ -34,7 +42,10 @@ pnpm run test:memorykernel-cutover-dry-run
 3. Any producer/consumer contract drift is triaged same business day.
 4. Rollback ownership remains pre-assigned in bilateral decision records.
 
-## Initial Stabilization Verdict
+## Stabilization Verdict
 - Consumer stability posture: **GO**
 - Governance posture: **GO**
-- Escalations opened: **0**
+- Window status: **CLOSED (Week 1 complete)**
+
+## Linked Closeout
+- `/Users/d/Projects/AssistSupport/docs/implementation/STABILIZATION_WEEK1_CLOSEOUT_2026-02-08.md`
