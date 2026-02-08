@@ -6,3 +6,4 @@ export { Toggle } from "./Toggle";
 export { Badge } from "./Badge";
 export { Tooltip } from "./Tooltip";
 export { Tabs } from "./Tabs";
+export { Skeleton } from "./Skeleton";

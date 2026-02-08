@@ -311,6 +311,7 @@ export function ChatView() {
             </button>
             <button
               onClick={() => setSidebarOpen(false)}
+              aria-label="Hide conversations sidebar"
               className="rounded p-1 text-muted-foreground hover:bg-muted"
             >
               <PanelLeftClose size={14} />
@@ -389,6 +390,7 @@ export function ChatView() {
               onClick={() => setSidebarOpen(true)}
               className="rounded p-1 text-muted-foreground hover:bg-muted"
               title="Show conversations"
+              aria-label="Show conversations sidebar"
             >
               <PanelLeftOpen size={14} />
             </button>
@@ -414,6 +416,7 @@ export function ChatView() {
             disabled={!activeConversationId || messages.length === 0}
             className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-50"
             title="Export conversation"
+            aria-label="Export conversation"
           >
             <Download size={14} />
           </button>
@@ -421,6 +424,7 @@ export function ChatView() {
             onClick={() => setSourcesOpen(!sourcesOpen)}
             className="rounded p-1 text-muted-foreground hover:bg-muted"
             title={sourcesOpen ? "Hide sources" : "Show sources"}
+            aria-label={sourcesOpen ? "Hide sources panel" : "Show sources panel"}
           >
             {sourcesOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
           </button>
@@ -554,6 +558,10 @@ export function ChatView() {
               <div ref={messagesEndRef} />
             </div>
           )}
+          <div aria-live="polite" className="sr-only">
+            {streaming && !streamingContent && "AI is thinking..."}
+            {streaming && streamingContent && "AI is responding..."}
+          </div>
         </div>
 
         {/* Input Area */}
@@ -574,6 +582,7 @@ export function ChatView() {
                 onClick={handleStopGeneration}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive text-white transition-colors hover:bg-destructive/90"
                 title="Stop generation"
+                aria-label="Stop generation"
               >
                 <Square size={16} />
               </button>
@@ -582,6 +591,7 @@ export function ChatView() {
                 onClick={handleSend}
                 disabled={!input.trim()}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+                aria-label="Send message"
               >
                 <Send size={16} />
               </button>

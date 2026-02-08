@@ -14,6 +14,7 @@ import {
   AlertCircle,
   CheckCircle2,
   File,
+  RefreshCw,
 } from "lucide-react";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useDocumentStore } from "../stores/documentStore";
@@ -94,6 +95,7 @@ export function DocumentsView() {
   const activeCollectionId = useCollectionStore((s) => s.activeCollectionId);
   const documents = useDocumentStore((s) => s.documents);
   const loading = useDocumentStore((s) => s.loading);
+  const error = useDocumentStore((s) => s.error);
   const fetchDocuments = useDocumentStore((s) => s.fetchDocuments);
   const deleteDocument = useDocumentStore((s) => s.deleteDocument);
   const fetchStats = useDocumentStore((s) => s.fetchStats);
@@ -242,6 +244,25 @@ export function DocumentsView() {
     return <DocumentGridSkeleton />;
   }
 
+  if (error && documents.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+        <AlertCircle size={48} strokeWidth={1.5} className="text-destructive" />
+        <p className="text-sm text-destructive">{error}</p>
+        <button
+          onClick={() => activeCollectionId && fetchDocuments(activeCollectionId)}
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
+        >
+          <RefreshCw size={16} />
+          Retry
+        </button>
+        <div aria-live="polite" className="sr-only">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
   if (!hasDocuments) {
     return (
       <div
@@ -296,11 +317,9 @@ export function DocumentsView() {
             )}
             Add Documents
           </button>
-          {dragging && (
-            <span className="text-sm text-accent font-medium">
-              Drop files to import
-            </span>
-          )}
+          <span aria-live="polite" className="text-sm text-accent font-medium">
+            {dragging ? "Drop files to import" : ingesting ? "Ingesting documents..." : ""}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <span className="mr-2 text-xs text-muted-foreground">Sort:</span>
@@ -356,6 +375,7 @@ export function DocumentsView() {
                   e.stopPropagation();
                   setDeleteConfirmId(doc.id);
                 }}
+                aria-label={`Delete ${doc.filename}`}
                 className="absolute right-2 top-2 hidden rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:block"
               >
                 <Trash2 size={14} />

@@ -6,6 +6,7 @@ import type { Document, PaginatedResponse } from "../types";
 interface DocumentState {
   documents: Document[];
   loading: boolean;
+  error: string | null;
   docCount: number;
   chunkCount: number;
   fetchDocuments: (collectionId: string) => Promise<void>;
@@ -16,11 +17,12 @@ interface DocumentState {
 export const useDocumentStore = create<DocumentState>((set, get) => ({
   documents: [],
   loading: false,
+  error: null,
   docCount: 0,
   chunkCount: 0,
 
   fetchDocuments: async (collectionId: string) => {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
       const response = await invoke<PaginatedResponse<Document>>("list_documents", {
         collectionId,
@@ -28,8 +30,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set({ documents: response.items, loading: false });
     } catch (error) {
       console.error("Failed to fetch documents:", error);
-      useToastStore.getState().addToast("error", "Failed to fetch documents: " + String(error));
-      set({ loading: false });
+      const errorMsg = "Failed to fetch documents: " + String(error);
+      useToastStore.getState().addToast("error", errorMsg);
+      set({ loading: false, error: errorMsg });
     }
   },
 

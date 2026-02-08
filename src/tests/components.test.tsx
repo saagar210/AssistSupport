@@ -16,7 +16,7 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { IngestionPanel } from "../components/IngestionPanel";
 import { SetupWizard } from "../components/SetupWizard";
 import { OllamaStatusBanner } from "../components/OllamaStatusBanner";
-import { Modal, Toggle, Badge, Tooltip } from "../components/ui";
+import { Modal, Toggle, Badge, Tooltip, Skeleton } from "../components/ui";
 import { FileText, Search } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { useAppStore } from "../stores/appStore";
@@ -433,5 +433,46 @@ describe("Tooltip", () => {
 
     fireEvent.mouseLeave(screen.getByTestId("tooltip-wrapper"));
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+});
+
+describe("Skeleton", () => {
+  it("test_skeleton_renders", () => {
+    render(<Skeleton className="h-4 w-full" />);
+    const skeleton = screen.getByTestId("skeleton");
+    expect(skeleton).toBeInTheDocument();
+    expect(skeleton).toHaveClass("animate-pulse");
+    expect(skeleton).toHaveClass("rounded");
+    expect(skeleton).toHaveClass("bg-muted");
+    expect(skeleton).toHaveClass("h-4");
+    expect(skeleton).toHaveClass("w-full");
+  });
+
+  it("renders multiple lines when lines prop is set", () => {
+    render(<Skeleton lines={3} className="h-4" />);
+    const skeleton = screen.getByTestId("skeleton");
+    expect(skeleton).toBeInTheDocument();
+    const lines = screen.getAllByTestId("skeleton-line");
+    expect(lines).toHaveLength(3);
+  });
+
+  it("applies custom width via style", () => {
+    render(<Skeleton width="200px" className="h-4" />);
+    const skeleton = screen.getByTestId("skeleton");
+    expect(skeleton).toHaveStyle({ width: "200px" });
+  });
+});
+
+describe("Modal accessibility", () => {
+  it("test_modal_has_aria_attributes", () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Accessible Modal">
+        <p>Content</p>
+      </Modal>,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAttribute("aria-label", "Accessible Modal");
   });
 });

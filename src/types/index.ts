@@ -161,4 +161,24 @@ export interface SearchHistoryEntry {
   created_at: string;
 }
 
+export interface Community {
+  id: number;
+  members: string[];
+  size: number;
+}
+
+export interface GraphTraversalNode {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  depth: number;
+  path_weight: number;
+}
+
+export interface GraphStats {
+  nodeCount: number;
+  edgeCount: number;
+  density: number;
+}
+
 export type ViewType = "graph" | "chat" | "documents" | "search" | "settings" | "document-detail";

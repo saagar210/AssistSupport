@@ -7,6 +7,8 @@ import {
   Clock,
   X,
   Sparkles,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useAppStore } from "../stores/appStore";
@@ -61,6 +63,7 @@ export function SearchView() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Facets
   const [showFilters, setShowFilters] = useState(false);
@@ -86,6 +89,7 @@ export function SearchView() {
 
     setLoading(true);
     setSearched(true);
+    setSearchError(null);
     if (searchQuery) setQuery(searchQuery);
     try {
       const command = SEARCH_COMMANDS[mode];
@@ -109,8 +113,9 @@ export function SearchView() {
       })
         .then(setHistory)
         .catch(() => {});
-    } catch (error) {
-      console.error("Search failed:", error);
+    } catch (err) {
+      console.error("Search failed:", err);
+      setSearchError("Search failed: " + String(err));
       setResults([]);
     } finally {
       setLoading(false);
@@ -313,7 +318,25 @@ export function SearchView() {
       {/* Results */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">
-          {loading ? (
+          <div aria-live="polite" className="sr-only">
+            {loading && "Searching..."}
+            {!loading && searched && filteredResults.length === 0 && !searchError && `No results found for ${query}`}
+            {!loading && searched && filteredResults.length > 0 && `${filteredResults.length} results found`}
+            {searchError ?? ""}
+          </div>
+          {searchError ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
+              <AlertCircle size={32} strokeWidth={1.5} className="text-destructive" />
+              <p className="text-sm text-destructive">{searchError}</p>
+              <button
+                onClick={() => handleSearch()}
+                className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
+              >
+                <RefreshCw size={16} />
+                Retry
+              </button>
+            </div>
+          ) : loading ? (
             <SearchSkeleton />
           ) : searched && filteredResults.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">

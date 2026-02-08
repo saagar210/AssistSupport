@@ -28,6 +28,7 @@ export function Sidebar() {
             <button
               key={view}
               title={label}
+              aria-label={label}
               onClick={() => setActiveView(view)}
               className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
                 isActive
@@ -43,6 +44,7 @@ export function Sidebar() {
 
       <button
         title="Settings"
+        aria-label="Settings"
         onClick={() => setActiveView("settings")}
         className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
           activeView === "settings"
