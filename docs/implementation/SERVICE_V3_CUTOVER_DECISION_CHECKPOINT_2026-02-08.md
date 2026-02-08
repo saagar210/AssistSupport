@@ -1,6 +1,6 @@
 # Service.v3 Cutover Decision Checkpoint (Consumer)
 
-Updated: 2026-02-08  
+Updated: 2026-02-08 (checkpoint decision logged)  
 Owner: AssistSupport (joint decision with MemoryKernel)
 
 ## Scope
@@ -88,6 +88,16 @@ Any one of the following is an automatic NO-GO:
   2. Runtime baseline remains intentionally pinned to `service.v2` by governance policy (Joint, unchanged until new approval).
   3. No immutable service.v3 runtime promotion tag/sha is approved for cutover execution (MemoryKernel + AssistSupport, pending future decision checkpoint).
 
+## Final Decision Record (Bilateral)
+- Decision artifact:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
+- Decision summary:
+  - Rehearsal continuation: `GO`
+  - Runtime cutover: `NO-GO`
+- Checkpoint closure status:
+  - Phase 7 decision checkpoint: `CLOSED`
+  - Phase 8 runtime cutover: `NOT STARTED`
+
 ## Required Evidence Links
 1. `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_CHECKPOINT_STATUS_2026-02-08.md`
 2. `/Users/d/Projects/AssistSupport/docs/implementation/PHASE_EXECUTION_STATUS_2026-02-08.md`
@@ -99,8 +109,12 @@ Any one of the following is an automatic NO-GO:
 ## Producer Alignment (Received)
 - Producer cutover-decision packet:
   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
+- Producer decision addendum:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
+- Producer runtime decision mirror:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_PRODUCER_2026-02-08.md`
 - Producer alignment commit:
-  - `fda52ed627648a912f9c17a26f8f65a023e40f42`
+  - `cf451a7`
 - Producer reported verdicts:
   - Rehearsal continuation: `GO`
   - Runtime cutover: `NO-GO`

@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (cutover-decision checkpoint active; bilateral verification refreshed)
+Updated: 2026-02-08 (cutover-decision checkpoint closed with explicit NO-GO runtime verdict)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -57,10 +57,16 @@ Updated: 2026-02-08 (cutover-decision checkpoint active; bilateral verification 
 - Producer cutover-decision checkpoint packet:
   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
 - Producer cutover-decision alignment commit:
-  - `fda52ed627648a912f9c17a26f8f65a023e40f42`
+  - `cf451a7`
+- Producer decision addendum:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
+- Joint gate review packet:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_GATE_REVIEW_2026-02-08.md`
 - Checkpoint mode status:
-  - Cutover-decision checkpoint: `OPEN` (bilateral)
-- Next: keep runtime cutover blocked and use bilateral cutover-decision packets for any future decision session.
+  - Cutover-decision checkpoint: `CLOSED` (bilateral decision recorded)
+- Decision record:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
+- Next: keep runtime cutover blocked and only enter Phase 8 after immutable service.v3 runtime target publication + bilateral GO record.
 
 ## Latest Validation Run (Consumer + Producer)
 - Consumer commands:

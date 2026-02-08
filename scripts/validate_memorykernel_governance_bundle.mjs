@@ -37,6 +37,17 @@ function main() {
         `- MemoryKernel commit: \`${pin.commit_sha}\``,
         'Checkpoint A (manifest mirrored + governance checks): `GO`',
         'Checkpoint B (consumer contract suite green): `GO`',
+        'Cutover-decision checkpoint: `CLOSED` (bilateral decision recorded)',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md',
+      snippets: [
+        'Runtime cutover execution: **NO-GO**',
+        'Approved Runtime Cutover Window',
+        'Status: **Not approved**',
+        'Support Platform On-Call Lead',
+        'MemoryKernel Producer On-Call Lead',
       ],
     },
     {
@@ -117,6 +128,14 @@ function main() {
         '## Phase 5: Consumer Cutover-Prep Controls',
         '## Phase 6: Cutover Governance + Rollback Readiness',
         'runtime cutover remains disabled',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/JOINT_RUNTIME_CUTOVER_GATE_REVIEW_2026-02-08.md',
+      snippets: [
+        '## Gate Decisions',
+        'Runtime cutover: **NO-GO**',
+        'Immutable `service.v3` runtime release tag + SHA are not yet published and approved.',
       ],
     },
     {

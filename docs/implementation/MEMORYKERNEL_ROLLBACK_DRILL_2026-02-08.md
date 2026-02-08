@@ -37,3 +37,24 @@ Result summary:
 ## Follow-up Actions
 1. Keep this drill cadence at least once per quarter.
 2. Add service.v3 pre-cutover rollback rehearsal before runtime transition.
+
+## Latest Execution Refresh (Decision Checkpoint Closure)
+Date: 2026-02-08  
+Consumer commit: `008dfc8`
+
+Commands rerun:
+```bash
+pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
+pnpm run test:memorykernel-contract
+```
+
+Refresh summary:
+- `check:memorykernel-pin`: PASS
+- `check:memorykernel-governance`: PASS
+- `test:memorykernel-contract`: PASS
+- Contract evidence refreshed: `/Users/d/Projects/AssistSupport/artifacts/memorykernel-contract-evidence.json`
+
+Checkpoint impact:
+- Phase 7 decision checkpoint can be closed with rollback readiness still `READY`.
+- Runtime cutover remains `NO-GO` until immutable `service.v3` runtime target and bilateral runtime GO decision are both completed.
