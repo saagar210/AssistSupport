@@ -17,6 +17,18 @@ Scope: planning/rehearsal evidence only (no runtime cutover)
   - `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
   - `docs/implementation/SERVICE_V3_RFC_DRAFT.md`
 
+## Reproducibility Commands
+```bash
+./scripts/generate_producer_handoff_payload.sh \
+  --mode service-v3-candidate \
+  --memorykernel-root /Users/d/Projects/MemoryKernel \
+  --out-json /Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json
+
+./scripts/generate_service_v3_rehearsal_payload.sh \
+  --memorykernel-root /Users/d/Projects/MemoryKernel \
+  --out-json /Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json
+```
+
 ## Required Producer Verification Commands
 ```bash
 cargo fmt --all -- --check
@@ -25,6 +37,7 @@ cargo test --workspace --all-targets --all-features
 ./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 ./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel
 ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel
+./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 ./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline
 ```
@@ -39,6 +52,7 @@ cargo test --workspace --all-targets --all-features
   - `verify_service_contract_alignment.sh`: pass
   - `verify_contract_parity.sh`: pass
   - `verify_trilogy_compatibility_artifacts.sh`: pass
+  - `verify_producer_handoff_payload.sh`: pass
   - `run_trilogy_smoke.sh`: pass
   - `run_trilogy_compliance_suite.sh --skip-baseline`: pass
 

@@ -983,7 +983,11 @@ fn governance_docs_exist_for_phase_checklists_and_policies() {
         "docs/implementation/trilogy-release-gate.md",
         "docs/implementation/trilogy-release-report-2026-02-07.md",
         "docs/implementation/trilogy-execution-status-2026-02-07.md",
+        "docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN_PRODUCER.md",
+        "docs/implementation/SERVICE_V3_CUTOVER_DAY_CHECKLIST.md",
+        "docs/implementation/SERVICE_V3_ROLLBACK_COMMUNICATION_PROTOCOL.md",
         ".github/workflows/release.yml",
+        ".github/workflows/ci.yml",
         "docs/operations/migration-runbook.md",
         "docs/operations/recovery-runbook.md",
         "docs/implementation/pilot-acceptance.md",
@@ -992,6 +996,7 @@ fn governance_docs_exist_for_phase_checklists_and_policies() {
         "docs/security/trust-controls.md",
         "scripts/verify_contract_parity.sh",
         "scripts/verify_trilogy_compatibility_artifacts.sh",
+        "scripts/verify_producer_handoff_payload.sh",
         "scripts/run_trilogy_smoke.sh",
         "scripts/run_trilogy_soak.sh",
         "scripts/run_trilogy_phase_8_11_closeout.sh",
@@ -1033,8 +1038,18 @@ fn governance_docs_exist_for_phase_checklists_and_policies() {
         }
         if path == ".github/workflows/release.yml" {
             assert!(
-                body.contains("workflow_dispatch") && body.contains("Validate SemVer input"),
+                body.contains("workflow_dispatch")
+                    && body.contains("Validate SemVer input")
+                    && body.contains("Producer handoff payload alignment"),
                 "release workflow must include semver-gated dispatch: {}",
+                full.display()
+            );
+        }
+        if path == ".github/workflows/ci.yml" {
+            assert!(
+                body.contains("Trilogy Monorepo Gates")
+                    && body.contains("Producer handoff payload alignment"),
+                "ci workflow must include producer handoff payload alignment gate: {}",
                 full.display()
             );
         }
@@ -1095,6 +1110,43 @@ fn governance_docs_exist_for_phase_checklists_and_policies() {
                     && body.contains("## Hosted Evidence Checks")
                     && body.contains("## Closeout Summary"),
                 "trilogy closeout report missing required sections: {}",
+                full.display()
+            );
+        }
+        if path == "docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN_PRODUCER.md" {
+            assert!(
+                body.contains("## Phase 4: Rehearsal Package Hardening")
+                    && body.contains(
+                        "## Phase 5: Producer Cutover-Prep Controls (No Runtime Cutover)"
+                    )
+                    && body.contains("## Phase 6: Cutover Governance + Rollback Evidence Scaffold"),
+                "remaining roadmap execution plan is missing required phase sections: {}",
+                full.display()
+            );
+        }
+        if path == "docs/implementation/SERVICE_V3_CUTOVER_DAY_CHECKLIST.md" {
+            assert!(
+                body.contains("## Producer Cutover Checklist")
+                    && body.contains("## Rollback Triggers (immediate)")
+                    && body.contains("## Rollback Evidence Requirements"),
+                "service v3 cutover-day checklist missing required sections: {}",
+                full.display()
+            );
+        }
+        if path == "docs/implementation/SERVICE_V3_ROLLBACK_COMMUNICATION_PROTOCOL.md" {
+            assert!(
+                body.contains("## Trigger-to-Action Matrix")
+                    && body.contains("## Required Reversal Evidence Bundle")
+                    && body.contains("## Go/No-Go Communication Protocol"),
+                "service v3 rollback communication protocol missing required sections: {}",
+                full.display()
+            );
+        }
+        if path == "scripts/verify_producer_handoff_payload.sh" {
+            assert!(
+                body.contains("service-v3-candidate")
+                    && body.contains("Producer handoff payload checks passed."),
+                "producer handoff payload checker script missing required candidate-mode checks: {}",
                 full.display()
             );
         }

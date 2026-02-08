@@ -23,6 +23,7 @@ Use this template to produce a deterministic handoff packet for AssistSupport wi
   - `./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
   - `./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel`
   - `./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
+  - `./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
   - `./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
   - `./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline`
 

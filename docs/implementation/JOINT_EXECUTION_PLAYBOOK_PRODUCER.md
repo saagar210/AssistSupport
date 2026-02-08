@@ -19,6 +19,7 @@
 - CI/release governance gates remain mandatory:
   - `verify_service_contract_alignment.sh`
   - `verify_producer_contract_manifest.sh`
+  - `verify_producer_handoff_payload.sh`
   - parity + compatibility + smoke + compliance suite
 
 ### Confirmed joint decisions (AssistSupport + MemoryKernel)
@@ -63,6 +64,7 @@ Make producer contract governance operationally routine (not tribal knowledge) f
 ### Verification commands
 ```bash
 ./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel
+./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 ./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 ./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel
 ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel
@@ -96,6 +98,7 @@ Reduce coordination drag by turning pin/matrix/manifest drift into fast CI failu
 ### Verification commands
 ```bash
 ./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel
+./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel
 cargo test --workspace --all-targets --all-features
 ```
 

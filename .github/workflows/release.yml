@@ -46,6 +46,9 @@ jobs:
       - name: Producer contract manifest alignment
         run: ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
+      - name: Producer handoff payload alignment
+        run: ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 

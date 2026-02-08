@@ -37,3 +37,8 @@
   - `docs/implementation/SERVICE_V3_CUTOVER_GATES.md`
   - `docs/implementation/SERVICE_V3_REHEARSAL_HANDOFF_CANDIDATE.json`
   - `docs/implementation/SERVICE_V3_REHEARSAL_VERIFICATION_EVIDENCE.md`
+- Added producer roadmap and cutover governance scaffolding:
+  - `docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN_PRODUCER.md`
+  - `docs/implementation/SERVICE_V3_CUTOVER_DAY_CHECKLIST.md`
+  - `docs/implementation/SERVICE_V3_ROLLBACK_COMMUNICATION_PROTOCOL.md`
+- Added `scripts/verify_producer_handoff_payload.sh` and wired it into CI/release to enforce handoff payload correctness and policy drift detection.
