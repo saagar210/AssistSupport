@@ -13,6 +13,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout MemoryKernel dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/MemoryKernel
+          path: MemoryKernel
+
+      - name: Link sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/MemoryKernel" "$GITHUB_WORKSPACE/../MemoryKernel"
+
       - name: Checkout MemoryKernel Canonical Contracts
         if: ${{ vars.MEMORYKERNEL_CANONICAL_REPO != '' }}
         uses: actions/checkout@v4
