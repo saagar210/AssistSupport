@@ -32,7 +32,8 @@ Define existing and planned feature toggles so revamp rollout is reversible and 
    3. Safe default (`false`)
 3. Current active flag wiring:
    1. `ASSISTSUPPORT_REVAMP_INBOX` toggles queue-first inbox wrapper.
-   2. Other flags are parsed and available for subsequent feature slices.
+   2. `ASSISTSUPPORT_REVAMP_WORKSPACE` toggles workspace revamp shell wrapper.
+   3. Other flags are parsed and available for subsequent feature slices.
 
 ## Flag Governance Rules
 1. New revamp surface cannot replace legacy by default until phase gate exit criteria pass.

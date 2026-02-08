@@ -38,7 +38,11 @@ export function renderActiveTab({
     case 'draft':
       return (
         <ErrorBoundary fallbackTitle="Draft tab encountered an error">
-          <WorkspacePage ref={draftRef} onNavigateToSource={onNavigateToSource} />
+          <WorkspacePage
+            ref={draftRef}
+            onNavigateToSource={onNavigateToSource}
+            revampModeEnabled={revampFlags.ASSISTSUPPORT_REVAMP_WORKSPACE}
+          />
         </ErrorBoundary>
       );
     case 'followups':
