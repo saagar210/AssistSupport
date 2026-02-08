@@ -237,6 +237,7 @@ The following are hard invariants for every phase:
 
 Current consumer execution status is tracked in:
 - `/Users/d/Projects/AssistSupport/docs/implementation/PHASE_EXECUTION_STATUS_2026-02-08.md`
+- `/Users/d/Projects/AssistSupport/docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN.md`
 
 This status artifact must be updated whenever checkpoint state or phase completion status changes.
 

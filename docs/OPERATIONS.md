@@ -84,6 +84,8 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
    pnpm run check:memorykernel-pin
    pnpm run check:memorykernel-governance
    pnpm run check:memorykernel-handoff
+   pnpm run check:memorykernel-boundary
+   pnpm run check:memorykernel-cutover-policy
    ```
    Optional strict mode (environments with direct producer repo access):
    ```bash
@@ -114,6 +116,13 @@ pnpm run test:memorykernel-phase3-dry-run
 Use this to validate a producer service.v3 handoff candidate payload without pinning/cutover.
 ```bash
 pnpm run check:memorykernel-handoff:service-v3-candidate
+```
+
+### MemoryKernel adapter-boundary and cutover-policy checks (consumer)
+Use these to enforce no endpoint leakage outside the Tauri adapter boundary and keep runtime cutover disabled by policy.
+```bash
+pnpm run check:memorykernel-boundary
+pnpm run check:memorykernel-cutover-policy
 ```
 
 ## 3) Backup/Restore Validation

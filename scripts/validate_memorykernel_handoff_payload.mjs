@@ -57,6 +57,93 @@ function compareSets(actual, expected, field) {
   }
 }
 
+function assertArrayContainsAll(values, expected, field) {
+  const valueSet = new Set(values);
+  const missing = expected.filter((entry) => !valueSet.has(entry));
+  if (missing.length > 0) {
+    fail(`${field} missing required entries: ${missing.join(',')}`);
+  }
+}
+
+function validateCandidateModeExpectations(handoff, pin) {
+  if (handoff.handoff_mode !== 'service-v3-candidate') {
+    fail(`handoff_mode must be service-v3-candidate for candidate validation, got ${handoff.handoff_mode}`);
+  }
+
+  if (!handoff.active_runtime_baseline || typeof handoff.active_runtime_baseline !== 'object') {
+    fail('candidate handoff must include active_runtime_baseline object');
+  }
+
+  const baseline = handoff.active_runtime_baseline;
+  assertEqual(baseline.release_tag, pin.release_tag, 'active_runtime_baseline.release_tag');
+  assertEqual(baseline.commit_sha, pin.commit_sha, 'active_runtime_baseline.commit_sha');
+  assertEqual(
+    baseline.expected_service_contract_version,
+    pin.expected_service_contract_version,
+    'active_runtime_baseline.expected_service_contract_version'
+  );
+  assertEqual(
+    baseline.expected_api_contract_version,
+    pin.expected_api_contract_version,
+    'active_runtime_baseline.expected_api_contract_version'
+  );
+  assertEqual(
+    baseline.integration_baseline,
+    pin.expected_integration_baseline,
+    'active_runtime_baseline.integration_baseline'
+  );
+
+  if (!handoff.non_2xx_envelope_policy || typeof handoff.non_2xx_envelope_policy !== 'object') {
+    fail('candidate handoff must include non_2xx_envelope_policy object');
+  }
+
+  const serviceV3Policy = handoff.non_2xx_envelope_policy.service_v3_candidate;
+  if (!serviceV3Policy || typeof serviceV3Policy !== 'object') {
+    fail('candidate handoff non_2xx_envelope_policy.service_v3_candidate is required');
+  }
+  assertArrayContainsAll(
+    serviceV3Policy.requires || [],
+    ['service_contract_version', 'error.code', 'error.message'],
+    'non_2xx_envelope_policy.service_v3_candidate.requires'
+  );
+  assertArrayContainsAll(
+    serviceV3Policy.forbids || [],
+    ['legacy_error', 'api_contract_version'],
+    'non_2xx_envelope_policy.service_v3_candidate.forbids'
+  );
+
+  if (!handoff.rehearsal_candidate || typeof handoff.rehearsal_candidate !== 'object') {
+    fail('candidate handoff must include rehearsal_candidate object');
+  }
+  if (handoff.rehearsal_candidate.requires_runtime_cutover !== false) {
+    fail('candidate handoff must set rehearsal_candidate.requires_runtime_cutover=false');
+  }
+  if (handoff.rehearsal_candidate.consumer_non_blocking_fallback_required !== true) {
+    fail(
+      'candidate handoff must set rehearsal_candidate.consumer_non_blocking_fallback_required=true'
+    );
+  }
+
+  if (!handoff.compatibility_expectations || typeof handoff.compatibility_expectations !== 'object') {
+    fail('candidate handoff must include compatibility_expectations object');
+  }
+
+  assertNonEmptyArray(
+    handoff.required_consumer_validation_commands,
+    'required_consumer_validation_commands'
+  );
+  assertArrayContainsAll(
+    handoff.required_consumer_validation_commands,
+    [
+      'pnpm run check:memorykernel-handoff:service-v3-candidate',
+      'pnpm run check:memorykernel-pin',
+      'pnpm run test:memorykernel-contract',
+      'pnpm run test:ci',
+    ],
+    'required_consumer_validation_commands'
+  );
+}
+
 function main() {
   if (!fs.existsSync(pinPath)) {
     fail(`missing pin manifest: ${pinPath}`);
@@ -78,16 +165,43 @@ function main() {
   const pin = parseJson(pinPath);
   const producerManifest = parseJson(producerManifestPath);
   const handoff = parseJson(handoffPath);
+  const candidateRuntimeBaseline =
+    handoff.handoff_mode === 'service-v3-candidate' &&
+    handoff.active_runtime_baseline &&
+    typeof handoff.active_runtime_baseline === 'object'
+      ? handoff.active_runtime_baseline
+      : null;
+  const usingCandidateRuntimeBaseline =
+    requirePinMatch &&
+    candidateRuntimeBaseline !== null &&
+    !process.env.MEMORYKERNEL_EXPECTED_SERVICE_CONTRACT_VERSION?.trim() &&
+    !process.env.MEMORYKERNEL_EXPECTED_API_CONTRACT_VERSION?.trim() &&
+    !process.env.MEMORYKERNEL_EXPECTED_INTEGRATION_BASELINE?.trim();
 
   const expectedServiceContractVersion =
     process.env.MEMORYKERNEL_EXPECTED_SERVICE_CONTRACT_VERSION?.trim() ||
-    pin.expected_service_contract_version;
+    (usingCandidateRuntimeBaseline
+      ? candidateRuntimeBaseline.expected_service_contract_version
+      : pin.expected_service_contract_version);
   const expectedApiContractVersion =
     process.env.MEMORYKERNEL_EXPECTED_API_CONTRACT_VERSION?.trim() ||
-    pin.expected_api_contract_version;
+    (usingCandidateRuntimeBaseline
+      ? candidateRuntimeBaseline.expected_api_contract_version
+      : pin.expected_api_contract_version);
   const expectedIntegrationBaseline =
     process.env.MEMORYKERNEL_EXPECTED_INTEGRATION_BASELINE?.trim() ||
-    pin.expected_integration_baseline;
+    (usingCandidateRuntimeBaseline
+      ? candidateRuntimeBaseline.integration_baseline
+      : pin.expected_integration_baseline);
+  const actualServiceContractVersion = usingCandidateRuntimeBaseline
+    ? candidateRuntimeBaseline.expected_service_contract_version
+    : handoff.expected_service_contract_version;
+  const actualApiContractVersion = usingCandidateRuntimeBaseline
+    ? candidateRuntimeBaseline.expected_api_contract_version
+    : handoff.expected_api_contract_version;
+  const actualIntegrationBaseline = usingCandidateRuntimeBaseline
+    ? candidateRuntimeBaseline.integration_baseline
+    : handoff.integration_baseline;
 
   if (requirePinMatch) {
     assertEqual(handoff.release_tag, pin.release_tag, 'release_tag');
@@ -101,21 +215,9 @@ function main() {
     }
   }
 
-  assertEqual(
-    handoff.expected_service_contract_version,
-    expectedServiceContractVersion,
-    'expected_service_contract_version'
-  );
-  assertEqual(
-    handoff.expected_api_contract_version,
-    expectedApiContractVersion,
-    'expected_api_contract_version'
-  );
-  assertEqual(
-    handoff.integration_baseline,
-    expectedIntegrationBaseline,
-    'integration_baseline'
-  );
+  assertEqual(actualServiceContractVersion, expectedServiceContractVersion, 'expected_service_contract_version');
+  assertEqual(actualApiContractVersion, expectedApiContractVersion, 'expected_api_contract_version');
+  assertEqual(actualIntegrationBaseline, expectedIntegrationBaseline, 'integration_baseline');
   assertEqual(
     handoff.manifest_contract_version,
     producerManifest.manifest_contract_version,
@@ -124,9 +226,13 @@ function main() {
 
   assertNonEmptyArray(handoff.error_code_enum, 'error_code_enum');
   const handoffSet = toStringSet(handoff.error_code_enum);
-  if (expectedServiceContractVersion === pin.expected_service_contract_version) {
+  const candidateMode =
+    expectedServiceContractVersion !== pin.expected_service_contract_version;
+  if (!candidateMode) {
     const manifestSet = toStringSet(producerManifest.error_code_enum ?? []);
     compareSets(handoffSet, manifestSet, 'error_code_enum');
+  } else {
+    validateCandidateModeExpectations(handoff, pin);
   }
 
   assertNonEmptyArray(handoff.verification_commands, 'verification_commands');
@@ -152,15 +258,17 @@ function main() {
       expected_service_contract_version: 'pass',
       expected_api_contract_version: 'pass',
       integration_baseline: 'pass',
+      candidate_runtime_baseline:
+        usingCandidateRuntimeBaseline ? 'used-for-pinned-validation' : 'not-used',
       manifest_contract_version: 'pass',
       error_code_enum_set_equality:
-        expectedServiceContractVersion === pin.expected_service_contract_version
+        !candidateMode
           ? 'pass'
           : 'skipped-service-version-differs-from-current-pin',
       verification_commands_present: 'pass',
       handoff_generated_at_utc_parseable: 'pass',
     },
-    mode: requirePinMatch ? 'pinned-baseline' : 'rehearsal-candidate',
+    mode: candidateMode ? 'rehearsal-candidate' : 'pinned-baseline',
     status: 'passed',
   };
 

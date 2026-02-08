@@ -110,6 +110,38 @@ function main() {
         'Sign-Off Checklist (AssistSupport + MemoryKernel)',
       ],
     },
+    {
+      relPath: 'docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN.md',
+      snippets: [
+        '## Phase 4: Rehearsal Closure',
+        '## Phase 5: Consumer Cutover-Prep Controls',
+        '## Phase 6: Cutover Governance + Rollback Readiness',
+        'runtime cutover remains disabled',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/PHASE4_CONSUMER_REHEARSAL_CLOSEOUT_2026-02-08.md',
+      snippets: [
+        '- Rehearsal continuation verdict: `GO`',
+        '- Runtime cutover verdict: `NO-GO`',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/PHASE5_CONSUMER_CUTOVER_PREP_2026-02-08.md',
+      snippets: [
+        'adapter boundary remains enforced',
+        'pin + matrix + manifest must be updated atomically in one PR',
+        'consumer-side controls complete',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/PHASE6_CONSUMER_CUTOVER_GOVERNANCE_2026-02-08.md',
+      snippets: [
+        'Runtime cutover remains disabled until explicit joint approval',
+        'Incident Communication Template',
+        'Rollback Success Checklist',
+      ],
+    },
   ];
 
   for (const doc of requiredDocs) {
@@ -126,6 +158,8 @@ function main() {
     'pnpm run check:memorykernel-governance',
     'pnpm run check:memorykernel-handoff',
     'pnpm run check:memorykernel-handoff:service-v3-candidate',
+    'pnpm run check:memorykernel-boundary',
+    'pnpm run check:memorykernel-cutover-policy',
     'pnpm run test:memorykernel-contract',
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);

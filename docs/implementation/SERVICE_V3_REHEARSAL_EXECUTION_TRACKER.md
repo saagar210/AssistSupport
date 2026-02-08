@@ -18,22 +18,33 @@ Owner: AssistSupport
   - explicit producer artifact requirements, consumer evidence, commands, rollback conditions, and joint sign-off checklist are published
 
 ### Task C1: Baseline rehearsal branch setup
-- Status: Pending
+- Status: Complete
 - Owner: AssistSupport
+- Evidence:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/PHASE4_CONSUMER_REHEARSAL_CLOSEOUT_2026-02-08.md`
 - Definition of done:
-  - branch created from current `master`
-  - rehearsal checklist attached in PR description
+  - rehearsal checklist published and execution evidence linked in closeout artifact
+  - candidate-mode validation path executed without runtime pin change
 
 ### Task C2: Consumer contract assertions for service.v3 candidate
-- Status: Pending
+- Status: Complete
 - Owner: AssistSupport
+- Evidence:
+  - `pnpm run check:memorykernel-handoff:service-v3-candidate` -> PASS
+  - `pnpm run test:memorykernel-contract` -> PASS
 - Definition of done:
   - non-2xx assertions match service.v3 policy
   - fallback-path tests remain green
 
 ### Task C3: Governance gate validation
-- Status: Pending
+- Status: Complete
 - Owner: AssistSupport
+- Evidence:
+  - `pnpm run check:memorykernel-pin` -> PASS
+  - `pnpm run check:memorykernel-governance` -> PASS
+  - `pnpm run check:memorykernel-handoff:service-v3-candidate` -> PASS
+  - `pnpm run check:memorykernel-boundary` -> PASS
+  - `pnpm run check:memorykernel-cutover-policy` -> PASS
 - Definition of done:
   - `pnpm run check:memorykernel-pin` green
   - `pnpm run check:memorykernel-governance` green
@@ -54,6 +65,8 @@ pnpm run test
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
 pnpm run check:memorykernel-handoff:service-v3-candidate
+pnpm run check:memorykernel-boundary
+pnpm run check:memorykernel-cutover-policy
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```

@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08
+Updated: 2026-02-08 (phase 4 closeout + phase 5/6 consumer scaffolding)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -12,6 +12,8 @@ Updated: 2026-02-08
 - Checkpoint B (consumer contract suite green): `GO`
 - Checkpoint C (steady-state service.v2 window): `GO` (14-day window approved)
 - Checkpoint D (service.v3 RFC kickoff): `GO` for planning only
+- Rehearsal continuation decision: `GO`
+- Runtime cutover decision: `NO-GO` (explicitly blocked pending joint gate completion)
 
 ## Locked Decisions
 1. `error_code_enum` validation is set equality (order-independent).
@@ -38,4 +40,6 @@ Updated: 2026-02-08
 - Phase 1: Governed steady-state service.v2 operation (consumer closeout evidence captured).
 - Phase 2: Consumer runtime hardening and diagnostics maturity (complete).
 - Phase 3: Cross-repo automation (including manifest-hash validation gate, handoff payload validation, and consumer dry-run evidence).
-- Phase 4: service.v3 migration readiness and pre-cutover rehearsal (consumer cutover-gates package published).
+- Phase 4: rehearsal readiness closed with candidate validation evidence.
+- Phase 5: consumer cutover-prep controls enforced (`boundary` + `cutover-policy` checks active).
+- Phase 6: cutover governance scaffold published (command checklist, rollback criteria, incident template).
