@@ -10,6 +10,7 @@
 - Local HTTP service.
 - Default bind: `127.0.0.1:4010`.
 - JSON request/response bodies unless noted.
+- Service handlers execute API operations on blocking worker threads and enforce a bounded timeout (`--operation-timeout-ms`, default `2500`).
 
 ## Envelope
 

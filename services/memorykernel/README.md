@@ -103,6 +103,16 @@ Top-level command groups:
 - OpenAPI: `openapi/openapi.yaml`
 - Liveness endpoint: `GET /v1/health`
 - Readiness endpoint: `GET /v1/ready`
+- Service operation timeout: `--operation-timeout-ms` (default: `2500`)
+
+Example:
+
+```bash
+cargo run -p memory-kernel-service -- \
+  --db ./memory_kernel.sqlite3 \
+  --bind 127.0.0.1:4010 \
+  --operation-timeout-ms 2500
+```
 
 ## Trilogy Integration
 

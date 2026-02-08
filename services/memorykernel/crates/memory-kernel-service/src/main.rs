@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Result;
 use axum::extract::rejection::JsonRejection;
@@ -22,6 +23,7 @@ const OPENAPI_YAML: &str = include_str!("../../../openapi/openapi.yaml");
 #[derive(Debug, Clone)]
 struct ServiceState {
     api: MemoryKernelApi,
+    operation_timeout: Duration,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +90,8 @@ struct Args {
     db: PathBuf,
     #[arg(long, default_value = "127.0.0.1:4010")]
     bind: SocketAddr,
+    #[arg(long, default_value_t = 2500)]
+    operation_timeout_ms: u64,
 }
 
 impl IntoResponse for ServiceFailure {
@@ -172,6 +176,44 @@ impl ServiceState {
 
         Self::failure(default_status, default_code, message, None)
     }
+
+    async fn run_blocking<T, F>(
+        &self,
+        default_status: StatusCode,
+        default_code: &'static str,
+        operation_label: &'static str,
+        op: F,
+    ) -> Result<T, ServiceFailure>
+    where
+        T: Send + 'static,
+        F: FnOnce(MemoryKernelApi) -> anyhow::Result<T> + Send + 'static,
+    {
+        let api = self.api.clone();
+        let handle = tokio::task::spawn_blocking(move || op(api));
+        let join_result =
+            tokio::time::timeout(self.operation_timeout, handle).await.map_err(|_| {
+                Self::failure(
+                    default_status,
+                    default_code,
+                    format!(
+                        "{operation_label} timed out after {} ms",
+                        self.operation_timeout.as_millis()
+                    ),
+                    Some(json!({ "timeout_ms": self.operation_timeout.as_millis() })),
+                )
+            })?;
+
+        let op_result = join_result.map_err(|err| {
+            Self::failure(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                format!("{operation_label} join failure: {err}"),
+                None,
+            )
+        })?;
+
+        op_result.map_err(|err| Self::classify_api_error(&err, default_status, default_code))
+    }
 }
 
 fn envelope<T>(data: T) -> ServiceEnvelope<T>
@@ -204,7 +246,10 @@ fn app(state: ServiceState) -> Router {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let state = ServiceState { api: MemoryKernelApi::new(args.db) };
+    let state = ServiceState {
+        api: MemoryKernelApi::new(args.db),
+        operation_timeout: Duration::from_millis(args.operation_timeout_ms),
+    };
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     axum::serve(listener, app(state)).await?;
     Ok(())
@@ -217,13 +262,14 @@ async fn health() -> Json<ServiceEnvelope<HealthResponse>> {
 async fn ready(
     State(state): State<ServiceState>,
 ) -> Result<Json<ServiceEnvelope<ReadinessResponse>>, ServiceFailure> {
-    let schema_status = state.api.schema_status().map_err(|err| {
-        ServiceState::classify_api_error(
-            &err,
+    let schema_status = state
+        .run_blocking(
             StatusCode::SERVICE_UNAVAILABLE,
             "schema_unavailable",
+            "schema_status",
+            |api| api.schema_status(),
         )
-    })?;
+        .await?;
 
     let is_ready = schema_status.pending_versions.is_empty()
         && schema_status.current_version == schema_status.target_version;
@@ -258,13 +304,14 @@ async fn openapi() -> impl IntoResponse {
 async fn db_schema_version(
     State(state): State<ServiceState>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_store_sqlite::SchemaStatus>>, ServiceFailure> {
-    let status = state.api.schema_status().map_err(|err| {
-        ServiceState::classify_api_error(
-            &err,
+    let status = state
+        .run_blocking(
             StatusCode::SERVICE_UNAVAILABLE,
             "schema_unavailable",
+            "schema_status",
+            |api| api.schema_status(),
         )
-    })?;
+        .await?;
     Ok(Json(envelope(status)))
 }
 
@@ -273,13 +320,14 @@ async fn db_migrate(
     payload: Result<Json<MigrateRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_api::MigrateResult>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let result = state.api.migrate(request.dry_run).map_err(|err| {
-        ServiceState::classify_api_error(
-            &err,
+    let result = state
+        .run_blocking(
             StatusCode::INTERNAL_SERVER_ERROR,
             "migration_failed",
+            "migrate",
+            move |api| api.migrate(request.dry_run),
         )
-    })?;
+        .await?;
     Ok(Json(envelope(result)))
 }
 
@@ -288,9 +336,14 @@ async fn memory_add_constraint(
     payload: Result<Json<AddConstraintRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_core::MemoryRecord>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let record = state.api.add_constraint(request).map_err(|err| {
-        ServiceState::classify_api_error(&err, StatusCode::INTERNAL_SERVER_ERROR, "write_failed")
-    })?;
+    let record = state
+        .run_blocking(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "write_failed",
+            "add_constraint",
+            move |api| api.add_constraint(request),
+        )
+        .await?;
     Ok(Json(envelope(record)))
 }
 
@@ -299,9 +352,14 @@ async fn memory_add_summary(
     payload: Result<Json<AddSummaryRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_core::MemoryRecord>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let record = state.api.add_summary(request).map_err(|err| {
-        ServiceState::classify_api_error(&err, StatusCode::INTERNAL_SERVER_ERROR, "write_failed")
-    })?;
+    let record = state
+        .run_blocking(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "write_failed",
+            "add_summary",
+            move |api| api.add_summary(request),
+        )
+        .await?;
     Ok(Json(envelope(record)))
 }
 
@@ -310,9 +368,11 @@ async fn memory_link(
     payload: Result<Json<AddLinkRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_api::AddLinkResult>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let result = state.api.add_link(request).map_err(|err| {
-        ServiceState::classify_api_error(&err, StatusCode::INTERNAL_SERVER_ERROR, "write_failed")
-    })?;
+    let result = state
+        .run_blocking(StatusCode::INTERNAL_SERVER_ERROR, "write_failed", "add_link", move |api| {
+            api.add_link(request)
+        })
+        .await?;
     Ok(Json(envelope(result)))
 }
 
@@ -321,9 +381,11 @@ async fn query_ask(
     payload: Result<Json<AskRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_core::ContextPackage>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let package = state.api.query_ask(request).map_err(|err| {
-        ServiceState::classify_api_error(&err, StatusCode::INTERNAL_SERVER_ERROR, "query_failed")
-    })?;
+    let package = state
+        .run_blocking(StatusCode::INTERNAL_SERVER_ERROR, "query_failed", "query_ask", move |api| {
+            api.query_ask(request)
+        })
+        .await?;
     Ok(Json(envelope(package)))
 }
 
@@ -332,9 +394,14 @@ async fn query_recall(
     payload: Result<Json<RecallRequest>, JsonRejection>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_core::ContextPackage>>, ServiceFailure> {
     let Json(request) = payload.map_err(|rejection| ServiceState::invalid_json(&rejection))?;
-    let package = state.api.query_recall(request).map_err(|err| {
-        ServiceState::classify_api_error(&err, StatusCode::INTERNAL_SERVER_ERROR, "query_failed")
-    })?;
+    let package = state
+        .run_blocking(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "query_failed",
+            "query_recall",
+            move |api| api.query_recall(request),
+        )
+        .await?;
     Ok(Json(envelope(package)))
 }
 
@@ -342,13 +409,14 @@ async fn context_show(
     State(state): State<ServiceState>,
     Path(context_package_id): Path<String>,
 ) -> Result<Json<ServiceEnvelope<memory_kernel_core::ContextPackage>>, ServiceFailure> {
-    let package = state.api.context_show(&context_package_id).map_err(|err| {
-        ServiceState::classify_api_error(
-            &err,
+    let package = state
+        .run_blocking(
             StatusCode::INTERNAL_SERVER_ERROR,
             "context_lookup_failed",
+            "context_show",
+            move |api| api.context_show(&context_package_id),
         )
-    })?;
+        .await?;
     Ok(Json(envelope(package)))
 }
 
@@ -381,7 +449,10 @@ mod tests {
     // Test IDs: TSVC-001
     #[tokio::test]
     async fn health_endpoint_reports_ok() {
-        let state = ServiceState { api: MemoryKernelApi::new(unique_temp_db_path()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(unique_temp_db_path()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let response = match router
@@ -409,7 +480,10 @@ mod tests {
     // Test IDs: TSVC-003
     #[tokio::test]
     async fn openapi_endpoint_returns_versioned_artifact() {
-        let state = ServiceState { api: MemoryKernelApi::new(unique_temp_db_path()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(unique_temp_db_path()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let response = match router
@@ -451,7 +525,7 @@ mod tests {
         if let Err(err) = api.migrate(false) {
             panic!("failed to migrate schema before readiness test: {err:#}");
         }
-        let router = app(ServiceState { api });
+        let router = app(ServiceState { api, operation_timeout: Duration::from_millis(2500) });
 
         let response = match router
             .oneshot(
@@ -493,7 +567,10 @@ mod tests {
     async fn ready_endpoint_returns_schema_unavailable_when_db_is_unreachable() {
         let db_path = std::env::temp_dir()
             .join(format!("memorykernel-service-missing-parent-{}/db.sqlite3", ulid::Ulid::new()));
-        let state = ServiceState { api: MemoryKernelApi::new(db_path) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let response = match router
@@ -525,11 +602,72 @@ mod tests {
         );
     }
 
+    // Test IDs: TSVC-012
+    #[tokio::test]
+    async fn run_blocking_returns_success_for_fast_operation() {
+        let state = ServiceState {
+            api: MemoryKernelApi::new(unique_temp_db_path()),
+            operation_timeout: Duration::from_millis(2500),
+        };
+
+        let result = state
+            .run_blocking(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "query_failed",
+                "unit_fast_operation",
+                |_api| Ok::<_, anyhow::Error>(42_u32),
+            )
+            .await;
+
+        match result {
+            Ok(value) => assert_eq!(value, 42),
+            Err(err) => panic!("expected fast blocking operation to succeed: {err:?}"),
+        }
+    }
+
+    // Test IDs: TSVC-013
+    #[tokio::test]
+    async fn run_blocking_times_out_with_mapped_error_status() {
+        let state = ServiceState {
+            api: MemoryKernelApi::new(unique_temp_db_path()),
+            operation_timeout: Duration::from_millis(1),
+        };
+
+        let result = state
+            .run_blocking(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "query_failed",
+                "unit_timeout_operation",
+                |_api| {
+                    std::thread::sleep(Duration::from_millis(25));
+                    Ok::<_, anyhow::Error>(())
+                },
+            )
+            .await;
+
+        match result {
+            Ok(()) => panic!("expected timeout for slow blocking operation"),
+            Err(err) => {
+                assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+                assert_eq!(err.code, "query_failed");
+                assert!(
+                    err.message.contains("timed out"),
+                    "timeout error message must mention timeout: {}",
+                    err.message
+                );
+                assert!(err.details.is_some(), "timeout error should include details");
+            }
+        }
+    }
+
     // Test IDs: TSVC-002
     #[tokio::test]
     async fn service_add_query_and_context_flow_round_trip() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let add_payload = serde_json::json!({
@@ -632,7 +770,10 @@ mod tests {
     #[tokio::test]
     async fn service_summary_add_and_recall_flow_round_trip() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let add_summary_payload = serde_json::json!({
@@ -709,7 +850,10 @@ mod tests {
     #[tokio::test]
     async fn context_show_missing_returns_not_found_machine_error() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let response = match router
@@ -746,7 +890,10 @@ mod tests {
     #[tokio::test]
     async fn add_constraint_validation_failure_returns_validation_error() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let add_payload = serde_json::json!({
@@ -803,7 +950,10 @@ mod tests {
     #[tokio::test]
     async fn invalid_json_payload_returns_invalid_json_error() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let response = match router
@@ -847,7 +997,10 @@ mod tests {
     #[tokio::test]
     async fn duplicate_identity_returns_write_conflict() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let payload = serde_json::json!({
@@ -920,7 +1073,10 @@ mod tests {
     #[tokio::test]
     async fn non_2xx_error_envelope_keeps_service_v3_shape() {
         let db_path = unique_temp_db_path();
-        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let state = ServiceState {
+            api: MemoryKernelApi::new(db_path.clone()),
+            operation_timeout: Duration::from_millis(2500),
+        };
         let router = app(state);
 
         let invalid_payload = serde_json::json!({
