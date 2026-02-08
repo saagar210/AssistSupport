@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { Sidebar, Header, TabBar } from './components/Layout';
 import { type DraftTabHandle } from './components/Draft/DraftTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
@@ -10,80 +10,51 @@ import { useInitialize } from './hooks/useInitialize';
 import { useToastContext } from './contexts/ToastContext';
 import { AppStatusProvider } from './contexts/AppStatusContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboard';
-import type { SavedDraft } from './types';
 import {
-  buildAppShellCommands,
   mapShortcutIndexToTab,
   renderActiveTab,
-  type TabId,
+  useAppShellCommands,
+  useAppShellState,
+  useDraftActions,
 } from './features/app-shell';
+import { getEnabledRevampFlags, resolveRevampFlags } from './features/revamp';
 import './App.css';
 
 function AppContent() {
   const { initResult, loading, error } = useInitialize();
   const { toasts, addToast, removeToast } = useToastContext();
-  const [activeTab, setActiveTab] = useState<TabId>('draft');
-  const [pendingDraft, setPendingDraft] = useState<SavedDraft | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sourceSearchQuery, setSourceSearchQuery] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const draftRef = useRef<DraftTabHandle>(null);
   const commandPalette = useCommandPalette();
   const shortcutsHelp = useKeyboardShortcutsHelp();
+  const revampFlags = useMemo(() => resolveRevampFlags(), []);
+  const revampEnabled = useMemo(() => getEnabledRevampFlags(revampFlags).length > 0, [revampFlags]);
 
-  const handleGenerate = useCallback(() => {
-    if (activeTab === 'draft') {
-      draftRef.current?.generate();
-    }
-  }, [activeTab]);
+  const {
+    activeTab,
+    setActiveTab,
+    sidebarCollapsed,
+    sourceSearchQuery,
+    showOnboarding,
+    handleNavigateToSource,
+    consumeSourceSearchQuery,
+    handleLoadDraft,
+    handleOnboardingComplete,
+    handleOnboardingSkip,
+    handleToggleSidebar,
+  } = useAppShellState({
+    initIsFirstRun: initResult?.is_first_run,
+    draftRef,
+    addToast,
+  });
 
-  const handleSaveDraft = useCallback(() => {
-    if (activeTab === 'draft') {
-      draftRef.current?.saveDraft();
-    }
-  }, [activeTab]);
-
-  const handleCopyResponse = useCallback(() => {
-    if (activeTab === 'draft') {
-      draftRef.current?.copyResponse();
-    }
-  }, [activeTab]);
-
-  const handleCancelGeneration = useCallback(() => {
-    if (activeTab === 'draft') {
-      draftRef.current?.cancelGeneration();
-    }
-  }, [activeTab]);
-
-  const handleExport = useCallback(() => {
-    if (activeTab === 'draft') {
-      draftRef.current?.exportResponse();
-    }
-  }, [activeTab]);
-
-  const handleNavigateToSource = useCallback((searchQuery: string) => {
-    setSourceSearchQuery(searchQuery);
-    setActiveTab('sources');
-  }, []);
-
-  const handleLoadDraft = useCallback((draft: SavedDraft) => {
-    // If already on draft tab, load directly via ref
-    if (activeTab === 'draft' && draftRef.current) {
-      draftRef.current.loadDraft(draft);
-    } else {
-      // Set pending draft and switch to draft tab
-      setPendingDraft(draft);
-      setActiveTab('draft');
-    }
-  }, [activeTab]);
-
-  // Clear pending draft when DraftTab mounts and loads it
-  useEffect(() => {
-    if (activeTab === 'draft' && pendingDraft && draftRef.current) {
-      draftRef.current.loadDraft(pendingDraft);
-      setPendingDraft(null);
-    }
-  }, [activeTab, pendingDraft]);
+  const {
+    handleGenerate,
+    handleSaveDraft,
+    handleCopyResponse,
+    handleCancelGeneration,
+    handleExport,
+    clearDraft,
+  } = useDraftActions({ activeTab, draftRef });
 
   useKeyboardShortcuts({
     onGenerate: handleGenerate,
@@ -99,46 +70,7 @@ function AppContent() {
     },
   });
 
-  // Show onboarding on first run (check localStorage to not show again after completion)
-  useEffect(() => {
-    if (initResult?.is_first_run) {
-      const hasCompletedOnboarding = localStorage.getItem('onboarding-completed');
-      if (!hasCompletedOnboarding) {
-        setShowOnboarding(true);
-      }
-    }
-  }, [initResult?.is_first_run]);
-
-  const handleOnboardingComplete = useCallback(() => {
-    localStorage.setItem('onboarding-completed', 'true');
-    setShowOnboarding(false);
-    addToast('Setup complete! Start drafting responses with AI assistance.', 'success');
-  }, [addToast]);
-
-  const handleOnboardingSkip = useCallback(() => {
-    localStorage.setItem('onboarding-completed', 'true');
-    setShowOnboarding(false);
-    addToast('You can configure settings anytime from the Settings tab.', 'info');
-  }, [addToast]);
-
-  // Persist sidebar state
-  useEffect(() => {
-    const saved = localStorage.getItem('sidebar-collapsed');
-    if (saved !== null) {
-      setSidebarCollapsed(saved === 'true');
-    }
-  }, []);
-
-  const handleToggleSidebar = useCallback(() => {
-    setSidebarCollapsed(prev => {
-      const next = !prev;
-      localStorage.setItem('sidebar-collapsed', String(next));
-      return next;
-    });
-  }, []);
-
-  // Command palette commands
-  const commands = useMemo(() => buildAppShellCommands({
+  const commands = useAppShellCommands({
     activeTab,
     sidebarCollapsed,
     setActiveTab,
@@ -150,20 +82,8 @@ function AppContent() {
     handleToggleSidebar,
     onOpenShortcuts: shortcutsHelp.open,
     addToast,
-    clearDraft: () => draftRef.current?.clearDraft?.(),
-  }), [
-    activeTab,
-    sidebarCollapsed,
-    setActiveTab,
-    handleGenerate,
-    handleSaveDraft,
-    handleCopyResponse,
-    handleExport,
-    handleCancelGeneration,
-    handleToggleSidebar,
-    shortcutsHelp.open,
-    addToast,
-  ]);
+    clearDraft,
+  });
 
   if (loading) {
     return (
@@ -215,9 +135,10 @@ function AppContent() {
             activeTab,
             draftRef,
             sourceSearchQuery,
-            onSearchQueryConsumed: () => setSourceSearchQuery(null),
+            onSearchQueryConsumed: consumeSourceSearchQuery,
             onNavigateToSource: handleNavigateToSource,
             onLoadDraft: handleLoadDraft,
+            revampFlags,
           })}
         </main>
       </div>
@@ -237,6 +158,7 @@ function AppContent() {
         isOpen={commandPalette.isOpen}
         onClose={commandPalette.close}
         commands={commands}
+        subtitle={revampEnabled ? 'Revamp preview mode active' : undefined}
       />
 
       <KeyboardShortcuts

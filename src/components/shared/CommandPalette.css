@@ -81,6 +81,14 @@
   flex-shrink: 0;
 }
 
+.command-palette-subtitle {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
 /* Body with command list */
 .command-palette-body {
   max-height: 400px;

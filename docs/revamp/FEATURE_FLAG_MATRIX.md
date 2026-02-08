@@ -24,6 +24,16 @@ Define existing and planned feature toggles so revamp rollout is reversible and 
 | `ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2` | 0 | Frontend | New command system | Revert to current palette |
 | `ASSISTSUPPORT_LLM_ROUTER_V2` | 0 | Runtime | Model routing/prompt contracts | Revert to legacy LLM path |
 
+## Implemented Revamp Flag Runtime (Phase 3)
+1. Flag parser implemented in `src/features/revamp/flags.ts`.
+2. Flag read precedence:
+   1. Local storage override (`assistsupport.flag.<FLAG_NAME>`)
+   2. Vite env (`VITE_<FLAG_NAME>`)
+   3. Safe default (`false`)
+3. Current active flag wiring:
+   1. `ASSISTSUPPORT_REVAMP_INBOX` toggles queue-first inbox wrapper.
+   2. Other flags are parsed and available for subsequent feature slices.
+
 ## Flag Governance Rules
 1. New revamp surface cannot replace legacy by default until phase gate exit criteria pass.
 2. Every flag must have a documented rollback command path.

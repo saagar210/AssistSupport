@@ -13,6 +13,7 @@ import { InboxPage } from '../inbox';
 import type { SavedDraft } from '../../types';
 import type { TabId } from './types';
 import type { RefObject } from 'react';
+import type { RevampFlags } from '../revamp';
 
 export interface RenderActiveTabProps {
   activeTab: TabId;
@@ -21,6 +22,7 @@ export interface RenderActiveTabProps {
   onSearchQueryConsumed: () => void;
   onNavigateToSource: (searchQuery: string) => void;
   onLoadDraft: (draft: SavedDraft) => void;
+  revampFlags: RevampFlags;
 }
 
 export function renderActiveTab({
@@ -30,6 +32,7 @@ export function renderActiveTab({
   onSearchQueryConsumed,
   onNavigateToSource,
   onLoadDraft,
+  revampFlags,
 }: RenderActiveTabProps) {
   switch (activeTab) {
     case 'draft':
@@ -41,7 +44,10 @@ export function renderActiveTab({
     case 'followups':
       return (
         <ErrorBoundary fallbackTitle="Follow-ups tab encountered an error">
-          <InboxPage onLoadDraft={onLoadDraft} />
+          <InboxPage
+            onLoadDraft={onLoadDraft}
+            queueFirstModeEnabled={revampFlags.ASSISTSUPPORT_REVAMP_INBOX}
+          />
         </ErrorBoundary>
       );
     case 'sources':

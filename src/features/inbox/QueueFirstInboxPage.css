@@ -1,0 +1,23 @@
+.queue-inbox-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+.queue-inbox-banner {
+  border: 1px solid var(--color-border, #2f343f);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4, 16px);
+  background: color-mix(in srgb, var(--color-surface, #11151b) 86%, var(--color-accent, #10b981));
+}
+
+.queue-inbox-banner h2 {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: 1rem;
+}
+
+.queue-inbox-banner p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--color-text-secondary, #a6adbb);
+}

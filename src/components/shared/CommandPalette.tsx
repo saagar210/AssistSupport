@@ -22,9 +22,10 @@ interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   commands: Command[];
+  subtitle?: string;
 }
 
-export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProps) {
+export function CommandPalette({ isOpen, onClose, commands, subtitle }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +147,11 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
             <span>to close</span>
           </div>
         </div>
+        {subtitle && (
+          <div className="command-palette-subtitle" role="status">
+            {subtitle}
+          </div>
+        )}
 
         <div className="command-palette-body" ref={listRef}>
           {filteredCommands.length === 0 ? (

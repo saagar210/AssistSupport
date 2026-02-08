@@ -15,6 +15,9 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 6. Added unit tests for app-shell command and shortcut contracts.
 7. Re-ran MemoryKernel contract and full CI suites with green results.
 8. Introduced `workspace` and `inbox` feature wrappers and routed tab rendering through these domain modules.
+9. Introduced revamp runtime flag parser with explicit precedence (storage > env > default false).
+10. Added queue-first inbox wrapper behind `ASSISTSUPPORT_REVAMP_INBOX` (default-off).
+11. Extracted app-shell orchestration into dedicated hooks (`useAppShellState`, `useDraftActions`, `useAppShellCommands`).
 
 ## Rationale
 1. Reduce `App.tsx` orchestration complexity.
@@ -22,10 +25,9 @@ Track low-risk structural extraction tasks that prepare the queue-first UX rebui
 3. Enforce clearer boundaries for future module migration.
 
 ## Pending Phase 3 Work
-1. Introduce feature-level route state abstraction.
-2. Isolate action dispatch from UI composition.
-3. Create compatibility wrappers for legacy tabs under new domain names.
-4. Add focused tests for app-shell mapping and command construction.
+1. Expand compatibility wrappers to remaining tabs under feature-domain ownership.
+2. Add focused tests for app-shell orchestration hooks and tab rendering contracts.
+3. Define cutover criteria for default-on of first revamp flag.
 
 ## Verification Requirements
 Run canonical revamp verification suite before Phase 3 closure.
@@ -33,3 +35,5 @@ Run canonical revamp verification suite before Phase 3 closure.
 ## Evidence
 1. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_VERIFICATION_2026-02-08.md`
 2. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_2_SUMMARY_2026-02-08.md`
+3. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_3_SUMMARY_2026-02-08.md`
+4. `docs/revamp/evidence/PHASE3_FOUNDATION_SLICE_4_SUMMARY_2026-02-08.md`
