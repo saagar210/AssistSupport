@@ -18,6 +18,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout OutcomeMemory dependency
+        uses: actions/checkout@v4
+        with:
+          repository: saagar210/OutcomeMemory
+          path: OutcomeMemory
+
+      - name: Link sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/OutcomeMemory" "$GITHUB_WORKSPACE/../OutcomeMemory"
+
       - name: Validate SemVer input
         run: |
           VERSION="${{ github.event.inputs.version }}"
