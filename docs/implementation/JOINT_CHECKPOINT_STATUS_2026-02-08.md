@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (runtime cutover complete)
+Updated: 2026-02-08 (runtime cutover complete; stabilization window active)
 
 ## Baseline
 - MemoryKernel release tag: `v0.4.0`
@@ -22,22 +22,15 @@ Updated: 2026-02-08 (runtime cutover complete)
 3. Pin + matrix + mirrored producer manifest update atomically in one PR.
 
 ## Current State
-- Runtime baseline is now `service.v3`.
+- Runtime baseline is `service.v3`.
 - AssistSupport fallback behavior remains deterministic and non-blocking.
-- Rollback execution evidence remains available.
+- Phase 9 stabilization window is active with rollback readiness maintained.
 
-## Latest Validation Run
-Consumer (PASS):
-- `pnpm run check:memorykernel-pin`
-- `pnpm run check:memorykernel-governance`
-- `pnpm run test:memorykernel-contract`
-- `pnpm run test:ci`
+## Canonical Runtime Closure Artifacts
+- Consumer closure:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_2026-02-08.md`
+- Producer closure:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
 
-Producer (PASS):
-- `cargo fmt --all -- --check`
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo test --workspace --all-targets --all-features`
-- `./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
-- `./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel`
-- `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
-- `./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
+## Historical Note
+Pre-cutover NO-GO rehearsal packets are retained for audit history and are superseded by the runtime closure artifacts listed above.

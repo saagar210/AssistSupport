@@ -1,5 +1,8 @@
 # Remaining Roadmap Execution Plan (Consumer)
 
+> Historical Snapshot: This document captures pre-cutover planning/rehearsal state and is superseded by the runtime closure records in both repos.
+
+
 Updated: 2026-02-08  
 Owner: AssistSupport  
 Scope: phases 4/5/6 for AssistSupport consumer track

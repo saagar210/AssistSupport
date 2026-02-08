@@ -1,5 +1,8 @@
 # Joint Sign-Off Checkpoint Packet (Consumer)
 
+> Historical Snapshot: This document captures pre-cutover planning/rehearsal state and is superseded by the runtime closure records in both repos.
+
+
 Updated: 2026-02-08  
 Owner: AssistSupport
 

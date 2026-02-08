@@ -4,19 +4,18 @@ Updated: 2026-02-08
 Owner: AssistSupport + MemoryKernel (bilateral)
 
 ## Decision Scope
-This record is the bilateral decision artifact for Phase 8 runtime cutover execution.
+Bilateral decision artifact for Phase 8 runtime cutover execution.
 
 ## Decision Outcome
 1. Rehearsal continuation: **GO**
 2. Runtime cutover execution: **GO**
 
 ## Approved Runtime Cutover Window
-- Approved runtime target:
-  - release_tag: `v0.4.0`
-  - commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-  - service_contract_version: `service.v3`
-  - api_contract_version: `api.v1`
-  - integration_baseline: `integration/v1`
+- release_tag: `v0.4.0`
+- commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- service_contract_version: `service.v3`
+- api_contract_version: `api.v1`
+- integration_baseline: `integration/v1`
 
 ## Ownership (Named Roles)
 - AssistSupport incident commander role: Support Platform On-Call Lead
@@ -33,18 +32,17 @@ This record is the bilateral decision artifact for Phase 8 runtime cutover execu
 - Producer handoff payload:
   - `/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
 
-## Stop Conditions (Immediate Abort / Rollback)
-1. Any contract mismatch on non-2xx envelope semantics.
-2. Any deterministic fallback regression in AssistSupport.
-3. Any unresolved rollback-owner ambiguity at cutover time.
-4. Any failed consumer contract or CI suite command during cutover validation.
-
 ## Runtime Cutover Completion Evidence
-1. MemoryKernel published immutable runtime target (`v0.4.0`, tag pushed).
+1. MemoryKernel published immutable runtime target (`v0.4.0`, `7e4806a...`).
 2. AssistSupport repinned atomically (pin + matrix + mirrored producer manifest).
 3. Consumer verification suite passed against runtime baseline.
-4. Rollback drill evidence refreshed with runtime baseline references.
+4. Bilateral rollback readiness evidence captured and linked.
+
+## Canonical Closure Links
+- `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_2026-02-08.md`
+- `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_PRODUCER_2026-02-08.md`
 
 ## Status
 - Phase 8 runtime cutover: **COMPLETE**
 - Operational posture: **GO**
+- Phase 9 stabilization window: **ACTIVE**

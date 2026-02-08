@@ -1,5 +1,8 @@
 # Service.v3 Cutover-Day Dry-Run Session Plan
 
+> Historical Snapshot: This document captures pre-cutover planning/rehearsal state and is superseded by the runtime closure records in both repos.
+
+
 Updated: 2026-02-08  
 Owners: AssistSupport + MemoryKernel
 
