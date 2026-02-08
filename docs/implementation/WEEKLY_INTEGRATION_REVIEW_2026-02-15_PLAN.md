@@ -17,6 +17,7 @@ Confirm service.v2 remains stable through the 14-day window with no drift/regres
 - [ ] Baseline unchanged (`v0.3.2` / `cf331449...`) or intentionally repinned with full governance evidence.
 - [ ] `pin + matrix + mirrored manifest` remain synchronized.
 - [ ] Local manifest hash validation in consumer CI green.
+- [ ] Governance bundle validation (`pnpm run check:memorykernel-governance`) green.
 - [ ] Remote manifest hash validation green when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 - [ ] Deterministic fallback behavior remains regression-free.
 - [ ] No unresolved high-severity integration incidents.
@@ -24,6 +25,7 @@ Confirm service.v2 remains stable through the 14-day window with no drift/regres
 ## Verification Commands (AssistSupport)
 ```bash
 pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```
@@ -38,4 +40,3 @@ pnpm run test:ci
 1. Week-2 GO/NO-GO verdict for closing steady-state window.
 2. Confirmed service.v3 rehearsal start date.
 3. Updated risk log with owner + due dates.
-

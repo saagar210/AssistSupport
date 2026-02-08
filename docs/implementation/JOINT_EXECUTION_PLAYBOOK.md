@@ -32,6 +32,7 @@ Operational state (as of this playbook):
   - pin: `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
   - matrix: `/Users/d/Projects/AssistSupport/docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md`
   - producer manifest mirror: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
+  - governance bundle check: `pnpm run check:memorykernel-governance`
 - Consumer error behavior:
   - primary machine routing via `error.code`
   - transitional compatibility via `legacy_error`
@@ -47,7 +48,8 @@ Operational state (as of this playbook):
 1. `error_code_enum` validation mode is set equality (order-independent).
 2. `service.v3` keeps non-2xx `api_contract_version` absent unless a future RFC explicitly changes this.
 3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks; authenticated remote validation is enforced when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
-4. Pin + compatibility matrix + mirrored producer manifest must be updated atomically in one PR.
+4. Governance bundle validation (`pnpm run check:memorykernel-governance`) is active in AssistSupport CI for phase artifact integrity.
+5. Pin + compatibility matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## 3) Phase Plan (Next 4 Phases)
 
@@ -88,7 +90,7 @@ Sprint target: Week 3.
 | Dependencies | Phase 2 exit; producer manifest stable for at least one sprint. |
 | Entry Criteria | Both repos aligned on producer manifest schema and policy fields. |
 | Exit Criteria | Repin workflow can be completed with one standard PR template and no ad hoc coordination steps; manifest hash enforcement remains green for two consecutive baseline validations. |
-| Deliverables | Cross-repo validation design, release handoff template, expected evidence manifest for every baseline update, and hash-enforced producer-manifest parity checks. |
+| Deliverables | Cross-repo validation design, release handoff template (`/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_RELEASE_HANDOFF_TEMPLATE.md`), expected evidence manifest for every baseline update, and hash-enforced producer-manifest parity checks. |
 | Verification Commands | AssistSupport CI with governance gate; MemoryKernel parity/alignment scripts; one full dry-run of repin handoff from producer release tag to consumer merge. |
 
 Sprint target: Week 4.
@@ -119,7 +121,7 @@ Sprint target: Week 5+ (planning gate only in this playbook).
 1. MemoryKernel publishes immutable tag + commit + updated canonical manifest.
 2. AssistSupport mirrors producer manifest and updates pin + matrix in the same PR.
 3. AssistSupport CI enforces atomic update of pin/matrix/manifest.
-4. AssistSupport runs contract suite and publishes evidence artifact.
+4. AssistSupport runs governance + contract suite and publishes evidence artifact.
 5. Merge only after all required checks are green.
 
 ### Additive error code protocol (service.v2)
@@ -183,6 +185,7 @@ Sprint target: Week 5+ (planning gate only in this playbook).
 
 ### Release handoff checklist
 - Producer supplies immutable tag, commit SHA, manifest, and change summary.
+- Producer fills `/Users/d/Projects/AssistSupport/docs/implementation/MEMORYKERNEL_RELEASE_HANDOFF_TEMPLATE.md`.
 - Consumer updates pin/matrix/manifest in one PR.
 - Consumer runs required verification commands and publishes evidence.
 - Joint go/no-go decision logged with rollback path.
@@ -229,14 +232,21 @@ The following are hard invariants for every phase:
 - Baseline update review checkpoint per release.
 - Service.v3 readiness decision checkpoint.
 
-## 11) Definition of Done for This Playbook
+## 11) Phase Execution Status Artifact
+
+Current consumer execution status is tracked in:
+- `/Users/d/Projects/AssistSupport/docs/implementation/PHASE_EXECUTION_STATUS_2026-02-08.md`
+
+This status artifact must be updated whenever checkpoint state or phase completion status changes.
+
+## 12) Definition of Done for This Playbook
 
 This playbook is considered active and adopted when:
 - Both repos reference it in their implementation planning docs.
 - Both sides agree to use the phase entry/exit gates for integration decisions.
 - The handoff prompt below is executed and producer alignment response is captured.
 
-## 12) Copy/Paste Handoff Prompt for MemoryKernel Codex
+## 13) Copy/Paste Handoff Prompt for MemoryKernel Codex
 
 ```text
 MemoryKernel Codex (GPT-5.3),

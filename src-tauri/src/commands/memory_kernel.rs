@@ -1207,6 +1207,26 @@ mod tests {
             normalize_machine_error_code("schema_unavailable"),
             FALLBACK_REASON_SCHEMA_UNAVAILABLE
         );
+        assert_eq!(
+            normalize_machine_error_code("write_failed"),
+            FALLBACK_REASON_NON_2XX
+        );
+        assert_eq!(
+            normalize_machine_error_code("migration_failed"),
+            FALLBACK_REASON_NON_2XX
+        );
+        assert_eq!(
+            normalize_machine_error_code("query_failed"),
+            FALLBACK_REASON_NON_2XX
+        );
+        assert_eq!(
+            normalize_machine_error_code("context_lookup_failed"),
+            FALLBACK_REASON_NON_2XX
+        );
+        assert_eq!(
+            normalize_machine_error_code("internal_error"),
+            FALLBACK_REASON_NON_2XX
+        );
     }
 
     #[test]

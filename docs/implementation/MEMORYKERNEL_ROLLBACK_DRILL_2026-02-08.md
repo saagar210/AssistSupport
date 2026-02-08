@@ -21,6 +21,7 @@ Prove that AssistSupport can safely hold/revert integration baseline without los
 ## Command Evidence
 ```bash
 pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
 pnpm run test:memorykernel-contract
 ```
 
@@ -36,4 +37,3 @@ Result summary:
 ## Follow-up Actions
 1. Keep this drill cadence at least once per quarter.
 2. Add service.v3 pre-cutover rollback rehearsal before runtime transition.
-

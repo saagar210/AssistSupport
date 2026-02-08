@@ -147,6 +147,9 @@ jobs:
       - name: Validate MemoryKernel pin + matrix + producer manifest sync
         run: pnpm run check:memorykernel-pin
 
+      - name: Validate MemoryKernel governance bundle
+        run: pnpm run check:memorykernel-governance
+
       - name: Validate remote producer manifest hash (authenticated)
         if: ${{ secrets.MEMORYKERNEL_REPO_READ_TOKEN != '' }}
         env:

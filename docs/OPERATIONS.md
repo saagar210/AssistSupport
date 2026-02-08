@@ -34,7 +34,7 @@ cargo llvm-cov --workspace --lcov --output-path ../coverage/backend/lcov.info
 
 ### CI parity check (recommended before pushing)
 ```bash
-pnpm run typecheck && pnpm test && (cd src-tauri && cargo test)
+pnpm run typecheck && pnpm test && pnpm run check:memorykernel-governance && (cd src-tauri && cargo test)
 ```
 
 ## 2) CI Failure Triage
@@ -82,6 +82,7 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
 4. Run governance synchronization check:
    ```bash
    pnpm run check:memorykernel-pin
+   pnpm run check:memorykernel-governance
    ```
    Optional strict mode (environments with direct producer repo access):
    ```bash

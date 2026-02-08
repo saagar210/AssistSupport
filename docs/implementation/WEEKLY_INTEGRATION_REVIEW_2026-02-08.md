@@ -18,6 +18,7 @@ Review Type: Week 1 checkpoint (service.v2 steady-state window)
 ## Evidence
 - AssistSupport:
   - `pnpm run check:memorykernel-pin` -> PASS
+  - `pnpm run check:memorykernel-governance` -> PASS
   - `pnpm run test:memorykernel-contract` -> PASS
 - MemoryKernel:
   - `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel` -> PASS
@@ -35,4 +36,3 @@ Review Type: Week 1 checkpoint (service.v2 steady-state window)
 
 ## Next Review Target
 - 2026-02-15 (or earlier if baseline changes)
-

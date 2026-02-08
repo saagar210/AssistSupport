@@ -45,7 +45,7 @@ Purpose: make MemoryKernel lifecycle behavior operationally deterministic and ea
 ## Verification Routine
 ```bash
 pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```
-

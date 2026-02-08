@@ -17,7 +17,8 @@ Updated: 2026-02-08
 1. `error_code_enum` validation is set equality (order-independent).
 2. Non-2xx envelopes keep `api_contract_version` absent in service.v3 unless a future joint RFC changes this.
 3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks; authenticated remote validation runs when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
-4. Pin + matrix + mirrored producer manifest must be updated atomically in one PR.
+4. MemoryKernel governance bundle validation is active in AssistSupport CI (`pnpm run check:memorykernel-governance`).
+5. Pin + matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## Service.v3 Cutover Gate (Consumer Criteria)
 1. Producer publishes immutable service.v3 tag/sha with updated manifest/OpenAPI/spec.
@@ -36,5 +37,5 @@ Updated: 2026-02-08
 ## Next Execution Window
 - Phase 1: Governed steady-state service.v2 operation and weekly checkpoints.
 - Phase 2: Consumer runtime hardening and diagnostics maturity.
-- Phase 3: Cross-repo automation (including manifest-hash validation gate in AssistSupport CI).
+- Phase 3: Cross-repo automation (including manifest-hash validation gate in AssistSupport CI and release handoff template adoption).
 - Phase 4: service.v3 migration readiness and pre-cutover rehearsal.

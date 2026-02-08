@@ -28,6 +28,7 @@ Owner: AssistSupport
 - Owner: AssistSupport
 - Definition of done:
   - `pnpm run check:memorykernel-pin` green
+  - `pnpm run check:memorykernel-governance` green
   - hash-integrity validation green
 
 ### Task C4: Cutover rehearsal + rollback drill
@@ -42,6 +43,7 @@ Owner: AssistSupport
 pnpm run typecheck
 pnpm run test
 pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```
@@ -50,4 +52,3 @@ pnpm run test:ci
 1. All tasks marked complete with evidence links.
 2. Rehearsal branch green in CI.
 3. Joint go/no-go call documented.
-

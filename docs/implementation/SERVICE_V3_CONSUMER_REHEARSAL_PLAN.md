@@ -31,6 +31,7 @@ Planning-only rehearsal for service.v3 adoption. No runtime cutover in this phas
 pnpm run typecheck
 pnpm run test
 pnpm run check:memorykernel-pin
+pnpm run check:memorykernel-governance
 pnpm run test:memorykernel-contract
 pnpm run test:ci
 ```
@@ -40,4 +41,3 @@ pnpm run test:ci
 2. Runtime diagnostics remain actionable for each failure class.
 3. Rollback rehearsal passes.
 4. Joint go/no-go decision recorded with MemoryKernel.
-
