@@ -15,9 +15,9 @@ Tracks post-Phase-7 execution status for Phases 8-11 across MemoryKernel, Outcom
       - Smoke: `https://github.com/saagar210/OutcomeMemory/actions/runs/21792820983`
       - Performance: `https://github.com/saagar210/OutcomeMemory/actions/runs/21792820986`
     - MultiAgentCenter hosted trilogy guard workflow passes:
-      - `https://github.com/saagar210/MultiAgentCenter/actions/runs/21792778945`
+      - `https://github.com/saagar210/MultiAgentCenter/actions/runs/21792896475`
     - MemoryKernel hosted CI passes with linked OutcomeMemory dependency:
-      - `https://github.com/saagar210/MemoryKernel/actions/runs/21792778888`
+      - `https://github.com/saagar210/MemoryKernel/actions/runs/21792896468`
     - OutcomeMemory local quality gates verified (`fmt`, `clippy -D warnings`, `test`).
     - MultiAgentCenter local quality gates verified (`fmt`, `clippy -D warnings`, `test`).
 
@@ -27,7 +27,7 @@ Tracks post-Phase-7 execution status for Phases 8-11 across MemoryKernel, Outcom
     - RC lock metadata format is documented (SemVer + commit SHA + gate evidence reference).
     - Final locked RC versions/SHAs are recorded in `trilogy-compatibility-matrix.md`.
     - Hosted release workflow evidence is captured:
-      - `https://github.com/saagar210/MemoryKernel/actions/runs/21792841060`
+      - `https://github.com/saagar210/MemoryKernel/actions/runs/21792912960`
 
 - Phase 10 (Soak and Operational Readiness): COMPLETE
   - Complete:
