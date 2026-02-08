@@ -1,10 +1,13 @@
 import type { Command } from '../../components/shared/CommandPalette';
 import type { TabId } from './types';
+import type { QueueView } from '../inbox/queueModel';
 
 interface BuildCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
+  revampCommandPaletteV2Enabled: boolean;
   setActiveTab: (tab: TabId) => void;
+  openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
   handleSaveDraft: () => void;
   handleCopyResponse: () => void;
@@ -19,7 +22,9 @@ interface BuildCommandsParams {
 export function buildAppShellCommands({
   activeTab,
   sidebarCollapsed,
+  revampCommandPaletteV2Enabled,
   setActiveTab,
+  openQueueView,
   handleGenerate,
   handleSaveDraft,
   handleCopyResponse,
@@ -30,7 +35,7 @@ export function buildAppShellCommands({
   addToast,
   clearDraft,
 }: BuildCommandsParams): Command[] {
-  return [
+  const commands: Command[] = [
     {
       id: 'nav-draft',
       label: 'Go to Draft',
@@ -243,4 +248,43 @@ export function buildAppShellCommands({
       },
     },
   ];
+
+  if (revampCommandPaletteV2Enabled) {
+    commands.push(
+      {
+        id: 'queue-open-unassigned',
+        label: 'Queue: Unassigned',
+        description: 'Jump to unassigned follow-ups queue',
+        icon: 'followups',
+        category: 'action',
+        action: () => openQueueView('unassigned'),
+      },
+      {
+        id: 'queue-open-at-risk',
+        label: 'Queue: At Risk',
+        description: 'Jump to SLA-at-risk follow-ups queue',
+        icon: 'alert-triangle',
+        category: 'action',
+        action: () => openQueueView('at_risk'),
+      },
+      {
+        id: 'queue-open-in-progress',
+        label: 'Queue: In Progress',
+        description: 'Jump to in-progress queue items',
+        icon: 'play',
+        category: 'action',
+        action: () => openQueueView('in_progress'),
+      },
+      {
+        id: 'queue-open-resolved',
+        label: 'Queue: Resolved',
+        description: 'Review resolved queue items',
+        icon: 'check',
+        category: 'action',
+        action: () => openQueueView('resolved'),
+      },
+    );
+  }
+
+  return commands;
 }

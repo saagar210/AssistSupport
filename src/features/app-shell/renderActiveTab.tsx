@@ -14,12 +14,15 @@ import type { SavedDraft } from '../../types';
 import type { TabId } from './types';
 import type { RefObject } from 'react';
 import type { RevampFlags } from '../revamp';
+import type { QueueView } from '../inbox/queueModel';
 
 export interface RenderActiveTabProps {
   activeTab: TabId;
   draftRef: RefObject<DraftTabHandle | null>;
   sourceSearchQuery: string | null;
+  pendingQueueView: QueueView | null;
   onSearchQueryConsumed: () => void;
+  onQueueViewConsumed: () => void;
   onNavigateToSource: (searchQuery: string) => void;
   onLoadDraft: (draft: SavedDraft) => void;
   revampFlags: RevampFlags;
@@ -29,7 +32,9 @@ export function renderActiveTab({
   activeTab,
   draftRef,
   sourceSearchQuery,
+  pendingQueueView,
   onSearchQueryConsumed,
+  onQueueViewConsumed,
   onNavigateToSource,
   onLoadDraft,
   revampFlags,
@@ -51,6 +56,8 @@ export function renderActiveTab({
           <InboxPage
             onLoadDraft={onLoadDraft}
             queueFirstModeEnabled={revampFlags.ASSISTSUPPORT_REVAMP_INBOX}
+            initialQueueView={pendingQueueView}
+            onQueueViewConsumed={onQueueViewConsumed}
           />
         </ErrorBoundary>
       );

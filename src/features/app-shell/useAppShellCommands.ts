@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import { buildAppShellCommands } from './commands';
 import type { TabId } from './types';
+import type { QueueView } from '../inbox/queueModel';
 
 interface UseAppShellCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
+  revampCommandPaletteV2Enabled: boolean;
   setActiveTab: (tab: TabId) => void;
+  openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
   handleSaveDraft: () => void;
   handleCopyResponse: () => void;
@@ -20,7 +23,9 @@ interface UseAppShellCommandsParams {
 export function useAppShellCommands({
   activeTab,
   sidebarCollapsed,
+  revampCommandPaletteV2Enabled,
   setActiveTab,
+  openQueueView,
   handleGenerate,
   handleSaveDraft,
   handleCopyResponse,
@@ -34,7 +39,9 @@ export function useAppShellCommands({
   return useMemo(() => buildAppShellCommands({
     activeTab,
     sidebarCollapsed,
+    revampCommandPaletteV2Enabled,
     setActiveTab,
+    openQueueView,
     handleGenerate,
     handleSaveDraft,
     handleCopyResponse,
@@ -47,7 +54,9 @@ export function useAppShellCommands({
   }), [
     activeTab,
     sidebarCollapsed,
+    revampCommandPaletteV2Enabled,
     setActiveTab,
+    openQueueView,
     handleGenerate,
     handleSaveDraft,
     handleCopyResponse,

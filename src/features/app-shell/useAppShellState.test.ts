@@ -87,6 +87,19 @@ describe('useAppShellState', () => {
     });
 
     expect(result.current.sourceSearchQuery).toBeNull();
+
+    act(() => {
+      result.current.handleNavigateToQueue('at_risk');
+    });
+
+    expect(result.current.activeTab).toBe('followups');
+    expect(result.current.pendingQueueView).toBe('at_risk');
+
+    act(() => {
+      result.current.consumePendingQueueView();
+    });
+
+    expect(result.current.pendingQueueView).toBeNull();
   });
 
   it('loads follow-up draft via deferred draft-tab handoff', () => {

@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import type { SavedDraft } from '../../types';
 import type { DraftTabHandle } from '../../components/Draft/DraftTab';
 import type { TabId } from './types';
+import type { QueueView } from '../inbox/queueModel';
 
 interface UseAppShellStateParams {
   initIsFirstRun: boolean | undefined;
@@ -18,6 +19,7 @@ export function useAppShellState({ initIsFirstRun, draftRef, addToast }: UseAppS
   const [pendingDraft, setPendingDraft] = useState<SavedDraft | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string | null>(null);
+  const [pendingQueueView, setPendingQueueView] = useState<QueueView | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const handleNavigateToSource = useCallback((searchQuery: string) => {
@@ -27,6 +29,15 @@ export function useAppShellState({ initIsFirstRun, draftRef, addToast }: UseAppS
 
   const consumeSourceSearchQuery = useCallback(() => {
     setSourceSearchQuery(null);
+  }, []);
+
+  const handleNavigateToQueue = useCallback((queueView: QueueView) => {
+    setPendingQueueView(queueView);
+    setActiveTab('followups');
+  }, []);
+
+  const consumePendingQueueView = useCallback(() => {
+    setPendingQueueView(null);
   }, []);
 
   const handleLoadDraft = useCallback((draft: SavedDraft) => {
@@ -89,9 +100,12 @@ export function useAppShellState({ initIsFirstRun, draftRef, addToast }: UseAppS
     setActiveTab,
     sidebarCollapsed,
     sourceSearchQuery,
+    pendingQueueView,
     showOnboarding,
     handleNavigateToSource,
+    handleNavigateToQueue,
     consumeSourceSearchQuery,
+    consumePendingQueueView,
     handleLoadDraft,
     handleOnboardingComplete,
     handleOnboardingSkip,

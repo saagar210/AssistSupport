@@ -5,7 +5,9 @@ function createParams(activeTab: 'draft' | 'sources' = 'draft') {
   return {
     activeTab,
     sidebarCollapsed: false,
+    revampCommandPaletteV2Enabled: false,
     setActiveTab: vi.fn(),
+    openQueueView: vi.fn(),
     handleGenerate: vi.fn(),
     handleSaveDraft: vi.fn(),
     handleCopyResponse: vi.fn(),
@@ -48,5 +50,17 @@ describe('buildAppShellCommands', () => {
 
     expect(params.setActiveTab).toHaveBeenCalledWith('draft');
     expect(params.clearDraft).toHaveBeenCalled();
+  });
+
+  it('includes queue commands when revamp command palette v2 is enabled', () => {
+    const params = createParams('sources');
+    params.revampCommandPaletteV2Enabled = true;
+    const commands = buildAppShellCommands(params);
+
+    expect(commands.some((c) => c.id === 'queue-open-unassigned')).toBe(true);
+    expect(commands.some((c) => c.id === 'queue-open-at-risk')).toBe(true);
+
+    commands.find((c) => c.id === 'queue-open-at-risk')?.action();
+    expect(params.openQueueView).toHaveBeenCalledWith('at_risk');
   });
 });
