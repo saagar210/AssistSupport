@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (phase 4 closeout + phase 5/6 consumer scaffolding)
+Updated: 2026-02-08 (final consumer checkpoint validation refresh)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -45,4 +45,6 @@ Updated: 2026-02-08 (phase 4 closeout + phase 5/6 consumer scaffolding)
 - Phase 6: cutover governance scaffold published (command checklist, rollback criteria, incident template).
 - Consumer cutover-day dry-run execution evidence captured:
   - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md`
+- Consumer sign-off checkpoint packet published:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_2026-02-08.md`
 - Next: obtain joint sign-off evidence package and keep runtime cutover blocked until gates close.
