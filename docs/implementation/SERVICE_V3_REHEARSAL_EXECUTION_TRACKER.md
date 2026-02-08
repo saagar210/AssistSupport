@@ -10,28 +10,28 @@ Owner: MemoryKernel
 ## Phase Execution Tasks
 
 ### Task P1: Rehearsal branch setup
-- Status: Pending
+- Status: Ready (checkpoint D planning approved)
 - Owner: MemoryKernel
 - Definition of done:
   - branch created from `main`
   - rehearsal artifact checklist added
 
 ### Task P2: service.v3 artifact preparation
-- Status: Pending
+- Status: In Progress (planning artifacts drafted, runtime changes not started)
 - Owner: MemoryKernel
 - Definition of done:
   - OpenAPI/spec/docs aligned
   - manifest updated for candidate
 
 ### Task P3: Producer verification suite
-- Status: Pending
+- Status: Ready (verification command set locked)
 - Owner: MemoryKernel
 - Definition of done:
   - full producer suite green
   - handoff packet prepared
 
 ### Task P4: Joint rehearsal handoff
-- Status: Pending
+- Status: Pending (awaiting AssistSupport rehearsal-entry confirmation)
 - Owner: Joint
 - Definition of done:
   - consumer rehearsal starts from immutable candidate tag/sha
@@ -54,4 +54,3 @@ cargo test --workspace --all-targets --all-features
 1. All tasks complete with evidence references.
 2. Candidate release handoff published.
 3. Joint go/no-go decision recorded.
-

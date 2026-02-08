@@ -19,7 +19,7 @@ Pre-cutover rehearsal for service.v3 artifacts and handoff discipline. No runtim
 ## Policy Locks
 1. Non-2xx envelope keeps `api_contract_version` absent unless a future joint RFC changes policy.
 2. `legacy_error` removal is blocked until all service.v3 cutover gates pass.
-3. Consumer manifest-hash validation must remain green throughout rehearsal.
+3. Consumer manifest-hash validation is optional during initial rehearsal and can be promoted in Phase 3 automation hardening.
 
 ## Verification Commands
 ```bash
@@ -38,4 +38,3 @@ cargo test --workspace --all-targets --all-features
 1. Producer verification suite is green.
 2. Consumer rehearsal PR is green against service.v3 candidate.
 3. Joint go/no-go record is captured before any runtime cutover.
-

@@ -1,0 +1,40 @@
+{
+  "handoff_generated_at_utc": "2026-02-08T10:59:43Z",
+  "release_tag": "v0.3.2",
+  "commit_sha": "cf331449e1589581a5dcbb3adecd3e9ae4509277",
+  "expected_service_contract_version": "service.v2",
+  "expected_api_contract_version": "api.v1",
+  "integration_baseline": "integration/v1",
+  "error_code_enum": [
+    "invalid_json",
+    "validation_error",
+    "context_package_not_found",
+    "write_conflict",
+    "write_failed",
+    "schema_unavailable",
+    "migration_failed",
+    "query_failed",
+    "context_lookup_failed",
+    "internal_error"
+  ],
+  "manifest_contract_version": "producer-contract-manifest.v1",
+  "manifest_path": "/Users/d/Projects/MemoryKernel/contracts/integration/v1/producer-contract-manifest.json",
+  "changelog_path": "/Users/d/Projects/MemoryKernel/CHANGELOG.md",
+  "verification_commands": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-targets --all-features",
+    "./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel",
+    "./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel",
+    "./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline"
+  ],
+  "consumer_impact_statement_template": {
+    "runtime_behavior_changes": "<none|describe>",
+    "required_consumer_mapping_changes": "<none|describe>",
+    "required_test_updates": "<none|describe>",
+    "repin_required": "<yes/no>",
+    "rollback_instruction": "repin to <previous tag/sha>"
+  }
+}

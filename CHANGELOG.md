@@ -22,3 +22,13 @@
 - Service error responses now include machine-readable `error.code` + `error.message` with explicit status mapping.
 - `service.v2` non-2xx envelope policy is locked: includes `service_contract_version` + `error` + `legacy_error`, excludes `api_contract_version`; `legacy_error` removal deferred to `service.v3`.
 - Added machine-readable producer baseline manifest at `contracts/integration/v1/producer-contract-manifest.json` with CI/release enforcement.
+
+### Governance
+
+- Added producer-side joint execution artifacts for AssistSupport parallel execution:
+  - `docs/implementation/JOINT_EXECUTION_PLAYBOOK_PRODUCER.md`
+  - `docs/implementation/SERVICE_V3_RFC_DRAFT.md`
+  - `docs/implementation/PRODUCER_PHASE1_STABILITY_CLOSEOUT_2026-02-08.md`
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_PACKET_TEMPLATE.md`
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
+- Added `scripts/generate_producer_handoff_payload.sh` to generate deterministic producer handoff payloads from the canonical manifest.

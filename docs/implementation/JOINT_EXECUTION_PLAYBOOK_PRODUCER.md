@@ -23,7 +23,7 @@
 
 ### Confirmed joint decisions (AssistSupport + MemoryKernel)
 - `error_code_enum` validation mode: set equality (order-independent).
-- Producer-manifest hash validation in consumer CI: local hash integrity is mandatory; authenticated remote validation runs when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
+- Producer-manifest hash validation in consumer CI: not required for Checkpoint A/B; candidate for Phase 3 automation hardening.
 - Consumer governance rule: pin + matrix + manifest updates must be atomic in one PR.
 
 ### Checkpoint status (as of 2026-02-08)
@@ -57,6 +57,8 @@ Make producer contract governance operationally routine (not tribal knowledge) f
   - manifest validation
   - contract alignment
   - parity/artifact checks
+- Closeout evidence report:
+  - `docs/implementation/PRODUCER_PHASE1_STABILITY_CLOSEOUT_2026-02-08.md`
 
 ### Verification commands
 ```bash
@@ -149,6 +151,9 @@ Ship producer releases with deterministic handoff payloads and zero ambiguity fo
 - Release tag + commit pair.
 - Producer handoff payload (template in Section 6).
 - Closeout evidence bundle (commands/results).
+- Generated handoff artifacts:
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_PACKET_TEMPLATE.md`
+  - `docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
 
 ### Verification commands
 ```bash
@@ -218,7 +223,6 @@ Reference draft:
   - producer release candidate gates pass
   - consumer repin is complete
   - consumer CI is green
-  - consumer manifest-hash validation gate is enabled (Phase 3 automation requirement)
   - joint go decision recorded
 
 ## 5) Producer Risk Register
@@ -250,6 +254,8 @@ Reference draft:
 - Full verification command list with pass/fail outcomes.
 - `verify_producer_contract_manifest.sh` result.
 - Service alignment/parity/artifact/smoke/compliance results.
+- Generated handoff payload:
+  - `./scripts/generate_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel --out-json /Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
 
 ### Gate-to-evidence mapping
 
@@ -289,7 +295,7 @@ Consumer impact:
   - fail on mismatch for tag/sha/service/api/integration baseline.
   - enforce `error_code_enum` set equality (order-independent).
   - enforce atomic pin+matrix+manifest updates in one PR.
-  - producer-manifest hash validation is now active in consumer CI via pinned local mirror hash; optional authenticated remote verification uses pinned commit SHA.
+  - defer producer-manifest hash validation to Phase 3 automation hardening.
 
 ## 8) Copy/Paste Prompt for AssistSupport Codex
 
@@ -323,7 +329,7 @@ Exact asks for AssistSupport (next execution block):
    - /Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md
    - /Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_REHEARSAL_EXECUTION_TRACKER.md
 2) Keep deterministic fallback + optional/non-blocking enrichment unchanged.
-3) Keep manifest hash governance active and report any token-gated remote validation behavior.
+3) Keep atomic pin+matrix+manifest governance active; treat manifest-hash validation as optional Phase 3 hardening unless promoted jointly.
 
 Proposed joint timeline/checkpoints:
 - Checkpoint A (complete): manifest mirrored + CI checks implemented

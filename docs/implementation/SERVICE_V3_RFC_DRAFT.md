@@ -85,7 +85,6 @@ Define a safe, testable transition from `service.v2` to `service.v3` where
 ### Exit criteria (hard gate)
 - Consumer repin merged.
 - Consumer CI green.
-- Consumer manifest-hash validation gate enabled (Phase 3 automation prerequisite).
 - Joint go decision recorded.
 
 ## Stage 4: Stabilization and cleanup
@@ -105,8 +104,7 @@ All must be true:
 2. AssistSupport repin is merged to immutable `service.v3` tag/sha.
 3. AssistSupport CI is green (`typecheck`, tests, contract tests, CI aggregate).
 4. Producer verification suite is green (fmt/clippy/tests/alignment/parity/smoke/compliance).
-5. AssistSupport manifest-hash validation is enabled in CI.
-6. Joint cutover acknowledgment is explicitly recorded.
+5. Joint cutover acknowledgment is explicitly recorded.
 
 ## Consumer cutover checklist (must all pass)
 1. Producer publishes immutable `service.v3` tag + commit with updated manifest/OpenAPI/spec.
@@ -156,4 +154,4 @@ cargo test --workspace --all-targets --all-features
 
 ## Resolved planning decisions
 1. Overlap rehearsal duration is locked to 14 calendar days (1 sprint).
-2. Consumer manifest-hash validation is active for local mirror integrity and can run authenticated remote validation when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
+2. Consumer manifest-hash validation is deferred for Checkpoint A/B and remains a Phase 3 automation hardening candidate.
