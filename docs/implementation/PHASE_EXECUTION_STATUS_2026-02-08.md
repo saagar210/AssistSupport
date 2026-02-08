@@ -1,6 +1,6 @@
 # Phase Execution Status: AssistSupport Consumer Track
 
-Updated: 2026-02-08 (cutover-decision checkpoint opened)
+Updated: 2026-02-08 (bilateral cutover-decision checkpoint opened)
 Owner: AssistSupport
 
 ## Baseline
@@ -31,3 +31,4 @@ pnpm run test:ci
 1. Keep runtime cutover blocked until explicit joint approval and cutover-gate completion evidence.
 2. Use the cutover-decision checkpoint packet for any future decision session:
    - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_2026-02-08.md`
+   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
