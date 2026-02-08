@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 
 use crate::error::AppError;
+use crate::utils::{bytes_to_f64_vec, cosine_similarity, f64_vec_to_bytes};
 
 /// Initialize the chunk_embeddings table. Call this during DB setup.
 pub fn create_table(conn: &Connection) -> Result<(), AppError> {
@@ -32,7 +33,7 @@ pub fn store_embeddings(
     )?;
 
     for (chunk_id, collection_id, document_id, embedding, preview) in chunks {
-        let bytes = vec_to_bytes(embedding);
+        let bytes = f64_vec_to_bytes(embedding);
         stmt.execute(rusqlite::params![chunk_id, collection_id, document_id, bytes, preview])?;
     }
 
@@ -60,7 +61,7 @@ pub fn search_vectors(
     let mut scored: Vec<(String, f64)> = Vec::new();
     for row in rows {
         let (chunk_id, blob) = row?;
-        let embedding = bytes_to_vec(&blob);
+        let embedding = bytes_to_f64_vec(&blob);
         let score = cosine_similarity(query_vec, &embedding);
         scored.push((chunk_id, score));
     }
@@ -89,45 +90,6 @@ pub fn delete_collection_vectors(conn: &Connection, collection_id: &str) -> Resu
     Ok(())
 }
 
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        norm_a += a[i] * a[i];
-        norm_b += b[i] * b[i];
-    }
-
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        return 0.0;
-    }
-
-    dot / denom
-}
-
-fn vec_to_bytes(v: &[f64]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(v.len() * 8);
-    for val in v {
-        bytes.extend_from_slice(&val.to_le_bytes());
-    }
-    bytes
-}
-
-fn bytes_to_vec(b: &[u8]) -> Vec<f64> {
-    b.chunks_exact(8)
-        .map(|chunk| {
-            let arr: [u8; 8] = chunk.try_into().unwrap_or([0u8; 8]);
-            f64::from_le_bytes(arr)
-        })
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {
@@ -247,8 +209,8 @@ mod tests {
     #[test]
     fn test_vec_bytes_roundtrip() {
         let original = vec![1.5, -2.3, 0.0, 42.0, std::f64::consts::PI];
-        let bytes = vec_to_bytes(&original);
-        let restored = bytes_to_vec(&bytes);
+        let bytes = f64_vec_to_bytes(&original);
+        let restored = bytes_to_f64_vec(&bytes);
         assert_eq!(original, restored);
     }
 

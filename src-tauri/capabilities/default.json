@@ -30,9 +30,8 @@
       "allow": [
         { "path": "$APPDATA/**" },
         { "path": "$DOCUMENT/**" },
-        { "path": "$HOME/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOWNLOAD/**" }
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" }
       ]
     }
   ]

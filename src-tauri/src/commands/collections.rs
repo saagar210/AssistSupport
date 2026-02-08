@@ -18,12 +18,7 @@ pub fn create_collection(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     db.execute(
         "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -41,12 +36,7 @@ pub fn create_collection(
 
 #[tauri::command]
 pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, AppError> {
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     let mut stmt = db.prepare(
         "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC",
@@ -69,12 +59,7 @@ pub fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, A
 
 #[tauri::command]
 pub fn get_collection(state: State<'_, AppState>, id: String) -> Result<Collection, AppError> {
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     let collection = db.query_row(
         "SELECT id, name, description, created_at, updated_at FROM collections WHERE id = ?1",
@@ -110,12 +95,7 @@ pub fn update_collection(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     let rows_updated = db.execute(
         "UPDATE collections SET name = ?1, description = ?2, updated_at = ?3 WHERE id = ?4",
@@ -137,12 +117,7 @@ pub fn update_collection(
 
 #[tauri::command]
 pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     // Check if this is the "General" collection
     let name: String = db.query_row(

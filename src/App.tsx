@@ -33,6 +33,8 @@ function ActiveView() {
       return <SearchView />;
     case "settings":
       return <SettingsView />;
+    default:
+      return <DocumentsView />;
   }
 }
 

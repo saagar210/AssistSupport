@@ -19,6 +19,9 @@ pub enum AppError {
 
     #[error("Validation error: {0}")]
     Validation(String),
+
+    #[error("Lock failed: {0}")]
+    LockFailed(String),
 }
 
 impl Serialize for AppError {

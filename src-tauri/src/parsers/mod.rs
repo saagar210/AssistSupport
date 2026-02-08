@@ -39,6 +39,30 @@ fn count_words(text: &str) -> i32 {
 }
 
 pub fn parse_document(path: &Path, file_type: &str) -> Result<ParsedDocument, AppError> {
+    // Validate file type first
+    match file_type {
+        "pdf" | "md" | "markdown" | "html" | "htm" | "txt" | "text" | "docx" | "csv" | "epub" => {}
+        _ => {
+            return Err(AppError::Parse(format!(
+                "Unsupported file type: {}",
+                file_type
+            )));
+        }
+    }
+
+    const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500MB limit
+
+    let file_size = std::fs::metadata(path)
+        .map_err(|e| AppError::Io(e))?
+        .len();
+
+    if file_size > MAX_FILE_SIZE {
+        return Err(AppError::Validation(format!(
+            "File too large: {} bytes (max {} bytes)",
+            file_size, MAX_FILE_SIZE
+        )));
+    }
+
     match file_type {
         "pdf" => pdf::parse(path),
         "md" | "markdown" => markdown::parse(path),
@@ -47,10 +71,7 @@ pub fn parse_document(path: &Path, file_type: &str) -> Result<ParsedDocument, Ap
         "docx" => docx::parse(path),
         "csv" => csv_parser::parse(path),
         "epub" => epub::parse(path),
-        _ => Err(AppError::Parse(format!(
-            "Unsupported file type: {}",
-            file_type
-        ))),
+        _ => unreachable!(),
     }
 }
 

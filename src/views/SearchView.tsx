@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useAppStore } from "../stores/appStore";
+import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
 import type { SearchResult } from "../types";
 
 type SearchMode = "hybrid" | "semantic" | "keyword";
@@ -15,16 +16,6 @@ const SEARCH_COMMANDS: Record<SearchMode, string> = {
   hybrid: "hybrid_search",
   semantic: "vector_search",
   keyword: "keyword_search",
-};
-
-const FILE_TYPE_COLORS: Record<string, string> = {
-  pdf: "bg-blue-500",
-  md: "bg-green-500",
-  docx: "bg-orange-500",
-  txt: "bg-slate-400",
-  html: "bg-purple-500",
-  csv: "bg-yellow-500",
-  epub: "bg-red-500",
 };
 
 function highlightText(text: string, query: string): React.ReactNode[] {
@@ -194,10 +185,9 @@ export function SearchView() {
                 {results.length} result{results.length !== 1 ? "s" : ""} found
               </p>
               {results.map((result) => {
-                const colorClass =
-                  FILE_TYPE_COLORS[
-                    result.document_title.split(".").pop()?.toLowerCase() ?? ""
-                  ] ?? "bg-slate-400";
+                const colorClass = getFileTypeBadgeColor(
+                  result.document_title.split(".").pop() ?? "",
+                );
                 const scorePercent = Math.round(result.score * 100);
 
                 return (

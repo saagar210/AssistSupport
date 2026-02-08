@@ -7,12 +7,7 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, AppError> {
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     let mut stmt = db.prepare("SELECT key, value FROM settings")?;
 
@@ -31,12 +26,7 @@ pub fn update_setting(
     key: String,
     value: String,
 ) -> Result<(), AppError> {
-    let db = state.db.lock().map_err(|e| AppError::Database(
-        rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ),
-    ))?;
+    let db = crate::state::lock_db(&state)?;
 
     db.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

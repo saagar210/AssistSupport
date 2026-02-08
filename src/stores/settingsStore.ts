@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { useToastStore } from "./toastStore";
 import type { Setting } from "../types";
 
 interface SettingsState {
@@ -24,6 +25,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ settings, loading: false });
     } catch (error) {
       console.error("Failed to fetch settings:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch settings: " + String(error));
       set({ loading: false });
     }
   },
@@ -35,6 +37,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ settings: { ...current, [key]: value } });
     } catch (error) {
       console.error("Failed to update setting:", error);
+      useToastStore.getState().addToast("error", "Failed to update setting: " + String(error));
     }
   },
 }));

@@ -19,19 +19,10 @@ import { useCollectionStore } from "../stores/collectionStore";
 import { useDocumentStore } from "../stores/documentStore";
 import { useAppStore } from "../stores/appStore";
 import { useToastStore } from "../stores/toastStore";
+import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
 import type { Document, IngestionProgress } from "../types";
 
 type SortKey = "name" | "date" | "type";
-
-const FILE_TYPE_COLORS: Record<string, string> = {
-  pdf: "bg-blue-500",
-  md: "bg-green-500",
-  docx: "bg-orange-500",
-  txt: "bg-slate-400",
-  html: "bg-purple-500",
-  csv: "bg-yellow-500",
-  epub: "bg-red-500",
-};
 
 const SUPPORTED_EXTENSIONS = [
   { name: "All Supported", extensions: ["pdf", "md", "html", "txt", "docx", "csv", "epub"] },
@@ -45,7 +36,7 @@ const SUPPORTED_EXTENSIONS = [
 ];
 
 function getFileTypeBadge(fileType: string) {
-  const colorClass = FILE_TYPE_COLORS[fileType.toLowerCase()] ?? "bg-slate-400";
+  const colorClass = getFileTypeBadgeColor(fileType);
   return (
     <span
       className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white ${colorClass}`}
@@ -178,7 +169,7 @@ export function DocumentsView() {
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current -= 1;
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
     if (dragCounter.current === 0) {
       setDragging(false);
     }

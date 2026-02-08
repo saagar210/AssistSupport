@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   MessageSquare,
@@ -65,17 +65,22 @@ export function ChatView() {
 
   // Listen for streaming tokens
   useEffect(() => {
-    const unlistenToken = listen<ChatTokenPayload>("chat-token", (event) => {
-      addStreamingToken(event.payload.token);
-    });
+    let mounted = true;
+    let cleanupToken: (() => void) | null = null;
+    let cleanupComplete: (() => void) | null = null;
 
-    const unlistenComplete = listen<ChatCompletePayload>("chat-complete", (event) => {
-      finishStreaming(event.payload.message, event.payload.citations);
-    });
+    listen<ChatTokenPayload>("chat-token", (event) => {
+      if (mounted) addStreamingToken(event.payload.token);
+    }).then((fn) => { cleanupToken = fn; });
+
+    listen<ChatCompletePayload>("chat-complete", (event) => {
+      if (mounted) finishStreaming(event.payload.message, event.payload.citations);
+    }).then((fn) => { cleanupComplete = fn; });
 
     return () => {
-      unlistenToken.then((fn) => fn());
-      unlistenComplete.then((fn) => fn());
+      mounted = false;
+      cleanupToken?.();
+      cleanupComplete?.();
     };
   }, [addStreamingToken, finishStreaming]);
 
@@ -182,8 +187,11 @@ export function ChatView() {
       ? citations[selectedMessageId]
       : [];
 
-  const sortedConversations = [...conversations].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  const sortedConversations = useMemo(
+    () => [...conversations].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    ),
+    [conversations],
   );
 
   if (!activeCollectionId) {

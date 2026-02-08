@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
 import {
@@ -15,17 +15,8 @@ import {
 import { useCollectionStore } from "../stores/collectionStore";
 import { useAppStore } from "../stores/appStore";
 import { useToastStore } from "../stores/toastStore";
+import { FILE_TYPE_COLORS, getFileTypeColor } from "../utils/fileTypeColors";
 import type { GraphData, GraphNode } from "../types";
-
-const FILE_TYPE_COLORS: Record<string, string> = {
-  pdf: "#3b82f6",
-  md: "#22c55e",
-  docx: "#f59e0b",
-  txt: "#94a3b8",
-  html: "#a855f7",
-  csv: "#eab308",
-  epub: "#ef4444",
-};
 
 interface ProcessedNode extends GraphNode {
   x?: number;
@@ -92,7 +83,7 @@ export function GraphView() {
 
       const processedNodes: ProcessedNode[] = data.nodes.map((node) => ({
         ...node,
-        color: FILE_TYPE_COLORS[node.file_type.toLowerCase()] ?? "#94a3b8",
+        color: getFileTypeColor(node.file_type),
       }));
 
       const processedLinks: ProcessedLink[] = data.links.map((link) => ({
@@ -172,7 +163,7 @@ export function GraphView() {
   }, []);
 
   // Filter graph data
-  const filteredData: ProcessedGraphData = {
+  const filteredData = useMemo<ProcessedGraphData>(() => ({
     nodes: graphData.nodes.filter((n) =>
       enabledTypes.has(n.file_type.toLowerCase()),
     ),
@@ -188,7 +179,7 @@ export function GraphView() {
         enabledTypes.has(targetNode.file_type.toLowerCase())
       );
     }),
-  };
+  }), [graphData, enabledTypes, minWeight]);
 
   const nodeCanvasObject = useCallback(
     (node: ProcessedNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -422,8 +413,7 @@ export function GraphView() {
               <span
                 className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white"
                 style={{
-                  backgroundColor:
-                    FILE_TYPE_COLORS[selectedNode.file_type.toLowerCase()] ?? "#94a3b8",
+                  backgroundColor: getFileTypeColor(selectedNode.file_type),
                 }}
               >
                 {selectedNode.file_type}

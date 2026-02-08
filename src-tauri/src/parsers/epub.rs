@@ -124,6 +124,10 @@ fn parse_opf_spine(opf_content: &str, opf_path: &str) -> Result<Vec<String>, App
         let trimmed = line.trim();
         if trimmed.contains("<item") && trimmed.contains("id=") && trimmed.contains("href=") {
             if let (Some(id), Some(href)) = (extract_attr(trimmed, "id"), extract_attr(trimmed, "href")) {
+                if href.contains("..") {
+                    tracing::warn!("Skipping suspicious path in EPUB manifest: {}", href);
+                    continue;
+                }
                 let full_path = if href.starts_with('/') {
                     href[1..].to_string()
                 } else {
@@ -166,14 +170,25 @@ fn parse_opf_spine(opf_content: &str, opf_path: &str) -> Result<Vec<String>, App
 }
 
 fn extract_attr(tag: &str, attr_name: &str) -> Option<String> {
-    let search = format!("{}=", attr_name);
-    let idx = tag.find(&search)?;
-    let rest = &tag[idx + search.len()..];
-    let quote = rest.chars().next()?;
-    if quote == '"' || quote == '\'' {
-        let inner = &rest[1..];
-        let end = inner.find(quote)?;
-        return Some(inner[..end].to_string());
+    let patterns = [
+        format!("{}=\"", attr_name),
+        format!("{}='", attr_name),
+        format!("{}= \"", attr_name),
+        format!("{}= '", attr_name),
+        format!("{} =\"", attr_name),
+        format!("{} ='", attr_name),
+        format!("{} = \"", attr_name),
+        format!("{} = '", attr_name),
+    ];
+
+    for pattern in &patterns {
+        if let Some(start) = tag.find(pattern.as_str()) {
+            let value_start = start + pattern.len();
+            let quote_char = if pattern.ends_with('"') { '"' } else { '\'' };
+            if let Some(end) = tag[value_start..].find(quote_char) {
+                return Some(tag[value_start..value_start + end].to_string());
+            }
+        }
     }
     None
 }

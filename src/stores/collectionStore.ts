@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { useToastStore } from "./toastStore";
 import type { Collection } from "../types";
 
 interface CollectionState {
@@ -37,6 +38,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       set({ collections, activeCollectionId: activeId, loading: false });
     } catch (error) {
       console.error("Failed to fetch collections:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch collections: " + String(error));
       set({ loading: false });
     }
   },
@@ -49,6 +51,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await get().fetchCollections();
     } catch (error) {
       console.error("Failed to create collection:", error);
+      useToastStore.getState().addToast("error", "Failed to create collection: " + String(error));
     }
   },
 
@@ -58,6 +61,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await get().fetchCollections();
     } catch (error) {
       console.error("Failed to update collection:", error);
+      useToastStore.getState().addToast("error", "Failed to update collection: " + String(error));
     }
   },
 
@@ -67,6 +71,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await get().fetchCollections();
     } catch (error) {
       console.error("Failed to delete collection:", error);
+      useToastStore.getState().addToast("error", "Failed to delete collection: " + String(error));
     }
   },
 }));

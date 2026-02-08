@@ -8,12 +8,7 @@ use crate::state::AppState;
 fn lock_db<'a>(
     state: &'a State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    state.db.lock().map_err(|e| {
-        AppError::Database(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ))
-    })
+    crate::state::lock_db(state.inner())
 }
 
 /// Build knowledge graph edges for a collection using the similarity_threshold from settings.

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { useToastStore } from "./toastStore";
 import type { Conversation, Message, Citation } from "../types";
 
 interface ChatState {
@@ -48,6 +49,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ conversations });
     } catch (error) {
       console.error("Failed to fetch conversations:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch conversations: " + String(error));
     }
   },
 
@@ -60,6 +62,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ messages });
     } catch (error) {
       console.error("Failed to fetch messages:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch messages: " + String(error));
     }
   },
 
@@ -74,6 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return id;
     } catch (error) {
       console.error("Failed to create conversation:", error);
+      useToastStore.getState().addToast("error", "Failed to create conversation: " + String(error));
       return null;
     }
   },
@@ -88,6 +92,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().fetchConversations(collectionId);
     } catch (error) {
       console.error("Failed to delete conversation:", error);
+      useToastStore.getState().addToast("error", "Failed to delete conversation: " + String(error));
     }
   },
 
@@ -101,6 +106,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().fetchConversations(collectionId);
     } catch (error) {
       console.error("Failed to rename conversation:", error);
+      useToastStore.getState().addToast("error", "Failed to rename conversation: " + String(error));
     }
   },
 
@@ -118,6 +124,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to send message:", error);
+      useToastStore.getState().addToast("error", "Failed to send message: " + String(error));
       set({ streaming: false, streamingContent: "" });
     }
   },

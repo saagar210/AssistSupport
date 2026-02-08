@@ -13,17 +13,8 @@ import { useAppStore } from "../stores/appStore";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useDocumentStore } from "../stores/documentStore";
 import { useToastStore } from "../stores/toastStore";
+import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
 import type { Document, Chunk } from "../types";
-
-const FILE_TYPE_COLORS: Record<string, string> = {
-  pdf: "bg-blue-500",
-  md: "bg-green-500",
-  docx: "bg-orange-500",
-  txt: "bg-slate-400",
-  html: "bg-purple-500",
-  csv: "bg-yellow-500",
-  epub: "bg-red-500",
-};
 
 export function DocumentDetailView() {
   const selectedDocumentId = useAppStore((s) => s.selectedDocumentId);
@@ -126,7 +117,7 @@ export function DocumentDetailView() {
       return acc;
     }, []);
 
-  const colorClass = FILE_TYPE_COLORS[document.file_type.toLowerCase()] ?? "bg-slate-400";
+  const colorClass = getFileTypeBadgeColor(document.file_type);
 
   return (
     <div className="flex flex-1 overflow-hidden">

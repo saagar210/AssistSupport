@@ -8,6 +8,7 @@ mod models;
 mod ollama;
 mod parsers;
 mod state;
+pub mod utils;
 mod vector_store;
 
 use state::AppState;

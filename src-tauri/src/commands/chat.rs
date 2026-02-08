@@ -12,12 +12,7 @@ use super::search::SearchResult;
 fn lock_db<'a>(
     state: &'a State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    state.db.lock().map_err(|e| {
-        AppError::Database(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ))
-    })
+    crate::state::lock_db(state.inner())
 }
 
 /// Send a chat message: run RAG pipeline (search + context + stream LLM response).
@@ -210,19 +205,23 @@ fn build_system_prompt(context: &[SearchResult]) -> String {
 }
 
 /// Load the last N messages from a conversation as ChatMessages.
+/// Uses a subquery to fetch the last N by created_at DESC, then re-orders ASC.
 fn load_conversation_history(
     conn: &rusqlite::Connection,
     conversation_id: &str,
     limit: usize,
 ) -> Result<Vec<ChatMessage>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT role, content FROM messages
-         WHERE conversation_id = ?1
-         ORDER BY created_at ASC",
+        "SELECT role, content FROM (
+            SELECT role, content, created_at FROM messages
+            WHERE conversation_id = ?1
+            ORDER BY created_at DESC
+            LIMIT ?2
+        ) sub ORDER BY created_at ASC",
     )?;
 
-    let all_messages: Vec<ChatMessage> = stmt
-        .query_map(rusqlite::params![conversation_id], |row| {
+    let messages: Vec<ChatMessage> = stmt
+        .query_map(rusqlite::params![conversation_id, limit as i64], |row| {
             Ok(ChatMessage {
                 role: row.get(0)?,
                 content: row.get(1)?,
@@ -230,14 +229,7 @@ fn load_conversation_history(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Return last `limit` messages (skip system messages if any were stored)
-    let start = if all_messages.len() > limit {
-        all_messages.len() - limit
-    } else {
-        0
-    };
-
-    Ok(all_messages[start..].to_vec())
+    Ok(messages)
 }
 
 #[tauri::command]

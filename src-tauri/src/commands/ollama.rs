@@ -10,12 +10,7 @@ pub async fn check_ollama_connection(
     state: State<'_, AppState>,
 ) -> Result<(bool, String), AppError> {
     let (host, port) = {
-        let db = state.db.lock().map_err(|e| AppError::Database(
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-                Some(format!("Mutex lock failed: {}", e)),
-            ),
-        ))?;
+        let db = crate::state::lock_db(&state)?;
 
         let host: String = db.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",
@@ -40,12 +35,7 @@ pub async fn list_ollama_models(
     state: State<'_, AppState>,
 ) -> Result<Vec<OllamaModel>, AppError> {
     let (host, port) = {
-        let db = state.db.lock().map_err(|e| AppError::Database(
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-                Some(format!("Mutex lock failed: {}", e)),
-            ),
-        ))?;
+        let db = crate::state::lock_db(&state)?;
 
         let host: String = db.query_row(
             "SELECT value FROM settings WHERE key = 'ollama_host'",

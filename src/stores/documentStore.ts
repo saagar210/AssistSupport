@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { useToastStore } from "./toastStore";
 import type { Document } from "../types";
 
 interface DocumentState {
@@ -27,6 +28,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set({ documents, loading: false });
     } catch (error) {
       console.error("Failed to fetch documents:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch documents: " + String(error));
       set({ loading: false });
     }
   },
@@ -38,6 +40,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       await get().fetchStats(collectionId);
     } catch (error) {
       console.error("Failed to delete document:", error);
+      useToastStore.getState().addToast("error", "Failed to delete document: " + String(error));
     }
   },
 
@@ -49,6 +52,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set({ docCount: stats[0], chunkCount: stats[1] });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
+      useToastStore.getState().addToast("error", "Failed to fetch stats: " + String(error));
     }
   },
 }));

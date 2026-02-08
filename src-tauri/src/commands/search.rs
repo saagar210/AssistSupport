@@ -6,6 +6,7 @@ use tauri::State;
 use crate::error::AppError;
 use crate::ollama;
 use crate::state::AppState;
+use crate::utils::{bytes_to_f64_vec, cosine_similarity};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -18,16 +19,11 @@ pub struct SearchResult {
     pub score: f64,
 }
 
-/// Helper to lock the DB mutex, returning a consistent AppError on failure.
+/// Helper to lock the DB mutex.
 fn lock_db<'a>(
     state: &'a State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    state.db.lock().map_err(|e| {
-        AppError::Database(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ))
-    })
+    crate::state::lock_db(state.inner())
 }
 
 /// Perform vector (semantic) search: embed the query, search vector store,
@@ -125,6 +121,10 @@ fn vector_search_in_db(
     let mut scored: Vec<(String, f64)> = Vec::new();
     for row_result in rows {
         let (chunk_id, blob) = row_result?;
+        if blob.len() % 8 != 0 {
+            tracing::warn!("Invalid embedding blob length {} for chunk {}, skipping", blob.len(), chunk_id);
+            continue;
+        }
         let embedding = bytes_to_f64_vec(&blob);
         let sim = cosine_similarity(query_embedding, &embedding);
         scored.push((chunk_id, sim));
@@ -367,37 +367,3 @@ fn reciprocal_rank_fusion(
         .collect()
 }
 
-/// Decode a blob of bytes into a Vec<f64> (little-endian f64s).
-fn bytes_to_f64_vec(bytes: &[u8]) -> Vec<f64> {
-    bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let arr: [u8; 8] = chunk.try_into().unwrap_or([0u8; 8]);
-            f64::from_le_bytes(arr)
-        })
-        .collect()
-}
-
-/// Cosine similarity between two vectors.
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-
-    for (x, y) in a.iter().zip(b.iter()) {
-        dot += x * y;
-        norm_a += x * x;
-        norm_b += y * y;
-    }
-
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        0.0
-    } else {
-        dot / denom
-    }
-}

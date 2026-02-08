@@ -14,12 +14,7 @@ use crate::vector_store;
 fn lock_db<'a>(
     state: &'a tauri::State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
-    state.db.lock().map_err(|e| {
-        AppError::Database(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!("Mutex lock failed: {}", e)),
-        ))
-    })
+    crate::state::lock_db(state.inner())
 }
 
 fn detect_file_type(path: &Path) -> Option<String> {
@@ -249,8 +244,8 @@ pub async fn ingest_files(
             let mut embedding_data: Vec<(String, String, String, Vec<f64>, String)> = Vec::new();
             for (i, (chunk_id, content)) in chunk_rows.iter().enumerate() {
                 if let Some(embedding) = embeddings.get(i) {
-                    let preview = if content.len() > 200 {
-                        format!("{}...", &content[..200])
+                    let preview = if content.chars().count() > 200 {
+                        format!("{}...", content.chars().take(200).collect::<String>())
                     } else {
                         content.clone()
                     };

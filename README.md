@@ -1,164 +1,178 @@
+<div align="center">
+
 # VaultMind
 
-**Local-first AI-powered knowledge management**
+### Your documents. Your AI. Your machine. Nothing leaves.
 
-VaultMind is a privacy-focused desktop application that lets you ingest documents, search them with semantic understanding, have conversations grounded in your own data, and explore the connections between your knowledge through an interactive graph.
+[![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Tauri](https://img.shields.io/badge/Tauri_2-FFC131?style=for-the-badge&logo=tauri&logoColor=black)](https://tauri.app/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](./LICENSE)
 
-Everything runs locally on your machine. Your documents never leave your computer.
+**Drop in your PDFs, Markdown, DOCX, HTML, EPUB, CSV, and plain text files.**
+**Search by meaning. Chat with your knowledge. See the connections.**
 
-## Key Features
+*All powered by local LLMs through Ollama. Zero cloud. Zero tracking. Zero compromise.*
 
-- **Document Ingestion** -- Import PDF, Markdown, HTML, Plain Text, DOCX, CSV, and EPUB files with automatic chunking and embedding
-- **Semantic Search** -- Find information by meaning, not just keywords, using local embedding models
-- **Hybrid Search** -- Combines vector similarity and keyword (BM25) search with Reciprocal Rank Fusion for best results
-- **Conversational RAG** -- Chat with your documents using retrieval-augmented generation powered by local LLMs
-- **Knowledge Graph** -- Visualize entity relationships extracted from your documents in an interactive force-directed graph
-- **Collections** -- Organize documents into collections for scoped search and conversation
-- **Command Palette** -- Keyboard-driven navigation (Cmd+K) for power users
-- **Dark/Light Mode** -- Automatic theme detection with manual override
-- **100% Local** -- No cloud services, no API keys, no data leaving your machine
+</div>
 
-## Screenshots
+---
 
-### Document Library
-*Coming soon*
+## What is VaultMind?
 
-### Semantic Search
-*Coming soon*
+VaultMind is a desktop app that turns your messy pile of documents into a searchable, conversational, interconnected knowledge base — and it does it **entirely on your machine**.
 
-### Chat with Documents
-*Coming soon*
+No API keys. No subscriptions. No data leaving your laptop. Just you, your documents, and a local AI that actually understands them.
 
-### Knowledge Graph
-*Coming soon*
+## What can it do?
+
+| Feature | What it means for you |
+|---------|----------------------|
+| **7-format ingestion** | Drop in PDF, Markdown, HTML, TXT, DOCX, CSV, EPUB — VaultMind parses, chunks, and embeds them automatically |
+| **Semantic search** | Find things by *meaning*, not just exact keywords. "papers about climate impact" finds relevant docs even if they never use those exact words |
+| **Hybrid search** | Combines vector similarity + BM25 keyword search with Reciprocal Rank Fusion — best of both worlds |
+| **Chat with your docs** | Ask questions, get answers grounded in YOUR data with inline citations pointing to exact sources |
+| **Knowledge graph** | See how your documents connect through an interactive force-directed graph — discover relationships you didn't know existed |
+| **Collections** | Organize documents into separate knowledge bases for different projects, topics, or clients |
+| **Command palette** | `Cmd+K` to do anything. Power users rejoice. |
+| **Dark mode** | Because of course. (Light mode and system-auto too.) |
 
 ## Tech Stack
 
-| Layer      | Technology                        |
-|------------|-----------------------------------|
-| Framework  | Tauri 2 (Rust)                    |
-| Frontend   | React 19, TypeScript, Tailwind 4  |
-| State      | Zustand                           |
-| Database   | SQLite (rusqlite)                 |
-| AI Runtime | Ollama (local LLMs + embeddings)  |
-| Build      | Vite 7, Cargo                     |
-
-## Prerequisites
-
-- **macOS** (Apple Silicon or Intel)
-- **Ollama** installed and running -- [Download Ollama](https://ollama.com)
-- **Node.js** 18+ and **pnpm**
-- **Rust** toolchain (rustup)
+```
+Frontend:  React 19 + TypeScript + Tailwind CSS 4 + Zustand
+Backend:   Tauri 2 + Rust + SQLite (WAL mode + FTS5)
+AI:        Ollama (local embeddings + chat)
+Graph:     react-force-graph-2d
+Build:     Vite 7 + Cargo
+Tests:     Vitest + Cargo test (76 tests)
+```
 
 ## Quick Start
 
-1. Install Ollama and pull the required models:
+### Prerequisites
 
-   ```bash
-   ollama pull nomic-embed-text && ollama pull llama3.2
-   ```
+- **macOS** (Apple Silicon or Intel)
+- [**Ollama**](https://ollama.com) installed and running
+- **Node.js** 18+ and [**pnpm**](https://pnpm.io/)
+- **Rust** toolchain via [rustup](https://rustup.rs/)
 
-2. Clone the repository:
+### Get running in 60 seconds
 
-   ```bash
-   git clone https://github.com/your-username/vaultmind.git
-   cd vaultmind
-   ```
+```bash
+# 1. Pull the AI models
+ollama pull nomic-embed-text && ollama pull llama3.2
 
-3. Install frontend dependencies:
+# 2. Clone and install
+git clone https://github.com/saagar210/Vaultmind.git
+cd Vaultmind
+pnpm install
 
-   ```bash
-   pnpm install
-   ```
+# 3. Launch
+pnpm tauri dev
+```
 
-4. Run in development mode:
+That's it. Drop some documents in and start exploring.
 
-   ```bash
-   pnpm tauri dev
-   ```
+## How It Works
+
+```
+Documents ──> Parse ──> Chunk ──> Embed ──> Store
+                                              │
+                          ┌───────────────────┤
+                          │                   │
+                     Search/Chat          Knowledge Graph
+                          │                   │
+                    Hybrid Search         Force-directed
+                   (Vector + BM25)        visualization
+                          │                   │
+                     RRF Fusion           Document clusters
+                          │               + connections
+                    Cited answers
+```
+
+**Ingestion**: Documents are parsed into text, split into overlapping chunks with section context, embedded via Ollama, and stored in SQLite alongside FTS5 full-text indexes.
+
+**Search**: Your query hits both a vector similarity search and a BM25 keyword search simultaneously. Results are fused using Reciprocal Rank Fusion for the best of both approaches.
+
+**Chat**: Questions trigger hybrid search to find the most relevant chunks, which get injected as context into Ollama's chat model. Every answer comes with clickable citations back to the source material.
+
+**Graph**: Document chunks are compared by embedding similarity. Cross-document connections above a configurable threshold become edges in an interactive force-directed graph, revealing hidden relationships across your knowledge base.
+
+## Project Structure
+
+```
+Vaultmind/
+├── src/                          # React frontend
+│   ├── components/               #   Sidebar, Header, StatusBar, Toast, CommandPalette
+│   ├── views/                    #   Documents, Search, Chat, Graph, Settings, Detail
+│   ├── stores/                   #   Zustand state (app, collections, docs, chat, settings)
+│   ├── hooks/                    #   useTheme, useOllamaStatus, useKeyboardShortcuts
+│   ├── utils/                    #   Shared utilities (file type colors)
+│   └── types/                    #   TypeScript interfaces
+├── src-tauri/                    # Rust backend
+│   └── src/
+│       ├── commands/             #   Tauri IPC handlers (7 modules)
+│       ├── parsers/              #   Format parsers (PDF, MD, HTML, TXT, DOCX, CSV, EPUB)
+│       ├── chunker.rs            #   Text chunking with overlap + section context
+│       ├── embedder.rs           #   Concurrent embedding via Ollama
+│       ├── vector_store.rs       #   Vector similarity search
+│       ├── graph.rs              #   Knowledge graph edge generation
+│       ├── ollama.rs             #   Ollama HTTP client (embed + chat stream)
+│       ├── db.rs                 #   SQLite setup + migrations
+│       ├── utils.rs              #   Shared math utilities
+│       └── models.rs             #   Data structures
+├── .github/workflows/ci.yml     # CI pipeline
+└── ARCHITECTURE.md               # Deep technical docs
+```
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+1` | Knowledge Graph |
+| `Cmd+2` | Chat |
+| `Cmd+3` | Documents |
+| `Cmd+4` | Search |
+| `Cmd+K` | Command Palette |
+| `Cmd+O` | Import Files |
+| `Cmd+N` | New Conversation |
+| `Cmd+,` | Settings |
+| `Cmd+Enter` | Send Message |
+
+## Supported Formats
+
+| Format | Extensions | Parser |
+|--------|-----------|--------|
+| PDF | `.pdf` | pdf-extract + lopdf |
+| Markdown | `.md` | pulldown-cmark |
+| HTML | `.html` | scraper |
+| Plain Text | `.txt` | encoding_rs (auto-detect) |
+| Word | `.docx` | zip + quick-xml |
+| CSV | `.csv` | csv crate |
+| EPUB | `.epub` | zip + scraper |
 
 ## Development
 
-### Commands
-
 ```bash
-# Development server with hot reload
-pnpm tauri dev
-
-# Build production release
-pnpm tauri build
-
-# Run frontend tests
-pnpm test
-
-# Run frontend tests in watch mode
-pnpm test:watch
-
-# Type-check frontend
-pnpm lint
-
-# Check Rust code
-cd src-tauri && cargo check
-
-# Run Rust tests
-cd src-tauri && cargo test
+pnpm tauri dev          # Dev server with hot reload
+pnpm tauri build        # Production build (macOS DMG)
+pnpm test               # Frontend tests (22 tests)
+pnpm lint               # TypeScript type check
+cd src-tauri && cargo test   # Rust tests (54 tests)
+cd src-tauri && cargo clippy # Rust linting
 ```
-
-### Project Structure
-
-```
-vaultmind/
-├── src/                    # React frontend
-│   ├── components/         # Reusable UI components
-│   ├── views/              # Page-level views
-│   ├── stores/             # Zustand state stores
-│   ├── hooks/              # Custom React hooks
-│   ├── types/              # TypeScript type definitions
-│   └── styles/             # Global styles
-├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── commands/       # Tauri IPC command handlers
-│       ├── parsers/        # Document format parsers
-│       ├── chunker.rs      # Text chunking engine
-│       ├── embedder.rs     # Ollama embedding client
-│       ├── vector_store.rs # Vector similarity search
-│       ├── graph.rs        # Knowledge graph extraction
-│       ├── ollama.rs       # Ollama API client
-│       ├── db.rs           # SQLite database layer
-│       ├── models.rs       # Data models
-│       ├── error.rs        # Error types
-│       └── state.rs        # Application state
-└── public/                 # Static assets
-```
-
-## Architecture Overview
-
-VaultMind follows a standard Tauri 2 architecture with a React frontend communicating with a Rust backend over IPC.
-
-**Frontend** renders the UI and manages client-side state with Zustand. User actions invoke Tauri commands that execute in the Rust backend.
-
-**Backend** handles all data processing: parsing documents into text, splitting text into chunks, generating embeddings via Ollama, storing everything in SQLite, and orchestrating search and chat pipelines.
-
-**Data Flow:**
-1. **Ingestion** -- Documents are parsed, chunked, embedded, and stored in SQLite with their vector representations
-2. **Search** -- Queries run through both vector similarity and keyword search, combined via Reciprocal Rank Fusion
-3. **Chat** -- User messages trigger hybrid search to find relevant chunks, which are injected as context into LLM prompts
-4. **Graph** -- Entity extraction runs over document chunks to build a knowledge graph of relationships
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full technical breakdown.
-
-## Supported File Formats
-
-| Format     | Extension  |
-|------------|------------|
-| PDF        | `.pdf`     |
-| Markdown   | `.md`      |
-| HTML       | `.html`    |
-| Plain Text | `.txt`     |
-| DOCX       | `.docx`    |
-| CSV        | `.csv`     |
-| EPUB       | `.epub`    |
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) — do whatever you want with it.
+
+---
+
+<div align="center">
+
+**Built with Rust, React, and a stubborn belief that your data should stay yours.**
+
+</div>
