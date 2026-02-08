@@ -76,6 +76,7 @@
 - `TSVC-006` Validation failures return machine-readable `validation_error` with `400`.
 - `TSVC-007` JSON parse failures return machine-readable `invalid_json` with `400`.
 - `TSVC-008` Duplicate identity writes return machine-readable `write_conflict` with `409`.
+- `TSVC-009` Non-2xx error envelope keeps `service.v2` shape (`service_contract_version` + `error` + `legacy_error`) and excludes `api_contract_version`.
 
 ## Performance
 

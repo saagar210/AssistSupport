@@ -61,9 +61,10 @@ fi
 service_main="$memorykernel_root/crates/memory-kernel-service/src/main.rs"
 openapi="$memorykernel_root/openapi/openapi.yaml"
 service_contract_doc="$memorykernel_root/docs/spec/service-contract.md"
+versioning_doc="$memorykernel_root/docs/spec/versioning.md"
 schema_dir="$memorykernel_root/contracts/integration/v1/schemas"
 
-for path in "$service_main" "$openapi" "$service_contract_doc"; do
+for path in "$service_main" "$openapi" "$service_contract_doc" "$versioning_doc"; do
   if [[ ! -f "$path" ]]; then
     echo "required file missing: $path" >&2
     exit 1
@@ -78,6 +79,10 @@ require_grep '^  version: service.v2$' "$openapi"
 
 echo "[check] documented service version"
 require_grep 'Service contract version: `service.v2`' "$service_contract_doc"
+require_grep 'Non-2xx responses intentionally do \*\*not\*\* include `api_contract_version`\.' "$service_contract_doc"
+require_grep '`legacy_error` remains required for the full `service.v2` lifecycle' "$service_contract_doc"
+require_grep 'removal of `legacy_error` from service non-2xx envelopes' "$versioning_doc"
+require_grep 'requires `service.v3`' "$versioning_doc"
 
 echo "[check] openapi includes structured error envelope"
 require_grep 'ServiceErrorEnvelope' "$openapi"
@@ -104,6 +109,24 @@ for code in \
   internal_error; do
   require_grep "\\- ${code}" "$openapi"
 done
+
+echo "[check] ServiceErrorEnvelope policy invariants"
+error_block_start=$(rg -n '^    ServiceErrorEnvelope:' "$openapi" | cut -d: -f1 | head -n1 || true)
+if [[ -z "$error_block_start" ]]; then
+  echo "ServiceErrorEnvelope schema block missing in $openapi" >&2
+  exit 1
+fi
+
+error_block=$(tail -n +"$error_block_start" "$openapi")
+if ! printf "%s\n" "$error_block" | rg -n --quiet -- '^\s*-\s+legacy_error$'; then
+  echo "ServiceErrorEnvelope must require legacy_error in $openapi" >&2
+  exit 1
+fi
+
+if printf "%s\n" "$error_block" | rg -n --quiet -- '^\s*api_contract_version:'; then
+  echo "ServiceErrorEnvelope must not define api_contract_version in $openapi" >&2
+  exit 1
+fi
 
 echo "[check] integration schemas use \$id metadata"
 if rg -n --quiet -- '"":' "$schema_dir"; then

@@ -20,3 +20,4 @@
 - Active CLI contract version: `cli.v1`.
 - Active service contract version: `service.v2`.
 - Service error responses now include machine-readable `error.code` + `error.message` with explicit status mapping.
+- `service.v2` non-2xx envelope policy is locked: includes `service_contract_version` + `error` + `legacy_error`, excludes `api_contract_version`; `legacy_error` removal deferred to `service.v3`.

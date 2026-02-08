@@ -784,4 +784,80 @@ mod tests {
 
         let _ = std::fs::remove_file(&db_path);
     }
+
+    // Test IDs: TSVC-009
+    #[tokio::test]
+    async fn non_2xx_error_envelope_keeps_service_v2_shape() {
+        let db_path = unique_temp_db_path();
+        let state = ServiceState { api: MemoryKernelApi::new(db_path.clone()) };
+        let router = app(state);
+
+        let invalid_payload = serde_json::json!({
+            "actor": "user",
+            "action": "use",
+            "resource": "usb_drive",
+            "effect": "deny",
+            "note": null,
+            "memory_id": null,
+            "version": 1,
+            "writer": "",
+            "justification": "service fixture",
+            "source_uri": "file:///policy.md",
+            "source_hash": "sha256:abc123",
+            "evidence": [],
+            "confidence": 0.9,
+            "truth_status": "asserted",
+            "authority": "authoritative",
+            "created_at": null,
+            "effective_at": null,
+            "supersedes": [],
+            "contradicts": []
+        });
+
+        let response = match router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/memory/add/constraint")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(invalid_payload.to_string()))
+                    .unwrap_or_else(|err| panic!("failed to build request: {err}")),
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => panic!("request failed: {err}"),
+        };
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let value = response_json(response).await;
+        assert_eq!(
+            value.get("service_contract_version").and_then(serde_json::Value::as_str),
+            Some(SERVICE_CONTRACT_VERSION)
+        );
+        assert!(
+            value.get("api_contract_version").is_none(),
+            "error envelope must not include api_contract_version: {value}"
+        );
+        assert_eq!(
+            value
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(serde_json::Value::as_str),
+            Some("validation_error")
+        );
+
+        let error_message = value
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| panic!("missing error.message: {value}"));
+        let legacy_error = value
+            .get("legacy_error")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| panic!("missing legacy_error: {value}"));
+        assert_eq!(legacy_error, error_message);
+
+        let _ = std::fs::remove_file(&db_path);
+    }
 }
