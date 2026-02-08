@@ -7,6 +7,7 @@ import {
   ResponseQualitySummary,
 } from '../../hooks/useAnalytics';
 import { useFeatureOps } from '../../hooks/useFeatureOps';
+import { buildResponseQualityCoaching } from '../../features/analytics/qualityCoaching';
 import type { KbGapCandidate } from '../../types';
 import { ArticleDetailPanel } from './ArticleDetailPanel';
 import './AnalyticsTab.css';
@@ -266,10 +267,20 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
   const medianTimeSeconds = summary.median_time_to_draft_ms != null
     ? (summary.median_time_to_draft_ms / 1000).toFixed(1)
     : '--';
+  const coaching = buildResponseQualityCoaching(summary);
 
   return (
     <div className="response-quality-panel">
-      <div className="section-title">Response Quality Signals</div>
+      <div className="response-quality-header">
+        <div className="section-title">Response Quality Signals</div>
+        {coaching && (
+          <span className={`quality-severity-badge severity-${coaching.overallSeverity}`}>
+            {coaching.overallSeverity === 'healthy' && 'Healthy'}
+            {coaching.overallSeverity === 'watch' && 'Watch'}
+            {coaching.overallSeverity === 'action' && 'Action'}
+          </span>
+        )}
+      </div>
       <div className="response-quality-grid">
         <div className="response-quality-card">
           <span className="response-quality-label">Snapshots</span>
@@ -304,6 +315,23 @@ function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | n
           <strong className="response-quality-value">{summary.saved_count}</strong>
         </div>
       </div>
+      {coaching && (
+        <div className="response-quality-coaching">
+          <div className="response-quality-coaching-title">Coaching thresholds</div>
+          <ul className="response-quality-coaching-list">
+            {coaching.signals.map((signal) => (
+              <li key={signal.id} className={`response-quality-coaching-item severity-${signal.severity}`}>
+                <div className="response-quality-coaching-item-head">
+                  <strong>{signal.label}</strong>
+                  <span>{signal.value}</span>
+                </div>
+                <p>{signal.guidance}</p>
+                <small>{signal.threshold}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

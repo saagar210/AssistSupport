@@ -981,6 +981,8 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
             variant="primary"
             onClick={handleGenerate}
             disabled={!modelLoaded || generating || !input.trim()}
+            title="Generate response (Cmd+G in input)"
+            aria-keyshortcuts="Meta+G"
           >
             Generate Full Response
           </Button>
@@ -992,6 +994,10 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           >
             Save
           </Button>
+          <div className="draft-workflow-shortcuts" aria-label="Keyboard shortcuts">
+            <span><kbd>Cmd</kbd>+<kbd>G</kbd> Generate</span>
+            <span><kbd>Cmd</kbd>+<kbd>N</kbd> Clear</span>
+          </div>
         </div>
       </section>
       <div className="draft-panels-container">

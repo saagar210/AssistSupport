@@ -26,8 +26,12 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 17. Added deterministic E2E draft persistence in Tauri mock so queue keyboard triage (`c`/`x`/`o`) is validated against real queue items.
 18. Added response-quality summary contract (`get_response_quality_summary`) with operator-facing Analytics panel.
 19. Added DB aggregation test coverage for response-quality summary metrics and timing median calculations.
+20. Added deterministic at-risk E2E draft fixture support in Tauri mock (`[e2e-at-risk]` marker backdates draft timestamps in test mode only).
+21. Added second Playwright revamp path for `at-risk queue -> open draft -> generate response` to harden queue-to-compose continuity.
+22. Added response-quality coaching thresholds and severity bands in Analytics to surface operator risk signals without leaving the app.
+23. Added keyboard-shortcut affordances to Draft workflow strip (`Cmd+G`, `Cmd+N`) to support one-hand MacBook operation.
 
 ## Next
-1. Add second Playwright path for at-risk queue triage followed by draft open + response generation.
-2. Continue Draft IA simplification pass for mobile-density and one-hand keyboard operation on MacBook layouts.
-3. Add coaching thresholds in Analytics (highlight when edit ratio/time-to-draft crosses risk bands).
+1. Continue Draft IA simplification pass for dense tri-pane usage on 13-inch and 14-inch MacBook layouts.
+2. Add operator-tunable coaching thresholds in Settings so quality bands can be calibrated by team.
+3. Add Analytics drill-down from coaching band -> underlying draft examples for targeted remediation.

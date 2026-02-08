@@ -335,13 +335,24 @@ export function setupE2eTauriMock(): void {
               return 'mock-draft-id';
             }
 
+            const atRiskMarker = '[e2e-at-risk]';
+            const shouldBackdate = draft.input_text?.includes(atRiskMarker) ?? false;
+            const normalizedDraft: MockDraftRecord = {
+              ...draft,
+              input_text: shouldBackdate
+                ? draft.input_text.replace(atRiskMarker, '').trim()
+                : draft.input_text,
+              updated_at: shouldBackdate ? '2025-01-01T00:00:00.000Z' : draft.updated_at,
+              created_at: shouldBackdate ? '2025-01-01T00:00:00.000Z' : draft.created_at,
+            };
+
             const existingIndex = draftStore.findIndex((item) => item.id === draft.id);
             if (existingIndex >= 0) {
-              draftStore[existingIndex] = draft;
+              draftStore[existingIndex] = normalizedDraft;
             } else {
-              draftStore.push(draft);
+              draftStore.push(normalizedDraft);
             }
-            return draft.id;
+            return normalizedDraft.id;
           }
         case 'delete_draft': {
           const body = payload as { draftId?: string } | undefined;

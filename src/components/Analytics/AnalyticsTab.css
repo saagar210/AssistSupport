@@ -399,6 +399,41 @@
   padding: var(--space-4);
 }
 
+.response-quality-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.quality-severity-badge {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.quality-severity-badge.severity-healthy {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: color-mix(in srgb, var(--success) 85%, white);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.quality-severity-badge.severity-watch {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: color-mix(in srgb, var(--warning) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+}
+
+.quality-severity-badge.severity-action {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  color: color-mix(in srgb, var(--error) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+}
+
 .response-quality-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -425,4 +460,61 @@
 .response-quality-value {
   font-size: var(--text-lg);
   color: var(--text-primary);
+}
+
+.response-quality-coaching {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-light);
+  padding-top: var(--space-3);
+}
+
+.response-quality-coaching-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-2);
+}
+
+.response-quality-coaching-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.response-quality-coaching-item {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-primary);
+}
+
+.response-quality-coaching-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.response-quality-coaching-item p {
+  margin: 6px 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.response-quality-coaching-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.response-quality-coaching-item.severity-watch {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border-color));
+}
+
+.response-quality-coaching-item.severity-action {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border-color));
 }
