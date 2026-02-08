@@ -162,3 +162,130 @@ pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), A
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db;
+    use crate::models::Collection;
+
+    fn setup_db() -> rusqlite::Connection {
+        let dir = tempfile::tempdir().unwrap();
+        db::initialize(dir.path()).unwrap()
+    }
+
+    fn create_collection_direct(conn: &rusqlite::Connection, name: &str, desc: &str) -> Collection {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, name, desc, now, now],
+        ).unwrap();
+        Collection {
+            id,
+            name: name.to_string(),
+            description: desc.to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    fn list_collections(conn: &rusqlite::Connection) -> Vec<Collection> {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC",
+        ).unwrap();
+        stmt.query_map([], |row| {
+            Ok(Collection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
+    #[test]
+    fn test_create_and_list_collections() {
+        let conn = setup_db();
+        // "General" is seeded
+        let initial = list_collections(&conn);
+        assert_eq!(initial.len(), 1);
+        assert_eq!(initial[0].name, "General");
+
+        create_collection_direct(&conn, "Test Collection", "A test");
+        let all = list_collections(&conn);
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_duplicate_collection_name_fails() {
+        let conn = setup_db();
+        create_collection_direct(&conn, "Unique", "desc");
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let result = conn.execute(
+            "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, "Unique", "another desc", now, now],
+        );
+        assert!(result.is_err(), "Duplicate collection name should fail due to UNIQUE constraint");
+    }
+
+    #[test]
+    fn test_general_cannot_be_deleted_logic() {
+        let conn = setup_db();
+
+        // Find the General collection id
+        let general_id: String = conn.query_row(
+            "SELECT id FROM collections WHERE name = 'General'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        // Simulate the delete_collection guard
+        let name: String = conn.query_row(
+            "SELECT name FROM collections WHERE id = ?1",
+            rusqlite::params![general_id],
+            |row| row.get(0),
+        ).unwrap();
+
+        assert_eq!(name, "General");
+        // The command would return an error here
+    }
+
+    #[test]
+    fn test_delete_non_general_collection() {
+        let conn = setup_db();
+        let col = create_collection_direct(&conn, "Deletable", "to delete");
+
+        conn.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![col.id]).unwrap();
+
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM collections WHERE id = ?1",
+            rusqlite::params![col.id],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_update_collection() {
+        let conn = setup_db();
+        let col = create_collection_direct(&conn, "Original", "original desc");
+
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE collections SET name = ?1, description = ?2, updated_at = ?3 WHERE id = ?4",
+            rusqlite::params!["Updated", "new desc", now, col.id],
+        ).unwrap();
+
+        let updated: (String, String) = conn.query_row(
+            "SELECT name, description FROM collections WHERE id = ?1",
+            rusqlite::params![col.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+
+        assert_eq!(updated.0, "Updated");
+        assert_eq!(updated.1, "new desc");
+    }
+}

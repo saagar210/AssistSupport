@@ -243,3 +243,190 @@ fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
         dot / denom
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: create in-memory DB with all required tables and seed data
+    fn setup_graph_db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+
+        conn.execute_batch(
+            "
+            CREATE TABLE collections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE documents (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                file_hash TEXT NOT NULL,
+                title TEXT NOT NULL,
+                author TEXT,
+                page_count INTEGER,
+                word_count INTEGER DEFAULT 0,
+                chunk_count INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'done',
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE chunks (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                collection_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_offset INTEGER DEFAULT 0,
+                end_offset INTEGER DEFAULT 0,
+                page_number INTEGER,
+                section_title TEXT,
+                token_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE chunk_embeddings (
+                chunk_id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                document_id TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                content_preview TEXT
+            );
+            CREATE TABLE graph_edges (
+                id TEXT PRIMARY KEY,
+                source_chunk_id TEXT NOT NULL,
+                target_chunk_id TEXT NOT NULL,
+                collection_id TEXT NOT NULL,
+                weight REAL DEFAULT 0.0,
+                relationship_type TEXT DEFAULT 'semantic',
+                created_at TEXT NOT NULL
+            );
+            ",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn f64_vec_to_bytes(v: &[f64]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(v.len() * 8);
+        for val in v {
+            bytes.extend_from_slice(&val.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn seed_two_docs_with_chunks(conn: &rusqlite::Connection) {
+        let now = "2025-01-01T00:00:00Z";
+
+        conn.execute(
+            "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES ('col1', 'Test', '', ?1, ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+
+        // Two documents
+        for (doc_id, title) in &[("doc1", "Doc One"), ("doc2", "Doc Two")] {
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, word_count, chunk_count, created_at, updated_at)
+                 VALUES (?1, 'col1', 'f.txt', '/f.txt', 'txt', 100, 'hash', ?2, 50, 2, ?3, ?3)",
+                rusqlite::params![doc_id, title, now],
+            ).unwrap();
+        }
+
+        // Chunks for doc1: c1 (index 0), c2 (index 1)
+        // Chunks for doc2: c3 (index 0), c4 (index 1)
+        let chunks_data = vec![
+            ("c1", "doc1", 0, vec![1.0, 0.0, 0.0]),
+            ("c2", "doc1", 1, vec![0.9, 0.1, 0.0]),
+            ("c3", "doc2", 0, vec![0.95, 0.05, 0.0]), // similar to doc1 chunks
+            ("c4", "doc2", 1, vec![0.0, 0.0, 1.0]),   // very different
+        ];
+
+        for (chunk_id, doc_id, idx, embedding) in &chunks_data {
+            conn.execute(
+                "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, created_at) VALUES (?1, ?2, 'col1', 'text', ?3, ?4)",
+                rusqlite::params![chunk_id, doc_id, idx, now],
+            ).unwrap();
+
+            let blob = f64_vec_to_bytes(embedding);
+            conn.execute(
+                "INSERT INTO chunk_embeddings (chunk_id, collection_id, document_id, embedding, content_preview) VALUES (?1, 'col1', ?2, ?3, 'preview')",
+                rusqlite::params![chunk_id, doc_id, blob],
+            ).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_build_graph_edges_semantic() {
+        let conn = setup_graph_db();
+        seed_two_docs_with_chunks(&conn);
+
+        let edges = build_graph_edges(&conn, "col1", 0.5).unwrap();
+
+        let semantic: Vec<_> = edges.iter().filter(|e| e.relationship_type == "semantic").collect();
+        // c1 (1,0,0) and c3 (0.95,0.05,0) are from different docs and very similar
+        assert!(!semantic.is_empty(), "Should have semantic edges between similar cross-doc chunks");
+    }
+
+    #[test]
+    fn test_build_graph_edges_same_document() {
+        let conn = setup_graph_db();
+        seed_two_docs_with_chunks(&conn);
+
+        let edges = build_graph_edges(&conn, "col1", 0.5).unwrap();
+
+        let same_doc: Vec<_> = edges.iter().filter(|e| e.relationship_type == "same_document").collect();
+        // c1->c2 (doc1, index 0->1) and c3->c4 (doc2, index 0->1)
+        assert_eq!(same_doc.len(), 2, "Should have 2 same_document edges (one per doc)");
+
+        for edge in &same_doc {
+            assert_eq!(edge.weight, 1.0);
+        }
+    }
+
+    #[test]
+    fn test_build_graph_edges_empty_collection() {
+        let conn = setup_graph_db();
+        conn.execute(
+            "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES ('empty', 'Empty', '', '2025-01-01', '2025-01-01')",
+            [],
+        ).unwrap();
+
+        let edges = build_graph_edges(&conn, "empty", 0.5).unwrap();
+        assert!(edges.is_empty());
+    }
+
+    #[test]
+    fn test_get_graph_data_nodes_and_links() {
+        let conn = setup_graph_db();
+        seed_two_docs_with_chunks(&conn);
+
+        // Build edges first
+        build_graph_edges(&conn, "col1", 0.5).unwrap();
+
+        let data = get_graph_data(&conn, "col1").unwrap();
+        assert_eq!(data.nodes.len(), 2, "Should have 2 document nodes");
+
+        let labels: Vec<&str> = data.nodes.iter().map(|n| n.label.as_str()).collect();
+        assert!(labels.contains(&"Doc One"));
+        assert!(labels.contains(&"Doc Two"));
+
+        // Links are aggregated semantic edges between documents
+        // There should be at least one since c1 and c3 are very similar
+        assert!(!data.links.is_empty(), "Should have at least one semantic link between docs");
+    }
+
+    #[test]
+    fn test_cosine_similarity_basic() {
+        assert!((cosine_similarity(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-9);
+        assert!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-9);
+        assert_eq!(cosine_similarity(&[], &[]), 0.0);
+    }
+}
