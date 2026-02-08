@@ -128,8 +128,19 @@ export interface ChatMessage {
 
 export interface IngestionProgress {
   document_id: string;
-  status: string;
+  filename: string;
+  stage: "parsing" | "chunking" | "embedding" | "indexing" | "complete" | "failed";
+  chunks_done: number;
+  chunks_total: number;
   error?: string;
+}
+
+export interface SearchHistoryEntry {
+  id: string;
+  collection_id: string;
+  query: string;
+  result_count: number;
+  created_at: string;
 }
 
 export type ViewType = "graph" | "chat" | "documents" | "search" | "settings" | "document-detail";

@@ -1,8 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar } from "../components/Sidebar";
 import { ToastContainer } from "../components/Toast";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import {
+  ChatSkeleton,
+  DocumentGridSkeleton,
+  DocumentListSkeleton,
+  SearchSkeleton,
+  GraphSkeleton,
+} from "../components/LoadingSkeleton";
+import { EmptyState } from "../components/EmptyState";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { IngestionPanel } from "../components/IngestionPanel";
+import { SetupWizard } from "../components/SetupWizard";
+import { OllamaStatusBanner } from "../components/OllamaStatusBanner";
+import { FileText, Search } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { useAppStore } from "../stores/appStore";
 
@@ -98,5 +112,199 @@ describe("ErrorBoundary", () => {
   // Restore console.error
   afterEach(() => {
     console.error = originalError;
+  });
+});
+
+describe("LoadingSkeleton", () => {
+  it("renders ChatSkeleton with skeleton blocks", () => {
+    render(<ChatSkeleton />);
+    expect(screen.getByTestId("chat-skeleton")).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton-block").length).toBeGreaterThan(0);
+  });
+
+  it("renders DocumentGridSkeleton with 6 card placeholders", () => {
+    render(<DocumentGridSkeleton />);
+    expect(screen.getByTestId("document-grid-skeleton")).toBeInTheDocument();
+  });
+
+  it("renders DocumentListSkeleton with row placeholders", () => {
+    render(<DocumentListSkeleton />);
+    expect(screen.getByTestId("document-list-skeleton")).toBeInTheDocument();
+  });
+
+  it("renders SearchSkeleton with result placeholders", () => {
+    render(<SearchSkeleton />);
+    expect(screen.getByTestId("search-skeleton")).toBeInTheDocument();
+  });
+
+  it("renders GraphSkeleton with loading text", () => {
+    render(<GraphSkeleton />);
+    expect(screen.getByTestId("graph-skeleton")).toBeInTheDocument();
+    expect(screen.getByText("Building graph...")).toBeInTheDocument();
+  });
+});
+
+describe("EmptyState", () => {
+  it("renders with icon, title, and description", () => {
+    render(
+      <EmptyState
+        icon={FileText}
+        title="No documents"
+        description="Import some documents to get started"
+      />,
+    );
+    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+    expect(screen.getByText("No documents")).toBeInTheDocument();
+    expect(screen.getByText("Import some documents to get started")).toBeInTheDocument();
+  });
+
+  it("renders with optional action button", () => {
+    render(
+      <EmptyState
+        icon={Search}
+        title="Search"
+        description="Search your knowledge"
+        action={<button>Import</button>}
+      />,
+    );
+    expect(screen.getByText("Import")).toBeInTheDocument();
+  });
+
+  it("renders without action button", () => {
+    const { container } = render(
+      <EmptyState
+        icon={FileText}
+        title="Empty"
+        description="Nothing here"
+      />,
+    );
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+});
+
+describe("ConfirmDialog", () => {
+  it("renders nothing when closed", () => {
+    const { container } = render(
+      <ConfirmDialog
+        open={false}
+        title="Delete?"
+        message="Are you sure?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("renders title and message when open", () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Delete document?"
+        message="This cannot be undone."
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText("Delete document?")).toBeInTheDocument();
+    expect(screen.getByText("This cannot be undone.")).toBeInTheDocument();
+  });
+
+  it("calls onConfirm when confirm button clicked", () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Delete?"
+        message="Sure?"
+        confirmLabel="Yes, delete"
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Yes, delete"));
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("calls onCancel when cancel button clicked", () => {
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open={true}
+        title="Delete?"
+        message="Sure?"
+        onConfirm={() => {}}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe("MarkdownRenderer", () => {
+  it("renders plain text", () => {
+    render(<MarkdownRenderer content="Hello world" />);
+    expect(screen.getByTestId("markdown-renderer")).toBeInTheDocument();
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
+  });
+
+  it("renders headers", () => {
+    render(<MarkdownRenderer content={"# Title\n\n## Subtitle"} />);
+    expect(screen.getByText("Title")).toBeInTheDocument();
+    expect(screen.getByText("Subtitle")).toBeInTheDocument();
+  });
+
+  it("renders code blocks with copy button", () => {
+    render(<MarkdownRenderer content={"```js\nconsole.log('hi')\n```"} />);
+    expect(screen.getByTestId("copy-code-button")).toBeInTheDocument();
+  });
+
+  it("renders tables", () => {
+    const table = "| Name | Age |\n|------|-----|\n| Alice | 30 |";
+    render(<MarkdownRenderer content={table} />);
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+  });
+
+  it("renders links", () => {
+    render(<MarkdownRenderer content="[Click here](https://example.com)" />);
+    const link = screen.getByText("Click here");
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+});
+
+describe("IngestionPanel", () => {
+  it("renders nothing when no files are being tracked", () => {
+    const { container } = render(<IngestionPanel />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("registers event listeners on mount", async () => {
+    const { listen } = await import("@tauri-apps/api/event");
+    render(<IngestionPanel />);
+    expect(listen).toHaveBeenCalledWith("ingestion-progress", expect.any(Function));
+    expect(listen).toHaveBeenCalledWith("ingestion-all-complete", expect.any(Function));
+  });
+});
+
+describe("SetupWizard", () => {
+  it("renders welcome step", () => {
+    render(<SetupWizard onComplete={() => {}} />);
+    expect(screen.getByText("Welcome to VaultMind")).toBeInTheDocument();
+  });
+
+  it("calls onComplete when finished", () => {
+    const onComplete = vi.fn();
+    render(<SetupWizard onComplete={onComplete} />);
+    expect(screen.getByText("Welcome to VaultMind")).toBeInTheDocument();
+  });
+});
+
+describe("OllamaStatusBanner", () => {
+  it("renders nothing when connected", () => {
+    const { container } = render(<OllamaStatusBanner />);
+    expect(container.querySelector('[data-testid="ollama-banner"]')).toBeNull();
   });
 });

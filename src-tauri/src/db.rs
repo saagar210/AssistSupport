@@ -147,6 +147,9 @@ pub fn initialize(app_data_dir: &Path) -> Result<Connection, AppError> {
         rusqlite::params![general_id, now, now],
     )?;
 
+    // Run pending migrations
+    crate::migrations::run_pending(&conn)?;
+
     Ok(conn)
 }
 

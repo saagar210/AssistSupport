@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use tauri::Emitter;
 use tokio::sync::Semaphore;
 
 use crate::chunker::ChunkData;
@@ -11,6 +12,7 @@ pub async fn embed_chunks(
     port: &str,
     model: &str,
     chunks: &[ChunkData],
+    progress: Option<ProgressCtx>,
 ) -> Result<Vec<Vec<f64>>, AppError> {
     if chunks.is_empty() {
         return Ok(Vec::new());
@@ -20,8 +22,9 @@ pub async fn embed_chunks(
     let host = host.to_string();
     let port = port.to_string();
     let model = model.to_string();
+    let total = chunks.len();
 
-    let mut handles = Vec::with_capacity(chunks.len());
+    let mut handles = Vec::with_capacity(total);
 
     for (idx, chunk) in chunks.iter().enumerate() {
         let sem = Arc::clone(&semaphore);
@@ -58,17 +61,40 @@ pub async fn embed_chunks(
         handles.push(handle);
     }
 
-    // Collect results preserving order
-    let mut results: Vec<(usize, Vec<f64>)> = Vec::with_capacity(chunks.len());
+    // Collect results preserving order, emitting progress per completion
+    let mut results: Vec<(usize, Vec<f64>)> = Vec::with_capacity(total);
+    let mut done_count: usize = 0;
     for handle in handles {
         let result = handle
             .await
             .map_err(|e| AppError::Ollama(format!("Task join error: {}", e)))??;
         results.push(result);
+        done_count += 1;
+
+        if let Some(ref ctx) = progress {
+            let _ = ctx.app_handle.emit(
+                "ingestion-progress",
+                serde_json::json!({
+                    "document_id": ctx.document_id,
+                    "filename": ctx.filename,
+                    "stage": "embedding",
+                    "chunks_done": done_count,
+                    "chunks_total": total,
+                }),
+            );
+        }
     }
 
     results.sort_by_key(|(idx, _)| *idx);
     let embeddings = results.into_iter().map(|(_, vec)| vec).collect();
 
     Ok(embeddings)
+}
+
+/// Context for emitting per-chunk embedding progress.
+#[derive(Clone)]
+pub struct ProgressCtx {
+    pub app_handle: tauri::AppHandle,
+    pub document_id: String,
+    pub filename: String,
 }

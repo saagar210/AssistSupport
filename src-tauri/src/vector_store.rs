@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::utils::{bytes_to_f64_vec, cosine_similarity, f64_vec_to_bytes};
 
 /// Initialize the chunk_embeddings table. Call this during DB setup.
+#[allow(dead_code)]
 pub fn create_table(conn: &Connection) -> Result<(), AppError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS chunk_embeddings (
@@ -42,6 +43,7 @@ pub fn store_embeddings(
 
 /// Search for the top_k most similar vectors in a collection.
 /// Returns (chunk_id, cosine_similarity_score) pairs sorted by score descending.
+#[allow(dead_code)]
 pub fn search_vectors(
     conn: &Connection,
     collection_id: &str,
@@ -82,6 +84,7 @@ pub fn delete_document_vectors(conn: &Connection, document_id: &str) -> Result<(
 }
 
 /// Delete all embeddings for a specific collection.
+#[allow(dead_code)]
 pub fn delete_collection_vectors(conn: &Connection, collection_id: &str) -> Result<(), AppError> {
     conn.execute(
         "DELETE FROM chunk_embeddings WHERE collection_id = ?1",

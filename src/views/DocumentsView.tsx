@@ -20,6 +20,8 @@ import { useDocumentStore } from "../stores/documentStore";
 import { useAppStore } from "../stores/appStore";
 import { useToastStore } from "../stores/toastStore";
 import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
+import { DocumentGridSkeleton } from "../components/LoadingSkeleton";
+import { EmptyState } from "../components/EmptyState";
 import type { Document, IngestionProgress } from "../types";
 
 type SortKey = "name" | "date" | "type";
@@ -115,15 +117,15 @@ export function DocumentsView() {
   useEffect(() => {
     const unlisten = listen<IngestionProgress>("ingestion-progress", (event) => {
       const progress = event.payload;
-      if (progress.status === "completed" || progress.status === "failed") {
+      if (progress.stage === "complete" || progress.stage === "failed") {
         if (activeCollectionId) {
           fetchDocuments(activeCollectionId);
           fetchStats(activeCollectionId);
         }
-        if (progress.status === "failed" && progress.error) {
+        if (progress.stage === "failed" && progress.error) {
           addToast("error", `Ingestion failed: ${progress.error}`);
         }
-        if (progress.status === "completed") {
+        if (progress.stage === "complete") {
           addToast("success", "Document ingested successfully");
         }
         setIngesting(false);
@@ -237,12 +239,7 @@ export function DocumentsView() {
   }
 
   if (loading && documents.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-        <Loader2 size={32} className="animate-spin" />
-        <p className="text-sm">Loading documents...</p>
-      </div>
-    );
+    return <DocumentGridSkeleton />;
   }
 
   if (!hasDocuments) {
@@ -256,28 +253,20 @@ export function DocumentsView() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div
-          className={`flex flex-col items-center gap-4 rounded-xl border-2 border-dashed p-12 transition-colors ${
-            dragging
-              ? "border-accent bg-accent/5"
-              : "border-border text-muted-foreground"
-          }`}
-        >
-          <Upload size={48} strokeWidth={1.5} className={dragging ? "text-accent" : ""} />
-          <h2 className="text-lg font-semibold text-foreground">
-            {dragging ? "Drop files to import" : "Drop files here or click to import"}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Supports PDF, Markdown, HTML, TXT, DOCX, CSV, EPUB
-          </p>
-          <button
-            onClick={handleOpenDialog}
-            className="mt-2 flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
-          >
-            <Plus size={16} />
-            Add Documents
-          </button>
-        </div>
+        <EmptyState
+          icon={Upload}
+          title={dragging ? "Drop files to import" : "No documents yet"}
+          description="Drop files here or click Import to get started. Supports PDF, Markdown, HTML, TXT, DOCX, CSV, EPUB."
+          action={
+            <button
+              onClick={handleOpenDialog}
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
+            >
+              <Plus size={16} />
+              Add Documents
+            </button>
+          }
+        />
       </div>
     );
   }

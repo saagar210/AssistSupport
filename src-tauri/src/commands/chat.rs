@@ -1,5 +1,9 @@
-use tauri::{AppHandle, State};
+use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
+
+use tauri::{AppHandle, Manager, State};
 use tauri::Emitter;
+use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
 use crate::models::{Citation, Conversation, Message};
@@ -7,6 +11,10 @@ use crate::ollama::{self, ChatMessage};
 use crate::state::AppState;
 
 use super::search::SearchResult;
+
+// Global map of active generation cancel tokens
+static CANCEL_TOKENS: std::sync::LazyLock<StdMutex<HashMap<String, CancellationToken>>> =
+    std::sync::LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 /// Helper to lock the DB mutex.
 fn lock_db<'a>(
@@ -23,6 +31,7 @@ pub async fn send_chat_message(
     conversation_id: String,
     collection_id: String,
     user_message: String,
+    model_override: Option<String>,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     let user_msg_id = uuid::Uuid::new_v4().to_string();
@@ -112,11 +121,26 @@ pub async fn send_chat_message(
     messages.extend(history);
     messages.push(ChatMessage {
         role: "user".to_string(),
-        content: user_message,
+        content: user_message.clone(),
     });
 
-    // 6. Stream response from Ollama
-    let full_response = ollama::chat_stream(&host, &port, &chat_model, &messages, &app_handle).await?;
+    // 5b. Use model override if provided
+    let active_model = model_override.unwrap_or(chat_model.clone());
+
+    // 6. Create cancellation token and stream response
+    let cancel_token = CancellationToken::new();
+    {
+        let mut tokens = CANCEL_TOKENS.lock().map_err(|e| AppError::LockFailed(e.to_string()))?;
+        tokens.insert(conversation_id.clone(), cancel_token.clone());
+    }
+
+    let full_response = ollama::chat_stream(&host, &port, &active_model, &messages, &app_handle, Some(&cancel_token)).await?;
+
+    // Remove cancel token
+    {
+        let mut tokens = CANCEL_TOKENS.lock().map_err(|e| AppError::LockFailed(e.to_string()))?;
+        tokens.remove(&conversation_id);
+    }
 
     // 7. Save assistant message + citations to DB
     let assistant_msg_id = uuid::Uuid::new_v4().to_string();
@@ -174,7 +198,7 @@ pub async fn send_chat_message(
         id: assistant_msg_id,
         conversation_id: conversation_id.clone(),
         role: "assistant".to_string(),
-        content: full_response,
+        content: full_response.clone(),
         created_at: msg_now,
     };
 
@@ -185,6 +209,61 @@ pub async fn send_chat_message(
             "citations": citations,
         }),
     );
+
+    // 9. Auto-title: if this is the first exchange (2 messages), generate a title
+    let msg_count: i64 = {
+        let db = lock_db(&state)?;
+        db.query_row(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1",
+            rusqlite::params![conversation_id],
+            |row| row.get(0),
+        )?
+    };
+
+    if msg_count == 2 {
+        let snippet: String = full_response.chars().take(500).collect();
+        let conv_id = conversation_id.clone();
+        let host_c = host.clone();
+        let port_c = port.clone();
+        let model_c = chat_model;
+        let app = app_handle.clone();
+
+        // Fire-and-forget: don't block on title generation
+        tauri::async_runtime::spawn(async move {
+            let title_messages = vec![
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: user_message.clone(),
+                },
+                ChatMessage {
+                    role: "assistant".to_string(),
+                    content: snippet,
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "Summarize this conversation in 3-5 words for a title. Reply with ONLY the title, nothing else.".to_string(),
+                },
+            ];
+
+            if let Ok(title) = ollama::chat_once(&host_c, &port_c, &model_c, &title_messages).await {
+                let title = title.trim().trim_matches('"').to_string();
+                if !title.is_empty() {
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let state: State<'_, AppState> = app.state();
+                    if let Ok(db) = crate::state::lock_db(state.inner()) {
+                        let _ = db.execute(
+                            "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
+                            rusqlite::params![title, now, conv_id],
+                        );
+                        let _ = app.emit(
+                            "conversation-title-updated",
+                            serde_json::json!({"conversationId": conv_id, "title": title}),
+                        );
+                    }
+                }
+            }
+        });
+    }
 
     Ok(())
 }
@@ -238,6 +317,53 @@ fn load_conversation_history(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(messages)
+}
+
+/// Cancel an active chat generation for a conversation.
+#[tauri::command]
+pub fn cancel_chat_generation(conversation_id: String) -> Result<(), AppError> {
+    let tokens = CANCEL_TOKENS
+        .lock()
+        .map_err(|e| AppError::LockFailed(e.to_string()))?;
+    if let Some(token) = tokens.get(&conversation_id) {
+        token.cancel();
+    }
+    Ok(())
+}
+
+/// Delete the last assistant message from a conversation and return the last user message.
+#[tauri::command]
+pub fn delete_last_assistant_message(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<String, AppError> {
+    let db = lock_db(&state)?;
+
+    // Find last assistant message
+    let last_assistant_id: String = db.query_row(
+        "SELECT id FROM messages WHERE conversation_id = ?1 AND role = 'assistant' ORDER BY created_at DESC LIMIT 1",
+        rusqlite::params![conversation_id],
+        |row| row.get(0),
+    ).map_err(|_| AppError::NotFound("No assistant message found".to_string()))?;
+
+    // Delete its citations then the message
+    db.execute(
+        "DELETE FROM citations WHERE message_id = ?1",
+        rusqlite::params![last_assistant_id],
+    )?;
+    db.execute(
+        "DELETE FROM messages WHERE id = ?1",
+        rusqlite::params![last_assistant_id],
+    )?;
+
+    // Return last user message content
+    let last_user_content: String = db.query_row(
+        "SELECT content FROM messages WHERE conversation_id = ?1 AND role = 'user' ORDER BY created_at DESC LIMIT 1",
+        rusqlite::params![conversation_id],
+        |row| row.get(0),
+    ).map_err(|_| AppError::NotFound("No user message found".to_string()))?;
+
+    Ok(last_user_content)
 }
 
 #[tauri::command]
@@ -406,4 +532,91 @@ pub fn rename_conversation(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn export_conversation_markdown(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<String, AppError> {
+    let db = lock_db(&state)?;
+
+    // Load conversation title
+    let title: String = db
+        .query_row(
+            "SELECT title FROM conversations WHERE id = ?1",
+            rusqlite::params![conversation_id],
+            |row: &rusqlite::Row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Conversation '{}' not found", conversation_id))
+            }
+            other => AppError::Database(other),
+        })?;
+
+    // Load all messages ordered by created_at ASC
+    let mut msg_stmt = db.prepare(
+        "SELECT id, role, content FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
+    )?;
+
+    let messages: Vec<(String, String, String)> = msg_stmt
+        .query_map(rusqlite::params![conversation_id], |row: &rusqlite::Row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Prepare citation query
+    let mut citation_stmt = db.prepare(
+        "SELECT document_title, section_title FROM citations WHERE message_id = ?1 ORDER BY relevance_score DESC",
+    )?;
+
+    let mut md = format!("# {}\n", title);
+
+    for (msg_id, role, content) in &messages {
+        md.push('\n');
+
+        match role.as_str() {
+            "user" => {
+                md.push_str(&format!("**User**: {}\n", content));
+            }
+            "assistant" => {
+                md.push_str(&format!("**Assistant**: {}\n", content));
+
+                // Load citations for this assistant message
+                let citations: Vec<(String, Option<String>)> = citation_stmt
+                    .query_map(rusqlite::params![msg_id], |row: &rusqlite::Row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                if !citations.is_empty() {
+                    let sources: Vec<String> = citations
+                        .iter()
+                        .map(|(doc_title, section)| {
+                            match section {
+                                Some(s) if !s.is_empty() => format!("{} ({})", doc_title, s),
+                                _ => doc_title.clone(),
+                            }
+                        })
+                        .collect();
+                    md.push_str(&format!("\n> Sources: {}\n", sources.join(", ")));
+                }
+            }
+            _ => {
+                md.push_str(&format!("**{}**: {}\n", role, content));
+            }
+        }
+
+        md.push_str("\n---\n");
+    }
+
+    Ok(md)
 }

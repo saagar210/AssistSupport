@@ -26,28 +26,38 @@ VaultMind is a desktop app that turns your messy pile of documents into a search
 
 No API keys. No subscriptions. No data leaving your laptop. Just you, your documents, and a local AI that actually understands them.
 
-## What can it do?
+## Features
 
 | Feature | What it means for you |
 |---------|----------------------|
 | **7-format ingestion** | Drop in PDF, Markdown, HTML, TXT, DOCX, CSV, EPUB — VaultMind parses, chunks, and embeds them automatically |
+| **Real-time ingestion progress** | Per-file, per-stage progress tracking. Continue using the app while files process in the background |
 | **Semantic search** | Find things by *meaning*, not just exact keywords. "papers about climate impact" finds relevant docs even if they never use those exact words |
 | **Hybrid search** | Combines vector similarity + BM25 keyword search with Reciprocal Rank Fusion — best of both worlds |
-| **Chat with your docs** | Ask questions, get answers grounded in YOUR data with inline citations pointing to exact sources |
-| **Knowledge graph** | See how your documents connect through an interactive force-directed graph — discover relationships you didn't know existed |
+| **Faceted search filters** | Filter results by file type. Search history chips for quick re-runs. "More like this" for any result |
+| **Chat with your docs** | Ask questions, get answers grounded in YOUR data with expandable inline citations pointing to exact sources |
+| **Markdown rendering** | Chat responses render with full markdown — headers, code blocks with syntax highlighting, tables, links |
+| **Stop & regenerate** | Stop generation mid-stream or regenerate the last response. Pick your chat model per conversation |
+| **Auto-titled conversations** | First exchange auto-generates a conversation title. Export any conversation as markdown |
+| **Knowledge graph** | Interactive force-directed graph with file-type colored nodes, search/highlight, right-click context menus, and a legend |
+| **Document tags** | Tag documents for organization and filtering |
+| **Re-ingestion** | Changed chunk settings? Re-ingest individual documents or entire collections without re-importing |
 | **Collections** | Organize documents into separate knowledge bases for different projects, topics, or clients |
-| **Command palette** | `Cmd+K` to do anything. Power users rejoice. |
-| **Dark mode** | Because of course. (Light mode and system-auto too.) |
+| **Setup wizard** | First-run wizard guides you through Ollama connection and model selection |
+| **Ollama recovery** | Auto-detects Ollama disconnection with a recovery banner that retries every 10 seconds |
+| **Command palette** | `Cmd+K` to do anything. Power users rejoice |
+| **Dark mode** | Light, dark, and system-auto themes |
 
 ## Tech Stack
 
 ```
-Frontend:  React 19 + TypeScript + Tailwind CSS 4 + Zustand
+Frontend:  React 19 + TypeScript + Tailwind CSS 4 + Zustand + Framer Motion
 Backend:   Tauri 2 + Rust + SQLite (WAL mode + FTS5)
-AI:        Ollama (local embeddings + chat)
+AI:        Ollama (local embeddings + chat with streaming)
+Rendering: react-markdown + remark-gfm + rehype-highlight
 Graph:     react-force-graph-2d
 Build:     Vite 7 + Cargo
-Tests:     Vitest + Cargo test (76 tests)
+Tests:     Vitest + Cargo test (101 tests)
 ```
 
 ## Quick Start
@@ -74,7 +84,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-That's it. Drop some documents in and start exploring.
+That's it. The setup wizard will guide you through connecting to Ollama and choosing your models. Drop some documents in and start exploring.
 
 ## How It Works
 
@@ -93,35 +103,36 @@ Documents ──> Parse ──> Chunk ──> Embed ──> Store
                     Cited answers
 ```
 
-**Ingestion**: Documents are parsed into text, split into overlapping chunks with section context, embedded via Ollama, and stored in SQLite alongside FTS5 full-text indexes.
+**Ingestion**: Documents are parsed into text, split into overlapping chunks with section context, embedded via Ollama, and stored in SQLite alongside FTS5 full-text indexes. Real-time progress events track each stage (parsing, chunking, embedding, indexing).
 
-**Search**: Your query hits both a vector similarity search and a BM25 keyword search simultaneously. Results are fused using Reciprocal Rank Fusion for the best of both approaches.
+**Search**: Your query hits both a vector similarity search and a BM25 keyword search simultaneously. Results are fused using Reciprocal Rank Fusion for the best of both approaches. Filter by file type, browse search history, or find similar content with one click.
 
-**Chat**: Questions trigger hybrid search to find the most relevant chunks, which get injected as context into Ollama's chat model. Every answer comes with clickable citations back to the source material.
+**Chat**: Questions trigger hybrid search to find the most relevant chunks, which get injected as context into Ollama's streaming chat model. Every answer renders as rich markdown with expandable inline citations. Stop generation mid-stream, regenerate responses, or switch models on the fly.
 
-**Graph**: Document chunks are compared by embedding similarity. Cross-document connections above a configurable threshold become edges in an interactive force-directed graph, revealing hidden relationships across your knowledge base.
+**Graph**: Document chunks are compared by embedding similarity. Cross-document connections above a configurable threshold become edges in an interactive force-directed graph with file-type colored nodes, search/highlight, and right-click context menus.
 
 ## Project Structure
 
 ```
 Vaultmind/
 ├── src/                          # React frontend
-│   ├── components/               #   Sidebar, Header, StatusBar, Toast, CommandPalette
+│   ├── components/               #   UI primitives (SetupWizard, MarkdownRenderer, GraphLegend, etc.)
 │   ├── views/                    #   Documents, Search, Chat, Graph, Settings, Detail
-│   ├── stores/                   #   Zustand state (app, collections, docs, chat, settings)
+│   ├── stores/                   #   Zustand state (app, collections, docs, chat, settings, toasts)
 │   ├── hooks/                    #   useTheme, useOllamaStatus, useKeyboardShortcuts
 │   ├── utils/                    #   Shared utilities (file type colors)
 │   └── types/                    #   TypeScript interfaces
 ├── src-tauri/                    # Rust backend
 │   └── src/
-│       ├── commands/             #   Tauri IPC handlers (7 modules)
+│       ├── commands/             #   Tauri IPC handlers (collections, documents, search, chat, graph, settings, ollama)
 │       ├── parsers/              #   Format parsers (PDF, MD, HTML, TXT, DOCX, CSV, EPUB)
 │       ├── chunker.rs            #   Text chunking with overlap + section context
-│       ├── embedder.rs           #   Concurrent embedding via Ollama
+│       ├── embedder.rs           #   Concurrent embedding via Ollama with progress events
 │       ├── vector_store.rs       #   Vector similarity search
 │       ├── graph.rs              #   Knowledge graph edge generation
-│       ├── ollama.rs             #   Ollama HTTP client (embed + chat stream)
-│       ├── db.rs                 #   SQLite setup + migrations
+│       ├── ollama.rs             #   Ollama HTTP client (embed + chat stream + cancellation)
+│       ├── db.rs                 #   SQLite setup
+│       ├── migrations.rs         #   Database migrations
 │       ├── utils.rs              #   Shared math utilities
 │       └── models.rs             #   Data structures
 ├── .github/workflows/ci.yml     # CI pipeline
@@ -138,9 +149,11 @@ Vaultmind/
 | `Cmd+4` | Search |
 | `Cmd+K` | Command Palette |
 | `Cmd+O` | Import Files |
-| `Cmd+N` | New Conversation |
+| `Cmd+N` | New Conversation (in Chat) |
+| `Cmd+Shift+F` | Jump to Search |
 | `Cmd+,` | Settings |
 | `Cmd+Enter` | Send Message |
+| `Escape` | Close palette / dialogs |
 
 ## Supported Formats
 
@@ -159,9 +172,9 @@ Vaultmind/
 ```bash
 pnpm tauri dev          # Dev server with hot reload
 pnpm tauri build        # Production build (macOS DMG)
-pnpm test               # Frontend tests (22 tests)
+pnpm test               # Frontend tests (44 tests)
 pnpm lint               # TypeScript type check
-cd src-tauri && cargo test   # Rust tests (54 tests)
+cd src-tauri && cargo test   # Rust tests (57 tests)
 cd src-tauri && cargo clippy # Rust linting
 ```
 

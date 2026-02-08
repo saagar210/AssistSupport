@@ -4,6 +4,7 @@ mod db;
 mod embedder;
 mod error;
 mod graph;
+mod migrations;
 mod models;
 mod ollama;
 mod parsers;
@@ -54,10 +55,19 @@ pub fn run() {
             commands::documents::delete_document,
             commands::documents::get_document_chunks,
             commands::documents::get_stats,
+            commands::documents::reingest_document,
+            commands::documents::reingest_collection,
+            commands::documents::add_document_tag,
+            commands::documents::remove_document_tag,
+            commands::documents::list_all_tags,
             // Search commands
             commands::search::vector_search,
             commands::search::keyword_search,
             commands::search::hybrid_search,
+            commands::search::save_search_query,
+            commands::search::get_search_history,
+            commands::search::clear_search_history,
+            commands::search::find_similar_chunks,
             // Chat commands
             commands::chat::send_chat_message,
             commands::chat::create_conversation,
@@ -66,6 +76,9 @@ pub fn run() {
             commands::chat::get_message_citations,
             commands::chat::delete_conversation,
             commands::chat::rename_conversation,
+            commands::chat::cancel_chat_generation,
+            commands::chat::delete_last_assistant_message,
+            commands::chat::export_conversation_markdown,
             // Graph commands
             commands::graph::build_graph,
             commands::graph::get_graph,

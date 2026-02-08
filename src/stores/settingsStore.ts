@@ -1,17 +1,20 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
-import type { Setting } from "../types";
+import type { Setting, OllamaModel } from "../types";
 
 interface SettingsState {
   settings: Record<string, string>;
+  models: OllamaModel[];
   loading: boolean;
   fetchSettings: () => Promise<void>;
+  fetchModels: () => Promise<void>;
   updateSetting: (key: string, value: string) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: {},
+  models: [],
   loading: false,
 
   fetchSettings: async () => {
@@ -27,6 +30,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       console.error("Failed to fetch settings:", error);
       useToastStore.getState().addToast("error", "Failed to fetch settings: " + String(error));
       set({ loading: false });
+    }
+  },
+
+  fetchModels: async () => {
+    try {
+      const models = await invoke<OllamaModel[]>("list_ollama_models");
+      set({ models });
+    } catch {
+      // Silently fail — models just won't be available in selector
     }
   },
 

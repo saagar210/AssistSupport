@@ -8,6 +8,8 @@ import {
   Calendar,
   Loader2,
   ExternalLink,
+  RotateCw,
+  Sparkles,
 } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useCollectionStore } from "../stores/collectionStore";
@@ -56,6 +58,38 @@ export function DocumentDetailView() {
 
     loadDocument();
   }, [selectedDocumentId, addToast]);
+
+  const [reingesting, setReingesting] = useState(false);
+
+  const handleReingest = useCallback(async () => {
+    if (!selectedDocumentId) return;
+    setReingesting(true);
+    try {
+      await invoke("reingest_document", { documentId: selectedDocumentId });
+      addToast("success", "Re-ingestion started");
+    } catch (error) {
+      addToast("error", "Failed to start re-ingestion: " + String(error));
+    } finally {
+      setReingesting(false);
+    }
+  }, [selectedDocumentId, addToast]);
+
+  const handleFindSimilar = useCallback(async () => {
+    if (!chunks.length || !activeCollectionId) return;
+    // Use first chunk's ID to find similar documents
+    try {
+      const results = await invoke("find_similar_chunks", {
+        chunkId: chunks[0].id,
+        collectionId: activeCollectionId,
+        topK: 10,
+      });
+      if (results) {
+        setActiveView("search");
+      }
+    } catch (error) {
+      addToast("error", "Failed to find similar: " + String(error));
+    }
+  }, [chunks, activeCollectionId, setActiveView, addToast]);
 
   const handleBack = useCallback(() => {
     setSelectedDocument(null);
@@ -195,6 +229,24 @@ export function DocumentDetailView() {
             >
               <ExternalLink size={12} />
               Open
+            </button>
+            <button
+              onClick={handleFindSimilar}
+              disabled={chunks.length === 0}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              title="Find similar documents"
+            >
+              <Sparkles size={12} />
+              Find Similar
+            </button>
+            <button
+              onClick={handleReingest}
+              disabled={reingesting}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              title="Re-ingest with current settings"
+            >
+              <RotateCw size={12} className={reingesting ? "animate-spin" : ""} />
+              Re-ingest
             </button>
             <button
               onClick={() => setDeleteConfirm(true)}

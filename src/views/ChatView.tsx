@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
 import {
   MessageSquare,
   Plus,
@@ -13,10 +15,17 @@ import {
   Edit3,
   FileText,
   BookOpen,
+  Square,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Download,
 } from "lucide-react";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useChatStore } from "../stores/chatStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useToastStore } from "../stores/toastStore";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import type { Message, Citation } from "../types";
 
 interface ChatTokenPayload {
@@ -42,11 +51,17 @@ export function ChatView() {
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const renameConversation = useChatStore((s) => s.renameConversation);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const cancelGeneration = useChatStore((s) => s.cancelGeneration);
   const addStreamingToken = useChatStore((s) => s.addStreamingToken);
   const finishStreaming = useChatStore((s) => s.finishStreaming);
+  const updateConversationTitle = useChatStore((s) => s.updateConversationTitle);
+  const isGenerating = useChatStore((s) => s.isGenerating);
+  const models = useSettingsStore((s) => s.models);
   const addToast = useToastStore((s) => s.addToast);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  const [expandedCitations, setExpandedCitations] = useState<Set<string>>(new Set());
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [input, setInput] = useState("");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -63,11 +78,13 @@ export function ChatView() {
     }
   }, [activeCollectionId, fetchConversations]);
 
-  // Listen for streaming tokens
+  // Listen for streaming tokens, completion, cancellation, and title updates
   useEffect(() => {
     let mounted = true;
     let cleanupToken: (() => void) | null = null;
     let cleanupComplete: (() => void) | null = null;
+    let cleanupCancelled: (() => void) | null = null;
+    let cleanupTitle: (() => void) | null = null;
 
     listen<ChatTokenPayload>("chat-token", (event) => {
       if (mounted) addStreamingToken(event.payload.token);
@@ -77,12 +94,26 @@ export function ChatView() {
       if (mounted) finishStreaming(event.payload.message, event.payload.citations);
     }).then((fn) => { cleanupComplete = fn; });
 
+    listen("chat-cancelled", () => {
+      if (mounted) {
+        useChatStore.setState({ streaming: false, isGenerating: false });
+      }
+    }).then((fn) => { cleanupCancelled = fn; });
+
+    listen<{ conversationId: string; title: string }>("conversation-title-updated", (event) => {
+      if (mounted) {
+        updateConversationTitle(event.payload.conversationId, event.payload.title);
+      }
+    }).then((fn) => { cleanupTitle = fn; });
+
     return () => {
       mounted = false;
       cleanupToken?.();
       cleanupComplete?.();
+      cleanupCancelled?.();
+      cleanupTitle?.();
     };
-  }, [addStreamingToken, finishStreaming]);
+  }, [addStreamingToken, finishStreaming, updateConversationTitle]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -131,12 +162,13 @@ export function ChatView() {
       textareaRef.current.style.height = "auto";
     }
 
-    await sendMessage(convId, activeCollectionId, msg);
+    await sendMessage(convId, activeCollectionId, msg, selectedModel);
   }, [
     input,
     activeCollectionId,
     activeConversationId,
     streaming,
+    selectedModel,
     createConversation,
     sendMessage,
     addToast,
@@ -181,6 +213,67 @@ export function ChatView() {
     setRenameId(null);
     setRenameValue("");
   }, [renameId, renameValue, activeCollectionId, renameConversation]);
+
+  const handleStopGeneration = useCallback(async () => {
+    if (!activeConversationId) return;
+    await cancelGeneration(activeConversationId);
+  }, [activeConversationId, cancelGeneration]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!activeConversationId || !activeCollectionId || streaming) return;
+    try {
+      const lastUserContent = await invoke<string>("delete_last_assistant_message", {
+        conversationId: activeConversationId,
+      });
+      // Remove last assistant message from local state
+      useChatStore.setState((state) => {
+        const msgs = [...state.messages];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "assistant") {
+            msgs.splice(i, 1);
+            break;
+          }
+        }
+        return { messages: msgs };
+      });
+      await sendMessage(activeConversationId, activeCollectionId, lastUserContent, selectedModel);
+    } catch (error) {
+      addToast("error", "Failed to regenerate: " + String(error));
+    }
+  }, [activeConversationId, activeCollectionId, streaming, selectedModel, sendMessage, addToast]);
+
+  const handleExport = useCallback(async () => {
+    if (!activeConversationId) return;
+    try {
+      const markdown = await invoke<string>("export_conversation_markdown", {
+        conversationId: activeConversationId,
+      });
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const path = await save({
+        defaultPath: "conversation.md",
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (path) {
+        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+        await writeTextFile(path, markdown);
+        addToast("success", "Conversation exported");
+      }
+    } catch (error) {
+      addToast("error", "Export failed: " + String(error));
+    }
+  }, [activeConversationId, addToast]);
+
+  const toggleCitationExpand = useCallback((citId: string) => {
+    setExpandedCitations((prev) => {
+      const next = new Set(prev);
+      if (next.has(citId)) {
+        next.delete(citId);
+      } else {
+        next.add(citId);
+      }
+      return next;
+    });
+  }, []);
 
   const selectedCitations =
     selectedMessageId && citations[selectedMessageId]
@@ -300,7 +393,30 @@ export function ChatView() {
               <PanelLeftOpen size={14} />
             </button>
           )}
+          {/* Model selector */}
+          {models.length > 0 && (
+            <select
+              value={selectedModel ?? ""}
+              onChange={(e) => setSelectedModel(e.target.value || undefined)}
+              className="rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground outline-none"
+            >
+              <option value="">Default model</option>
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="flex-1" />
+          <button
+            onClick={handleExport}
+            disabled={!activeConversationId || messages.length === 0}
+            className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-50"
+            title="Export conversation"
+          >
+            <Download size={14} />
+          </button>
           <button
             onClick={() => setSourcesOpen(!sourcesOpen)}
             className="rounded p-1 text-muted-foreground hover:bg-muted"
@@ -338,8 +454,11 @@ export function ChatView() {
           ) : (
             <div className="mx-auto max-w-3xl space-y-4">
               {messages.map((msg) => (
-                <div
+                <motion.div
                   key={msg.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
@@ -356,33 +475,72 @@ export function ChatView() {
                       }
                     }}
                   >
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    {msg.role === "assistant" ? (
+                      <MarkdownRenderer content={msg.content} />
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    )}
                     {msg.role === "assistant" && citations[msg.id] && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {citations[msg.id].map((cit) => (
-                          <span
-                            key={cit.id}
-                            className="inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
-                          >
-                            <FileText size={8} />
-                            {cit.document_title}
-                          </span>
-                        ))}
+                      <div className="mt-2 space-y-1">
+                        <div className="flex flex-wrap gap-1">
+                          {citations[msg.id].map((cit) => (
+                            <button
+                              key={cit.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCitationExpand(cit.id);
+                              }}
+                              className="inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent hover:bg-accent/20 transition-colors"
+                            >
+                              <FileText size={8} />
+                              {cit.document_title}
+                              {cit.section_title && ` · ${cit.section_title}`}
+                              {expandedCitations.has(cit.id) ? <ChevronDown size={8} /> : <ChevronRight size={8} />}
+                            </button>
+                          ))}
+                        </div>
+                        {citations[msg.id]
+                          .filter((cit) => expandedCitations.has(cit.id))
+                          .map((cit) => (
+                            <div
+                              key={`expanded-${cit.id}`}
+                              className="rounded border border-border bg-muted/50 p-2 text-xs text-muted-foreground"
+                            >
+                              <p className="leading-relaxed">{cit.snippet}</p>
+                              <p className="mt-1 text-[10px] text-accent">
+                                {Math.round(cit.relevance_score * 100)}% relevant
+                                {cit.page_number ? ` · Page ${cit.page_number}` : ""}
+                              </p>
+                            </div>
+                          ))}
                       </div>
                     )}
                   </div>
-                </div>
+                </motion.div>
               ))}
+
+              {/* Regenerate button */}
+              {!streaming && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
+                <div className="flex justify-start">
+                  <button
+                    onClick={handleRegenerate}
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <RefreshCw size={12} />
+                    Regenerate
+                  </button>
+                </div>
+              )}
 
               {/* Streaming Message */}
               {streaming && (
                 <div className="flex justify-start">
                   <div className="max-w-[80%] rounded-lg border border-border bg-card px-4 py-2.5 text-sm text-card-foreground">
                     {streamingContent ? (
-                      <p className="whitespace-pre-wrap leading-relaxed">
-                        {streamingContent}
+                      <div>
+                        <MarkdownRenderer content={streamingContent} />
                         <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent" />
-                      </p>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Loader2 size={14} className="animate-spin" />
@@ -411,17 +569,23 @@ export function ChatView() {
               rows={1}
               className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50"
             />
-            <button
-              onClick={handleSend}
-              disabled={streaming || !input.trim()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
-            >
-              {streaming ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
+            {isGenerating ? (
+              <button
+                onClick={handleStopGeneration}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive text-white transition-colors hover:bg-destructive/90"
+                title="Stop generation"
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+              >
                 <Send size={16} />
-              )}
-            </button>
+              </button>
+            )}
           </div>
         </div>
       </div>

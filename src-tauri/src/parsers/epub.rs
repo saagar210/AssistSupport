@@ -128,8 +128,8 @@ fn parse_opf_spine(opf_content: &str, opf_path: &str) -> Result<Vec<String>, App
                     tracing::warn!("Skipping suspicious path in EPUB manifest: {}", href);
                     continue;
                 }
-                let full_path = if href.starts_with('/') {
-                    href[1..].to_string()
+                let full_path = if let Some(stripped) = href.strip_prefix('/') {
+                    stripped.to_string()
                 } else {
                     format!("{}{}", base_dir, href)
                 };

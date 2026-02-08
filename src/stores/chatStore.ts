@@ -10,6 +10,7 @@ interface ChatState {
   citations: Record<string, Citation[]>;
   streaming: boolean;
   streamingContent: string;
+  isGenerating: boolean;
   fetchConversations: (collectionId: string) => Promise<void>;
   setActiveConversation: (id: string) => Promise<void>;
   createConversation: (
@@ -26,9 +27,12 @@ interface ChatState {
     conversationId: string,
     collectionId: string,
     message: string,
+    modelOverride?: string,
   ) => Promise<void>;
+  cancelGeneration: (conversationId: string) => Promise<void>;
   addStreamingToken: (token: string) => void;
   finishStreaming: (message: Message, newCitations: Citation[]) => void;
+  updateConversationTitle: (conversationId: string, title: string) => void;
   clearMessages: () => void;
 }
 
@@ -39,6 +43,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   citations: {},
   streaming: false,
   streamingContent: "",
+  isGenerating: false,
 
   fetchConversations: async (collectionId: string) => {
     try {
@@ -114,18 +119,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     conversationId: string,
     collectionId: string,
     message: string,
+    modelOverride?: string,
   ) => {
-    set({ streaming: true, streamingContent: "" });
+    set({ streaming: true, isGenerating: true, streamingContent: "" });
     try {
       await invoke("send_chat_message", {
         conversationId,
         collectionId,
-        message,
+        userMessage: message,
+        modelOverride: modelOverride ?? null,
       });
     } catch (error) {
       console.error("Failed to send message:", error);
       useToastStore.getState().addToast("error", "Failed to send message: " + String(error));
-      set({ streaming: false, streamingContent: "" });
+      set({ streaming: false, isGenerating: false, streamingContent: "" });
+    }
+  },
+
+  cancelGeneration: async (conversationId: string) => {
+    try {
+      await invoke("cancel_chat_generation", { conversationId });
+    } catch (error) {
+      console.error("Failed to cancel generation:", error);
     }
   },
 
@@ -136,12 +151,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   finishStreaming: (message: Message, newCitations: Citation[]) => {
     set((state) => ({
       streaming: false,
+      isGenerating: false,
       streamingContent: "",
       messages: [...state.messages, message],
       citations: {
         ...state.citations,
         [message.id]: newCitations,
       },
+    }));
+  },
+
+  updateConversationTitle: (conversationId: string, title: string) => {
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.id === conversationId ? { ...c, title } : c,
+      ),
     }));
   },
 

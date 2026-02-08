@@ -53,7 +53,7 @@ pub fn parse_document(path: &Path, file_type: &str) -> Result<ParsedDocument, Ap
     const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500MB limit
 
     let file_size = std::fs::metadata(path)
-        .map_err(|e| AppError::Io(e))?
+        .map_err(AppError::Io)?
         .len();
 
     if file_size > MAX_FILE_SIZE {

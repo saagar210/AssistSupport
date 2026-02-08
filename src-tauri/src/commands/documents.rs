@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::chunker;
 use crate::embedder;
@@ -15,6 +15,12 @@ fn lock_db<'a>(
     state: &'a tauri::State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, AppError> {
     crate::state::lock_db(state.inner())
+}
+
+fn lock_db_arc(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, AppError> {
+    crate::state::lock_db(state)
 }
 
 fn detect_file_type(path: &Path) -> Option<String> {
@@ -38,6 +44,212 @@ fn get_setting(db: &rusqlite::Connection, key: &str, default: &str) -> String {
     .unwrap_or_else(|_| default.to_string())
 }
 
+fn emit_progress(
+    app: &tauri::AppHandle,
+    doc_id: &str,
+    filename: &str,
+    stage: &str,
+    chunks_done: usize,
+    chunks_total: usize,
+    error: Option<&str>,
+) {
+    let mut payload = serde_json::json!({
+        "document_id": doc_id,
+        "filename": filename,
+        "stage": stage,
+        "chunks_done": chunks_done,
+        "chunks_total": chunks_total,
+    });
+    if let Some(err) = error {
+        payload["error"] = serde_json::Value::String(err.to_string());
+    }
+    let _ = app.emit("ingestion-progress", payload);
+}
+
+/// Internal ingestion logic for a single file. Used by both ingest_files and reingest.
+async fn ingest_single_file(
+    app: &tauri::AppHandle,
+    app_state: &AppState,
+    collection_id: &str,
+    doc_id: &str,
+    file_path_str: &str,
+    filename: &str,
+    file_type: &str,
+) -> Result<(), AppError> {
+    let path = Path::new(file_path_str);
+
+    // Stage: parsing
+    emit_progress(app, doc_id, filename, "parsing", 0, 0, None);
+    let parsed = match parsers::parse_document(path, file_type) {
+        Ok(p) => p,
+        Err(e) => {
+            let db = lock_db_arc(app_state)?;
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.execute(
+                "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![e.to_string(), now, doc_id],
+            );
+            emit_progress(app, doc_id, filename, "failed", 0, 0, Some(&e.to_string()));
+            return Err(e);
+        }
+    };
+
+    // Read settings
+    let (chunk_size, chunk_overlap, ollama_host, ollama_port, embedding_model) = {
+        let db = lock_db_arc(app_state)?;
+        (
+            get_setting(&db, "chunk_size", "512").parse::<usize>().unwrap_or(512),
+            get_setting(&db, "chunk_overlap", "64").parse::<usize>().unwrap_or(64),
+            get_setting(&db, "ollama_host", "localhost"),
+            get_setting(&db, "ollama_port", "11434"),
+            get_setting(&db, "embedding_model", "nomic-embed-text"),
+        )
+    };
+
+    // Stage: chunking
+    emit_progress(app, doc_id, filename, "chunking", 0, 0, None);
+    let chunks = chunker::chunk_text(
+        &parsed.text,
+        &parsed.sections,
+        chunk_size,
+        chunk_overlap,
+    );
+    let chunks_total = chunks.len();
+
+    // Insert chunks into DB
+    {
+        let db = lock_db_arc(app_state)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        for chunk in &chunks {
+            let chunk_id = uuid::Uuid::new_v4().to_string();
+
+            db.execute(
+                "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, start_offset, end_offset, page_number, section_title, token_count, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10)",
+                rusqlite::params![
+                    chunk_id,
+                    doc_id,
+                    collection_id,
+                    chunk.content,
+                    chunk.chunk_index,
+                    chunk.start_offset,
+                    chunk.end_offset,
+                    chunk.section_title,
+                    chunk.token_count,
+                    now,
+                ],
+            )?;
+
+            db.execute(
+                "INSERT INTO chunks_fts (content, chunk_id, document_id, collection_id) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![chunk.content, chunk_id, doc_id, collection_id],
+            )?;
+        }
+    }
+
+    // Stage: embedding
+    emit_progress(app, doc_id, filename, "embedding", 0, chunks_total, None);
+    let progress_ctx = embedder::ProgressCtx {
+        app_handle: app.clone(),
+        document_id: doc_id.to_string(),
+        filename: filename.to_string(),
+    };
+
+    let embeddings = match embedder::embed_chunks(
+        &ollama_host,
+        &ollama_port,
+        &embedding_model,
+        &chunks,
+        Some(progress_ctx),
+    )
+    .await
+    {
+        Ok(e) => e,
+        Err(e) => {
+            let db = lock_db_arc(app_state)?;
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.execute(
+                "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![e.to_string(), now, doc_id],
+            );
+            emit_progress(app, doc_id, filename, "failed", 0, chunks_total, Some(&e.to_string()));
+            return Err(e);
+        }
+    };
+
+    // Stage: indexing
+    emit_progress(app, doc_id, filename, "indexing", chunks_total, chunks_total, None);
+    {
+        let db = lock_db_arc(app_state)?;
+
+        let mut stmt = db.prepare(
+            "SELECT id, content FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC",
+        )?;
+        let chunk_rows: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![doc_id], |row: &rusqlite::Row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut embedding_data: Vec<(String, String, String, Vec<f64>, String)> = Vec::new();
+        for (i, (chunk_id, content)) in chunk_rows.iter().enumerate() {
+            if let Some(embedding) = embeddings.get(i) {
+                let preview = if content.chars().count() > 200 {
+                    format!("{}...", content.chars().take(200).collect::<String>())
+                } else {
+                    content.clone()
+                };
+                embedding_data.push((
+                    chunk_id.clone(),
+                    collection_id.to_string(),
+                    doc_id.to_string(),
+                    embedding.clone(),
+                    preview,
+                ));
+            }
+        }
+
+        vector_store::store_embeddings(&db, &embedding_data)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        db.execute(
+            "UPDATE documents SET status = 'completed', word_count = ?1, chunk_count = ?2, title = ?3, author = ?4, page_count = ?5, updated_at = ?6 WHERE id = ?7",
+            rusqlite::params![
+                parsed.metadata.word_count,
+                chunks.len() as i32,
+                parsed.metadata.title.as_deref().unwrap_or(filename),
+                parsed.metadata.author,
+                parsed.metadata.page_count,
+                now,
+                doc_id,
+            ],
+        )?;
+    }
+
+    // Stage: complete
+    emit_progress(app, doc_id, filename, "complete", chunks_total, chunks_total, None);
+    Ok(())
+}
+
+/// Clear all chunks, FTS entries, embeddings, and graph edges for a document.
+fn clear_document_data(db: &rusqlite::Connection, doc_id: &str) -> Result<(), AppError> {
+    vector_store::delete_document_vectors(db, doc_id)?;
+    db.execute(
+        "DELETE FROM chunks_fts WHERE document_id = ?1",
+        rusqlite::params![doc_id],
+    )?;
+    db.execute(
+        "DELETE FROM graph_edges WHERE source_chunk_id IN (SELECT id FROM chunks WHERE document_id = ?1) OR target_chunk_id IN (SELECT id FROM chunks WHERE document_id = ?1)",
+        rusqlite::params![doc_id],
+    )?;
+    db.execute(
+        "DELETE FROM chunks WHERE document_id = ?1",
+        rusqlite::params![doc_id],
+    )?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn ingest_files(
     app_handle: tauri::AppHandle,
@@ -45,13 +257,12 @@ pub async fn ingest_files(
     collection_id: String,
     file_paths: Vec<String>,
 ) -> Result<Vec<String>, AppError> {
-    let mut created_ids: Vec<String> = Vec::new();
+    // Gather document IDs synchronously, then spawn background work
+    let mut doc_entries: Vec<(String, String, String, String)> = Vec::new(); // (doc_id, path, filename, file_type)
 
     for file_path_str in &file_paths {
         let path = Path::new(file_path_str);
-        let doc_id = uuid::Uuid::new_v4().to_string();
 
-        // Detect file type
         let file_type = match detect_file_type(path) {
             Some(ft) => ft,
             None => {
@@ -60,7 +271,6 @@ pub async fn ingest_files(
             }
         };
 
-        // Compute hash
         let file_hash = match compute_sha256(path) {
             Ok(h) => h,
             Err(e) => {
@@ -69,7 +279,6 @@ pub async fn ingest_files(
             }
         };
 
-        // Get file metadata
         let file_metadata = match std::fs::metadata(path) {
             Ok(m) => m,
             Err(e) => {
@@ -84,9 +293,9 @@ pub async fn ingest_files(
             .unwrap_or("unknown")
             .to_string();
 
+        let doc_id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
-        // Check for duplicates and insert document record inside lock scope
         {
             let db = lock_db(&state)?;
 
@@ -104,7 +313,6 @@ pub async fn ingest_files(
                 continue;
             }
 
-            // Insert document with status "processing"
             db.execute(
                 "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, 0, 0, 'processing', NULL, ?9, ?10)",
@@ -121,171 +329,179 @@ pub async fn ingest_files(
                     now,
                 ],
             )?;
-        } // db lock dropped here
+        }
 
-        // Parse document (sync, no lock needed)
-        let parsed = match parsers::parse_document(path, &file_type) {
-            Ok(p) => p,
-            Err(e) => {
-                let db = lock_db(&state)?;
-                let now = chrono::Utc::now().to_rfc3339();
-                let _ = db.execute(
-                    "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
-                    rusqlite::params![e.to_string(), now, doc_id],
-                );
-                let _ = app_handle.emit(
-                    "ingestion-progress",
-                    serde_json::json!({"document_id": doc_id, "status": "failed", "error": e.to_string()}),
-                );
-                continue;
-            }
-        };
+        doc_entries.push((doc_id, file_path_str.clone(), filename, file_type));
+    }
 
-        // Read settings inside lock, then drop
-        let (chunk_size, chunk_overlap, ollama_host, ollama_port, embedding_model) = {
-            let db = lock_db(&state)?;
+    let created_ids: Vec<String> = doc_entries.iter().map(|(id, _, _, _)| id.clone()).collect();
 
-            let chunk_size = get_setting(&db, "chunk_size", "512");
-            let chunk_overlap = get_setting(&db, "chunk_overlap", "64");
-            let host = get_setting(&db, "ollama_host", "localhost");
-            let port = get_setting(&db, "ollama_port", "11434");
-            let model = get_setting(&db, "embedding_model", "nomic-embed-text");
-
-            (
-                chunk_size.parse::<usize>().unwrap_or(512),
-                chunk_overlap.parse::<usize>().unwrap_or(64),
-                host,
-                port,
-                model,
+    // Fire-and-forget: spawn background processing for all docs
+    let app = app_handle.clone();
+    let cid = collection_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let app_state: tauri::State<'_, AppState> = app.state();
+        for (doc_id, file_path_str, filename, file_type) in &doc_entries {
+            if let Err(e) = ingest_single_file(
+                &app,
+                app_state.inner(),
+                &cid,
+                doc_id,
+                file_path_str,
+                filename,
+                file_type,
             )
-        }; // db lock dropped
-
-        // Chunk text (sync)
-        let chunks = chunker::chunk_text(
-            &parsed.text,
-            &parsed.sections,
-            chunk_size,
-            chunk_overlap,
-        );
-
-        // Insert chunks into DB
-        {
-            let db = lock_db(&state)?;
-            let now = chrono::Utc::now().to_rfc3339();
-
-            for chunk in &chunks {
-                let chunk_id = uuid::Uuid::new_v4().to_string();
-
-                db.execute(
-                    "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, start_offset, end_offset, page_number, section_title, token_count, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10)",
-                    rusqlite::params![
-                        chunk_id,
-                        doc_id,
-                        collection_id,
-                        chunk.content,
-                        chunk.chunk_index,
-                        chunk.start_offset,
-                        chunk.end_offset,
-                        chunk.section_title,
-                        chunk.token_count,
-                        now,
-                    ],
-                )?;
-
-                // Insert into FTS table
-                db.execute(
-                    "INSERT INTO chunks_fts (content, chunk_id, document_id, collection_id) VALUES (?1, ?2, ?3, ?4)",
-                    rusqlite::params![chunk.content, chunk_id, doc_id, collection_id],
-                )?;
+            .await
+            {
+                tracing::error!("Ingestion failed for {}: {}", filename, e);
             }
-        } // db lock dropped
+        }
+        // Signal all files done
+        let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
+    });
 
-        // Generate embeddings (async, no lock held)
-        let embeddings = match embedder::embed_chunks(
-            &ollama_host,
-            &ollama_port,
-            &embedding_model,
-            &chunks,
+    Ok(created_ids)
+}
+
+#[tauri::command]
+pub async fn reingest_document(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    document_id: String,
+) -> Result<(), AppError> {
+    // Load document info
+    let (collection_id, file_path, filename, file_type) = {
+        let db = lock_db(&state)?;
+        let row = db.query_row(
+            "SELECT collection_id, file_path, filename, file_type FROM documents WHERE id = ?1",
+            rusqlite::params![document_id],
+            |row: &rusqlite::Row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Document '{}' not found", document_id))
+            }
+            other => AppError::Database(other),
+        })?;
+
+        // Clear old data
+        clear_document_data(&db, &document_id)?;
+
+        // Reset status
+        let now = chrono::Utc::now().to_rfc3339();
+        db.execute(
+            "UPDATE documents SET status = 'processing', error_message = NULL, word_count = 0, chunk_count = 0, updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, document_id],
+        )?;
+
+        row
+    };
+
+    let app = app_handle.clone();
+    let did = document_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let app_state: tauri::State<'_, AppState> = app.state();
+        if let Err(e) = ingest_single_file(
+            &app,
+            app_state.inner(),
+            &collection_id,
+            &did,
+            &file_path,
+            &filename,
+            &file_type,
         )
         .await
         {
-            Ok(e) => e,
-            Err(e) => {
-                let db = lock_db(&state)?;
-                let now = chrono::Utc::now().to_rfc3339();
-                let _ = db.execute(
-                    "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
-                    rusqlite::params![e.to_string(), now, doc_id],
-                );
-                let _ = app_handle.emit(
-                    "ingestion-progress",
-                    serde_json::json!({"document_id": doc_id, "status": "failed", "error": e.to_string()}),
-                );
-                continue;
-            }
-        };
+            tracing::error!("Re-ingestion failed for {}: {}", filename, e);
+        }
+    });
 
-        // Store embeddings and update document status
-        {
-            let db = lock_db(&state)?;
+    Ok(())
+}
 
-            // Re-query chunk IDs in order to match with embeddings
-            let mut stmt = db.prepare(
-                "SELECT id, content FROM chunks WHERE document_id = ?1 ORDER BY chunk_index ASC",
-            )?;
-            let chunk_rows: Vec<(String, String)> = stmt
-                .query_map(rusqlite::params![doc_id], |row: &rusqlite::Row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
+#[tauri::command]
+pub async fn reingest_collection(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    collection_id: String,
+) -> Result<(), AppError> {
+    // Load all documents for collection
+    let docs: Vec<(String, String, String, String)> = {
+        let db = lock_db(&state)?;
+        let mut stmt = db.prepare(
+            "SELECT id, file_path, filename, file_type FROM documents WHERE collection_id = ?1 AND status != 'failed'",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![collection_id], |row: &rusqlite::Row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
 
-            // Build embedding tuples
-            let mut embedding_data: Vec<(String, String, String, Vec<f64>, String)> = Vec::new();
-            for (i, (chunk_id, content)) in chunk_rows.iter().enumerate() {
-                if let Some(embedding) = embeddings.get(i) {
-                    let preview = if content.chars().count() > 200 {
-                        format!("{}...", content.chars().take(200).collect::<String>())
-                    } else {
-                        content.clone()
-                    };
-                    embedding_data.push((
-                        chunk_id.clone(),
-                        collection_id.clone(),
-                        doc_id.clone(),
-                        embedding.clone(),
-                        preview,
-                    ));
-                }
-            }
+    let total_docs = docs.len();
 
-            vector_store::store_embeddings(&db, &embedding_data)?;
-
-            // Update document status to completed
-            let now = chrono::Utc::now().to_rfc3339();
+    // Clear and reset all documents
+    {
+        let db = lock_db(&state)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        for (doc_id, _, _, _) in &docs {
+            clear_document_data(&db, doc_id)?;
             db.execute(
-                "UPDATE documents SET status = 'completed', word_count = ?1, chunk_count = ?2, title = ?3, author = ?4, page_count = ?5, updated_at = ?6 WHERE id = ?7",
-                rusqlite::params![
-                    parsed.metadata.word_count,
-                    chunks.len() as i32,
-                    parsed.metadata.title.as_deref().unwrap_or(&filename),
-                    parsed.metadata.author,
-                    parsed.metadata.page_count,
-                    now,
-                    doc_id,
-                ],
+                "UPDATE documents SET status = 'processing', error_message = NULL, word_count = 0, chunk_count = 0, updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, doc_id],
             )?;
-        } // db lock dropped
-
-        let _ = app_handle.emit(
-            "ingestion-progress",
-            serde_json::json!({"document_id": doc_id, "status": "completed"}),
-        );
-
-        created_ids.push(doc_id);
+        }
     }
 
-    Ok(created_ids)
+    let app = app_handle.clone();
+    let cid = collection_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let app_state: tauri::State<'_, AppState> = app.state();
+        for (i, (doc_id, file_path, filename, file_type)) in docs.iter().enumerate() {
+            let _ = app.emit(
+                "reingest-collection-progress",
+                serde_json::json!({
+                    "collection_id": cid,
+                    "documents_done": i,
+                    "documents_total": total_docs,
+                }),
+            );
+            if let Err(e) = ingest_single_file(
+                &app,
+                app_state.inner(),
+                &cid,
+                doc_id,
+                file_path,
+                filename,
+                file_type,
+            )
+            .await
+            {
+                tracing::error!("Re-ingestion failed for {}: {}", filename, e);
+            }
+        }
+        let _ = app.emit(
+            "reingest-collection-progress",
+            serde_json::json!({
+                "collection_id": cid,
+                "documents_done": total_docs,
+                "documents_total": total_docs,
+            }),
+        );
+        let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -376,28 +592,8 @@ pub fn delete_document(
 ) -> Result<(), AppError> {
     let db = lock_db(&state)?;
 
-    // Delete embeddings
-    vector_store::delete_document_vectors(&db, &id)?;
+    clear_document_data(&db, &id)?;
 
-    // Delete FTS entries for this document's chunks
-    db.execute(
-        "DELETE FROM chunks_fts WHERE document_id = ?1",
-        rusqlite::params![id],
-    )?;
-
-    // Delete graph edges referencing this document's chunks
-    db.execute(
-        "DELETE FROM graph_edges WHERE source_chunk_id IN (SELECT id FROM chunks WHERE document_id = ?1) OR target_chunk_id IN (SELECT id FROM chunks WHERE document_id = ?1)",
-        rusqlite::params![id],
-    )?;
-
-    // Delete chunks (cascade should handle this, but be explicit)
-    db.execute(
-        "DELETE FROM chunks WHERE document_id = ?1",
-        rusqlite::params![id],
-    )?;
-
-    // Delete the document itself
     let rows = db.execute(
         "DELETE FROM documents WHERE id = ?1",
         rusqlite::params![id],
@@ -463,4 +659,119 @@ pub fn get_stats(
     )?;
 
     Ok((doc_count, chunk_count))
+}
+
+#[tauri::command]
+pub fn add_document_tag(
+    state: tauri::State<'_, AppState>,
+    document_id: String,
+    tag: String,
+) -> Result<Vec<String>, AppError> {
+    let tag = tag.trim().to_string();
+    if tag.is_empty() {
+        return Err(AppError::Validation("Tag cannot be empty".into()));
+    }
+
+    let db = lock_db(&state)?;
+
+    let tags_json: String = db
+        .query_row(
+            "SELECT COALESCE(tags, '[]') FROM documents WHERE id = ?1",
+            rusqlite::params![document_id],
+            |row: &rusqlite::Row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Document '{}' not found", document_id))
+            }
+            other => AppError::Database(other),
+        })?;
+
+    let mut tags: Vec<String> = serde_json::from_str(&tags_json)
+        .unwrap_or_default();
+
+    if !tags.contains(&tag) {
+        tags.push(tag);
+    }
+
+    let updated_json = serde_json::to_string(&tags)
+        .map_err(|e| AppError::Validation(format!("Failed to serialize tags: {}", e)))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.execute(
+        "UPDATE documents SET tags = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![updated_json, now, document_id],
+    )?;
+
+    Ok(tags)
+}
+
+#[tauri::command]
+pub fn remove_document_tag(
+    state: tauri::State<'_, AppState>,
+    document_id: String,
+    tag: String,
+) -> Result<Vec<String>, AppError> {
+    let db = lock_db(&state)?;
+
+    let tags_json: String = db
+        .query_row(
+            "SELECT COALESCE(tags, '[]') FROM documents WHERE id = ?1",
+            rusqlite::params![document_id],
+            |row: &rusqlite::Row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Document '{}' not found", document_id))
+            }
+            other => AppError::Database(other),
+        })?;
+
+    let mut tags: Vec<String> = serde_json::from_str(&tags_json)
+        .unwrap_or_default();
+
+    tags.retain(|t| t != &tag);
+
+    let updated_json = serde_json::to_string(&tags)
+        .map_err(|e| AppError::Validation(format!("Failed to serialize tags: {}", e)))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.execute(
+        "UPDATE documents SET tags = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![updated_json, now, document_id],
+    )?;
+
+    Ok(tags)
+}
+
+#[tauri::command]
+pub fn list_all_tags(
+    state: tauri::State<'_, AppState>,
+    collection_id: String,
+) -> Result<Vec<String>, AppError> {
+    let db = lock_db(&state)?;
+
+    let mut stmt = db.prepare(
+        "SELECT COALESCE(tags, '[]') FROM documents WHERE collection_id = ?1",
+    )?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![collection_id], |row: &rusqlite::Row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut all_tags = std::collections::HashSet::new();
+    for tags_json in &rows {
+        if let Ok(tags) = serde_json::from_str::<Vec<String>>(tags_json) {
+            for tag in tags {
+                all_tags.insert(tag);
+            }
+        }
+    }
+
+    let mut result: Vec<String> = all_tags.into_iter().collect();
+    result.sort();
+
+    Ok(result)
 }

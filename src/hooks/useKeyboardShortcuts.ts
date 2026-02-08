@@ -57,7 +57,23 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Handle Escape before the meta/ctrl gate
+      if (e.key === "Escape") {
+        if (useAppStore.getState().commandPaletteOpen) {
+          e.preventDefault();
+          toggleCommandPalette();
+        }
+        return;
+      }
+
       if (!e.metaKey && !e.ctrlKey) return;
+
+      // Cmd+Shift+F → search view
+      if (e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setActiveView("search");
+        return;
+      }
 
       const view = VIEW_MAP[e.key];
       if (view) {

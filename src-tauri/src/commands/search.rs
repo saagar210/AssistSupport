@@ -9,6 +9,15 @@ use crate::state::AppState;
 use crate::utils::{bytes_to_f64_vec, cosine_similarity};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchHistoryEntry {
+    pub id: String,
+    pub collection_id: String,
+    pub query: String,
+    pub result_count: i32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub chunk_id: String,
     pub document_id: String,
@@ -326,6 +335,177 @@ pub(crate) fn reciprocal_rank_fusion_pub(
     top_k: usize,
 ) -> Vec<SearchResult> {
     reciprocal_rank_fusion(vector_results, keyword_results, k, top_k)
+}
+
+// --- Search History Commands ---
+
+#[tauri::command]
+pub fn save_search_query(
+    state: State<'_, AppState>,
+    collection_id: String,
+    query: String,
+    result_count: i32,
+) -> Result<(), AppError> {
+    let db = lock_db(&state)?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Upsert: if same query exists for collection, update timestamp + result_count
+    let existing: Option<String> = db
+        .query_row(
+            "SELECT id FROM search_history WHERE collection_id = ?1 AND query = ?2",
+            rusqlite::params![collection_id, query],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(id) = existing {
+        db.execute(
+            "UPDATE search_history SET result_count = ?1, created_at = ?2 WHERE id = ?3",
+            rusqlite::params![result_count, now, id],
+        )?;
+    } else {
+        let id = uuid::Uuid::new_v4().to_string();
+        db.execute(
+            "INSERT INTO search_history (id, collection_id, query, result_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, collection_id, query, result_count, now],
+        )?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_search_history(
+    state: State<'_, AppState>,
+    collection_id: String,
+    limit: Option<i32>,
+) -> Result<Vec<SearchHistoryEntry>, AppError> {
+    let db = lock_db(&state)?;
+    let limit = limit.unwrap_or(10);
+
+    let mut stmt = db.prepare(
+        "SELECT id, collection_id, query, result_count, created_at FROM search_history WHERE collection_id = ?1 ORDER BY created_at DESC LIMIT ?2",
+    )?;
+
+    let entries = stmt
+        .query_map(rusqlite::params![collection_id, limit], |row| {
+            Ok(SearchHistoryEntry {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                query: row.get(2)?,
+                result_count: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn clear_search_history(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> Result<(), AppError> {
+    let db = lock_db(&state)?;
+    db.execute(
+        "DELETE FROM search_history WHERE collection_id = ?1",
+        rusqlite::params![collection_id],
+    )?;
+    Ok(())
+}
+
+// --- Find Similar Chunks ---
+
+#[tauri::command]
+pub fn find_similar_chunks(
+    state: State<'_, AppState>,
+    chunk_id: String,
+    collection_id: String,
+    top_k: Option<usize>,
+) -> Result<Vec<SearchResult>, AppError> {
+    let db = lock_db(&state)?;
+    let top_k = top_k.unwrap_or(10);
+
+    // Load the source chunk's embedding
+    let source_blob: Vec<u8> = db
+        .query_row(
+            "SELECT embedding FROM chunk_embeddings WHERE chunk_id = ?1",
+            rusqlite::params![chunk_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Embedding not found for chunk '{}'", chunk_id))
+            }
+            other => AppError::Database(other),
+        })?;
+
+    let source_embedding = bytes_to_f64_vec(&source_blob);
+
+    // Get the source chunk's document_id to exclude it
+    let source_doc_id: String = db.query_row(
+        "SELECT document_id FROM chunks WHERE id = ?1",
+        rusqlite::params![chunk_id],
+        |row| row.get(0),
+    )?;
+
+    // Search all embeddings in collection, excluding the source document
+    let mut stmt = db.prepare(
+        "SELECT ce.chunk_id, ce.embedding
+         FROM chunk_embeddings ce
+         JOIN chunks c ON c.id = ce.chunk_id
+         WHERE c.collection_id = ?1 AND c.document_id != ?2",
+    )?;
+
+    let rows = stmt.query_map(rusqlite::params![collection_id, source_doc_id], |row| {
+        let cid: String = row.get(0)?;
+        let blob: Vec<u8> = row.get(1)?;
+        Ok((cid, blob))
+    })?;
+
+    let mut scored: Vec<(String, f64)> = Vec::new();
+    for row_result in rows {
+        let (cid, blob) = row_result?;
+        if blob.len() % 8 != 0 {
+            continue;
+        }
+        let embedding = bytes_to_f64_vec(&blob);
+        let sim = cosine_similarity(&source_embedding, &embedding);
+        scored.push((cid, sim));
+    }
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(top_k);
+
+    // Enrich results
+    let mut results = Vec::with_capacity(scored.len());
+    for (cid, score) in scored {
+        let result = db.query_row(
+            "SELECT c.id, c.document_id, c.content, c.section_title, c.page_number, d.title
+             FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?1",
+            rusqlite::params![cid],
+            |row| {
+                Ok(SearchResult {
+                    chunk_id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    content: row.get(2)?,
+                    section_title: row.get(3)?,
+                    page_number: row.get(4)?,
+                    document_title: row.get(5)?,
+                    score,
+                })
+            },
+        );
+
+        match result {
+            Ok(sr) => results.push(sr),
+            Err(rusqlite::Error::QueryReturnedNoRows) => continue,
+            Err(e) => return Err(AppError::Database(e)),
+        }
+    }
+
+    Ok(results)
 }
 
 /// Reciprocal Rank Fusion: merge two ranked result lists.

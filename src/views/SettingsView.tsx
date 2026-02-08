@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, Loader2, RotateCw } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useCollectionStore } from "../stores/collectionStore";
+import { useToastStore } from "../stores/toastStore";
 import { useTheme } from "../hooks/useTheme";
 import type { OllamaModel } from "../types";
 
@@ -13,7 +15,14 @@ interface TestResult {
 export function SettingsView() {
   const settings = useSettingsStore((state) => state.settings);
   const updateSetting = useSettingsStore((state) => state.updateSetting);
+  const activeCollectionId = useCollectionStore((s) => s.activeCollectionId);
+  const addToast = useToastStore((s) => s.addToast);
   const { theme, setTheme } = useTheme();
+
+  const [chunkSettingsChanged, setChunkSettingsChanged] = useState(false);
+  const [reingesting, setReingesting] = useState(false);
+  const initialChunkSize = useRef(settings.chunk_size);
+  const initialChunkOverlap = useRef(settings.chunk_overlap);
 
   const [ollamaHost, setOllamaHost] = useState("");
   const [ollamaPort, setOllamaPort] = useState("");
@@ -27,6 +36,36 @@ export function SettingsView() {
     setOllamaHost(settings.ollama_host ?? "localhost");
     setOllamaPort(settings.ollama_port ?? "11434");
   }, [settings.ollama_host, settings.ollama_port]);
+
+  useEffect(() => {
+    if (initialChunkSize.current === undefined) {
+      initialChunkSize.current = settings.chunk_size;
+      initialChunkOverlap.current = settings.chunk_overlap;
+      return;
+    }
+    const sizeChanged = settings.chunk_size !== initialChunkSize.current;
+    const overlapChanged = settings.chunk_overlap !== initialChunkOverlap.current;
+    setChunkSettingsChanged(sizeChanged || overlapChanged);
+  }, [settings.chunk_size, settings.chunk_overlap]);
+
+  const handleReingestAll = useCallback(async () => {
+    if (!activeCollectionId) {
+      addToast("error", "No collection selected");
+      return;
+    }
+    setReingesting(true);
+    try {
+      await invoke("reingest_collection", { collectionId: activeCollectionId });
+      addToast("success", "Re-ingestion started for all documents");
+      setChunkSettingsChanged(false);
+      initialChunkSize.current = settings.chunk_size;
+      initialChunkOverlap.current = settings.chunk_overlap;
+    } catch (error) {
+      addToast("error", "Failed to start re-ingestion: " + String(error));
+    } finally {
+      setReingesting(false);
+    }
+  }, [activeCollectionId, addToast, settings.chunk_size, settings.chunk_overlap]);
 
   const fetchModels = useCallback(async () => {
     try {
@@ -175,6 +214,21 @@ export function SettingsView() {
               Changing these settings requires re-ingesting documents
             </span>
           </div>
+          {chunkSettingsChanged && (
+            <div className="mb-4 flex items-center justify-between rounded-md bg-accent/10 p-3">
+              <span className="text-xs text-accent">
+                Chunk settings changed. Re-ingest documents to apply.
+              </span>
+              <button
+                onClick={handleReingestAll}
+                disabled={reingesting}
+                className="flex items-center gap-1 rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
+              >
+                <RotateCw size={12} className={reingesting ? "animate-spin" : ""} />
+                Re-ingest All
+              </button>
+            </div>
+          )}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="mb-1 block text-xs text-muted-foreground">

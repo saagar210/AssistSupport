@@ -1,14 +1,19 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Search,
   FileText,
-  Lightbulb,
+  Filter,
+  Clock,
+  X,
+  Sparkles,
 } from "lucide-react";
 import { useCollectionStore } from "../stores/collectionStore";
 import { useAppStore } from "../stores/appStore";
 import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
-import type { SearchResult } from "../types";
+import { SearchSkeleton } from "../components/LoadingSkeleton";
+import { EmptyState } from "../components/EmptyState";
+import type { SearchResult, SearchHistoryEntry } from "../types";
 
 type SearchMode = "hybrid" | "semantic" | "keyword";
 
@@ -41,21 +46,9 @@ function highlightText(text: string, query: string): React.ReactNode[] {
   });
 }
 
-function SkeletonCard() {
-  return (
-    <div className="animate-pulse rounded-lg border border-border bg-card p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="h-4 w-24 rounded bg-muted" />
-        <div className="h-4 w-12 rounded bg-muted" />
-      </div>
-      <div className="mb-2 h-3 w-3/4 rounded bg-muted" />
-      <div className="space-y-1.5">
-        <div className="h-3 w-full rounded bg-muted" />
-        <div className="h-3 w-5/6 rounded bg-muted" />
-        <div className="h-3 w-2/3 rounded bg-muted" />
-      </div>
-    </div>
-  );
+function getDocFileType(title: string): string {
+  const ext = title.split(".").pop()?.toLowerCase() ?? "";
+  return ext;
 }
 
 export function SearchView() {
@@ -69,18 +62,53 @@ export function SearchView() {
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSearch = useCallback(async () => {
-    if (!activeCollectionId || !query.trim()) return;
+  // Facets
+  const [showFilters, setShowFilters] = useState(false);
+  const [typeFilters, setTypeFilters] = useState<Set<string>>(new Set());
+
+  // History
+  const [history, setHistory] = useState<SearchHistoryEntry[]>([]);
+
+  // Load search history on mount
+  useEffect(() => {
+    if (!activeCollectionId) return;
+    invoke<SearchHistoryEntry[]>("get_search_history", {
+      collectionId: activeCollectionId,
+      limit: 5,
+    })
+      .then(setHistory)
+      .catch(() => {});
+  }, [activeCollectionId]);
+
+  const handleSearch = useCallback(async (searchQuery?: string) => {
+    const q = searchQuery ?? query;
+    if (!activeCollectionId || !q.trim()) return;
 
     setLoading(true);
     setSearched(true);
+    if (searchQuery) setQuery(searchQuery);
     try {
       const command = SEARCH_COMMANDS[mode];
       const searchResults = await invoke<SearchResult[]>(command, {
         collectionId: activeCollectionId,
-        query: query.trim(),
+        query: q.trim(),
       });
       setResults(searchResults);
+
+      // Save to history
+      invoke("save_search_query", {
+        collectionId: activeCollectionId,
+        query: q.trim(),
+        resultCount: searchResults.length,
+      }).catch(() => {});
+
+      // Refresh history
+      invoke<SearchHistoryEntry[]>("get_search_history", {
+        collectionId: activeCollectionId,
+        limit: 5,
+      })
+        .then(setHistory)
+        .catch(() => {});
     } catch (error) {
       console.error("Search failed:", error);
       setResults([]);
@@ -106,6 +134,56 @@ export function SearchView() {
     [setSelectedDocument, setActiveView],
   );
 
+  const handleMoreLikeThis = useCallback(
+    async (chunkId: string) => {
+      if (!activeCollectionId) return;
+      setLoading(true);
+      setSearched(true);
+      try {
+        const similar = await invoke<SearchResult[]>("find_similar_chunks", {
+          chunkId,
+          collectionId: activeCollectionId,
+          topK: 10,
+        });
+        setResults(similar);
+        setQuery("(similar to selected)");
+      } catch (error) {
+        console.error("Find similar failed:", error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeCollectionId],
+  );
+
+  const handleClearHistory = useCallback(async () => {
+    if (!activeCollectionId) return;
+    await invoke("clear_search_history", { collectionId: activeCollectionId }).catch(() => {});
+    setHistory([]);
+  }, [activeCollectionId]);
+
+  const toggleTypeFilter = useCallback((fileType: string) => {
+    setTypeFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileType)) {
+        next.delete(fileType);
+      } else {
+        next.add(fileType);
+      }
+      return next;
+    });
+  }, []);
+
+  // Get unique file types from results for facet filtering
+  const fileTypes = Array.from(
+    new Set(results.map((r) => getDocFileType(r.document_title)).filter(Boolean))
+  );
+
+  // Apply client-side filters
+  const filteredResults = typeFilters.size > 0
+    ? results.filter((r) => typeFilters.has(getDocFileType(r.document_title)))
+    : results;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Search Header */}
@@ -127,112 +205,199 @@ export function SearchView() {
             />
           </div>
 
-          <div className="mt-3 flex items-center gap-4">
-            <span className="text-xs text-muted-foreground">Mode:</span>
-            {(["hybrid", "semantic", "keyword"] as const).map((m) => (
-              <label
-                key={m}
-                className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  mode === m
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-muted-foreground">Mode:</span>
+              {(["hybrid", "semantic", "keyword"] as const).map((m) => (
+                <label
+                  key={m}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
+                    mode === m
+                      ? "bg-accent/10 text-accent"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="searchMode"
+                    value={m}
+                    checked={mode === m}
+                    onChange={() => setMode(m)}
+                    className="sr-only"
+                  />
+                  {m.charAt(0).toUpperCase() + m.slice(1)}
+                </label>
+              ))}
+            </div>
+
+            {searched && results.length > 0 && (
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                  showFilters || typeFilters.size > 0
                     ? "bg-accent/10 text-accent"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <input
-                  type="radio"
-                  name="searchMode"
-                  value={m}
-                  checked={mode === m}
-                  onChange={() => setMode(m)}
-                  className="sr-only"
-                />
-                {m.charAt(0).toUpperCase() + m.slice(1)}
-              </label>
-            ))}
+                <Filter size={12} />
+                Filters
+                {typeFilters.size > 0 && (
+                  <span className="ml-1 rounded-full bg-accent px-1.5 text-[10px] text-accent-foreground">
+                    {typeFilters.size}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
+
+          {/* Search History Chips */}
+          {!searched && history.length > 0 && (
+            <div className="mt-3 flex items-center gap-2">
+              <Clock size={12} className="text-muted-foreground" />
+              {history.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => handleSearch(h.query)}
+                  className="rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground"
+                >
+                  {h.query}
+                </button>
+              ))}
+              <button
+                onClick={handleClearHistory}
+                className="ml-1 text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Filter Panel */}
+      {showFilters && fileTypes.length > 0 && (
+        <div className="border-b border-border bg-muted/30 px-4 py-2">
+          <div className="mx-auto flex max-w-3xl items-center gap-3">
+            <span className="text-xs text-muted-foreground">File type:</span>
+            {fileTypes.map((ft) => {
+              const colorClass = getFileTypeBadgeColor(ft);
+              const active = typeFilters.has(ft);
+              return (
+                <button
+                  key={ft}
+                  onClick={() => toggleTypeFilter(ft)}
+                  className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-xs transition-colors ${
+                    active
+                      ? "bg-accent/10 text-accent ring-1 ring-accent/30"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className={`inline-block h-2 w-2 rounded-full ${colorClass}`} />
+                  {ft.toUpperCase()}
+                </button>
+              );
+            })}
+            {typeFilters.size > 0 && (
+              <button
+                onClick={() => setTypeFilters(new Set())}
+                className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                <X size={10} />
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Results */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl">
           {loading ? (
-            <div className="space-y-3">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          ) : searched && results.length === 0 ? (
+            <SearchSkeleton />
+          ) : searched && filteredResults.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
               <Search size={32} strokeWidth={1.5} />
               <p className="text-sm">No results found for &quot;{query}&quot;</p>
               <p className="text-xs">Try different keywords or switch search mode</p>
             </div>
           ) : !searched ? (
-            <div className="flex flex-col items-center gap-4 py-12 text-muted-foreground">
-              <Lightbulb size={32} strokeWidth={1.5} />
-              <h3 className="text-sm font-medium text-foreground">Search Tips</h3>
-              <ul className="space-y-1.5 text-xs">
-                <li>Use natural language for semantic search</li>
-                <li>Use specific terms for keyword search</li>
-                <li>Hybrid mode combines both for best results</li>
-                <li>Press Enter to search</li>
-              </ul>
-            </div>
+            <EmptyState
+              icon={Search}
+              title="Search your knowledge"
+              description="Find anything by meaning, not just keywords. Use hybrid mode for best results."
+            />
           ) : (
             <div className="space-y-3">
               <p className="mb-4 text-xs text-muted-foreground">
-                {results.length} result{results.length !== 1 ? "s" : ""} found
+                {filteredResults.length} result{filteredResults.length !== 1 ? "s" : ""} found
+                {typeFilters.size > 0 && ` (filtered from ${results.length})`}
               </p>
-              {results.map((result) => {
-                const colorClass = getFileTypeBadgeColor(
-                  result.document_title.split(".").pop() ?? "",
-                );
+              {filteredResults.map((result) => {
+                const ft = getDocFileType(result.document_title);
+                const colorClass = getFileTypeBadgeColor(ft);
                 const scorePercent = Math.round(result.score * 100);
 
                 return (
                   <div
                     key={result.chunk_id}
-                    onClick={() => handleResultClick(result)}
-                    className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-all hover:border-accent/50 hover:shadow-sm"
+                    className="rounded-lg border border-border bg-card p-4 transition-all hover:border-accent/50 hover:shadow-sm"
                   >
-                    <div className="mb-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-muted-foreground" />
-                        <span className="text-sm font-medium text-card-foreground">
-                          {result.document_title}
-                        </span>
-                        <span
-                          className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase text-white ${colorClass}`}
-                        >
-                          {result.document_title.split(".").pop()}
+                    <div
+                      onClick={() => handleResultClick(result)}
+                      className="cursor-pointer"
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText size={14} className="text-muted-foreground" />
+                          <span className="text-sm font-medium text-card-foreground">
+                            {result.document_title}
+                          </span>
+                          <span
+                            className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase text-white ${colorClass}`}
+                          >
+                            {ft}
+                          </span>
+                        </div>
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                          {scorePercent}%
                         </span>
                       </div>
-                      <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
-                        {scorePercent}%
-                      </span>
+
+                      {result.section_title && (
+                        <p className="mb-1 text-xs text-accent">
+                          {result.section_title}
+                        </p>
+                      )}
+
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        {highlightText(
+                          result.content.length > 300
+                            ? result.content.slice(0, 300) + "..."
+                            : result.content,
+                          query,
+                        )}
+                      </p>
+
+                      {result.page_number && (
+                        <p className="mt-2 text-[10px] text-muted-foreground">
+                          Page {result.page_number}
+                        </p>
+                      )}
                     </div>
 
-                    {result.section_title && (
-                      <p className="mb-1 text-xs text-accent">
-                        {result.section_title}
-                      </p>
-                    )}
-
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {highlightText(
-                        result.content.length > 300
-                          ? result.content.slice(0, 300) + "..."
-                          : result.content,
-                        query,
-                      )}
-                    </p>
-
-                    {result.page_number && (
-                      <p className="mt-2 text-[10px] text-muted-foreground">
-                        Page {result.page_number}
-                      </p>
-                    )}
+                    <div className="mt-2 flex items-center border-t border-border pt-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoreLikeThis(result.chunk_id);
+                        }}
+                        className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <Sparkles size={10} />
+                        More like this
+                      </button>
+                    </div>
                   </div>
                 );
               })}
