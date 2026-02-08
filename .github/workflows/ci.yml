@@ -147,6 +147,23 @@ jobs:
       - name: Validate MemoryKernel pin + matrix + producer manifest sync
         run: pnpm run check:memorykernel-pin
 
+      - name: Validate remote producer manifest hash (authenticated)
+        if: ${{ secrets.MEMORYKERNEL_REPO_READ_TOKEN != '' }}
+        env:
+          ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST: '1'
+          MEMORYKERNEL_GITHUB_TOKEN: ${{ secrets.MEMORYKERNEL_REPO_READ_TOKEN }}
+        run: pnpm run check:memorykernel-pin
+
+      - name: Note remote manifest check status
+        if: ${{ secrets.MEMORYKERNEL_REPO_READ_TOKEN == '' }}
+        run: |
+          {
+            echo "### MemoryKernel Manifest Remote Check"
+            echo
+            echo "- Status: skipped (no \`MEMORYKERNEL_REPO_READ_TOKEN\` configured)"
+            echo "- Local manifest hash integrity checks still enforced."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run MemoryKernel contract tests
         run: pnpm run test:memorykernel-contract
 

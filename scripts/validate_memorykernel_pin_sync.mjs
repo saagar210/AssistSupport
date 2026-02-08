@@ -37,9 +37,9 @@ function parseGitHubRepo(repoUrl) {
   return { owner: match[1], repo: match[2] };
 }
 
-function buildRawManifestUrl(pin) {
+function buildManifestApiUrl(pin) {
   const { owner, repo } = parseGitHubRepo(pin.memorykernel_repo);
-  return `https://raw.githubusercontent.com/${owner}/${repo}/${pin.release_tag}/contracts/integration/v1/producer-contract-manifest.json`;
+  return `https://api.github.com/repos/${owner}/${repo}/contents/contracts/integration/v1/producer-contract-manifest.json?ref=${pin.commit_sha}`;
 }
 
 function validateProducerManifestFields(pin, producerManifest) {
@@ -133,12 +133,25 @@ async function validateRemoteManifestHash(pin, expectedHash) {
     return;
   }
 
-  const remoteUrl = buildRawManifestUrl(pin);
+  const remoteUrl = buildManifestApiUrl(pin);
+  const token = process.env.MEMORYKERNEL_GITHUB_TOKEN?.trim();
+  if (!token) {
+    fail(
+      'ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1 requires MEMORYKERNEL_GITHUB_TOKEN for cross-repo manifest access'
+    );
+  }
+
+  const headers = {
+    Accept: 'application/vnd.github.raw+json',
+    Authorization: `Bearer ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
   let response;
   try {
     response = await fetch(remoteUrl, {
       signal: AbortSignal.timeout(10_000),
-      headers: { Accept: 'application/vnd.github.v3.raw' },
+      headers,
     });
   } catch (error) {
     fail(`failed to fetch producer manifest from ${remoteUrl}: ${error.message}`);

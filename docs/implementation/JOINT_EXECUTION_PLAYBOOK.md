@@ -46,7 +46,7 @@ Operational state (as of this playbook):
 ### Locked joint decisions
 1. `error_code_enum` validation mode is set equality (order-independent).
 2. `service.v3` keeps non-2xx `api_contract_version` absent unless a future RFC explicitly changes this.
-3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks.
+3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks; authenticated remote validation is enforced when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 4. Pin + compatibility matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## 3) Phase Plan (Next 4 Phases)

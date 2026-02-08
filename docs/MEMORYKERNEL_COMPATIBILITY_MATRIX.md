@@ -42,7 +42,8 @@ This document defines the immutable consumer-side integration baseline for Memor
    - Drift fails CI until consumer mapping/tests and governance artifacts are updated together.
 5. Producer manifest integrity governance:
    - Consumer validates mirrored manifest SHA-256 against pin metadata.
-   - Optional strict mode can validate remote producer manifest hash from pinned release tag (`ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1`) in environments with repo access.
+   - Optional strict mode can validate remote producer manifest hash from pinned commit SHA (`ASSISTSUPPORT_VALIDATE_REMOTE_MANIFEST=1`).
+   - In GitHub Actions, remote validation runs automatically when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 
 ## Pin Update Policy
 

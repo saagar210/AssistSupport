@@ -16,7 +16,7 @@ Updated: 2026-02-08
 ## Locked Decisions
 1. `error_code_enum` validation is set equality (order-independent).
 2. Non-2xx envelopes keep `api_contract_version` absent in service.v3 unless a future joint RFC changes this.
-3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks.
+3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks; authenticated remote validation runs when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
 4. Pin + matrix + mirrored producer manifest must be updated atomically in one PR.
 
 ## Service.v3 Cutover Gate (Consumer Criteria)
