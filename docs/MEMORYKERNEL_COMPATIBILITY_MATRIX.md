@@ -7,12 +7,12 @@ This document defines the immutable consumer-side integration baseline for Memor
 ## Baseline Pin
 
 - MemoryKernel repo: `https://github.com/saagar210/MemoryKernel`
-- MemoryKernel release tag: `v0.3.2`
-- MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
-- Expected service contract version: `service.v2`
+- MemoryKernel release tag: `v0.4.0`
+- MemoryKernel commit SHA: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- Expected service contract version: `service.v3`
 - Expected API contract version: `api.v1`
 - Expected integration baseline: `integration/v1`
-- Expected producer manifest SHA-256: `67408e0bcf7d9e88c27c9e54c996c32d23aa915eb572ede46dd5ee6e3728c6f6`
+- Expected producer manifest SHA-256: `79970ec83f37fe0a272cbb62e998ab35628125dbaedaa50c2b9d370d3c53d772`
 - Pin manifest (source of truth): `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
 - Producer manifest mirror: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
 
@@ -20,7 +20,7 @@ This document defines the immutable consumer-side integration baseline for Memor
 
 | AssistSupport version | AssistSupport commit | MemoryKernel tag | MemoryKernel commit | Service contract | API contract | Integration baseline | Status |
 |---|---|---|---|---|---|---|---|
-| 1.0.0 | fd56b4b | v0.3.2 | cf331449e1589581a5dcbb3adecd3e9ae4509277 | service.v2 | api.v1 | integration/v1 | Approved |
+| 1.0.0 | cc6cb15 | v0.4.0 | 7e4806a34b98e6c06ee33fa9f11499a975e7b922 | service.v3 | api.v1 | integration/v1 | Approved |
 
 ## Forward Readiness Note
 

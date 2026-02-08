@@ -7,9 +7,9 @@ Scope: phases 4/5/6 for AssistSupport consumer track
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
 - MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
-- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
+- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
 - Candidate handoff mode available: `service-v3-candidate`
-- Runtime cutover state: `NO-GO` (disabled by policy)
+- Runtime cutover state: `GO` (executed)
 
 ## Phase 4: Rehearsal Closure
 
@@ -85,7 +85,7 @@ pnpm run test:memorykernel-contract
 ## Phase 6: Cutover Governance + Rollback Readiness
 
 ### Objective
-Publish cutover-day governance scaffolding and rollback/incident procedures while runtime cutover remains disabled.
+Publish cutover-day governance scaffolding and rollback/incident procedures while runtime cutover completed.
 
 ### Owner
 AssistSupport (joint decision point with MemoryKernel)
@@ -107,7 +107,7 @@ AssistSupport (joint decision point with MemoryKernel)
 1. `PHASE6_CONSUMER_CUTOVER_GOVERNANCE_2026-02-08.md`
 2. `SERVICE_V3_CUTOVER_DAY_DRY_RUN_SESSION_PLAN.md`
 3. Operations runbook references to phase-6 procedures
-4. Governance checks confirm runtime cutover remains disabled
+4. Governance checks confirm runtime cutover completed
 
 ### Verification Commands
 ```bash
@@ -153,4 +153,4 @@ pnpm run test:ci
 ```
 
 ## Policy Statement
-For this roadmap block, runtime cutover remains disabled. Any runtime contract pin change to `service.v3` is out of scope until explicit joint approval and cutover gate completion.
+For this roadmap block, runtime cutover completed. Any runtime contract pin change to `service.v3` is out of scope until explicit joint approval and cutover gate completion.

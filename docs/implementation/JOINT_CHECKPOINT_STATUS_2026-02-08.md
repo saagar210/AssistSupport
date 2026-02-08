@@ -1,90 +1,43 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (cutover-decision checkpoint closed with explicit NO-GO runtime verdict)
+Updated: 2026-02-08 (runtime cutover complete)
 
 ## Baseline
-- MemoryKernel release tag: `v0.3.2`
-- MemoryKernel commit: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
-- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
+- MemoryKernel release tag: `v0.4.0`
+- MemoryKernel commit: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
 
 ## Checkpoint Results
 - Checkpoint A (manifest mirrored + governance checks): `GO`
 - Checkpoint B (consumer contract suite green): `GO`
-- Checkpoint C (steady-state service.v2 window): `GO` (14-day window approved)
-- Checkpoint D (service.v3 RFC kickoff): `GO` for planning only
+- Checkpoint C (steady-state service.v2 window): `GO`
+- Checkpoint D (service.v3 RFC kickoff): `GO`
 - Rehearsal continuation decision: `GO`
-- Runtime cutover decision: `NO-GO` (explicitly blocked pending joint gate completion)
-- Bilateral sign-off status: `CLOSED` for rehearsal continuation + governance checkpoint
+- Runtime cutover decision: `GO`
+- Bilateral sign-off status: `CLOSED`
 
 ## Locked Decisions
 1. `error_code_enum` validation is set equality (order-independent).
-2. Non-2xx envelopes keep `api_contract_version` absent in service.v3 unless a future joint RFC changes this.
-3. Producer-manifest hash validation is active in AssistSupport CI via pin + mirrored manifest SHA-256 integrity checks; authenticated remote validation runs when `MEMORYKERNEL_REPO_READ_TOKEN` is configured.
-4. MemoryKernel governance bundle validation is active in AssistSupport CI (`pnpm run check:memorykernel-governance`).
-5. Pin + matrix + mirrored producer manifest must be updated atomically in one PR.
+2. Non-2xx envelopes in `service.v3` omit `legacy_error` and `api_contract_version`.
+3. Pin + matrix + mirrored producer manifest update atomically in one PR.
 
-## Service.v3 Cutover Gate (Consumer Criteria)
-1. Producer publishes immutable service.v3 tag/sha with updated manifest/OpenAPI/spec.
-2. AssistSupport updates pin+matrix+mirrored manifest in one PR.
-3. `pnpm run check:memorykernel-pin` passes for service.v3 expectations.
-4. `pnpm run test:memorykernel-contract` passes for service.v3 envelope semantics.
-5. Deterministic fallback remains green for offline/timeout/malformed/version mismatch/non-2xx.
-6. `pnpm run test:ci` passes.
-7. Rollback rehearsal to prior approved baseline succeeds with no Draft-flow regression.
+## Current State
+- Runtime baseline is now `service.v3`.
+- AssistSupport fallback behavior remains deterministic and non-blocking.
+- Rollback execution evidence remains available.
 
-## Joint Risks to Track
-- Dual-compat drift risk during v2/v3 overlap.
-- Release-cadence mismatch risk reducing overlap rehearsal time.
-- Error taxonomy growth risk if lead-time notice policy slips.
+## Latest Validation Run
+Consumer (PASS):
+- `pnpm run check:memorykernel-pin`
+- `pnpm run check:memorykernel-governance`
+- `pnpm run test:memorykernel-contract`
+- `pnpm run test:ci`
 
-## Next Execution Window
-- Phase 1: Governed steady-state service.v2 operation (consumer closeout evidence captured).
-- Phase 2: Consumer runtime hardening and diagnostics maturity (complete).
-- Phase 3: Cross-repo automation (including manifest-hash validation gate, handoff payload validation, and consumer dry-run evidence).
-- Phase 4: rehearsal readiness closed with candidate validation evidence.
-- Phase 5: consumer cutover-prep controls enforced (`boundary` + `cutover-policy` checks active).
-- Phase 6: cutover governance scaffold published (command checklist, rollback criteria, incident template).
-- Consumer cutover-day dry-run execution evidence captured:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md`
-- Consumer sign-off checkpoint packet published:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_2026-02-08.md`
-- Producer sign-off checkpoint packet published:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_PRODUCER_2026-02-08.md`
-- Closure evidence:
-  - Producer sign-off commit: `208efc5b7006f4ac3f12dc0d9d57b8a0f3bbd85d`
-- New cutover-decision checkpoint packet:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_2026-02-08.md`
-- Producer cutover-decision checkpoint packet:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md`
-- Producer cutover-decision alignment commit:
-  - `cf451a7`
-- Producer decision addendum:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
-- Joint gate review packet:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_GATE_REVIEW_2026-02-08.md`
-- Checkpoint mode status:
-  - Cutover-decision checkpoint: `CLOSED` (bilateral decision recorded)
-- Decision record:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
-- Next: keep runtime cutover blocked and only enter Phase 8 after immutable service.v3 runtime target publication + bilateral GO record.
-
-## Latest Validation Run (Consumer + Producer)
-- Consumer commands:
-  - `pnpm run check:memorykernel-handoff:service-v3-candidate` PASS
-  - `pnpm run check:memorykernel-pin` PASS
-  - `pnpm run test:memorykernel-contract` PASS
-  - `pnpm run test:ci` PASS
-- Producer commands:
-  - `cargo fmt --all -- --check` PASS
-  - `cargo clippy --workspace --all-targets --all-features -- -D warnings` PASS
-  - `cargo test --workspace --all-targets --all-features` PASS
-  - `./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
-  - `./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel` PASS
-  - `./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
-  - `./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
-  - `./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline` PASS
-  - `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
-  - `./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel` PASS
-- Bilateral verdict refresh:
-  - Rehearsal continuation: `GO`
-  - Runtime cutover: `NO-GO` (still intentionally blocked by decision policy)
+Producer (PASS):
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-targets --all-features`
+- `./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
+- `./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel`
+- `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel`
+- `./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel`

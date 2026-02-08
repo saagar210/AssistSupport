@@ -780,13 +780,28 @@ mod tests {
     }
 
     fn fixture_typed_error(code: &str, message: &str) -> String {
-        format!(
-            "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
-            INTEGRATION_PIN.expected_service_contract_version, code, message, message
-        )
+        if INTEGRATION_PIN.expected_service_contract_version == "service.v2" {
+            format!(
+                "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}},\"legacy_error\":\"{}\"}}",
+                INTEGRATION_PIN.expected_service_contract_version, code, message, message
+            )
+        } else {
+            format!(
+                "{{\"service_contract_version\":\"{}\",\"error\":{{\"code\":\"{}\",\"message\":\"{}\"}}}}",
+                INTEGRATION_PIN.expected_service_contract_version, code, message
+            )
+        }
     }
 
-    fn assert_non_2xx_envelope_policy(body: &str, expected_code: &str) {
+    fn mismatched_service_contract_version() -> &'static str {
+        if INTEGRATION_PIN.expected_service_contract_version == "service.v3" {
+            "service.v2"
+        } else {
+            "service.v3"
+        }
+    }
+
+    fn assert_non_2xx_envelope_policy(body: &str, expected_code: &str, allow_legacy_error: bool) {
         let value: serde_json::Value =
             serde_json::from_str(body).expect("error fixture should be valid JSON");
         assert_eq!(
@@ -814,13 +829,20 @@ mod tests {
                 .is_some(),
             "error.message must be present"
         );
-        assert!(
-            value
-                .get("legacy_error")
-                .and_then(serde_json::Value::as_str)
-                .is_some(),
-            "legacy_error must be present for service.v2 compatibility"
-        );
+        if INTEGRATION_PIN.expected_service_contract_version == "service.v2" || allow_legacy_error {
+            assert!(
+                value
+                    .get("legacy_error")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some(),
+                "legacy_error must be present for service.v2 compatibility"
+            );
+        } else {
+            assert!(
+                value.get("legacy_error").is_none(),
+                "legacy_error must be absent for service.v3 compatibility"
+            );
+        }
     }
 
     #[tokio::test]
@@ -864,13 +886,16 @@ mod tests {
     async fn preflight_detects_version_mismatch() {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
-            method: "GET",
-            path: "/v1/health",
-            status: 200,
-            body: "{\"service_contract_version\":\"service.v3\",\"api_contract_version\":\"api.v1\",\"data\":{\"status\":\"ok\"}}".to_string(),
-            content_type: "application/json",
-            delay_ms: 0,
-        }]);
+                method: "GET",
+                path: "/v1/health",
+                status: 200,
+                body: format!(
+                    "{{\"service_contract_version\":\"{}\",\"api_contract_version\":\"api.v1\",\"data\":{{\"status\":\"ok\"}}}}",
+                    mismatched_service_contract_version()
+                ),
+                content_type: "application/json",
+                delay_ms: 0,
+            }]);
         set_test_env(&base_url, 500, true);
 
         let status = get_memory_kernel_preflight_status()
@@ -963,13 +988,16 @@ mod tests {
     async fn query_ask_uses_deterministic_fallback_when_preflight_fails() {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
-            method: "GET",
-            path: "/v1/health",
-            status: 200,
-            body: "{\"service_contract_version\":\"service.v3\",\"api_contract_version\":\"api.v1\",\"data\":{\"status\":\"ok\"}}".to_string(),
-            content_type: "application/json",
-            delay_ms: 0,
-        }]);
+                method: "GET",
+                path: "/v1/health",
+                status: 200,
+                body: format!(
+                    "{{\"service_contract_version\":\"{}\",\"api_contract_version\":\"api.v1\",\"data\":{{\"status\":\"ok\"}}}}",
+                    mismatched_service_contract_version()
+                ),
+                content_type: "application/json",
+                delay_ms: 0,
+            }]);
         set_test_env(&base_url, 500, true);
 
         let result = memory_kernel_query_ask("Need policy guidance".to_string())
@@ -994,7 +1022,7 @@ mod tests {
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_error", "validation failed");
-        assert_non_2xx_envelope_policy(&error_body, "validation_error");
+        assert_non_2xx_envelope_policy(&error_body, "validation_error", false);
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1042,7 +1070,7 @@ mod tests {
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");
-        assert_non_2xx_envelope_policy(&error_body, "validation_failed");
+        assert_non_2xx_envelope_policy(&error_body, "validation_failed", false);
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1095,7 +1123,7 @@ mod tests {
         let schema_body = fixture_schema_ok();
         let error_body =
             fixture_transitional_legacy_error("validation_error", "Invalid query", "validation failed");
-        assert_non_2xx_envelope_policy(&error_body, "validation_error");
+        assert_non_2xx_envelope_policy(&error_body, "validation_error", true);
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",
@@ -1142,7 +1170,7 @@ mod tests {
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");
-        assert_non_2xx_envelope_policy(&error_body, "validation_failed");
+        assert_non_2xx_envelope_policy(&error_body, "validation_failed", false);
         let (base_url, handle) = spawn_mock_server(vec![
             MockResponse {
                 method: "GET",

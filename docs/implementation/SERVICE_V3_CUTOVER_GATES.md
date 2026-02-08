@@ -1,90 +1,38 @@
-# Service.v3 Cutover Gates (Consumer)
+# Service.v3 Cutover Gates
 
 Updated: 2026-02-08
-Owner: AssistSupport (joint sign-off with MemoryKernel)
 
-## Scope
-Planning/rehearsal gates for service.v3 adoption. This document does **not** authorize runtime cutover by itself.
-
-## Baseline Context
-- Current production consumer baseline:
-  - `release_tag`: `v0.3.2`
-  - `commit_sha`: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
-  - `service_contract_version`: `service.v2`
-  - `api_contract_version`: `api.v1`
-  - `integration baseline`: `integration/v1`
+## Baseline
+- release_tag: `v0.4.0`
+- commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- service_contract_version: `service.v3`
+- api_contract_version: `api.v1`
 
 ## Required Producer Artifacts
-1. Immutable service.v3 candidate handoff payload JSON at:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json`
-2. Updated service.v3 RFC and rehearsal docs:
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_RFC_DRAFT.md`
-   - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_REHEARSAL_PLAN.md`
-3. Producer verification evidence for candidate:
-   - fmt/clippy/tests
-   - alignment/parity/artifact/smoke/compliance checks
-4. Explicit producer envelope policy statement for service.v3 non-2xx responses.
+1. Producer manifest aligned to runtime baseline.
+2. Stable producer handoff payload (`handoff_mode=stable`).
+3. Green producer verification suite evidence.
 
 ## Required Consumer Evidence
-1. Handoff payload validation evidence:
-   - `/Users/d/Projects/AssistSupport/artifacts/memorykernel-handoff-evidence.json`
-2. Contract evidence artifact:
-   - `/Users/d/Projects/AssistSupport/artifacts/memorykernel-contract-evidence.json`
-3. Updated phase status evidence:
-   - `/Users/d/Projects/AssistSupport/docs/implementation/PHASE_EXECUTION_STATUS_2026-02-08.md`
-4. Rehearsal tracker updates:
-   - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_REHEARSAL_EXECUTION_TRACKER.md`
+1. Atomic pin + matrix + mirrored manifest update.
+2. Green contract suite and full CI.
+3. Updated runtime decision record and checkpoint packet.
+4. Rollback drill evidence against current runtime baseline.
 
-## Exact Commands (Consumer)
-
-### Current pinned baseline validation
-```bash
-pnpm run check:memorykernel-pin
-pnpm run check:memorykernel-governance
-pnpm run check:memorykernel-handoff
-pnpm run test:memorykernel-contract
-pnpm run test:ci
-```
-
-### service.v3 candidate rehearsal validation (no pin update, no runtime cutover)
-```bash
-pnpm run check:memorykernel-handoff:service-v3-candidate
-pnpm run typecheck
-pnpm run test
-pnpm run test:memorykernel-contract
-pnpm run test:ci
-```
-
-### Phase 3 dry-run regression path
-```bash
-pnpm run test:memorykernel-phase3-dry-run
-```
+## Non-2xx Envelope Policy (`service.v3`)
+- Required fields: `service_contract_version`, `error.code`, `error.message`
+- Optional fields: `error.details`
+- Forbidden fields: `legacy_error`, `api_contract_version`
 
 ## Fail-Fast Rollback Conditions
 Rollback immediately to last approved baseline (`v0.3.2` / `cf331449...`) if any condition is true:
-1. Any contract/gov check fails (`check:memorykernel-pin`, `check:memorykernel-governance`, `check:memorykernel-handoff`).
-2. Deterministic fallback behavior regresses for offline/timeout/malformed/version-mismatch/non-2xx.
-3. Draft flow is blocked or degraded due to MemoryKernel state transitions.
-4. Producer handoff payload and consumer expected baseline cannot be reconciled by explicit policy.
+1. Contract mismatch or schema drift.
+2. Deterministic fallback regression.
+3. Preflight no longer passes against intended runtime target.
+4. Any CI gate failure in cutover validation scope.
 
 ## Sign-Off Checklist (AssistSupport + MemoryKernel)
-
-### AssistSupport sign-off
-- [ ] Consumer commands above are green.
-- [ ] Fallback invariants confirmed unchanged.
-- [ ] Evidence artifacts generated and linked.
-- [ ] Cutover risk reviewed and accepted.
-
-### MemoryKernel sign-off
-- [ ] Producer service.v3 candidate artifacts published.
-- [ ] Producer verification evidence attached.
-- [ ] Envelope/error policy confirmed for service.v3.
-- [ ] Rollback coordination path confirmed.
-
-### Joint gate decision
-- [ ] Joint GO/NO-GO documented for rehearsal entry.
-- [ ] Joint GO/NO-GO documented for runtime cutover (separate decision, future step).
-
-## Decision Rule
-- Rehearsal entry: requires both sides green on rehearsal gates.
-- Runtime cutover: requires explicit separate joint approval after rehearsal completion.
+- [x] Joint GO/NO-GO documented for rehearsal entry.
+- [x] Joint GO/NO-GO documented for runtime cutover.
+- [x] Bilateral decision records published.
+- [x] Runtime baseline promotion recorded.

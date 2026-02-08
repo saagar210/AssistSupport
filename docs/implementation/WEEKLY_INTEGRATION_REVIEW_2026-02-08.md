@@ -1,39 +1,24 @@
-# Weekly Integration Review: AssistSupport + MemoryKernel
+# Weekly Integration Review
 
+Review Type: Runtime cutover completion checkpoint  
 Date: 2026-02-08
-Review Type: Week 1 checkpoint (service.v2 steady-state window)
 
-## Checklist
-- [x] Approved baseline unchanged or intentionally updated.
-- [x] Governance checks green in both repos.
-- [x] Proposed producer contract changes reviewed.
-- [x] No unresolved high-severity integration incidents.
-- [x] Owners and next actions confirmed.
+## Baseline
+- MemoryKernel release tag: `v0.4.0`
+- MemoryKernel commit SHA: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
 
-## Baseline Reviewed
-- MemoryKernel release tag: `v0.3.2`
-- MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
-- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
+## Outcomes
+1. Runtime cutover to `service.v3` is complete.
+2. Consumer contract/governance suites are green.
+3. Deterministic fallback remains preserved.
 
-## Evidence
-- AssistSupport:
-  - `pnpm run check:memorykernel-pin` -> PASS
-  - `pnpm run check:memorykernel-governance` -> PASS
-  - `pnpm run test:memorykernel-contract` -> PASS
-- MemoryKernel:
-  - `./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel` -> PASS
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_PHASE1_STABILITY_CLOSEOUT_2026-02-08.md` -> COMPLETE
+## Verification
+- `pnpm run check:memorykernel-pin` PASS
+- `pnpm run check:memorykernel-governance` PASS
+- `pnpm run test:memorykernel-contract` PASS
+- `pnpm run test:ci` PASS
 
-## Decisions Confirmed
-1. Checkpoint C = GO (14-day steady-state service.v2 window).
-2. Checkpoint D = GO for planning only.
-3. Hash validation for mirrored producer manifest is active in AssistSupport CI.
-
-## Risks and Actions
-| Risk | Action | Owner | Due |
-|---|---|---|---|
-| Remote manifest fetch transient CI failures | Retry policy + keep local hash parity check for dev loops | AssistSupport | Next checkpoint |
-| service.v3 overlap drift | Execute rehearsal plan before any cutover | Joint | Before cutover |
-
-## Next Review Target
-- 2026-02-15 (or earlier if baseline changes)
+## Decision
+- Runtime posture: GO
+- Follow-up mode: steady-state monitoring + normal release cadence
