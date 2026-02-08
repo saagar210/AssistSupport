@@ -229,7 +229,7 @@ pub async fn chat_stream(
                         full_response.push_str(content);
                         let _ = app_handle.emit(
                             "chat-token",
-                            serde_json::json!({"content": content}),
+                            serde_json::json!({"token": content}),
                         );
                     }
                 }

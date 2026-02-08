@@ -169,11 +169,19 @@ pub async fn send_chat_message(
         saved_citations
     };
 
-    // 8. Emit chat-complete event
+    // 8. Emit chat-complete event with full message object
+    let assistant_message = Message {
+        id: assistant_msg_id,
+        conversation_id: conversation_id.clone(),
+        role: "assistant".to_string(),
+        content: full_response,
+        created_at: msg_now,
+    };
+
     let _ = app_handle.emit(
         "chat-complete",
         serde_json::json!({
-            "message_id": assistant_msg_id,
+            "message": assistant_message,
             "citations": citations,
         }),
     );
