@@ -1,0 +1,46 @@
+{
+  "executed_at": "2026-02-08T20:25:59.033Z",
+  "completed_at": "2026-02-08T20:26:04.920Z",
+  "total_checks": 6,
+  "completed_checks": 6,
+  "passed_checks": 6,
+  "failed": false,
+  "checks": [
+    {
+      "command": "pnpm run check:memorykernel-governance",
+      "duration_ms": 146,
+      "exit_code": 0,
+      "passed": true
+    },
+    {
+      "command": "pnpm run check:memorykernel-handoff",
+      "duration_ms": 148,
+      "exit_code": 0,
+      "passed": true
+    },
+    {
+      "command": "pnpm run check:memorykernel-handoff:service-v3-candidate",
+      "duration_ms": 145,
+      "exit_code": 0,
+      "passed": true
+    },
+    {
+      "command": "pnpm run check:llm-golden-set",
+      "duration_ms": 285,
+      "exit_code": 0,
+      "passed": true
+    },
+    {
+      "command": "pnpm run check:rollback-readiness",
+      "duration_ms": 211,
+      "exit_code": 0,
+      "passed": true
+    },
+    {
+      "command": "pnpm run test:security-regression",
+      "duration_ms": 4951,
+      "exit_code": 0,
+      "passed": true
+    }
+  ]
+}

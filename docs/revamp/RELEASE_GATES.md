@@ -55,12 +55,14 @@ Date: 2026-02-08
 1. Candidate/stable handoff validations pass.
 2. Failure-mode playbook tested.
 3. Ops diagnostics and recovery flows documented.
+4. `pnpm run check:phase6-ops-hardening` passes with fresh evidence.
 
 ## Gate G7: Security + Compliance Closure
 ### Exit Requirements
 1. No unresolved high-severity security findings.
 2. Control-to-evidence matrix complete.
 3. Security signoff packet complete.
+4. `pnpm run test:security-regression` passes on release candidate branch.
 
 ## Gate G8: Release Candidate + Handoff
 ### Exit Requirements
@@ -78,6 +80,9 @@ pnpm run check:memorykernel-governance
 pnpm run check:memorykernel-handoff
 pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run check:llm-golden-set
+pnpm run check:rollback-readiness
+pnpm run check:phase6-ops-hardening
+pnpm run test:security-regression
 pnpm run test:memorykernel-contract
 pnpm run test:memorykernel-phase3-dry-run
 pnpm run test:ci
