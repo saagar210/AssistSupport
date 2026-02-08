@@ -142,6 +142,24 @@ function main() {
         'Rollback Success Checklist',
       ],
     },
+    {
+      relPath: 'docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_SESSION_PLAN.md',
+      snippets: [
+        '## Session Goal',
+        '## Joint Agenda (60 minutes)',
+        'pnpm run test:memorykernel-cutover-dry-run',
+        'Runtime cutover verdict: `NO-GO`',
+      ],
+    },
+    {
+      relPath: 'docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md',
+      snippets: [
+        '## Commands Executed',
+        'pnpm run test:memorykernel-cutover-dry-run',
+        '- Rehearsal continuation: `GO`',
+        '- Runtime cutover: `NO-GO`',
+      ],
+    },
   ];
 
   for (const doc of requiredDocs) {
@@ -160,6 +178,7 @@ function main() {
     'pnpm run check:memorykernel-handoff:service-v3-candidate',
     'pnpm run check:memorykernel-boundary',
     'pnpm run check:memorykernel-cutover-policy',
+    'pnpm run test:memorykernel-cutover-dry-run',
     'pnpm run test:memorykernel-contract',
   ]) {
     requireIncludes(operations, 'docs/OPERATIONS.md', snippet);

@@ -19,6 +19,7 @@
     "check:memorykernel-cutover-policy": "node scripts/validate_memorykernel_cutover_policy.mjs",
     "test:memorykernel-contract": "pnpm run check:memorykernel-pin && pnpm run check:memorykernel-governance && pnpm run check:memorykernel-boundary && pnpm run check:memorykernel-cutover-policy && vitest run src/hooks/useInitialize.test.ts src/hooks/useMemoryKernelEnrichment.test.ts && (cd src-tauri && cargo test memory_kernel -- --nocapture) && node scripts/generate_memorykernel_contract_evidence.mjs",
     "test:memorykernel-phase3-dry-run": "ASSISTSUPPORT_REQUIRE_HANDOFF_PAYLOAD=1 pnpm run check:memorykernel-handoff && pnpm run test:memorykernel-contract",
+    "test:memorykernel-cutover-dry-run": "pnpm run check:memorykernel-handoff:service-v3-candidate && pnpm run check:memorykernel-pin && pnpm run test:memorykernel-contract && pnpm run test:ci",
     "test:e2e:smoke": "playwright test --config=playwright.config.ts --grep @smoke",
     "test:e2e:ops": "playwright test --config=playwright.config.ts e2e/ops.spec.ts",
     "test:ci": "vitest run && cd src-tauri && cargo test",

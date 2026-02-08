@@ -105,8 +105,9 @@ AssistSupport (joint decision point with MemoryKernel)
 
 ### Deliverables
 1. `PHASE6_CONSUMER_CUTOVER_GOVERNANCE_2026-02-08.md`
-2. Operations runbook references to phase-6 procedures
-3. Governance checks confirm runtime cutover remains disabled
+2. `SERVICE_V3_CUTOVER_DAY_DRY_RUN_SESSION_PLAN.md`
+3. Operations runbook references to phase-6 procedures
+4. Governance checks confirm runtime cutover remains disabled
 
 ### Verification Commands
 ```bash
@@ -145,6 +146,7 @@ pnpm run check:memorykernel-handoff
 pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run check:memorykernel-boundary
 pnpm run check:memorykernel-cutover-policy
+pnpm run test:memorykernel-cutover-dry-run
 pnpm run test:memorykernel-contract
 pnpm run test:memorykernel-phase3-dry-run
 pnpm run test:ci

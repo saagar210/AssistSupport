@@ -17,7 +17,7 @@ Owner: AssistSupport
 | Phase 3: Cross-repo automation prep | Joint (consumer-side implementation) | Complete (consumer-side) | `/Users/d/Projects/AssistSupport/scripts/validate_memorykernel_pin_sync.mjs`, `/Users/d/Projects/AssistSupport/scripts/validate_memorykernel_governance_bundle.mjs`, `/Users/d/Projects/AssistSupport/scripts/validate_memorykernel_handoff_payload.mjs`, `/Users/d/Projects/AssistSupport/docs/implementation/PHASE3_CONSUMER_DRY_RUN_2026-02-08.md` | Consumer now validates producer handoff payload alignment and has executed dry-run evidence path. |
 | Phase 4: service.v3 rehearsal readiness | Joint | Complete (consumer scope) | `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CONSUMER_REHEARSAL_PLAN.md`, `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_REHEARSAL_EXECUTION_TRACKER.md`, `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_GATES.md`, `/Users/d/Projects/AssistSupport/docs/implementation/PHASE4_CONSUMER_REHEARSAL_CLOSEOUT_2026-02-08.md` | Candidate handoff validation and rehearsal entry evidence are complete; runtime cutover remains NO-GO. |
 | Phase 5: consumer cutover-prep controls | AssistSupport | Complete | `/Users/d/Projects/AssistSupport/scripts/validate_memorykernel_boundary.mjs`, `/Users/d/Projects/AssistSupport/scripts/validate_memorykernel_cutover_policy.mjs`, `/Users/d/Projects/AssistSupport/docs/implementation/PHASE5_CONSUMER_CUTOVER_PREP_2026-02-08.md` | Unilateral consumer controls are now enforced in contract flow; adapter-boundary and cutover-policy checks are active. |
-| Phase 6: cutover governance scaffold | AssistSupport | Complete (planning scaffold) | `/Users/d/Projects/AssistSupport/docs/implementation/PHASE6_CONSUMER_CUTOVER_GOVERNANCE_2026-02-08.md`, `/Users/d/Projects/AssistSupport/docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN.md` | Cutover-day checklist, rollback success criteria, and incident template are published; runtime cutover remains disabled by policy. |
+| Phase 6: cutover governance scaffold | AssistSupport | Complete (planning scaffold + consumer dry-run evidence) | `/Users/d/Projects/AssistSupport/docs/implementation/PHASE6_CONSUMER_CUTOVER_GOVERNANCE_2026-02-08.md`, `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_SESSION_PLAN.md`, `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md`, `/Users/d/Projects/AssistSupport/docs/implementation/REMAINING_ROADMAP_EXECUTION_PLAN.md` | Cutover-day checklist, session plan, dry-run execution evidence, rollback criteria, and incident template are published; runtime cutover remains disabled by policy. |
 
 ## Verification Snapshot (Consumer)
 ```bash
@@ -28,5 +28,5 @@ pnpm run test:ci
 ```
 
 ## Open Items
-1. Obtain joint AssistSupport + MemoryKernel sign-off artifact for rehearsal continuation GO.
+1. Obtain joint AssistSupport + MemoryKernel sign-off artifact for rehearsal continuation GO using dry-run evidence now captured.
 2. Keep runtime cutover blocked until explicit joint approval and cutover-gate completion evidence.

@@ -43,3 +43,6 @@ Updated: 2026-02-08 (phase 4 closeout + phase 5/6 consumer scaffolding)
 - Phase 4: rehearsal readiness closed with candidate validation evidence.
 - Phase 5: consumer cutover-prep controls enforced (`boundary` + `cutover-policy` checks active).
 - Phase 6: cutover governance scaffold published (command checklist, rollback criteria, incident template).
+- Consumer cutover-day dry-run execution evidence captured:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md`
+- Next: obtain joint sign-off evidence package and keep runtime cutover blocked until gates close.

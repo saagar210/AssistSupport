@@ -15,6 +15,7 @@ Do not execute this checklist for production cutover until joint GO is documente
    - `config/memorykernel-producer-manifest.json`
    - `docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md`
 3. Run:
+   - `pnpm run test:memorykernel-cutover-dry-run`
    - `pnpm run check:memorykernel-pin`
    - `pnpm run check:memorykernel-governance`
    - `pnpm run check:memorykernel-handoff`
@@ -61,3 +62,6 @@ Do not execute this checklist for production cutover until joint GO is documente
 - Resolution summary:
 - Follow-up actions:
 - Owner assignments and due dates:
+
+## Reference Session Plan
+- `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_SESSION_PLAN.md`

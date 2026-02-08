@@ -125,6 +125,12 @@ pnpm run check:memorykernel-boundary
 pnpm run check:memorykernel-cutover-policy
 ```
 
+### MemoryKernel cutover-day dry-run command (consumer)
+Use this to execute the joint rehearsal command block before any cutover decision.
+```bash
+pnpm run test:memorykernel-cutover-dry-run
+```
+
 ## 3) Backup/Restore Validation
 
 Use this flow before releases and after backup/import logic changes.
