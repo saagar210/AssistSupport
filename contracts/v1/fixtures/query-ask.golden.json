@@ -1,0 +1,62 @@
+{
+  "contract_version": "cli.v1",
+  "context_package_id": "<context_package_id>",
+  "generated_at": "<rfc3339>",
+  "query": {
+    "text": "Am I allowed to use a USB drive?",
+    "actor": "user",
+    "action": "use",
+    "resource": "usb_drive",
+    "as_of": "<rfc3339>"
+  },
+  "determinism": {
+    "ruleset_version": "ordering.v1",
+    "snapshot_id": "<snapshot_id>",
+    "tie_breakers": [
+      "scope_specificity desc",
+      "authority_rank desc",
+      "truth_status_rank desc",
+      "confidence desc",
+      "effective_at desc",
+      "created_at desc",
+      "memory_id asc",
+      "memory_version_id asc"
+    ]
+  },
+  "answer": {
+    "result": "deny",
+    "why": "Highest-precedence active constraint denies the action"
+  },
+  "selected_items": [
+    {
+      "rank": 1,
+      "memory_version_id": "<ulid>",
+      "memory_id": "<ulid>",
+      "record_type": "constraint",
+      "version": 1,
+      "truth_status": "asserted",
+      "confidence": "<confidence>",
+      "authority": "authoritative",
+      "why": {
+        "included": true,
+        "reasons": [
+          "scope specificity score=3 for actor/action/resource",
+          "passed active filters (not retracted, not superseded)"
+        ],
+        "rule_scores": {
+          "scope_match": 1.0,
+          "authority_rank": 3,
+          "truth_status_rank": 4,
+          "confidence": "<confidence>"
+        }
+      }
+    }
+  ],
+  "excluded_items": [],
+  "ordering_trace": [
+    "filter: record_type=constraint",
+    "filter: scope_match(actor, action, resource)",
+    "exclude: retracted and superseded",
+    "sort: precedence tuple with deterministic tie-breakers"
+  ]
+}

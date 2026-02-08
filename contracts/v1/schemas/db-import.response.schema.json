@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-import-response",
+  "type": "object",
+  "required": ["contract_version", "in_dir", "skip_existing", "summary"],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "in_dir": { "type": "string" },
+    "skip_existing": { "type": "boolean" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "imported_records",
+        "skipped_existing_records",
+        "imported_context_packages",
+        "skipped_existing_context_packages"
+      ],
+      "properties": {
+        "imported_records": { "type": "integer" },
+        "skipped_existing_records": { "type": "integer" },
+        "imported_context_packages": { "type": "integer" },
+        "skipped_existing_context_packages": { "type": "integer" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

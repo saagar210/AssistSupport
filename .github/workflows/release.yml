@@ -1,0 +1,73 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer release version (for example 0.2.0)"
+        required: true
+        type: string
+
+jobs:
+  validate-and-package:
+    name: Validate Release Candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate SemVer input
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "invalid semver version: $VERSION"
+            exit 1
+          fi
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Integration contract parity (trilogy)
+        run: |
+          if [[ -d "$GITHUB_WORKSPACE/../OutcomeMemory" && -d "$GITHUB_WORKSPACE/../MultiAgentCenter" ]]; then
+            ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE"
+          else
+            ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE" --allow-missing
+          fi
+
+      - name: Trilogy compatibility artifact validation (consumer gate)
+        run: |
+          if [[ -d "$GITHUB_WORKSPACE/../OutcomeMemory" && -d "$GITHUB_WORKSPACE/../MultiAgentCenter" ]]; then
+            ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE"
+          else
+            ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE" --allow-missing
+          fi
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint (deny warnings)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+
+      - name: Outcome benchmark guardrails (host CLI)
+        run: >
+          cargo run -p memory-kernel-cli -- outcome benchmark run
+          --volume 100 --volume 500 --volume 2000
+          --repetitions 3
+          --append-p95-max-ms 8
+          --replay-p95-max-ms 250
+          --gate-p95-max-ms 8
+          --json
+
+      - name: Build release artifacts
+        run: cargo build --workspace --release

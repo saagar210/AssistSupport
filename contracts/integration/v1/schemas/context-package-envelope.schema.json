@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "": "https://memorykernel.dev/contracts/integration/v1/context-package-envelope.schema.json",
+  "title": "ContextPackageEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "package_slot",
+    "source",
+    "context_package",
+    "package_hash"
+  ],
+  "properties": {
+    "package_slot": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "package_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_package": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "context_package_id",
+        "generated_at",
+        "query",
+        "determinism",
+        "answer",
+        "selected_items",
+        "excluded_items",
+        "ordering_trace"
+      ],
+      "properties": {
+        "context_package_id": { "type": "string", "minLength": 1 },
+        "generated_at": { "type": "string", "minLength": 1 },
+        "query": { "type": "object" },
+        "determinism": { "type": "object" },
+        "answer": { "type": "object" },
+        "selected_items": { "type": "array" },
+        "excluded_items": { "type": "array" },
+        "ordering_trace": { "type": "array" }
+      }
+    }
+  }
+}

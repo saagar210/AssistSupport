@@ -1,0 +1,9 @@
+{
+  "contract_version": "cli.v1",
+  "current_version": 0,
+  "target_version": 2,
+  "pending_versions": [1, 2],
+  "up_to_date": false,
+  "inferred_from_legacy": false
+}
+

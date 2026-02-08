@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "memory-list-response",
+  "type": "object",
+  "required": ["contract_version", "records"],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "records": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "additionalProperties": false
+}
+

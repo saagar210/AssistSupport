@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-backup-response",
+  "type": "object",
+  "required": ["contract_version", "backup_path", "status"],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "backup_path": { "type": "string" },
+    "status": { "const": "ok" }
+  },
+  "additionalProperties": false
+}
+

@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-migrate-response",
+  "type": "object",
+  "required": ["contract_version", "dry_run", "target_version"],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "dry_run": { "type": "boolean" },
+    "current_version": { "type": "integer" },
+    "target_version": { "type": "integer" },
+    "would_apply_versions": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "inferred_from_legacy": { "type": "boolean" },
+    "before_version": { "type": "integer" },
+    "applied_versions": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "after_version": { "type": "integer" },
+    "up_to_date": { "type": "boolean" }
+  },
+  "anyOf": [
+    {
+      "required": ["dry_run", "current_version", "would_apply_versions"],
+      "properties": { "dry_run": { "const": true } }
+    },
+    {
+      "required": ["dry_run", "before_version", "applied_versions", "after_version", "up_to_date"],
+      "properties": { "dry_run": { "const": false } }
+    }
+  ],
+  "additionalProperties": false
+}
+

@@ -1,0 +1,83 @@
+openapi: 3.1.0
+info:
+  title: Memory Kernel Local Service
+  version: service.v1
+servers:
+  - url: http://127.0.0.1:4010
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service health
+  /v1/openapi:
+    get:
+      summary: OpenAPI artifact
+      responses:
+        "200":
+          description: OpenAPI YAML
+  /v1/db/schema-version:
+    post:
+      summary: Inspect schema status
+      responses:
+        "200":
+          description: Schema status envelope
+  /v1/db/migrate:
+    post:
+      summary: Migrate database or dry-run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dry_run]
+              properties:
+                dry_run:
+                  type: boolean
+      responses:
+        "200":
+          description: Migrate response envelope
+  /v1/memory/add/constraint:
+    post:
+      summary: Add constraint memory
+      responses:
+        "200":
+          description: Added memory record envelope
+  /v1/memory/add/summary:
+    post:
+      summary: Add summary memory (decision/preference/event/outcome)
+      responses:
+        "200":
+          description: Added summary memory record envelope
+  /v1/memory/link:
+    post:
+      summary: Add memory link
+      responses:
+        "200":
+          description: Added link envelope
+  /v1/query/ask:
+    post:
+      summary: Query and persist context package
+      responses:
+        "200":
+          description: Context package envelope
+  /v1/query/recall:
+    post:
+      summary: Recall query and persist mixed-record context package
+      responses:
+        "200":
+          description: Context package envelope
+  /v1/context/{context_package_id}:
+    get:
+      summary: Fetch persisted context package
+      parameters:
+        - in: path
+          name: context_package_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Context package envelope

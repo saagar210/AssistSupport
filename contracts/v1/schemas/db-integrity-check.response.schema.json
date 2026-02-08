@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "db-integrity-check-response",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "quick_check_ok",
+    "quick_check_message",
+    "foreign_key_violations",
+    "schema_status"
+  ],
+  "properties": {
+    "contract_version": { "const": "cli.v1" },
+    "quick_check_ok": { "type": "boolean" },
+    "quick_check_message": { "type": "string" },
+    "foreign_key_violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "rowid", "parent", "fk_index"],
+        "properties": {
+          "table": { "type": "string" },
+          "rowid": { "type": "integer" },
+          "parent": { "type": "string" },
+          "fk_index": { "type": "integer" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "schema_status": {
+      "type": "object",
+      "required": ["current_version", "target_version", "pending_versions", "inferred_from_legacy"],
+      "properties": {
+        "current_version": { "type": "integer" },
+        "target_version": { "type": "integer" },
+        "pending_versions": { "type": "array", "items": { "type": "integer" } },
+        "inferred_from_legacy": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+
