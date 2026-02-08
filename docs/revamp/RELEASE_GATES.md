@@ -71,6 +71,14 @@ Date: 2026-02-08
 3. GO/NO-GO decision record complete.
 4. Work-machine handoff runbook validated.
 
+## Gate Closure Records (Current)
+1. G4 closed with:
+   - `docs/revamp/evidence/PHASE4_UX_CLOSURE_2026-02-08.md`
+2. G5 closed with:
+   - `docs/revamp/evidence/PHASE5_LLM_GOVERNANCE_CLOSURE_2026-02-08.md`
+3. G6 closed with:
+   - `docs/revamp/evidence/PHASE6_OPS_HARDENING_CLOSURE_2026-02-08.md`
+
 ## Mandatory Verification Suite (for gate transitions)
 ```bash
 pnpm run typecheck

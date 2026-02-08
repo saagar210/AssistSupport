@@ -1,6 +1,6 @@
 # UX Rebuild Log (Phase 4)
 
-Status: In Progress  
+Status: Complete  
 Date: 2026-02-08
 
 ## Scope
@@ -38,7 +38,10 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 29. Extended Operator Scorecard with queue telemetry (at-risk rate, unassigned rate, workload skew) so operations risk is scored alongside response-quality posture.
 30. Added Draft task presets (Incident triage, Access request, Change/rollout support) to reduce manual framing and standardize operator intake.
 
+## Closure Evidence
+1. `docs/revamp/evidence/PHASE4_UX_CLOSURE_2026-02-08.md`
+2. `docs/revamp/evidence/PHASE4_UX_SLICE_10_SUMMARY_2026-02-08.md`
+3. `docs/revamp/MAC_OPERATOR_QA_CHECKLIST.md`
+
 ## Next
-1. Start Phase 6 integration/ops hardening checklist execution against the refreshed Phase 5 governance gates.
-2. Add runtime-target service.v3 candidate scenarios into golden-set cases before cutover decision mode advances.
-3. Continue full workflow rehearsal on compact MacBook layouts with updated Draft presets and queue-aware scorecard guidance.
+1. Start Phase 7 security/compliance closure pack using the completed UX + governance + ops evidence bundle from Phases 4-6.

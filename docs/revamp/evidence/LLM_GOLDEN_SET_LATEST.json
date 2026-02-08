@@ -1,7 +1,7 @@
 {
   "suite_name": "assistsupport-phase5-golden-set-v1",
   "source_cases_path": "docs/revamp/evidence/LLM_GOLDEN_SET_CASES_2026-02-08.json",
-  "evaluated_at": "2026-02-08T20:25:59.725Z",
+  "evaluated_at": "2026-02-08T20:32:19.774Z",
   "sample_count": 10,
   "passed_cases": 10,
   "failed_cases": 0,

@@ -22,7 +22,12 @@ Date: 2026-02-08
 | R-008 | Historical docs create conflicting decisions | Medium | Team references stale implementation docs | `docs/revamp/` set as source of truth; ADR supersession policy | Archive stale docs with superseded note | Program Owner |
 
 ## Resolved Risks (to be appended during execution)
-- None yet in revamp track.
+1. R-003 mitigation execution confirmed via:
+   - `docs/revamp/evidence/PHASE4_UX_CLOSURE_2026-02-08.md`
+2. R-004 mitigation execution confirmed via:
+   - `docs/revamp/evidence/PHASE5_LLM_GOVERNANCE_CLOSURE_2026-02-08.md`
+3. R-005/R-006 mitigation execution confirmed via:
+   - `docs/revamp/evidence/PHASE6_OPS_HARDENING_CLOSURE_2026-02-08.md`
 
 ## Risk Review Cadence
 1. Update on each phase closeout.

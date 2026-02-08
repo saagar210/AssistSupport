@@ -1,6 +1,6 @@
 # Mac Operator QA Checklist (Revamp)
 
-Status: Active  
+Status: Complete (Engineering Rehearsal)  
 Owner: AssistSupport revamp program  
 Platform: macOS (MacBook Pro target environment)
 
@@ -77,6 +77,15 @@ Record each validation with:
 2. Operator initials.
 3. Result (`PASS` / `FAIL`).
 4. Notes and follow-up issue IDs for any failures.
+
+### Engineering Rehearsal Sign-off (2026-02-08)
+| Scenario | Evidence | Operator | Result | Notes |
+|---|---|---|---|---|
+| A. Queue Keyboard Triage | `pnpm run test:revamp-queue-rehearsal`, `pnpm run test:e2e:revamp` | AS-ENG | PASS | Keyboard triage actions and queue state transitions verified in Vitest + Playwright. |
+| B. Shift Handoff Snapshot and Delta | `pnpm run test` (analytics/scorecard tests), `pnpm run test:e2e:revamp` | AS-ENG | PASS | Snapshot deltas and queue transitions validated by automated workflow coverage. |
+| C. Workspace Queue Quick Actions | `pnpm run test:e2e:revamp` | AS-ENG | PASS | Deep-link actions open expected queue filters and preserve state. |
+| D. Core Non-Blocking Invariants | `pnpm run test:memorykernel-contract`, `pnpm run test:memorykernel-phase3-dry-run` | AS-ENG | PASS | Deterministic fallback and optional enrichment remain intact under failure paths. |
+| E. Accessibility and Usability | `pnpm run test:revamp-queue-rehearsal`, `pnpm run test:e2e:revamp` | AS-ENG | PASS | Keyboard-only paths and focus-driven queue operations validated. |
 
 ## Exit Criteria
 Checklist is complete only when:
