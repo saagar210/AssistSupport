@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage: verify_contract_parity.sh [options]
 
-Compare MemoryKernel integration contract pack against sibling repos.
+Compare MemoryKernel integration contract pack against OutcomeMemory and MultiAgentCenter.
 
 Options:
   --canonical-root <path>   Path to MemoryKernel repo root (default: script/..)
@@ -77,13 +77,21 @@ else
 fi
 
 if [[ -z "$outcome_root" ]]; then
-  outcome_root=$(resolve_path "$canonical_root/../OutcomeMemory")
+  if [[ -d "$canonical_root/components/outcome-memory" ]]; then
+    outcome_root=$(resolve_path "$canonical_root/components/outcome-memory")
+  else
+    outcome_root=$(resolve_path "$canonical_root/../OutcomeMemory")
+  fi
 else
   outcome_root=$(resolve_path "$outcome_root")
 fi
 
 if [[ -z "$multi_agent_root" ]]; then
-  multi_agent_root=$(resolve_path "$canonical_root/../MultiAgentCenter")
+  if [[ -d "$canonical_root/components/multi-agent-center" ]]; then
+    multi_agent_root=$(resolve_path "$canonical_root/components/multi-agent-center")
+  else
+    multi_agent_root=$(resolve_path "$canonical_root/../MultiAgentCenter")
+  fi
 else
   multi_agent_root=$(resolve_path "$multi_agent_root")
 fi

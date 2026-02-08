@@ -22,7 +22,7 @@ time.workspace = true
 ulid.workspace = true
 memory-kernel-core = { path = "../memory-kernel-core" }
 memory-kernel-store-sqlite = { path = "../memory-kernel-store-sqlite" }
-memory-kernel-outcome-cli = { path = "../../../OutcomeMemory/crates/memory-kernel-outcome-cli" }
+memory-kernel-outcome-cli = { path = "../../components/outcome-memory/crates/memory-kernel-outcome-cli" }
 rand = "0.8"
 
 [dev-dependencies]

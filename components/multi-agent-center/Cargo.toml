@@ -22,10 +22,10 @@ rust-version = "1.78"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 hex = "0.4"
-memory-kernel-core = { path = "../MemoryKernel/crates/memory-kernel-core" }
-memory-kernel-store-sqlite = { path = "../MemoryKernel/crates/memory-kernel-store-sqlite" }
-memory-kernel-api = { path = "../MemoryKernel/crates/memory-kernel-api" }
-memory-kernel-outcome-core = { path = "../OutcomeMemory/crates/memory-kernel-outcome-core" }
+memory-kernel-core = { path = "../../crates/memory-kernel-core" }
+memory-kernel-store-sqlite = { path = "../../crates/memory-kernel-store-sqlite" }
+memory-kernel-api = { path = "../../crates/memory-kernel-api" }
+memory-kernel-outcome-core = { path = "../outcome-memory/crates/memory-kernel-outcome-core" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }

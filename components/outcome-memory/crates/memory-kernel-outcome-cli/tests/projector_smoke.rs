@@ -23,26 +23,34 @@ fn fixture_memory_id() -> MemoryId {
 }
 
 fn mk_output(db_path: &Path, args: &[&str]) -> Output {
-    let binary = match std::env::var("CARGO_BIN_EXE_mk") {
+    let binary = match std::env::var("CARGO_BIN_EXE_mk_outcome") {
         Ok(value) => value,
         Err(_) => {
             let workspace_binary =
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/mk");
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/mk-outcome");
             if !workspace_binary.exists() {
                 let build_status = Command::new("cargo")
-                    .args(["build", "-p", "memory-kernel-outcome-cli", "--bin", "mk"])
+                    .args([
+                        "build",
+                        "-p",
+                        "memory-kernel-outcome-cli",
+                        "--bin",
+                        "mk-outcome",
+                    ])
                     .status();
                 match build_status {
                     Ok(status) if status.success() => {}
                     Ok(status) => {
-                        panic!("failed building mk binary for smoke tests (status={status})")
+                        panic!(
+                            "failed building mk-outcome binary for smoke tests (status={status})"
+                        )
                     }
                     Err(err) => panic!("failed invoking cargo build for smoke tests: {err}"),
                 }
             }
             match workspace_binary.into_os_string().into_string() {
                 Ok(value) => value,
-                Err(_) => panic!("workspace mk binary path is not valid UTF-8"),
+                Err(_) => panic!("workspace mk-outcome binary path is not valid UTF-8"),
             }
         }
     };
@@ -55,7 +63,7 @@ fn mk_output(db_path: &Path, args: &[&str]) -> Output {
 
     match command.output() {
         Ok(output) => output,
-        Err(err) => panic!("failed to execute mk command {:?}: {err}", args),
+        Err(err) => panic!("failed to execute mk-outcome command {:?}: {err}", args),
     }
 }
 

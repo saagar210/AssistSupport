@@ -104,7 +104,12 @@ fn canonical_contract_root(repo: &Path) -> PathBuf {
     if let Ok(raw) = env::var("MEMORYKERNEL_CANONICAL_CONTRACTS") {
         return PathBuf::from(raw);
     }
-    repo.join("../MemoryKernel/contracts/integration")
+    let monorepo_path = repo.join("../../contracts/integration");
+    if monorepo_path.exists() {
+        monorepo_path
+    } else {
+        repo.join("../MemoryKernel/contracts/integration")
+    }
 }
 
 fn read_required_str<'a>(value: &'a Value, path: &str) -> &'a str {

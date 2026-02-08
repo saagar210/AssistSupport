@@ -5,24 +5,14 @@ on:
   pull_request:
 
 jobs:
-  rust:
-    name: Rust Quality Gates
+  trilogy:
+    name: Trilogy Monorepo Gates
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Checkout OutcomeMemory dependency
-        uses: actions/checkout@v4
-        with:
-          repository: saagar210/OutcomeMemory
-          path: OutcomeMemory
-
-      - name: Link sibling path dependencies
-        run: |
-          ln -sfn "$GITHUB_WORKSPACE/OutcomeMemory" "$GITHUB_WORKSPACE/../OutcomeMemory"
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -32,21 +22,11 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Integration contract parity (trilogy)
-        run: |
-          if [[ -d "$GITHUB_WORKSPACE/../OutcomeMemory" && -d "$GITHUB_WORKSPACE/../MultiAgentCenter" ]]; then
-            ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE"
-          else
-            ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE" --allow-missing
-          fi
+      - name: Contract parity (canonical v1 pack)
+        run: ./scripts/verify_contract_parity.sh --canonical-root "$GITHUB_WORKSPACE"
 
-      - name: Trilogy compatibility artifact validation (consumer gate)
-        run: |
-          if [[ -d "$GITHUB_WORKSPACE/../OutcomeMemory" && -d "$GITHUB_WORKSPACE/../MultiAgentCenter" ]]; then
-            ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE"
-          else
-            ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE" --allow-missing
-          fi
+      - name: Compatibility artifacts (OutcomeMemory + MultiAgentCenter)
+        run: ./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$GITHUB_WORKSPACE"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -67,5 +47,8 @@ jobs:
           --gate-p95-max-ms 8
           --json
 
-      - name: Benchmark smoke (resolver)
-        run: cargo bench -p memory-kernel-core --bench resolver_bench -- --sample-size 10 --warm-up-time 0.01 --measurement-time 0.02 --noplot
+      - name: Trilogy smoke gate
+        run: ./scripts/run_trilogy_smoke.sh --memorykernel-root "$GITHUB_WORKSPACE"
+
+      - name: Seven-standard compliance suite
+        run: ./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$GITHUB_WORKSPACE"

@@ -42,9 +42,10 @@ This project focuses on deterministic execution, reproducible replay, and strict
 ## Prerequisites
 
 - Rust stable toolchain
-- Sibling repositories for path dependencies:
-  - `../MemoryKernel`
-  - `../OutcomeMemory`
+- Monorepo root checked out with:
+  - `crates/memory-kernel-*`
+  - `components/outcome-memory`
+  - `components/multi-agent-center`
 
 ## Quick Start
 
@@ -128,15 +129,13 @@ Hosted workflow:
 
 ## Troubleshooting
 
-### Error: failed to read `../MemoryKernel/.../Cargo.toml` or `../OutcomeMemory/.../Cargo.toml`
+### Error: failed to read `../../crates/memory-kernel-.../Cargo.toml` or `../outcome-memory/.../Cargo.toml`
 
 Cause:
-- Missing sibling path dependencies.
+- Incomplete monorepo checkout or wrong working directory.
 
 Fix:
-- Ensure both repos exist one level up:
-  - `../MemoryKernel`
-  - `../OutcomeMemory`
+- Run commands from the monorepo root or from `components/multi-agent-center` inside this repository.
 
 ### Workflow fails due recall record types
 

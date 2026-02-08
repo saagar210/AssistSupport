@@ -21,7 +21,7 @@ time.workspace = true
 ulid.workspace = true
 
 [[bin]]
-name = "mk"
+name = "mk-outcome"
 path = "src/main.rs"
 
 [dev-dependencies]

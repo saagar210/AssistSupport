@@ -1,9 +1,9 @@
 # Trilogy Phase 8-11 Closeout Report
 
-- Started (UTC): `2026-02-08T05:34:13Z`
+- Started (UTC): `2026-02-08T07:10:24Z`
 - MemoryKernel root: `/Users/d/Projects/MemoryKernel`
-- OutcomeMemory root: `/Users/d/Projects/OutcomeMemory`
-- MultiAgentCenter root: `/Users/d/Projects/MultiAgentCenter`
+- OutcomeMemory root: `/Users/d/Projects/MemoryKernel/components/outcome-memory`
+- MultiAgentCenter root: `/Users/d/Projects/MemoryKernel/components/multi-agent-center`
 - MemoryKernel hosted repo: `saagar210/MemoryKernel`
 - OutcomeMemory hosted repo: `saagar210/OutcomeMemory`
 - MultiAgentCenter hosted repo: `saagar210/MultiAgentCenter`
@@ -23,7 +23,7 @@
 ## Contract Parity
 
 ```bash
-/Users/d/Projects/MemoryKernel/scripts/verify_contract_parity.sh --canonical-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/OutcomeMemory' --multi-agent-root '/Users/d/Projects/MultiAgentCenter'
+/Users/d/Projects/MemoryKernel/scripts/verify_contract_parity.sh --canonical-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/MemoryKernel/components/outcome-memory' --multi-agent-root '/Users/d/Projects/MemoryKernel/components/multi-agent-center'
 ```
 
 - Result: PASS
@@ -31,7 +31,7 @@
 ## Compatibility Artifact Validation
 
 ```bash
-/Users/d/Projects/MemoryKernel/scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/OutcomeMemory' --multi-agent-root '/Users/d/Projects/MultiAgentCenter'
+/Users/d/Projects/MemoryKernel/scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/MemoryKernel/components/outcome-memory' --multi-agent-root '/Users/d/Projects/MemoryKernel/components/multi-agent-center'
 ```
 
 - Result: PASS
@@ -39,7 +39,7 @@
 ## Trilogy Smoke Gate
 
 ```bash
-/Users/d/Projects/MemoryKernel/scripts/run_trilogy_smoke.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/OutcomeMemory' --multi-agent-root '/Users/d/Projects/MultiAgentCenter'
+/Users/d/Projects/MemoryKernel/scripts/run_trilogy_smoke.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/MemoryKernel/components/outcome-memory' --multi-agent-root '/Users/d/Projects/MemoryKernel/components/multi-agent-center'
 ```
 
 - Result: PASS
@@ -47,7 +47,7 @@
 ## Trilogy Soak Gate
 
 ```bash
-/Users/d/Projects/MemoryKernel/scripts/run_trilogy_soak.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/OutcomeMemory' --multi-agent-root '/Users/d/Projects/MultiAgentCenter' --iterations 1
+/Users/d/Projects/MemoryKernel/scripts/run_trilogy_soak.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --outcome-root '/Users/d/Projects/MemoryKernel/components/outcome-memory' --multi-agent-root '/Users/d/Projects/MemoryKernel/components/multi-agent-center' --iterations 1
 ```
 
 - Result: PASS
@@ -80,6 +80,14 @@ cargo test --manifest-path '/Users/d/Projects/MemoryKernel/Cargo.toml' --workspa
 
 ```bash
 cargo run --manifest-path '/Users/d/Projects/MemoryKernel/Cargo.toml' -p memory-kernel-cli -- outcome benchmark run --volume 100 --volume 500 --volume 2000 --repetitions 3 --append-p95-max-ms 8 --replay-p95-max-ms 250 --gate-p95-max-ms 8 --json
+```
+
+- Result: PASS
+
+## Seven-Standard Compliance Suite
+
+```bash
+/Users/d/Projects/MemoryKernel/scripts/run_trilogy_compliance_suite.sh --memorykernel-root '/Users/d/Projects/MemoryKernel' --skip-baseline
 ```
 
 - Result: PASS
@@ -121,6 +129,6 @@ gh run list -R 'saagar210/MemoryKernel' --workflow release.yml --limit 5
 
 ## Closeout Summary
 
-- Finished (UTC): `2026-02-08T05:34:25Z`
+- Finished (UTC): `2026-02-08T07:10:36Z`
 - Report path: `/Users/d/Projects/MemoryKernel/docs/implementation/trilogy-closeout-report-latest.md`
 - Hosted status: PASS or SKIPPED (not required)

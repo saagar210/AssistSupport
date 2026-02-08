@@ -9,8 +9,8 @@ Execute repeated trilogy convergence checks from MemoryKernel workspace.
 
 Options:
   --memorykernel-root <path> Path to MemoryKernel repo root (default: script/..)
-  --outcome-root <path>      Path to OutcomeMemory repo root (default: ../OutcomeMemory)
-  --multi-agent-root <path>  Path to MultiAgentCenter repo root (default: ../MultiAgentCenter)
+  --outcome-root <path>      Path to OutcomeMemory repo root (default: components/outcome-memory)
+  --multi-agent-root <path>  Path to MultiAgentCenter repo root (default: components/multi-agent-center)
   --iterations <n>           Number of iterations (default: 3)
   --sleep-seconds <n>        Sleep between iterations (default: 0)
   --full-gate                Run fmt/clippy/tests each iteration
@@ -88,12 +88,20 @@ else
   memorykernel_root=$(resolve_path "$memorykernel_root")
 fi
 if [[ -z "$outcome_root" ]]; then
-  outcome_root=$(resolve_path "$memorykernel_root/../OutcomeMemory")
+  if [[ -d "$memorykernel_root/components/outcome-memory" ]]; then
+    outcome_root=$(resolve_path "$memorykernel_root/components/outcome-memory")
+  else
+    outcome_root=$(resolve_path "$memorykernel_root/../OutcomeMemory")
+  fi
 else
   outcome_root=$(resolve_path "$outcome_root")
 fi
 if [[ -z "$multi_agent_root" ]]; then
-  multi_agent_root=$(resolve_path "$memorykernel_root/../MultiAgentCenter")
+  if [[ -d "$memorykernel_root/components/multi-agent-center" ]]; then
+    multi_agent_root=$(resolve_path "$memorykernel_root/components/multi-agent-center")
+  else
+    multi_agent_root=$(resolve_path "$memorykernel_root/../MultiAgentCenter")
+  fi
 else
   multi_agent_root=$(resolve_path "$multi_agent_root")
 fi

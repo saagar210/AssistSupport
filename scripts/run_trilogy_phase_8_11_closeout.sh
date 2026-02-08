@@ -11,8 +11,8 @@ hosted GitHub prerequisites/evidence when repository identifiers are supplied.
 
 Options:
   --memorykernel-root <path>   Path to MemoryKernel repo root (default: script/..)
-  --outcome-root <path>        Path to OutcomeMemory repo root (default: ../OutcomeMemory)
-  --multi-agent-root <path>    Path to MultiAgentCenter repo root (default: ../MultiAgentCenter)
+  --outcome-root <path>        Path to OutcomeMemory repo root (default: components/outcome-memory)
+  --multi-agent-root <path>    Path to MultiAgentCenter repo root (default: components/multi-agent-center)
   --memorykernel-repo <owner/repo> Hosted MemoryKernel repo id for hosted run checks
   --outcome-repo <owner/repo>      Hosted OutcomeMemory repo id for hosted run checks
   --multi-agent-repo <owner/repo>  Hosted MultiAgentCenter repo id for hosted run checks
@@ -155,12 +155,20 @@ else
   memorykernel_root=$(resolve_path "$memorykernel_root")
 fi
 if [[ -z "$outcome_root" ]]; then
-  outcome_root=$(resolve_path "$memorykernel_root/../OutcomeMemory")
+  if [[ -d "$memorykernel_root/components/outcome-memory" ]]; then
+    outcome_root=$(resolve_path "$memorykernel_root/components/outcome-memory")
+  else
+    outcome_root=$(resolve_path "$memorykernel_root/../OutcomeMemory")
+  fi
 else
   outcome_root=$(resolve_path "$outcome_root")
 fi
 if [[ -z "$multi_agent_root" ]]; then
-  multi_agent_root=$(resolve_path "$memorykernel_root/../MultiAgentCenter")
+  if [[ -d "$memorykernel_root/components/multi-agent-center" ]]; then
+    multi_agent_root=$(resolve_path "$memorykernel_root/components/multi-agent-center")
+  else
+    multi_agent_root=$(resolve_path "$memorykernel_root/../MultiAgentCenter")
+  fi
 else
   multi_agent_root=$(resolve_path "$multi_agent_root")
 fi
@@ -239,6 +247,10 @@ run_step "Rust Test" \
 run_step "Outcome Benchmark Threshold Gate" \
   "cargo run --manifest-path '$memorykernel_root/Cargo.toml' -p memory-kernel-cli -- outcome benchmark run --volume 100 --volume 500 --volume 2000 --repetitions 3 --append-p95-max-ms 8 --replay-p95-max-ms 250 --gate-p95-max-ms 8 --json" \
   "$tmp_dir/benchmark.log"
+
+run_step "Seven-Standard Compliance Suite" \
+  "$memorykernel_root/scripts/run_trilogy_compliance_suite.sh --memorykernel-root '$memorykernel_root' --skip-baseline" \
+  "$tmp_dir/compliance_suite.log"
 
 append_section "Hosted Evidence Checks"
 hosted_failures=0

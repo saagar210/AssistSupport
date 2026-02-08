@@ -3,7 +3,13 @@ set -euo pipefail
 
 PACK_VERSION="${1:-v1}"
 LOCAL_ROOT="${OUTCOME_CONTRACT_PACK_ROOT:-contracts/integration}"
-CANONICAL_ROOT="${MEMORYKERNEL_CONTRACT_PACK_ROOT:-../MemoryKernel/contracts/integration}"
+if [[ -n "${MEMORYKERNEL_CONTRACT_PACK_ROOT:-}" ]]; then
+  CANONICAL_ROOT="${MEMORYKERNEL_CONTRACT_PACK_ROOT}"
+elif [[ -d "../../../contracts/integration" ]]; then
+  CANONICAL_ROOT="../../../contracts/integration"
+else
+  CANONICAL_ROOT="../MemoryKernel/contracts/integration"
+fi
 
 LOCAL_PACK="${LOCAL_ROOT}/${PACK_VERSION}"
 CANONICAL_PACK="${CANONICAL_ROOT}/${PACK_VERSION}"

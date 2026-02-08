@@ -18,17 +18,23 @@ fn fixture_memory_id() -> MemoryId {
 }
 
 fn mk_binary_path() -> PathBuf {
-    match std::env::var("CARGO_BIN_EXE_mk") {
+    match std::env::var("CARGO_BIN_EXE_mk_outcome") {
         Ok(value) => PathBuf::from(value),
         Err(_) => {
-            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/mk");
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/mk-outcome");
             if !path.exists() {
                 let status = Command::new("cargo")
-                    .args(["build", "-p", "memory-kernel-outcome-cli", "--bin", "mk"])
+                    .args([
+                        "build",
+                        "-p",
+                        "memory-kernel-outcome-cli",
+                        "--bin",
+                        "mk-outcome",
+                    ])
                     .status();
                 match status {
                     Ok(value) if value.success() => {}
-                    Ok(value) => panic!("failed to build mk binary (status={value})"),
+                    Ok(value) => panic!("failed to build mk-outcome binary (status={value})"),
                     Err(err) => panic!("failed to invoke cargo build: {err}"),
                 }
             }
@@ -46,7 +52,7 @@ fn mk_output(db_path: &Path, args: &[&str]) -> Output {
 
     match command.output() {
         Ok(output) => output,
-        Err(err) => panic!("failed to run mk command {:?}: {err}", args),
+        Err(err) => panic!("failed to run mk-outcome command {:?}: {err}", args),
     }
 }
 

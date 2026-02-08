@@ -1,12 +1,12 @@
-# MemoryKernel
+# MemoryKernel Trilogy Monorepo
 
-MemoryKernel is the authoritative memory layer in the trilogy:
+This repository is the consolidated monorepo for the trilogy:
 
 - `MemoryKernel`: typed memory storage and deterministic context resolution.
 - `OutcomeMemory`: trust projection and gating.
 - `MultiAgentCenter`: orchestration, execution traces, and replay.
 
-This project stores policy and recall memory records in SQLite and returns deterministic, explainable Context Packages instead of raw rows.
+MemoryKernel remains the canonical contract authority (`contracts/integration/v1/*`), and the monorepo now enforces cross-component parity and compatibility gates in one CI pipeline.
 
 ## What You Get
 
@@ -25,10 +25,13 @@ This project stores policy and recall memory records in SQLite and returns deter
 - `crates/memory-kernel-cli`: `mk` CLI surface.
 - `crates/memory-kernel-api`: stable local API wrapper.
 - `crates/memory-kernel-service`: HTTP service and OpenAPI surface.
+- `components/outcome-memory`: trust/gating subsystem.
+- `components/multi-agent-center`: orchestration and trace/replay subsystem.
 - `contracts/v1`: versioned CLI JSON schemas and fixtures.
 - `contracts/integration/v1`: trilogy integration schemas and fixtures (canonical source).
 - `docs/spec`: normative contracts and behavior definitions.
 - `docs/implementation`: release gates, closeout reports, and phase records.
+- `docs/compliance`: seven-standard compliance matrix and suite docs.
 
 ## Quick Start
 
@@ -118,6 +121,7 @@ MemoryKernel is the canonical source for `contracts/integration/v1/*`.
 ./scripts/verify_trilogy_compatibility_artifacts.sh
 ./scripts/run_trilogy_smoke.sh
 ./scripts/run_trilogy_soak.sh --iterations 3
+./scripts/run_trilogy_compliance_suite.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
@@ -127,6 +131,7 @@ cargo test --workspace --all-targets --all-features
 
 - CI: `.github/workflows/ci.yml`
 - Release: `.github/workflows/release.yml`
+- Compliance suite: `docs/compliance/TRILOGY_COMPLIANCE_TEST_SUITE.md`
 
 ## Documentation Index
 
@@ -150,10 +155,9 @@ cargo test --workspace --all-targets --all-features
 
 ### Error: missing sibling repository path in CI/local builds
 
-Some crates use path dependencies to sibling projects during trilogy validation.
-Make sure sibling repos exist at:
+This monorepo expects OutcomeMemory and MultiAgentCenter under:
 
-- `../OutcomeMemory`
-- `../MultiAgentCenter`
+- `components/outcome-memory`
+- `components/multi-agent-center`
 
-or use the hosted workflows that checkout/link these dependencies automatically.
+All included scripts detect these paths automatically.

@@ -42,10 +42,11 @@ This project is append-only, replay-driven, and contract-frozen for `v1`.
 
 - Rust stable toolchain
 - SQLite-compatible local filesystem
-- `MemoryKernel` checked out as sibling path:
-  - `../MemoryKernel`
+- Monorepo root checked out with:
+  - `crates/memory-kernel-*`
+  - `components/outcome-memory`
 
-This is required because workspace dependencies point to `../MemoryKernel/crates/...`.
+Workspace dependencies resolve via monorepo-local paths.
 
 ## Quick Start
 
@@ -126,14 +127,13 @@ Do not call private helper functions directly.
 
 ## Troubleshooting
 
-### Error: failed to read `../MemoryKernel/.../Cargo.toml`
+### Error: failed to read `../../crates/memory-kernel-.../Cargo.toml`
 
 Cause:
-- Missing sibling checkout for `MemoryKernel`.
+- Incomplete monorepo checkout or wrong working directory.
 
 Fix:
-- Ensure `MemoryKernel` exists one level up from this repository:
-  - `../MemoryKernel`
+- Run commands from the monorepo root or from `components/outcome-memory` inside this repository.
 
 ### CI parity fails with missing canonical pack path
 
