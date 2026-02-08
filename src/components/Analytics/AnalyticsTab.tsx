@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAnalytics, AnalyticsSummary, ArticleUsage, LowRatingAnalysis } from '../../hooks/useAnalytics';
+import {
+  useAnalytics,
+  AnalyticsSummary,
+  ArticleUsage,
+  LowRatingAnalysis,
+  ResponseQualitySummary,
+} from '../../hooks/useAnalytics';
 import { useFeatureOps } from '../../hooks/useFeatureOps';
 import type { KbGapCandidate } from '../../types';
 import { ArticleDetailPanel } from './ArticleDetailPanel';
@@ -15,10 +21,11 @@ const PERIODS: { label: string; value: Period }[] = [
 ];
 
 export function AnalyticsTab() {
-  const { getSummary, getKbUsage, getLowRatingAnalysis } = useAnalytics();
+  const { getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary } = useAnalytics();
   const { getKbGapCandidates, updateKbGapStatus } = useFeatureOps();
   const [period, setPeriod] = useState<Period>(30);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [qualitySummary, setQualitySummary] = useState<ResponseQualitySummary | null>(null);
   const [kbUsage, setKbUsage] = useState<ArticleUsage[]>([]);
   const [lowRatingData, setLowRatingData] = useState<LowRatingAnalysis | null>(null);
   const [gapCandidates, setGapCandidates] = useState<KbGapCandidate[]>([]);
@@ -30,13 +37,15 @@ export function AnalyticsTab() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryData, kbData, lowRating] = await Promise.all([
+      const [summaryData, kbData, lowRating, qualityData] = await Promise.all([
         getSummary(period ?? undefined),
         getKbUsage(period ?? undefined),
         getLowRatingAnalysis(period ?? undefined).catch(() => null),
+        getResponseQualitySummary(period ?? undefined).catch(() => null),
       ]);
       const gaps = await getKbGapCandidates(12, 'open').catch(() => []);
       setSummary(summaryData);
+      setQualitySummary(qualityData);
       setKbUsage(kbData);
       setLowRatingData(lowRating);
       setGapCandidates(gaps);
@@ -46,7 +55,7 @@ export function AnalyticsTab() {
     } finally {
       setLoading(false);
     }
-  }, [period, getSummary, getKbUsage, getLowRatingAnalysis, getKbGapCandidates]);
+  }, [period, getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary, getKbGapCandidates]);
 
   const handleGapStatus = useCallback(async (id: string, status: 'accepted' | 'resolved' | 'ignored') => {
     await updateKbGapStatus(id, status);
@@ -162,6 +171,8 @@ export function AnalyticsTab() {
         <RatingDistribution summary={summary} />
       </div>
 
+      <ResponseQualityPanel summary={qualitySummary} />
+
       {/* Quality Alert */}
       {lowRatingData && lowRatingData.low_rating_count > 0 && (
         <div className="low-rating-alert">
@@ -233,6 +244,66 @@ export function AnalyticsTab() {
           onClose={() => setSelectedArticleId(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ResponseQualityPanel({ summary }: { summary: ResponseQualitySummary | null }) {
+  if (!summary || summary.snapshots_count === 0) {
+    return (
+      <div className="response-quality-panel">
+        <div className="section-title">Response Quality Signals</div>
+        <div className="analytics-empty">
+          <div className="analytics-empty-description">No response quality snapshots captured yet</div>
+        </div>
+      </div>
+    );
+  }
+
+  const avgTimeSeconds = summary.avg_time_to_draft_ms != null
+    ? (summary.avg_time_to_draft_ms / 1000).toFixed(1)
+    : '--';
+  const medianTimeSeconds = summary.median_time_to_draft_ms != null
+    ? (summary.median_time_to_draft_ms / 1000).toFixed(1)
+    : '--';
+
+  return (
+    <div className="response-quality-panel">
+      <div className="section-title">Response Quality Signals</div>
+      <div className="response-quality-grid">
+        <div className="response-quality-card">
+          <span className="response-quality-label">Snapshots</span>
+          <strong className="response-quality-value">{summary.snapshots_count}</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Avg Words</span>
+          <strong className="response-quality-value">{Math.round(summary.avg_word_count)}</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Avg Edit Ratio</span>
+          <strong className="response-quality-value">{(summary.avg_edit_ratio * 100).toFixed(1)}%</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Edited Save Rate</span>
+          <strong className="response-quality-value">{(summary.edited_save_rate * 100).toFixed(1)}%</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Avg Time to Draft</span>
+          <strong className="response-quality-value">{avgTimeSeconds}s</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Median Time to Draft</span>
+          <strong className="response-quality-value">{medianTimeSeconds}s</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Copy per Save</span>
+          <strong className="response-quality-value">{(summary.copy_per_saved_ratio * 100).toFixed(1)}%</strong>
+        </div>
+        <div className="response-quality-card">
+          <span className="response-quality-label">Save Events</span>
+          <strong className="response-quality-value">{summary.saved_count}</strong>
+        </div>
+      </div>
     </div>
   );
 }

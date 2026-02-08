@@ -251,6 +251,7 @@ pub fn run() {
             // Phase 2: Analytics commands
             commands::log_analytics_event,
             commands::get_analytics_summary,
+            commands::get_response_quality_summary,
             commands::get_kb_usage_stats,
             commands::get_low_rating_analysis,
             commands::get_kb_gap_candidates,

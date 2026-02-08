@@ -23,8 +23,11 @@ Track incremental UX rebuild slices while preserving deterministic fallback, opt
 14. Added Draft workflow strip with staged intake/diagnose/respond status and quick actions for faster compose flow.
 15. Added response-quality analytics signals (`response_quality_snapshot`, `response_saved`, `response_copied`) to support tuning.
 16. Added Playwright revamp queue workflow coverage (`pnpm run test:e2e:revamp`) for workspace deep-link and queue view filter transitions.
+17. Added deterministic E2E draft persistence in Tauri mock so queue keyboard triage (`c`/`x`/`o`) is validated against real queue items.
+18. Added response-quality summary contract (`get_response_quality_summary`) with operator-facing Analytics panel.
+19. Added DB aggregation test coverage for response-quality summary metrics and timing median calculations.
 
 ## Next
-1. Extend response-quality instrumentation into dashboard summaries for operator/coaching views.
-2. Add second Playwright path for at-risk queue triage followed by draft open + response generation.
-3. Continue Draft IA simplification pass for mobile-density and one-hand keyboard operation on MacBook layouts.
+1. Add second Playwright path for at-risk queue triage followed by draft open + response generation.
+2. Continue Draft IA simplification pass for mobile-density and one-hand keyboard operation on MacBook layouts.
+3. Add coaching thresholds in Analytics (highlight when edit ratio/time-to-draft crosses risk bands).

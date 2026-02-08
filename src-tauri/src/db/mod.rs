@@ -3752,6 +3752,134 @@ impl Database {
         })
     }
 
+    /// Get response quality summary from structured analytics events.
+    pub fn get_response_quality_summary(
+        &self,
+        period_days: Option<i64>,
+    ) -> Result<ResponseQualitySummary, DbError> {
+        let date_filter = period_days
+            .map(|d| format!("AND created_at >= datetime('now', '-{} days')", d))
+            .unwrap_or_default();
+
+        let snapshots_count: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'response_quality_snapshot' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let saved_count: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'response_saved' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let copied_count: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM analytics_events WHERE event_type = 'response_copied' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let (avg_word_count, avg_edit_ratio): (Option<f64>, Option<f64>) = self.conn.query_row(
+            &format!(
+                "SELECT
+                    AVG(CAST(json_extract(event_data_json, '$.word_count') AS REAL)),
+                    AVG(CAST(json_extract(event_data_json, '$.edit_ratio') AS REAL))
+                 FROM analytics_events
+                 WHERE event_type = 'response_quality_snapshot' {}",
+                date_filter
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        let edited_save_rate: f64 = self.conn.query_row(
+            &format!(
+                "SELECT
+                    COALESCE(
+                        AVG(
+                            CASE
+                                WHEN CAST(json_extract(event_data_json, '$.is_edited') AS INTEGER) = 1 THEN 1.0
+                                ELSE 0.0
+                            END
+                        ),
+                        0.0
+                    )
+                 FROM analytics_events
+                 WHERE event_type = 'response_saved' {}",
+                date_filter
+            ),
+            [],
+            |row| row.get(0),
+        )?;
+
+        let mut time_to_draft_values: Vec<i64> = Vec::new();
+        {
+            let query = format!(
+                "SELECT CAST(json_extract(event_data_json, '$.time_to_draft_ms') AS INTEGER)
+                 FROM analytics_events
+                 WHERE event_type = 'response_quality_snapshot'
+                   AND json_extract(event_data_json, '$.time_to_draft_ms') IS NOT NULL
+                   {}",
+                date_filter
+            );
+            let mut stmt = self.conn.prepare(&query)?;
+            let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+            for value in rows {
+                time_to_draft_values.push(value?);
+            }
+        }
+
+        let avg_time_to_draft_ms = if time_to_draft_values.is_empty() {
+            None
+        } else {
+            Some(
+                time_to_draft_values.iter().copied().map(|v| v as f64).sum::<f64>()
+                    / time_to_draft_values.len() as f64,
+            )
+        };
+
+        let median_time_to_draft_ms = if time_to_draft_values.is_empty() {
+            None
+        } else {
+            time_to_draft_values.sort_unstable();
+            let len = time_to_draft_values.len();
+            if len % 2 == 1 {
+                Some(time_to_draft_values[len / 2])
+            } else {
+                let upper = time_to_draft_values[len / 2];
+                let lower = time_to_draft_values[(len / 2) - 1];
+                Some((upper + lower) / 2)
+            }
+        };
+
+        let copy_per_saved_ratio = if saved_count > 0 {
+            copied_count as f64 / saved_count as f64
+        } else {
+            0.0
+        };
+
+        Ok(ResponseQualitySummary {
+            snapshots_count,
+            saved_count,
+            copied_count,
+            avg_word_count: avg_word_count.unwrap_or(0.0),
+            avg_edit_ratio: avg_edit_ratio.unwrap_or(0.0),
+            edited_save_rate,
+            avg_time_to_draft_ms,
+            median_time_to_draft_ms,
+            copy_per_saved_ratio,
+        })
+    }
+
     /// Get analysis of low-rated responses for quality feedback loop
     pub fn get_low_rating_analysis(
         &self,
@@ -5242,6 +5370,20 @@ pub struct AnalyticsSummary {
     pub rating_distribution: Vec<i64>,
 }
 
+/// Aggregated response quality telemetry summary.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResponseQualitySummary {
+    pub snapshots_count: i64,
+    pub saved_count: i64,
+    pub copied_count: i64,
+    pub avg_word_count: f64,
+    pub avg_edit_ratio: f64,
+    pub edited_save_rate: f64,
+    pub avg_time_to_draft_ms: Option<f64>,
+    pub median_time_to_draft_ms: Option<i64>,
+    pub copy_per_saved_ratio: f64,
+}
+
 /// Daily event count
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DailyCount {
@@ -5769,6 +5911,49 @@ mod tests {
             .expect_err("array config should be rejected");
 
         assert!(err.to_string().contains("JSON object"));
+    }
+
+    #[test]
+    fn test_response_quality_summary_aggregates_event_metrics() {
+        let (db, _dir) = create_test_db();
+
+        db.log_analytics_event(
+            "event-1",
+            "response_quality_snapshot",
+            Some(r#"{"word_count":120,"edit_ratio":0.2,"time_to_draft_ms":9000}"#),
+        )
+        .unwrap();
+        db.log_analytics_event(
+            "event-2",
+            "response_quality_snapshot",
+            Some(r#"{"word_count":80,"edit_ratio":0.5,"time_to_draft_ms":3000}"#),
+        )
+        .unwrap();
+        db.log_analytics_event(
+            "event-3",
+            "response_saved",
+            Some(r#"{"is_edited":true}"#),
+        )
+        .unwrap();
+        db.log_analytics_event(
+            "event-4",
+            "response_saved",
+            Some(r#"{"is_edited":false}"#),
+        )
+        .unwrap();
+        db.log_analytics_event("event-5", "response_copied", Some(r#"{}"#))
+            .unwrap();
+
+        let summary = db.get_response_quality_summary(None).unwrap();
+        assert_eq!(summary.snapshots_count, 2);
+        assert_eq!(summary.saved_count, 2);
+        assert_eq!(summary.copied_count, 1);
+        assert!((summary.avg_word_count - 100.0).abs() < f64::EPSILON);
+        assert!((summary.avg_edit_ratio - 0.35).abs() < f64::EPSILON);
+        assert!((summary.edited_save_rate - 0.5).abs() < f64::EPSILON);
+        assert_eq!(summary.median_time_to_draft_ms, Some(6000));
+        assert_eq!(summary.avg_time_to_draft_ms, Some(6000.0));
+        assert!((summary.copy_per_saved_ratio - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]

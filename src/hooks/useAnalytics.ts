@@ -31,6 +31,18 @@ export interface LowRatingAnalysis {
   recent_feedback: RecentLowFeedback[];
 }
 
+export interface ResponseQualitySummary {
+  snapshots_count: number;
+  saved_count: number;
+  copied_count: number;
+  avg_word_count: number;
+  avg_edit_ratio: number;
+  edited_save_rate: number;
+  avg_time_to_draft_ms: number | null;
+  median_time_to_draft_ms: number | null;
+  copy_per_saved_ratio: number;
+}
+
 export interface FeedbackCategoryCount {
   category: string;
   count: number;
@@ -75,5 +87,11 @@ export function useAnalytics() {
     });
   }, []);
 
-  return { logEvent, getSummary, getKbUsage, getLowRatingAnalysis };
+  const getResponseQualitySummary = useCallback(async (periodDays?: number): Promise<ResponseQualitySummary> => {
+    return invoke<ResponseQualitySummary>('get_response_quality_summary', {
+      periodDays: periodDays ?? null,
+    });
+  }, []);
+
+  return { logEvent, getSummary, getKbUsage, getLowRatingAnalysis, getResponseQualitySummary };
 }

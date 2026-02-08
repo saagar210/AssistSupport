@@ -4549,6 +4549,22 @@ pub async fn get_analytics_summary(
         .map_err(|e| e.to_string())
 }
 
+/// Get response quality telemetry summary for a time period
+#[tauri::command]
+pub async fn get_response_quality_summary(
+    state: State<'_, AppState>,
+    period_days: Option<i64>,
+) -> Result<crate::db::ResponseQualitySummary, String> {
+    let db_guard = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock error: {}", e))?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.get_response_quality_summary(period_days)
+        .map_err(|e| e.to_string())
+}
+
 /// Get KB article usage statistics
 #[tauri::command]
 pub async fn get_kb_usage_stats(

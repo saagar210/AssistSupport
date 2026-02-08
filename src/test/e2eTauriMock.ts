@@ -125,6 +125,22 @@ export function setupE2eTauriMock(): void {
     },
   ];
 
+  type MockDraftRecord = {
+    id: string;
+    input_text: string;
+    summary_text: string | null;
+    diagnosis_json: string | null;
+    response_text: string | null;
+    ticket_id: string | null;
+    kb_sources_json: string | null;
+    created_at: string;
+    updated_at: string;
+    is_autosave: boolean;
+    model_name?: string | null;
+  };
+
+  const draftStore: MockDraftRecord[] = [];
+
   mockWindows('main');
   mockIPC(
     async (cmd, payload) => {
@@ -255,12 +271,88 @@ export function setupE2eTauriMock(): void {
         case 'list_saved_response_templates':
         case 'find_similar_saved_responses':
         case 'get_alternatives_for_draft':
-        case 'list_drafts':
-        case 'list_autosaves':
         case 'get_draft_versions':
           return [];
+        case 'list_drafts': {
+          const body = payload as { limit?: number } | undefined;
+          const limit = body?.limit ?? 50;
+          return draftStore
+            .filter((draft) => !draft.is_autosave)
+            .slice()
+            .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+            .slice(0, limit);
+        }
+        case 'list_autosaves': {
+          const body = payload as { limit?: number } | undefined;
+          const limit = body?.limit ?? 50;
+          return draftStore
+            .filter((draft) => draft.is_autosave)
+            .slice()
+            .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+            .slice(0, limit);
+        }
+        case 'search_drafts': {
+          const body = payload as { query?: string; limit?: number } | undefined;
+          const query = (body?.query ?? '').toLowerCase().trim();
+          const limit = body?.limit ?? 50;
+          if (!query) {
+            return draftStore
+              .filter((draft) => !draft.is_autosave)
+              .slice(0, limit);
+          }
+
+          return draftStore
+            .filter((draft) => {
+              if (draft.is_autosave) {
+                return false;
+              }
+              const haystack = [
+                draft.input_text,
+                draft.summary_text,
+                draft.ticket_id,
+                draft.response_text,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+              return haystack.includes(query);
+            })
+            .slice(0, limit);
+        }
+        case 'get_draft': {
+          const body = payload as { draftId?: string } | undefined;
+          const match = draftStore.find((draft) => draft.id === body?.draftId);
+          if (!match) {
+            throw new Error(`Draft not found: ${body?.draftId}`);
+          }
+          return match;
+        }
         case 'save_draft':
-          return (payload as { draft?: { id?: string } })?.draft?.id ?? 'mock-draft-id';
+          {
+            const body = payload as { draft?: MockDraftRecord } | undefined;
+            const draft = body?.draft;
+            if (!draft) {
+              return 'mock-draft-id';
+            }
+
+            const existingIndex = draftStore.findIndex((item) => item.id === draft.id);
+            if (existingIndex >= 0) {
+              draftStore[existingIndex] = draft;
+            } else {
+              draftStore.push(draft);
+            }
+            return draft.id;
+          }
+        case 'delete_draft': {
+          const body = payload as { draftId?: string } | undefined;
+          const draftId = body?.draftId;
+          if (!draftId) {
+            return null;
+          }
+          const next = draftStore.filter((draft) => draft.id !== draftId);
+          draftStore.splice(0, draftStore.length, ...next);
+          return null;
+        }
         case 'generate_streaming':
         case 'generate_with_context':
           return {
@@ -504,6 +596,33 @@ export function setupE2eTauriMock(): void {
             latency_ms: { avg: 21, p50: 12, p95: 55, p99: 91 },
             feedback_stats: { helpful: 8, not_helpful: 1, incorrect: 0 },
             intent_distribution: { POLICY: 6, PROCEDURE: 4, REFERENCE: 2 },
+          };
+        case 'get_analytics_summary':
+          return {
+            total_events: 18,
+            responses_generated: 6,
+            searches_performed: 5,
+            drafts_saved: 7,
+            daily_counts: [
+              { date: '2026-02-06', count: 4 },
+              { date: '2026-02-07', count: 6 },
+              { date: '2026-02-08', count: 8 },
+            ],
+            average_rating: 4.4,
+            total_ratings: 5,
+            rating_distribution: [0, 0, 1, 1, 3],
+          };
+        case 'get_response_quality_summary':
+          return {
+            snapshots_count: 5,
+            saved_count: 4,
+            copied_count: 3,
+            avg_word_count: 133.2,
+            avg_edit_ratio: 0.21,
+            edited_save_rate: 0.5,
+            avg_time_to_draft_ms: 8400,
+            median_time_to_draft_ms: 7900,
+            copy_per_saved_ratio: 0.75,
           };
         case 'is_jira_configured':
           return false;

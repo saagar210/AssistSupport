@@ -54,6 +54,7 @@ Define existing and planned feature toggles so revamp rollout is reversible and 
 2. UX criteria:
    1. Queue-first mode verified in desktop and mobile shell without navigation regressions.
    2. Follow-up history operations (search, load, delete, template use) remain functional.
+   3. Revamp E2E queue flow validates `claim -> resolve -> reopen` keyboard lifecycle on persisted drafts.
 3. Governance criteria:
    1. Rollback path documented and rehearsed (`localStorage` override and env default).
    2. Phase evidence packet recorded in `docs/revamp/evidence/`.
