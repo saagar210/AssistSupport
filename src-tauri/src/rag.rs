@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
 
 use crate::commands::search::SearchResult;
 use crate::error::AppError;
@@ -239,6 +241,250 @@ pub fn build_adaptive_context(
     (selected_chunks, selected_history)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiHopResult {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_title: String,
+    pub content: String,
+    pub score: f64,
+    pub hop_distance: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreciseCitation {
+    pub snippet: String,
+    pub start_char: usize,
+    pub end_char: usize,
+    pub confidence: f64,
+}
+
+/// Follow graph edges from initial results to find related context.
+///
+/// Starting from the chunk_ids in `initial_results` (hop_distance = 0), traverses
+/// graph_edges to discover neighboring chunks up to `max_hops` levels deep.
+/// Returns at most `max_additional` extra results beyond the initial set.
+pub fn multi_hop_retrieval(
+    conn: &rusqlite::Connection,
+    initial_results: &[SearchResult],
+    collection_id: &str,
+    max_hops: usize,
+    max_additional: usize,
+) -> Result<Vec<MultiHopResult>, AppError> {
+    if initial_results.is_empty() || max_hops == 0 || max_additional == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Track all seen chunk_ids to avoid revisiting
+    let mut seen: HashSet<String> = initial_results.iter().map(|r| r.chunk_id.clone()).collect();
+
+    // Current frontier: chunk_ids we just discovered
+    let mut frontier: Vec<String> = initial_results.iter().map(|r| r.chunk_id.clone()).collect();
+
+    let mut additional_results: Vec<MultiHopResult> = Vec::new();
+
+    for hop in 1..=max_hops {
+        if frontier.is_empty() || additional_results.len() >= max_additional {
+            break;
+        }
+
+        // Find all neighbors of the current frontier via graph_edges
+        let placeholders: String = frontier.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT source_chunk_id, target_chunk_id, weight
+             FROM graph_edges
+             WHERE collection_id = ?1
+               AND (source_chunk_id IN ({placeholders}) OR target_chunk_id IN ({placeholders}))"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+
+        // Bind parameters: ?1 = collection_id, then frontier twice
+        let param_count = 1 + frontier.len() * 2;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(param_count);
+        params.push(Box::new(collection_id.to_string()));
+        for chunk_id in &frontier {
+            params.push(Box::new(chunk_id.clone()));
+        }
+        for chunk_id in &frontier {
+            params.push(Box::new(chunk_id.clone()));
+        }
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let mut neighbor_ids: Vec<(String, f64)> = Vec::new();
+        let mut rows = stmt.query(param_refs.as_slice())?;
+        while let Some(row) = rows.next()? {
+            let src: String = row.get(0)?;
+            let tgt: String = row.get(1)?;
+            let weight: f64 = row.get(2)?;
+
+            // The neighbor is whichever side is NOT in the frontier
+            if frontier.contains(&src) && !seen.contains(&tgt) {
+                neighbor_ids.push((tgt.clone(), weight));
+            }
+            if frontier.contains(&tgt) && !seen.contains(&src) {
+                neighbor_ids.push((src, weight));
+            }
+        }
+
+        // Deduplicate and sort by weight descending
+        let mut unique_neighbors: HashMap<String, f64> = HashMap::new();
+        for (id, weight) in neighbor_ids {
+            unique_neighbors
+                .entry(id)
+                .and_modify(|w| {
+                    if weight > *w {
+                        *w = weight;
+                    }
+                })
+                .or_insert(weight);
+        }
+
+        let mut sorted_neighbors: Vec<(String, f64)> = unique_neighbors.into_iter().collect();
+        sorted_neighbors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut next_frontier: Vec<String> = Vec::new();
+
+        for (neighbor_id, weight) in sorted_neighbors {
+            if additional_results.len() >= max_additional {
+                break;
+            }
+
+            seen.insert(neighbor_id.clone());
+
+            // Enrich with chunk content and document info
+            let enrichment = conn.query_row(
+                "SELECT c.content, c.document_id, d.title
+                 FROM chunks c
+                 JOIN documents d ON d.id = c.document_id
+                 WHERE c.id = ?1",
+                rusqlite::params![neighbor_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            );
+
+            if let Ok((content, document_id, document_title)) = enrichment {
+                additional_results.push(MultiHopResult {
+                    chunk_id: neighbor_id.clone(),
+                    document_id,
+                    document_title,
+                    content,
+                    score: weight,
+                    hop_distance: hop,
+                });
+                next_frontier.push(neighbor_id);
+            }
+        }
+
+        frontier = next_frontier;
+    }
+
+    Ok(additional_results)
+}
+
+/// Extract the best matching sentence from chunk content for a citation.
+///
+/// Splits the chunk into sentences, computes word overlap with the query,
+/// and returns the sentence with the highest overlap as a precise citation.
+pub fn extract_precise_citation(chunk_content: &str, query: &str) -> PreciseCitation {
+    if chunk_content.is_empty() || query.is_empty() {
+        return PreciseCitation {
+            snippet: String::new(),
+            start_char: 0,
+            end_char: 0,
+            confidence: 0.0,
+        };
+    }
+
+    let query_words: HashSet<String> = query
+        .split_whitespace()
+        .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    if query_words.is_empty() {
+        return PreciseCitation {
+            snippet: chunk_content.to_string(),
+            start_char: 0,
+            end_char: chunk_content.len(),
+            confidence: 0.0,
+        };
+    }
+
+    // Split into sentences using common delimiters
+    let mut sentences: Vec<(usize, usize, &str)> = Vec::new();
+    let mut start = 0;
+    for (i, c) in chunk_content.char_indices() {
+        if c == '.' || c == '!' || c == '?' {
+            let end = i + c.len_utf8();
+            let sentence = chunk_content[start..end].trim();
+            if !sentence.is_empty() {
+                // Find the actual trimmed positions
+                let trim_start = start + chunk_content[start..end].find(sentence).unwrap_or(0);
+                let trim_end = trim_start + sentence.len();
+                sentences.push((trim_start, trim_end, sentence));
+            }
+            start = end;
+        }
+    }
+    // Handle trailing text without sentence-ending punctuation
+    if start < chunk_content.len() {
+        let remaining = chunk_content[start..].trim();
+        if !remaining.is_empty() {
+            let trim_start = start + chunk_content[start..].find(remaining).unwrap_or(0);
+            let trim_end = trim_start + remaining.len();
+            sentences.push((trim_start, trim_end, remaining));
+        }
+    }
+
+    if sentences.is_empty() {
+        return PreciseCitation {
+            snippet: chunk_content.to_string(),
+            start_char: 0,
+            end_char: chunk_content.len(),
+            confidence: 0.0,
+        };
+    }
+
+    let mut best_score: f64 = -1.0;
+    let mut best_idx: usize = 0;
+
+    for (i, (_start, _end, sentence)) in sentences.iter().enumerate() {
+        let sentence_words: HashSet<String> = sentence
+            .split_whitespace()
+            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        let overlap = query_words.intersection(&sentence_words).count() as f64;
+        let score = if query_words.is_empty() {
+            0.0
+        } else {
+            overlap / query_words.len() as f64
+        };
+
+        if score > best_score {
+            best_score = score;
+            best_idx = i;
+        }
+    }
+
+    let (start_char, end_char, snippet) = sentences[best_idx];
+
+    PreciseCitation {
+        snippet: snippet.to_string(),
+        start_char,
+        end_char,
+        confidence: best_score.clamp(0.0, 1.0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,5 +720,108 @@ mod tests {
                 "Chunks should be ordered by score descending"
             );
         }
+    }
+
+    #[test]
+    fn test_multi_hop_retrieval_finds_neighbors() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory DB");
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("set pragma");
+        conn.execute_batch(
+            "CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
+             CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, filename TEXT, file_path TEXT, file_type TEXT, file_size INTEGER, file_hash TEXT, title TEXT, author TEXT, page_count INTEGER, word_count INTEGER DEFAULT 0, chunk_count INTEGER DEFAULT 0, status TEXT DEFAULT 'done', error_message TEXT, created_at TEXT, updated_at TEXT);
+             CREATE TABLE chunks (id TEXT PRIMARY KEY, document_id TEXT, collection_id TEXT, content TEXT, chunk_index INTEGER, start_offset INTEGER DEFAULT 0, end_offset INTEGER DEFAULT 0, page_number INTEGER, section_title TEXT, token_count INTEGER DEFAULT 0, created_at TEXT);
+             CREATE TABLE graph_edges (id TEXT PRIMARY KEY, source_chunk_id TEXT, target_chunk_id TEXT, collection_id TEXT, weight REAL DEFAULT 0.0, relationship_type TEXT DEFAULT 'semantic', created_at TEXT);"
+        ).expect("create tables");
+
+        let now = "2025-01-01T00:00:00Z";
+        conn.execute("INSERT INTO collections (id, name, description, created_at, updated_at) VALUES ('col1', 'Test', '', ?1, ?1)", rusqlite::params![now]).expect("insert col");
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, word_count, chunk_count, created_at, updated_at) VALUES ('doc1', 'col1', 'f.txt', '/f.txt', 'txt', 100, 'h', 'Doc One', 50, 3, ?1, ?1)",
+            rusqlite::params![now],
+        ).expect("insert doc1");
+        conn.execute(
+            "INSERT INTO documents (id, collection_id, filename, file_path, file_type, file_size, file_hash, title, word_count, chunk_count, created_at, updated_at) VALUES ('doc2', 'col1', 'g.txt', '/g.txt', 'txt', 100, 'h2', 'Doc Two', 50, 1, ?1, ?1)",
+            rusqlite::params![now],
+        ).expect("insert doc2");
+
+        for (cid, did, idx, content) in &[
+            ("c1", "doc1", 0, "Machine learning basics and fundamentals."),
+            ("c2", "doc1", 1, "Neural networks are a subset of machine learning."),
+            ("c3", "doc1", 2, "Deep learning uses multiple neural network layers."),
+            ("c4", "doc2", 0, "Reinforcement learning is another ML approach."),
+        ] {
+            conn.execute(
+                "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, created_at) VALUES (?1, ?2, 'col1', ?3, ?4, ?5)",
+                rusqlite::params![cid, did, content, idx, now],
+            ).expect("insert chunk");
+        }
+
+        for (eid, src, tgt, w) in &[("e1", "c1", "c2", 0.9), ("e2", "c2", "c3", 0.85), ("e3", "c2", "c4", 0.7)] {
+            conn.execute(
+                "INSERT INTO graph_edges (id, source_chunk_id, target_chunk_id, collection_id, weight, relationship_type, created_at) VALUES (?1, ?2, ?3, 'col1', ?4, 'semantic', ?5)",
+                rusqlite::params![eid, src, tgt, w, now],
+            ).expect("insert edge");
+        }
+
+        let initial = vec![SearchResult {
+            chunk_id: "c1".to_string(),
+            document_id: "doc1".to_string(),
+            document_title: "Doc One".to_string(),
+            section_title: None,
+            page_number: None,
+            content: "Machine learning basics and fundamentals.".to_string(),
+            score: 0.95,
+        }];
+
+        // 1 hop should discover c2
+        let results = multi_hop_retrieval(&conn, &initial, "col1", 1, 10).expect("multi_hop 1");
+        assert!(!results.is_empty(), "Should find at least one neighbor");
+        assert!(results.iter().any(|r| r.chunk_id == "c2"), "Should discover c2 at hop 1");
+        assert!(results.iter().all(|r| r.hop_distance == 1), "All should be hop_distance=1");
+
+        // 2 hops should also discover c3 and c4
+        let results_2hop = multi_hop_retrieval(&conn, &initial, "col1", 2, 10).expect("multi_hop 2");
+        let chunk_ids: HashSet<String> = results_2hop.iter().map(|r| r.chunk_id.clone()).collect();
+        assert!(chunk_ids.contains("c2"), "Should contain c2 at hop 1");
+        assert!(chunk_ids.contains("c3"), "Should contain c3 at hop 2");
+        assert!(chunk_ids.contains("c4"), "Should contain c4 at hop 2");
+
+        for r in &results_2hop {
+            if r.chunk_id == "c2" { assert_eq!(r.hop_distance, 1); }
+            if r.chunk_id == "c3" || r.chunk_id == "c4" { assert_eq!(r.hop_distance, 2); }
+        }
+
+        // max_additional limit
+        let limited = multi_hop_retrieval(&conn, &initial, "col1", 2, 1).expect("multi_hop limited");
+        assert_eq!(limited.len(), 1, "Should respect max_additional=1");
+    }
+
+    #[test]
+    fn test_extract_precise_citation_finds_best_sentence() {
+        let content = "The weather today is sunny. Machine learning uses neural networks for pattern recognition. The cat sat on the mat.";
+        let query = "machine learning neural networks";
+
+        let citation = extract_precise_citation(content, query);
+        assert!(citation.snippet.contains("Machine learning"), "Should pick ML sentence, got: '{}'", citation.snippet);
+        assert!(citation.confidence > 0.0, "Confidence should be positive");
+        assert!(citation.start_char < citation.end_char, "start < end");
+        assert_eq!(&content[citation.start_char..citation.end_char], citation.snippet, "Offsets should match snippet");
+
+        // Empty inputs
+        let empty = extract_precise_citation("", "query");
+        assert!(empty.snippet.is_empty());
+        assert_eq!(empty.confidence, 0.0);
+
+        let empty_query = extract_precise_citation("Some content here.", "");
+        assert_eq!(empty_query.confidence, 0.0);
+
+        // Single sentence without period
+        let single = extract_precise_citation("Only one sentence here", "sentence here");
+        assert_eq!(single.snippet, "Only one sentence here");
+        assert!(single.confidence > 0.0);
+
+        // Perfect match
+        let perfect = extract_precise_citation("Alpha beta gamma.", "alpha beta gamma");
+        assert_eq!(perfect.confidence, 1.0, "Perfect overlap should give confidence 1.0");
     }
 }

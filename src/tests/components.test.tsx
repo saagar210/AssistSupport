@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { Sidebar } from "../components/Sidebar";
 import { ToastContainer } from "../components/Toast";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -16,6 +16,7 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { IngestionPanel } from "../components/IngestionPanel";
 import { SetupWizard } from "../components/SetupWizard";
 import { OllamaStatusBanner } from "../components/OllamaStatusBanner";
+import { Modal, Toggle, Badge, Tooltip } from "../components/ui";
 import { FileText, Search } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { useAppStore } from "../stores/appStore";
@@ -306,5 +307,131 @@ describe("OllamaStatusBanner", () => {
   it("renders nothing when connected", () => {
     const { container } = render(<OllamaStatusBanner />);
     expect(container.querySelector('[data-testid="ollama-banner"]')).toBeNull();
+  });
+});
+
+describe("Modal", () => {
+  it("test_modal_opens_and_closes", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <Modal isOpen={false} onClose={onClose} title="Test Modal">
+        <p>Modal body</p>
+      </Modal>,
+    );
+    expect(screen.queryByText("Test Modal")).not.toBeInTheDocument();
+
+    rerender(
+      <Modal isOpen={true} onClose={onClose} title="Test Modal">
+        <p>Modal body</p>
+      </Modal>,
+    );
+    expect(screen.getByText("Test Modal")).toBeInTheDocument();
+    expect(screen.getByText("Modal body")).toBeInTheDocument();
+
+    // Close via close button
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("test_modal_closes_on_escape", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose} title="Escape Test">
+        <p>Content</p>
+      </Modal>,
+    );
+    expect(screen.getByText("Escape Test")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("closes on backdrop click", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose} title="Backdrop Test">
+        <p>Content</p>
+      </Modal>,
+    );
+    fireEvent.click(screen.getByTestId("modal-overlay"));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Toggle", () => {
+  it("test_toggle_switches_state", () => {
+    const onChange = vi.fn();
+    render(<Toggle checked={false} onChange={onChange} label="Dark mode" />);
+
+    expect(screen.getByText("Dark mode")).toBeInTheDocument();
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it("respects disabled state", () => {
+    const onChange = vi.fn();
+    render(<Toggle checked={false} onChange={onChange} disabled />);
+
+    expect(screen.getByRole("switch")).toBeDisabled();
+  });
+});
+
+describe("Badge", () => {
+  it("test_badge_renders_variants", () => {
+    const { rerender } = render(<Badge>Default</Badge>);
+    expect(screen.getByTestId("badge")).toBeInTheDocument();
+    expect(screen.getByText("Default")).toBeInTheDocument();
+
+    rerender(<Badge variant="success">Active</Badge>);
+    expect(screen.getByText("Active")).toBeInTheDocument();
+
+    rerender(<Badge variant="error">Failed</Badge>);
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+
+    rerender(<Badge variant="warning">Pending</Badge>);
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+
+    rerender(<Badge variant="info">Info</Badge>);
+    expect(screen.getByText("Info")).toBeInTheDocument();
+  });
+
+  it("supports size variants", () => {
+    const { rerender } = render(<Badge size="sm">Small</Badge>);
+    expect(screen.getByText("Small")).toBeInTheDocument();
+
+    rerender(<Badge size="md">Medium</Badge>);
+    expect(screen.getByText("Medium")).toBeInTheDocument();
+  });
+});
+
+describe("Tooltip", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("test_tooltip_shows_content", () => {
+    render(
+      <Tooltip content="Help text" delay={0}>
+        <button>Hover me</button>
+      </Tooltip>,
+    );
+
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByTestId("tooltip-wrapper"));
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    expect(screen.getByText("Help text")).toBeInTheDocument();
+
+    fireEvent.mouseLeave(screen.getByTestId("tooltip-wrapper"));
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });

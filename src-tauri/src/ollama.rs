@@ -1,5 +1,6 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -69,6 +70,169 @@ struct ChatStreamChunk {
 #[derive(Deserialize)]
 struct ChatChunkMessage {
     content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkResult {
+    pub model_name: String,
+    pub tokens_per_second: f64,
+    pub first_token_latency_ms: f64,
+    pub total_generation_time_ms: f64,
+    pub embedding_latency_ms: Option<f64>,
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+    pub timestamp: String,
+}
+
+#[derive(Serialize)]
+struct GenerateRequest<'a> {
+    model: &'a str,
+    prompt: &'a str,
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct GenerateStreamChunk {
+    response: Option<String>,
+    done: Option<bool>,
+    prompt_eval_count: Option<usize>,
+    eval_count: Option<usize>,
+}
+
+/// Run a benchmark against a model with a fixed prompt.
+///
+/// For chat models: sends a fixed prompt via /api/generate with stream=true,
+/// measuring time-to-first-token, total generation time, and tokens/sec.
+///
+/// For embedding models: sends fixed text via generate_embedding and measures latency.
+pub async fn benchmark_model(
+    host: &str,
+    port: &str,
+    model_name: &str,
+    is_embedding: bool,
+) -> Result<BenchmarkResult, AppError> {
+    let timestamp = Utc::now().to_rfc3339();
+
+    if is_embedding {
+        let sample_text = "The quick brown fox jumps over the lazy dog. \
+            Machine learning is a subset of artificial intelligence.";
+
+        let start = Instant::now();
+        generate_embedding(host, port, model_name, sample_text).await?;
+        let elapsed = start.elapsed();
+
+        return Ok(BenchmarkResult {
+            model_name: model_name.to_string(),
+            tokens_per_second: 0.0,
+            first_token_latency_ms: 0.0,
+            total_generation_time_ms: elapsed.as_secs_f64() * 1000.0,
+            embedding_latency_ms: Some(elapsed.as_secs_f64() * 1000.0),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            timestamp,
+        });
+    }
+
+    // Chat/generate model benchmark
+    let url = format!("http://{}:{}/api/generate", host, port);
+    let prompt = "Explain the concept of machine learning in 3 sentences.";
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| AppError::Ollama(e.to_string()))?;
+
+    let body = GenerateRequest {
+        model: model_name,
+        prompt,
+        stream: true,
+    };
+
+    let start = Instant::now();
+
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::Ollama(format!("Benchmark request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
+        return Err(AppError::Ollama(format!(
+            "Generate API returned {}: {}",
+            status, body_text
+        )));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut first_token_time: Option<Duration> = None;
+    let mut completion_tokens: usize = 0;
+    let mut prompt_tokens: usize = 0;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk_bytes = chunk_result
+            .map_err(|e| AppError::Ollama(format!("Stream read error: {}", e)))?;
+
+        let chunk_str = String::from_utf8_lossy(&chunk_bytes);
+
+        for line in chunk_str.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<GenerateStreamChunk>(line) {
+                if let Some(ref token) = parsed.response {
+                    if !token.is_empty() && first_token_time.is_none() {
+                        first_token_time = Some(start.elapsed());
+                    }
+                    // Count non-empty response chunks as tokens (rough approximation)
+                    if !token.is_empty() {
+                        completion_tokens += 1;
+                    }
+                }
+
+                if parsed.done == Some(true) {
+                    // Ollama returns actual token counts on the final chunk
+                    if let Some(pc) = parsed.prompt_eval_count {
+                        prompt_tokens = pc;
+                    }
+                    if let Some(ec) = parsed.eval_count {
+                        completion_tokens = ec;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    let total_elapsed = start.elapsed();
+    let total_ms = total_elapsed.as_secs_f64() * 1000.0;
+    let first_token_ms = first_token_time
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .unwrap_or(total_ms);
+
+    let tokens_per_second = if total_ms > 0.0 {
+        (completion_tokens as f64) / (total_ms / 1000.0)
+    } else {
+        0.0
+    };
+
+    Ok(BenchmarkResult {
+        model_name: model_name.to_string(),
+        tokens_per_second,
+        first_token_latency_ms: first_token_ms,
+        total_generation_time_ms: total_ms,
+        embedding_latency_ms: None,
+        prompt_tokens,
+        completion_tokens,
+        timestamp,
+    })
 }
 
 pub async fn health_check(host: &str, port: &str) -> Result<(bool, String), AppError> {
@@ -566,6 +730,57 @@ mod tests {
         assert!(deserialized.family.is_none());
         assert!(deserialized.format.is_none());
         assert!(deserialized.modified_at.is_none());
+    }
+
+    #[test]
+    fn test_benchmark_result_serialization() {
+        let result = BenchmarkResult {
+            model_name: "llama3:8b".to_string(),
+            tokens_per_second: 42.5,
+            first_token_latency_ms: 150.3,
+            total_generation_time_ms: 2500.0,
+            embedding_latency_ms: None,
+            prompt_tokens: 12,
+            completion_tokens: 85,
+            timestamp: "2025-01-15T10:30:00+00:00".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).expect("Failed to serialize BenchmarkResult");
+        let deserialized: BenchmarkResult =
+            serde_json::from_str(&json).expect("Failed to deserialize BenchmarkResult");
+
+        assert_eq!(deserialized.model_name, "llama3:8b");
+        assert!((deserialized.tokens_per_second - 42.5).abs() < f64::EPSILON);
+        assert!((deserialized.first_token_latency_ms - 150.3).abs() < f64::EPSILON);
+        assert!((deserialized.total_generation_time_ms - 2500.0).abs() < f64::EPSILON);
+        assert!(deserialized.embedding_latency_ms.is_none());
+        assert_eq!(deserialized.prompt_tokens, 12);
+        assert_eq!(deserialized.completion_tokens, 85);
+        assert_eq!(deserialized.timestamp, "2025-01-15T10:30:00+00:00");
+    }
+
+    #[test]
+    fn test_benchmark_result_serialization_embedding() {
+        let result = BenchmarkResult {
+            model_name: "nomic-embed-text".to_string(),
+            tokens_per_second: 0.0,
+            first_token_latency_ms: 0.0,
+            total_generation_time_ms: 85.7,
+            embedding_latency_ms: Some(85.7),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            timestamp: "2025-01-15T10:30:00+00:00".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).expect("Failed to serialize BenchmarkResult");
+        let deserialized: BenchmarkResult =
+            serde_json::from_str(&json).expect("Failed to deserialize BenchmarkResult");
+
+        assert_eq!(deserialized.model_name, "nomic-embed-text");
+        assert!((deserialized.tokens_per_second - 0.0).abs() < f64::EPSILON);
+        assert_eq!(deserialized.embedding_latency_ms, Some(85.7));
+        assert_eq!(deserialized.prompt_tokens, 0);
+        assert_eq!(deserialized.completion_tokens, 0);
     }
 
     #[test]

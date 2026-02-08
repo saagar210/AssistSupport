@@ -89,6 +89,7 @@ pub fn run() {
             commands::ollama::show_ollama_model,
             commands::ollama::get_recommended_models,
             commands::ollama::get_models_by_use_case,
+            commands::ollama::benchmark_ollama_model,
             commands::documents::ingest_files,
             commands::documents::list_documents,
             commands::documents::get_document,

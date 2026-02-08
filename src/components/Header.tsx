@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Settings, Plus } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useCollectionStore } from "../stores/collectionStore";
+import { Modal, FormField, TextInput } from "./ui";
 
 export function Header() {
   const setActiveView = useAppStore((state) => state.setActiveView);
@@ -15,12 +17,25 @@ export function Header() {
     (state) => state.createCollection,
   );
 
-  function handleNewCollection() {
-    const name = window.prompt("Collection name:");
-    if (!name?.trim()) return;
-    const description =
-      window.prompt("Description (optional):") ?? "";
+  const [modalOpen, setModalOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [nameError, setNameError] = useState("");
+
+  function openModal() {
+    setName("");
+    setDescription("");
+    setNameError("");
+    setModalOpen(true);
+  }
+
+  function handleSubmit() {
+    if (!name.trim()) {
+      setNameError("Collection name is required");
+      return;
+    }
     createCollection(name.trim(), description.trim());
+    setModalOpen(false);
   }
 
   return (
@@ -43,7 +58,7 @@ export function Header() {
 
         <button
           title="New Collection"
-          onClick={handleNewCollection}
+          onClick={openModal}
           className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Plus size={16} />
@@ -61,6 +76,56 @@ export function Header() {
       >
         <Settings size={16} />
       </button>
+
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="New Collection"
+        size="sm"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+          className="flex flex-col gap-4"
+        >
+          <FormField label="Name" required error={nameError}>
+            <TextInput
+              placeholder="Collection name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError) setNameError("");
+              }}
+              error={!!nameError}
+              autoFocus
+            />
+          </FormField>
+          <FormField label="Description" helpText="Optional short description">
+            <TextInput
+              placeholder="Description (optional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </FormField>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              Create
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

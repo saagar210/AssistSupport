@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::model_registry::{self, RecommendedModel};
 use crate::models::OllamaModel;
 use crate::ollama;
-use crate::ollama::ModelInfo;
+use crate::ollama::{BenchmarkResult, ModelInfo};
 use crate::state::{get_conn, AppState};
 
 #[tauri::command]
@@ -152,4 +152,31 @@ pub fn get_recommended_models() -> Vec<RecommendedModel> {
 #[tauri::command]
 pub fn get_models_by_use_case(use_case: String) -> Vec<RecommendedModel> {
     model_registry::get_models_by_use_case(&use_case)
+}
+
+#[tauri::command]
+pub async fn benchmark_ollama_model(
+    state: State<'_, AppState>,
+    model_name: String,
+    is_embedding: Option<bool>,
+) -> Result<BenchmarkResult, AppError> {
+    let (host, port) = {
+        let conn = get_conn(state.inner())?;
+
+        let host: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'ollama_host'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let port: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'ollama_port'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        (host, port)
+    };
+
+    ollama::benchmark_model(&host, &port, &model_name, is_embedding.unwrap_or(false)).await
 }

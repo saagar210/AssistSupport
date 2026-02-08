@@ -61,8 +61,24 @@ fn migrate_v4(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Migration v5: Add enhanced citation columns for multi-hop RAG.
+fn migrate_v5(conn: &Connection) -> Result<(), AppError> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Each ALTER TABLE uses .ok() for idempotent re-runs (won't fail if column exists)
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN start_char INTEGER DEFAULT 0;").ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN end_char INTEGER DEFAULT 0;").ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN confidence REAL DEFAULT 0.0;").ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN hop_distance INTEGER DEFAULT 0;").ok();
+
+    set_schema_version(&tx, 5)?;
+    tx.commit()?;
+    tracing::info!("Migration v5 applied (enhanced citation columns for multi-hop RAG)");
+    Ok(())
+}
+
 #[cfg(test)]
-const CURRENT_VERSION: i64 = 4;
+const CURRENT_VERSION: i64 = 5;
 
 /// Run all pending migrations. Called after initial schema creation.
 pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
@@ -79,6 +95,9 @@ pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
     }
     if version < 4 {
         migrate_v4(conn)?;
+    }
+    if version < 5 {
+        migrate_v5(conn)?;
     }
 
     Ok(())
@@ -277,6 +296,34 @@ mod tests {
             )
             .unwrap();
         assert!(idx_count >= 3, "Should have at least 3 entity_rel indexes");
+    }
+
+    #[test]
+    fn test_migration_v5_adds_citation_columns() {
+        let conn = setup_db();
+        let version = get_schema_version(&conn).unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+
+        // Verify all four new columns exist on citations table
+        let has_start_char: bool = conn
+            .prepare("SELECT start_char FROM citations LIMIT 0")
+            .is_ok();
+        assert!(has_start_char, "citations.start_char column should exist after migration v5");
+
+        let has_end_char: bool = conn
+            .prepare("SELECT end_char FROM citations LIMIT 0")
+            .is_ok();
+        assert!(has_end_char, "citations.end_char column should exist after migration v5");
+
+        let has_confidence: bool = conn
+            .prepare("SELECT confidence FROM citations LIMIT 0")
+            .is_ok();
+        assert!(has_confidence, "citations.confidence column should exist after migration v5");
+
+        let has_hop_distance: bool = conn
+            .prepare("SELECT hop_distance FROM citations LIMIT 0")
+            .is_ok();
+        assert!(has_hop_distance, "citations.hop_distance column should exist after migration v5");
     }
 
     #[test]

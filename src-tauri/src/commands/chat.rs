@@ -31,7 +31,7 @@ pub async fn send_chat_message(
     let user_msg_id = uuid::Uuid::new_v4().to_string();
 
     // 1. Save user message to DB + read all settings we need, then drop connection
-    let (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget) = {
+    let (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget, use_multi_hop) = {
         let conn = get_conn(state.inner())?;
 
         conn.execute(
@@ -78,8 +78,11 @@ pub async fn send_chat_message(
         let history_token_budget: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'history_token_budget'", [], |row: &rusqlite::Row| row.get(0),
         ).unwrap_or_else(|_| "2048".to_string());
+        let use_multi_hop: String = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'use_multi_hop'", [], |row: &rusqlite::Row| row.get(0),
+        ).unwrap_or_else(|_| "false".to_string());
 
-        (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget)
+        (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget, use_multi_hop)
     };
 
     let rrf_k_val: f64 = rrf_k.parse().unwrap_or(60.0);
@@ -105,6 +108,31 @@ pub async fn send_chat_message(
         crate::commands::search::reciprocal_rank_fusion_pub(vr, kr, rrf_k_val, vec_top_k)
     };
 
+    // 2b. Optionally run multi-hop retrieval to expand context via graph edges
+    let multi_hop_results: Vec<crate::rag::MultiHopResult> = if use_multi_hop == "true" {
+        let conn = get_conn(state.inner())?;
+        crate::rag::multi_hop_retrieval(&conn, &candidate_results, &collection_id, 2, 5)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Merge multi-hop results into candidate results as SearchResult entries
+    let mut all_candidates = candidate_results.clone();
+    for hop_result in &multi_hop_results {
+        if !all_candidates.iter().any(|r| r.chunk_id == hop_result.chunk_id) {
+            all_candidates.push(SearchResult {
+                chunk_id: hop_result.chunk_id.clone(),
+                document_id: hop_result.document_id.clone(),
+                document_title: hop_result.document_title.clone(),
+                section_title: None,
+                page_number: None,
+                content: hop_result.content.clone(),
+                score: hop_result.score * 0.8, // Discount multi-hop results slightly
+            });
+        }
+    }
+
     // 3. Load raw conversation history (generous limit, adaptive trimming handles budget)
     let raw_history: Vec<(String, String)> = {
         let conn = get_conn(state.inner())?;
@@ -113,7 +141,7 @@ pub async fn send_chat_message(
 
     // 4. Apply adaptive context window: filter by relevance + token budget
     let (context_results, trimmed_history) = crate::rag::build_adaptive_context(
-        &candidate_results,
+        &all_candidates,
         ctx_token_budget,
         &raw_history,
         hist_token_budget,
@@ -170,16 +198,30 @@ pub async fn send_chat_message(
             rusqlite::params![assistant_msg_id, conversation_id, "assistant", full_response, msg_now],
         )?;
 
-        // Save citations (one per context chunk)
+        // Build a lookup of chunk_id -> hop_distance from multi-hop results
+        let hop_distances: std::collections::HashMap<String, usize> = multi_hop_results
+            .iter()
+            .map(|r| (r.chunk_id.clone(), r.hop_distance))
+            .collect();
+
+        // Save citations (one per context chunk) with precise citation extraction
         let mut saved_citations = Vec::new();
         for result in &context_results {
             let citation_id = uuid::Uuid::new_v4().to_string();
-            // Truncate snippet to first 200 chars
-            let snippet: String = result.content.chars().take(200).collect();
+
+            // Extract precise citation with character offsets
+            let precise = crate::rag::extract_precise_citation(&result.content, &user_message);
+            let snippet = if precise.snippet.is_empty() {
+                result.content.chars().take(200).collect::<String>()
+            } else {
+                precise.snippet.clone()
+            };
+
+            let hop_distance = hop_distances.get(&result.chunk_id).copied().unwrap_or(0);
 
             conn.execute(
-                "INSERT INTO citations (id, message_id, chunk_id, document_id, document_title, section_title, page_number, relevance_score, snippet)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO citations (id, message_id, chunk_id, document_id, document_title, section_title, page_number, relevance_score, snippet, start_char, end_char, confidence, hop_distance)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 rusqlite::params![
                     citation_id,
                     assistant_msg_id,
@@ -190,6 +232,10 @@ pub async fn send_chat_message(
                     result.page_number,
                     result.score,
                     snippet,
+                    precise.start_char as i64,
+                    precise.end_char as i64,
+                    precise.confidence,
+                    hop_distance as i64,
                 ],
             )?;
 
