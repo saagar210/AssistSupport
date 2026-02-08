@@ -1,0 +1,16 @@
+{
+  "target_repo": "/Users/d/Projects/AssistSupport",
+  "source_repo": "/Users/d/Projects/MemoryKernel",
+  "migration_branch": "codex/monorepo-migration",
+  "rehearsal_branch": "codex/monorepo-import-rehearsal",
+  "base_migration_commit": "bdd23d9b3fef4f92307334d8304f28ff8670f8da",
+  "rehearsal_import_commit": "fe2645288f781101843908a4ca10151ba0a4a275",
+  "source_main_commit": "54da0d271da6b7dcad8e4a8411c1577e9ee988fa",
+  "source_release_tag": "v0.4.0",
+  "import_prefix": "services/memorykernel",
+  "history_preserving": true,
+  "notes": [
+    "Rehearsal import performed via git subtree add without squash.",
+    "Tag fetch collision observed for local tag v0.3.1; branch fetch used for rehearsal."
+  ]
+}

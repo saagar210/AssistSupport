@@ -4,9 +4,22 @@ import path from 'node:path';
 const root = process.cwd();
 const pinPath = path.join(root, 'config', 'memorykernel-integration-pin.json');
 const producerManifestPath = path.join(root, 'config', 'memorykernel-producer-manifest.json');
-const defaultHandoffPath =
+const legacyDefaultHandoffPath =
   '/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json';
-const handoffPath = process.env.MEMORYKERNEL_HANDOFF_PAYLOAD_PATH?.trim() || defaultHandoffPath;
+const monorepoDefaultHandoffPath = path.join(
+  root,
+  'services',
+  'memorykernel',
+  'docs',
+  'implementation',
+  'PRODUCER_RELEASE_HANDOFF_LATEST.json'
+);
+const handoffPath =
+  process.env.MEMORYKERNEL_HANDOFF_PAYLOAD_PATH?.trim() ||
+  [monorepoDefaultHandoffPath, legacyDefaultHandoffPath].find((candidatePath) =>
+    fs.existsSync(candidatePath)
+  ) ||
+  monorepoDefaultHandoffPath;
 const requireHandoff = process.env.ASSISTSUPPORT_REQUIRE_HANDOFF_PAYLOAD === '1';
 const requirePinMatch = process.env.ASSISTSUPPORT_HANDOFF_REQUIRE_PIN_MATCH !== '0';
 const outputPath = path.join(root, 'artifacts', 'memorykernel-handoff-evidence.json');

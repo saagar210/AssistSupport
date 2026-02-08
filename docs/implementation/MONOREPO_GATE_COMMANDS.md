@@ -19,16 +19,22 @@ pnpm run test:ci
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
-./scripts/verify_service_contract_alignment.sh --memorykernel-root /Users/d/Projects/MemoryKernel
-./scripts/verify_contract_parity.sh --canonical-root /Users/d/Projects/MemoryKernel
-./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root /Users/d/Projects/MemoryKernel
-./scripts/run_trilogy_smoke.sh --memorykernel-root /Users/d/Projects/MemoryKernel
-./scripts/run_trilogy_compliance_suite.sh --memorykernel-root /Users/d/Projects/MemoryKernel --skip-baseline
-./scripts/verify_producer_contract_manifest.sh --memorykernel-root /Users/d/Projects/MemoryKernel
-./scripts/verify_producer_handoff_payload.sh --memorykernel-root /Users/d/Projects/MemoryKernel
+cd services/memorykernel
+./scripts/verify_service_contract_alignment.sh --memorykernel-root "$(pwd)"
+./scripts/verify_contract_parity.sh --canonical-root "$(pwd)"
+./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root "$(pwd)"
+./scripts/run_trilogy_smoke.sh --memorykernel-root "$(pwd)"
+./scripts/run_trilogy_compliance_suite.sh --memorykernel-root "$(pwd)" --skip-baseline
+./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$(pwd)"
+./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$(pwd)"
 ```
 
 ## Required Evidence Artifacts Per Gate
 For every gate execution, write:
 1. Human-readable evidence markdown under `docs/implementation/evidence/`
 2. Machine-readable summary JSON under `docs/implementation/evidence/`
+
+## Final Migration Gates
+1. `G5`: AssistSupport monorepo validation (`artifacts/monorepo-gates/GATE_G5_ASSISTSUPPORT_MONOREPO_VALIDATION.log`)
+2. `G6`: Imported MemoryKernel validation (`artifacts/monorepo-gates/GATE_G6_IMPORTED_MEMORYKERNEL_VALIDATION.log`)
+3. `G7`: Monorepo decision checkpoint (`docs/implementation/MONOREPO_DECISION_CHECKPOINT.md`)

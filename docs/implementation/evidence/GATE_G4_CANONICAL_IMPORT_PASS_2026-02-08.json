@@ -1,0 +1,10 @@
+{
+  "gate": "G4",
+  "repo": "AssistSupport",
+  "timestamp_utc": "2026-02-08T14:28:00Z",
+  "branch": "codex/monorepo-migration",
+  "commit": "e839dfe809e00f117bab758bc3b75efab34e2746",
+  "result": "PASS",
+  "import_prefix": "services/memorykernel",
+  "source_split_commit": "54da0d271da6b7dcad8e4a8411c1577e9ee988fa"
+}

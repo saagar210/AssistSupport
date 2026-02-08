@@ -27,9 +27,22 @@ const decisionRecordPath = path.join(
   'implementation',
   'RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md'
 );
+const legacyDefaultHandoffPath =
+  '/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json';
+const monorepoDefaultHandoffPath = path.join(
+  root,
+  'services',
+  'memorykernel',
+  'docs',
+  'implementation',
+  'PRODUCER_RELEASE_HANDOFF_LATEST.json'
+);
 const handoffPath =
   process.env.MEMORYKERNEL_HANDOFF_PAYLOAD_PATH?.trim() ||
-  '/Users/d/Projects/MemoryKernel/docs/implementation/PRODUCER_RELEASE_HANDOFF_LATEST.json';
+  [monorepoDefaultHandoffPath, legacyDefaultHandoffPath].find((candidatePath) =>
+    fs.existsSync(candidatePath)
+  ) ||
+  monorepoDefaultHandoffPath;
 
 function fail(message) {
   console.error(`MemoryKernel cutover policy validation failed: ${message}`);

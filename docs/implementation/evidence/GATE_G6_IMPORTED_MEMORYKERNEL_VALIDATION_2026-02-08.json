@@ -1,0 +1,23 @@
+{
+  "gate_id": "G6",
+  "date_utc": "2026-02-08",
+  "branch": "codex/monorepo-migration",
+  "scope": "imported_memorykernel_validation",
+  "workdir": "services/memorykernel",
+  "log_path": "artifacts/monorepo-gates/GATE_G6_IMPORTED_MEMORYKERNEL_VALIDATION.log",
+  "commands": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --all-targets --all-features",
+    "./scripts/verify_service_contract_alignment.sh --memorykernel-root $(pwd)",
+    "./scripts/verify_contract_parity.sh --canonical-root $(pwd)",
+    "./scripts/verify_trilogy_compatibility_artifacts.sh --memorykernel-root $(pwd)",
+    "./scripts/run_trilogy_smoke.sh --memorykernel-root $(pwd)",
+    "./scripts/run_trilogy_compliance_suite.sh --memorykernel-root $(pwd) --skip-baseline",
+    "./scripts/verify_producer_contract_manifest.sh --memorykernel-root $(pwd)",
+    "./scripts/verify_producer_handoff_payload.sh --memorykernel-root $(pwd)"
+  ],
+  "status": "PASS",
+  "blocking_findings": 0,
+  "notes": "Imported producer stack fully validated inside AssistSupport monorepo layout."
+}

@@ -1,0 +1,21 @@
+{
+  "timestamp_utc": "2026-02-08T14:28:00Z",
+  "target_repo": "/Users/d/Projects/AssistSupport",
+  "target_branch": "codex/monorepo-migration",
+  "target_commit": "e839dfe809e00f117bab758bc3b75efab34e2746",
+  "import_method": "git subtree add --prefix=services/memorykernel memorykernel main",
+  "source_repo": "/Users/d/Projects/MemoryKernel",
+  "source_ref": "main",
+  "source_split_commit": "54da0d271da6b7dcad8e4a8411c1577e9ee988fa",
+  "subtree_prefix": "services/memorykernel",
+  "history_preserved": true,
+  "subtree_metadata": {
+    "git_subtree_dir": "services/memorykernel",
+    "git_subtree_mainline": "bdd23d985941d1c3dc8570e9d385dc4743831ecd",
+    "git_subtree_split": "54da0d271da6b7dcad8e4a8411c1577e9ee988fa"
+  },
+  "tag_notes": [
+    "Branch import used to avoid local tag name collision for v0.3.1 during rehearsal.",
+    "Canonical import lineage is anchored by git-subtree metadata and source split SHA."
+  ]
+}

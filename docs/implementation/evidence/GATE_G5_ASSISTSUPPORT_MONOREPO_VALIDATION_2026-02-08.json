@@ -1,0 +1,22 @@
+{
+  "gate_id": "G5",
+  "date_utc": "2026-02-08",
+  "branch": "codex/monorepo-migration",
+  "scope": "assistsupport_monorepo_validation",
+  "log_path": "artifacts/monorepo-gates/GATE_G5_ASSISTSUPPORT_MONOREPO_VALIDATION.log",
+  "commands": [
+    "pnpm run typecheck",
+    "pnpm run test",
+    "pnpm run check:memorykernel-pin",
+    "pnpm run check:memorykernel-governance",
+    "pnpm run check:memorykernel-handoff",
+    "pnpm run check:memorykernel-handoff:service-v3-candidate",
+    "pnpm run test:memorykernel-contract",
+    "pnpm run test:memorykernel-phase3-dry-run",
+    "pnpm run test:memorykernel-cutover-dry-run",
+    "pnpm run test:ci"
+  ],
+  "status": "PASS",
+  "blocking_findings": 0,
+  "notes": "Deterministic fallback and adapter-boundary guardrails remain green."
+}
