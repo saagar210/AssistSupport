@@ -23,7 +23,7 @@
 
 ### Confirmed joint decisions (AssistSupport + MemoryKernel)
 - `error_code_enum` validation mode: set equality (order-independent).
-- Producer-manifest hash validation in consumer CI: not required for Checkpoint A/B.
+- Producer-manifest hash validation in consumer CI: not required for Checkpoint A/B; now active post-checkpoint as part of early Phase 3 hardening.
 - Consumer governance rule: pin + matrix + manifest updates must be atomic in one PR.
 
 ### Checkpoint status (as of 2026-02-08)
@@ -195,6 +195,7 @@ cargo test --workspace --all-targets --all-features
 
 Reference draft:
 - `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_RFC_DRAFT.md`
+- `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_REHEARSAL_PLAN.md`
 
 ## Milestone M1: RFC draft
 - Define final `service.v3` non-2xx envelope without `legacy_error`.
@@ -288,7 +289,7 @@ Consumer impact:
   - fail on mismatch for tag/sha/service/api/integration baseline.
   - enforce `error_code_enum` set equality (order-independent).
   - enforce atomic pin+matrix+manifest updates in one PR.
-  - defer producer-manifest hash validation to Phase 3 automation hardening.
+  - producer-manifest hash validation is now active in consumer CI (remote fetch from pinned release tag).
 
 ## 8) Copy/Paste Prompt for AssistSupport Codex
 

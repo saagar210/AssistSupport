@@ -156,4 +156,3 @@ cargo test --workspace --all-targets --all-features
 
 ## Open decisions
 1. Confirm overlap rehearsal duration remains 14 calendar days (1 sprint).
-2. Confirm first release train where manifest-hash validation becomes mandatory in consumer CI.
