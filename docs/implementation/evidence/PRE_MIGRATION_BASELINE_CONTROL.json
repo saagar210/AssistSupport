@@ -1,0 +1,28 @@
+{
+  "assistsupport": {
+    "repo": "/Users/d/Projects/AssistSupport",
+    "branch": "codex/monorepo-migration",
+    "commit": "2deeef0356773e278df4dba496c33313eee66e27",
+    "release_tag": "v1.0.0",
+    "memorykernel_pin": {
+      "release_tag": "v0.4.0",
+      "commit_sha": "7e4806a34b98e6c06ee33fa9f11499a975e7b922",
+      "service_contract_version": "service.v3",
+      "api_contract_version": "api.v1",
+      "integration_baseline": "integration/v1"
+    }
+  },
+  "memorykernel": {
+    "repo": "/Users/d/Projects/MemoryKernel",
+    "branch": "main",
+    "commit": "54da0d271da6b7dcad8e4a8411c1577e9ee988fa",
+    "release_tag": "v0.3.2",
+    "service_contract_version": "service.v3",
+    "api_contract_version": "api.v1",
+    "integration_baseline": "integration/v1"
+  },
+  "notes": [
+    "Pre-migration control snapshot generated before canonical import operations.",
+    "Release tags reflect current documented states and may be updated during migration if governance docs change."
+  ]
+}

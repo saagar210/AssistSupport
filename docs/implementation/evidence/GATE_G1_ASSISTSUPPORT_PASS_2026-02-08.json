@@ -1,0 +1,9 @@
+{
+  "gate": "G1",
+  "repo": "AssistSupport",
+  "timestamp_utc": "2026-02-08T14:25:51Z",
+  "branch": "codex/monorepo-migration",
+  "commit": "2deeef0356773e278df4dba496c33313eee66e27",
+  "result": "PASS",
+  "output_file": "docs/implementation/evidence/GATE_G1_ASSISTSUPPORT_PASS_2026-02-08.md"
+}
