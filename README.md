@@ -155,6 +155,7 @@ For day-to-day engineering workflows (local validation, CI triage, backup/restor
 git clone https://github.com/saagar210/AssistSupport.git
 cd AssistSupport
 pnpm install
+pnpm run check:monorepo-readiness
 pnpm tauri dev
 ```
 

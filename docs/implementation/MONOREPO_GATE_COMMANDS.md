@@ -2,6 +2,9 @@
 
 ## AssistSupport Baseline and Validation Commands
 ```bash
+pnpm run check:workstation-preflight
+pnpm run check:monorepo-readiness
+pnpm run check:monorepo-readiness:full
 pnpm run typecheck
 pnpm run test
 pnpm run check:memorykernel-pin

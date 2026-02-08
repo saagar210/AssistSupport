@@ -240,6 +240,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify workstation preflight contract
+        run: pnpm run check:workstation-preflight
+
       - name: Run monorepo governance checks
         run: |
           pnpm run check:memorykernel-pin

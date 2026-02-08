@@ -27,7 +27,15 @@ cd AssistSupport
 ```bash
 pnpm install --frozen-lockfile
 ```
-3. Validate consumer integration governance:
+3. Run the canonical monorepo readiness gate (recommended):
+```bash
+pnpm run check:monorepo-readiness:full
+```
+4. Optional: run step-by-step commands for troubleshooting/debugging:
+```bash
+pnpm run check:workstation-preflight
+```
+5. Validate consumer integration governance:
 ```bash
 pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
@@ -36,7 +44,7 @@ pnpm run check:memorykernel-handoff:service-v3-candidate
 pnpm run check:memorykernel-boundary
 pnpm run check:memorykernel-cutover-policy
 ```
-4. Validate consumer runtime and contract behavior:
+6. Validate consumer runtime and contract behavior:
 ```bash
 pnpm run typecheck
 pnpm run test
@@ -45,7 +53,7 @@ pnpm run test:memorykernel-phase3-dry-run
 pnpm run test:memorykernel-cutover-dry-run
 pnpm run test:ci
 ```
-5. Validate imported MemoryKernel stack:
+7. Validate imported MemoryKernel stack:
 ```bash
 cd services/memorykernel
 cargo fmt --all -- --check
@@ -59,7 +67,7 @@ cargo test --workspace --all-targets --all-features
 ./scripts/verify_producer_contract_manifest.sh --memorykernel-root "$(pwd)"
 ./scripts/verify_producer_handoff_payload.sh --memorykernel-root "$(pwd)"
 ```
-6. Return to repository root:
+8. Return to repository root:
 ```bash
 cd ../..
 ```
@@ -68,6 +76,7 @@ cd ../..
 1. All commands pass without manual patching.
 2. Consumer governance artifacts are internally consistent.
 3. Embedded MemoryKernel contracts and compliance gates pass in-place.
+4. Workstation preflight evidence is generated at `artifacts/workstation-preflight-evidence.json`.
 
 ## Fail-Fast Rules
 1. If `check:memorykernel-pin` fails, stop and repair pin/matrix/manifest atomicity.

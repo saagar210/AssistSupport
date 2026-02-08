@@ -13,7 +13,17 @@ This runbook covers day-to-day development operations, incident triage, security
 ### Startup
 ```bash
 pnpm install --frozen-lockfile
+pnpm run check:monorepo-readiness
 pnpm dev
+```
+
+### Canonical monorepo readiness gates
+```bash
+# Fast validation (recommended before regular pushes)
+pnpm run check:monorepo-readiness
+
+# Full validation (recommended before machine migration / release handoff)
+pnpm run check:monorepo-readiness:full
 ```
 
 ### Core verification commands
@@ -105,6 +115,12 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
    ```
 8. Rollback policy:
    - If contract gate fails on pin bump, revert pin+matrix+producer manifest mirror to last approved pair and re-run tests.
+
+### Workstation preflight-only check
+Use this when validating new-machine prerequisites before running the full readiness suite.
+```bash
+pnpm run check:workstation-preflight
+```
 
 ### MemoryKernel Phase 3 dry-run command (consumer)
 Use this to validate producer handoff payload + consumer governance + contract paths together.
