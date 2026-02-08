@@ -28,6 +28,13 @@ Date: 2026-02-08
    - `docs/revamp/evidence/PHASE5_LLM_GOVERNANCE_CLOSURE_2026-02-08.md`
 3. R-005/R-006 mitigation execution confirmed via:
    - `docs/revamp/evidence/PHASE6_OPS_HARDENING_CLOSURE_2026-02-08.md`
+4. R-002 mitigation revalidated and closed for current baseline via:
+   - `docs/revamp/evidence/PHASE7_SECURITY_COMPLIANCE_CLOSURE_2026-02-08.md`
+   - `docs/revamp/evidence/PHASE8_RELEASE_CANDIDATE_CLOSURE_2026-02-08.md`
+5. R-005 mitigation closure reaffirmed in Phase 7 security packet:
+   - `docs/revamp/SECURITY_SIGNOFF_PACKET.md`
+6. R-006 mitigation closure reaffirmed in Phase 8 release candidate closure:
+   - `docs/revamp/evidence/PHASE8_RELEASE_CANDIDATE_CLOSURE_2026-02-08.md`
 
 ## Risk Review Cadence
 1. Update on each phase closeout.

@@ -78,6 +78,12 @@ Date: 2026-02-08
    - `docs/revamp/evidence/PHASE5_LLM_GOVERNANCE_CLOSURE_2026-02-08.md`
 3. G6 closed with:
    - `docs/revamp/evidence/PHASE6_OPS_HARDENING_CLOSURE_2026-02-08.md`
+4. G7 closed with:
+   - `docs/revamp/evidence/PHASE7_SECURITY_COMPLIANCE_CLOSURE_2026-02-08.md`
+   - `docs/revamp/SECURITY_SIGNOFF_PACKET.md`
+5. G8 closed with:
+   - `docs/revamp/evidence/PHASE8_RELEASE_CANDIDATE_CLOSURE_2026-02-08.md`
+   - `docs/revamp/GO_NO_GO_DECISION_RECORD.md`
 
 ## Mandatory Verification Suite (for gate transitions)
 ```bash
