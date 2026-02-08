@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (bilateral sign-off closure)
+Updated: 2026-02-08 (cutover-decision checkpoint opened)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -52,4 +52,6 @@ Updated: 2026-02-08 (bilateral sign-off closure)
   - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_PRODUCER_2026-02-08.md`
 - Closure evidence:
   - Producer sign-off commit: `208efc5b7006f4ac3f12dc0d9d57b8a0f3bbd85d`
-- Next: keep runtime cutover blocked and open a new explicit cutover-decision checkpoint only when both sides agree to enter cutover mode.
+- New cutover-decision checkpoint packet:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_2026-02-08.md`
+- Next: keep runtime cutover blocked and use this checkpoint packet for any future cutover-decision session.
