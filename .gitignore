@@ -71,3 +71,4 @@ venv/
 tmp/
 .next/
 dump.rdb
+artifacts/

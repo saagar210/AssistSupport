@@ -131,6 +131,12 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     try {
       const combinedInput = ocrText ? `${input}\n\n[Screenshot OCR Text]:\n${ocrText}` : input;
       const enrichment = await enrichDiagnosticNotes(combinedInput, diagnosticNotes || undefined);
+      logEvent('memorykernel_enrichment_attempted', {
+        applied: enrichment.enrichmentApplied,
+        status: enrichment.status,
+        fallback_reason: enrichment.fallbackReason,
+        machine_error_code: enrichment.machineErrorCode,
+      });
       if (!enrichment.enrichmentApplied) {
         console.info('MemoryKernel enrichment skipped:', enrichment.message);
       }

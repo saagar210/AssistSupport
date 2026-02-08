@@ -142,9 +142,9 @@ export function setupE2eTauriMock(): void {
         case 'get_memory_kernel_integration_pin':
           return {
             memorykernel_repo: 'https://github.com/saagar210/MemoryKernel',
-            release_tag: 'v0.1.0',
-            commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
-            expected_service_contract_version: 'service.v1',
+            release_tag: 'v0.3.0',
+            commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
+            expected_service_contract_version: 'service.v2',
             expected_api_contract_version: 'api.v1',
             expected_integration_baseline: 'integration/v1',
             default_base_url: 'http://127.0.0.1:4010',
@@ -160,17 +160,19 @@ export function setupE2eTauriMock(): void {
             base_url: 'http://127.0.0.1:4010',
             service_contract_version: null,
             api_contract_version: null,
-            expected_service_contract_version: 'service.v1',
+            expected_service_contract_version: 'service.v2',
             expected_api_contract_version: 'api.v1',
             integration_baseline: 'integration/v1',
-            release_tag: 'v0.1.0',
-            commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+            release_tag: 'v0.3.0',
+            commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
           };
         case 'memory_kernel_query_ask':
           return {
             applied: false,
             status: 'fallback',
             message: 'MemoryKernel enrichment currently unavailable',
+            fallback_reason: 'offline',
+            machine_error_code: null,
             context_package_id: null,
             enrichment_text: null,
             preflight: {
@@ -182,11 +184,11 @@ export function setupE2eTauriMock(): void {
               base_url: 'http://127.0.0.1:4010',
               service_contract_version: null,
               api_contract_version: null,
-              expected_service_contract_version: 'service.v1',
+              expected_service_contract_version: 'service.v2',
               expected_api_contract_version: 'api.v1',
               integration_baseline: 'integration/v1',
-              release_tag: 'v0.1.0',
-              commit_sha: 'b62fa63e4f80503a61c6719df7146d7ae4a5cd95',
+              release_tag: 'v0.3.0',
+              commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
             },
           };
         case 'check_db_integrity':

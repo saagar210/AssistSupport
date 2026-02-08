@@ -13,7 +13,7 @@ Define how AssistSupport should integrate with MemoryKernel in a way that is rel
 - MemoryKernel is actively changing; local working tree activity is expected.
 - MemoryKernel currently exposes both:
   - local Rust API crate (`memory-kernel-api`)
-  - local HTTP service (`memory-kernel-service`, default `127.0.0.1:4010`, `service.v1`)
+  - local HTTP service (`memory-kernel-service`, default `127.0.0.1:4010`, `service.v2`)
 
 ## Why Integration Drift Is the Main Risk
 
@@ -84,7 +84,7 @@ AssistSupport (Tauri backend) calls `memory-kernel-service` over localhost.
 ### Pros
 
 - Clean process isolation and failure containment.
-- Strong version handshake via service envelope (`service.v1`, `api.v1`).
+- Strong version handshake via service envelope (`service.v2`, `api.v1`).
 - Easier local debugging and integration testing.
 - No tight Rust crate coupling across repos.
 
@@ -222,4 +222,3 @@ Create an AssistSupport RFC for “MemoryKernel v1 Service Adapter” containing
 - timeout/fallback policy
 - test plan and CI gates
 - rollout and rollback steps
-

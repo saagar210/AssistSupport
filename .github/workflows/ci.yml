@@ -121,8 +121,33 @@ jobs:
       - name: Create frontend dist stub
         run: mkdir -p dist && echo '<html></html>' > dist/index.html
 
+      - name: Validate MemoryKernel pin + matrix sync
+        run: pnpm run check:memorykernel-pin
+
       - name: Run MemoryKernel contract tests
         run: pnpm run test:memorykernel-contract
+
+      - name: Summarize MemoryKernel contract evidence
+        run: |
+          if [[ -f artifacts/memorykernel-contract-evidence.json ]]; then
+            echo "### MemoryKernel Contract Evidence" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat artifacts/memorykernel-contract-evidence.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Missing artifacts/memorykernel-contract-evidence.json"
+            exit 1
+          fi
+
+      - name: Upload MemoryKernel contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memorykernel-contract-evidence
+          path: artifacts/memorykernel-contract-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
   test-e2e-smoke:
     name: E2E Smoke

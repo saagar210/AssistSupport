@@ -9,6 +9,8 @@ export interface MemoryKernelEnrichmentOutcome {
   enrichmentApplied: boolean;
   status: string;
   message: string;
+  fallbackReason: string | null;
+  machineErrorCode: string | null;
 }
 
 function joinNotes(existing: string | undefined, enrichmentText: string): string {
@@ -34,6 +36,8 @@ export function useMemoryKernelEnrichment() {
             enrichmentApplied: true,
             status: result.status,
             message: result.message,
+            fallbackReason: null,
+            machineErrorCode: null,
           };
         }
 
@@ -42,6 +46,8 @@ export function useMemoryKernelEnrichment() {
           enrichmentApplied: false,
           status: result.status,
           message: result.message,
+          fallbackReason: result.fallback_reason,
+          machineErrorCode: result.machine_error_code,
         };
       } catch (err) {
         return {
@@ -49,6 +55,8 @@ export function useMemoryKernelEnrichment() {
           enrichmentApplied: false,
           status: 'fallback',
           message: `MemoryKernel enrichment unavailable: ${String(err)}`,
+          fallbackReason: 'adapter-error',
+          machineErrorCode: null,
         };
       }
     },

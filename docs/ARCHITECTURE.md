@@ -224,3 +224,27 @@ Operational rules:
 - Frontend must call Tauri MemoryKernel commands only.
 - No direct frontend calls to MemoryKernel service endpoints.
 - Startup preflight checks enforce contract/version compatibility before enrichment is enabled.
+
+### MemoryKernel Runtime Lifecycle Policy
+
+The MemoryKernel integration is intentionally optional and must never block core draft generation.
+
+- Startup preflight timeout budget:
+  - Default: `2500ms` per HTTP call.
+  - Configurable via `ASSISTSUPPORT_MEMORY_KERNEL_TIMEOUT_MS`.
+- Startup preflight checks:
+  - `GET /v1/health` must report `service.v2` and `api.v1`.
+  - `POST /v1/db/schema-version` must succeed and match the same versions.
+- Retry/backoff policy:
+  - No blocking retries in startup path.
+  - Status polling is periodic via `AppStatusContext` refresh cycle.
+  - Transient failures remain in fallback mode until a later successful preflight.
+- State transitions:
+  - `disabled` -> feature flag off.
+  - `checking` -> preflight in progress.
+  - `ready` -> enrichment enabled.
+  - `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded` -> enrichment disabled.
+- User-facing diagnostics:
+  - Header status panel shows integration state and reason text from preflight.
+  - Draft flow logs skipped enrichment and proceeds with deterministic fallback.
+  - Fallback telemetry reasons are categorized as: `feature-disabled`, `offline`, `timeout`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`, `non-2xx`, `network-error`, `query-error`, `empty-context`, `unknown`.

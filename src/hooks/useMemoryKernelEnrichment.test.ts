@@ -17,6 +17,8 @@ describe('useMemoryKernelEnrichment', () => {
       applied: true,
       status: 'applied',
       message: 'ok',
+      fallback_reason: null,
+      machine_error_code: null,
       context_package_id: 'ctx_1',
       enrichment_text: 'Policy decision: allow',
       preflight: {
@@ -26,13 +28,13 @@ describe('useMemoryKernelEnrichment', () => {
         status: 'ready',
         message: 'ready',
         base_url: 'http://127.0.0.1:4010',
-        service_contract_version: 'service.v1',
+        service_contract_version: 'service.v2',
         api_contract_version: 'api.v1',
-        expected_service_contract_version: 'service.v1',
+        expected_service_contract_version: 'service.v2',
         expected_api_contract_version: 'api.v1',
         integration_baseline: 'integration/v1',
-        release_tag: 'v0.1.0',
-        commit_sha: 'b62fa63',
+        release_tag: 'v0.3.0',
+        commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
       },
     } as never);
 
@@ -40,6 +42,8 @@ describe('useMemoryKernelEnrichment', () => {
     const enriched = await result.current.enrichDiagnosticNotes('Need USB guidance', 'Checked logs');
 
     expect(enriched.enrichmentApplied).toBe(true);
+    expect(enriched.fallbackReason).toBeNull();
+    expect(enriched.machineErrorCode).toBeNull();
     expect(enriched.diagnosticNotes).toContain('Checked logs');
     expect(enriched.diagnosticNotes).toContain('MemoryKernel Policy Context');
     expect(enriched.diagnosticNotes).toContain('Policy decision: allow');
@@ -50,6 +54,8 @@ describe('useMemoryKernelEnrichment', () => {
       applied: false,
       status: 'fallback',
       message: 'service unavailable',
+      fallback_reason: 'offline',
+      machine_error_code: null,
       context_package_id: null,
       enrichment_text: null,
       preflight: {
@@ -61,11 +67,11 @@ describe('useMemoryKernelEnrichment', () => {
         base_url: 'http://127.0.0.1:4010',
         service_contract_version: null,
         api_contract_version: null,
-        expected_service_contract_version: 'service.v1',
+        expected_service_contract_version: 'service.v2',
         expected_api_contract_version: 'api.v1',
         integration_baseline: 'integration/v1',
-        release_tag: 'v0.1.0',
-        commit_sha: 'b62fa63',
+        release_tag: 'v0.3.0',
+        commit_sha: 'b9e1b397558dfba1fa8a4948fcf723ed4b505e1c',
       },
     } as never);
 
@@ -74,6 +80,7 @@ describe('useMemoryKernelEnrichment', () => {
 
     expect(enriched.enrichmentApplied).toBe(false);
     expect(enriched.status).toBe('fallback');
+    expect(enriched.fallbackReason).toBe('offline');
     expect(enriched.diagnosticNotes).toBe('Checked logs');
   });
 
@@ -85,6 +92,7 @@ describe('useMemoryKernelEnrichment', () => {
 
     expect(enriched.enrichmentApplied).toBe(false);
     expect(enriched.status).toBe('fallback');
+    expect(enriched.fallbackReason).toBe('adapter-error');
     expect(enriched.diagnosticNotes).toBeUndefined();
     expect(enriched.message).toContain('MemoryKernel enrichment unavailable');
   });

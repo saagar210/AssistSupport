@@ -57,6 +57,8 @@ export interface MemoryKernelEnrichmentResult {
   applied: boolean;
   status: string;
   message: string;
+  fallback_reason: string | null;
+  machine_error_code: string | null;
   context_package_id: string | null;
   enrichment_text: string | null;
   preflight: MemoryKernelPreflightStatus;

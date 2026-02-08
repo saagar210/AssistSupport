@@ -53,6 +53,50 @@ pnpm run typecheck && pnpm test && (cd src-tauri && cargo test)
 - `test-search-api`: Verify redis is reachable and run `python validate_runtime.py --check-backends` plus `python smoke_search_api.py`.
 - `check-backend`: Ensure formatting/clippy pass with zero warnings.
 
+## 2.1) MemoryKernel Runtime Lifecycle
+
+AssistSupport treats MemoryKernel as optional enrichment. Core drafting must remain available under all MemoryKernel failure modes.
+
+### Runtime policy
+- Timeout budget:
+  - Default `2500ms` per request (`ASSISTSUPPORT_MEMORY_KERNEL_TIMEOUT_MS` override).
+- Preflight at startup:
+  - `GET /v1/health` contract/version check.
+  - `POST /v1/db/schema-version` readiness check.
+- Retry/backoff:
+  - No synchronous retry loop in startup flow.
+  - Health/preflight status naturally re-evaluates on periodic status refresh.
+- State transitions:
+  - `ready`: enrichment enabled.
+  - `disabled`, `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`: enrichment disabled, fallback active.
+
+### User-facing diagnostics
+- Header system status includes MemoryKernel readiness detail.
+- Draft generation continues in deterministic fallback mode when enrichment is unavailable.
+- Preflight failures should be treated as actionable diagnostics, not fatal app errors.
+
+### MemoryKernel pin upgrade runbook
+1. Update `config/memorykernel-integration-pin.json` to the new approved tag and commit SHA.
+2. Update `docs/MEMORYKERNEL_COMPATIBILITY_MATRIX.md` with the same tag/SHA pair in baseline and approved row.
+3. Run pin synchronization check:
+   ```bash
+   pnpm run check:memorykernel-pin
+   ```
+4. Run MemoryKernel contract suite:
+   ```bash
+   pnpm run test:memorykernel-contract
+   ```
+5. Confirm generated evidence artifact exists locally:
+   - `artifacts/memorykernel-contract-evidence.json`
+6. Run full CI parity suite before push:
+   ```bash
+   pnpm run typecheck
+   pnpm run test
+   pnpm run test:ci
+   ```
+7. Rollback policy:
+   - If contract gate fails on pin bump, revert pin+matrix to last approved pair and re-run tests.
+
 ## 3) Backup/Restore Validation
 
 Use this flow before releases and after backup/import logic changes.
