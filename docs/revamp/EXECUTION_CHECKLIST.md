@@ -20,6 +20,7 @@ pnpm run check:memorykernel-pin
 pnpm run check:memorykernel-governance
 pnpm run check:memorykernel-handoff
 pnpm run check:memorykernel-handoff:service-v3-candidate
+pnpm run check:llm-golden-set
 pnpm run test:memorykernel-contract
 pnpm run test:memorykernel-phase3-dry-run
 pnpm run test:ci

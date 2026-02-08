@@ -1,0 +1,10 @@
+{
+  "evaluated_at": "2026-02-08T00:00:00Z",
+  "sample_count": 40,
+  "overall_score": 86,
+  "hallucination_rate": 0.02,
+  "policy_violation_rate": 0.0,
+  "critical_failures": 0,
+  "notes": "Baseline governance artifact for Phase 5 gate seeding. Replace with fresh eval output during each phase closeout."
+}
+
