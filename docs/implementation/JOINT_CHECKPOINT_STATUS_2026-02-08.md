@@ -1,6 +1,6 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (final consumer checkpoint validation refresh)
+Updated: 2026-02-08 (bilateral sign-off closure)
 
 ## Baseline
 - MemoryKernel release tag: `v0.3.2`
@@ -14,6 +14,7 @@ Updated: 2026-02-08 (final consumer checkpoint validation refresh)
 - Checkpoint D (service.v3 RFC kickoff): `GO` for planning only
 - Rehearsal continuation decision: `GO`
 - Runtime cutover decision: `NO-GO` (explicitly blocked pending joint gate completion)
+- Bilateral sign-off status: `CLOSED` for rehearsal continuation + governance checkpoint
 
 ## Locked Decisions
 1. `error_code_enum` validation is set equality (order-independent).
@@ -47,4 +48,8 @@ Updated: 2026-02-08 (final consumer checkpoint validation refresh)
   - `/Users/d/Projects/AssistSupport/docs/implementation/SERVICE_V3_CUTOVER_DAY_DRY_RUN_EXECUTION_2026-02-08.md`
 - Consumer sign-off checkpoint packet published:
   - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_2026-02-08.md`
-- Next: obtain joint sign-off evidence package and keep runtime cutover blocked until gates close.
+- Producer sign-off checkpoint packet published:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_SIGNOFF_CHECKPOINT_PACKET_PRODUCER_2026-02-08.md`
+- Closure evidence:
+  - Producer sign-off commit: `208efc5b7006f4ac3f12dc0d9d57b8a0f3bbd85d`
+- Next: keep runtime cutover blocked and open a new explicit cutover-decision checkpoint only when both sides agree to enter cutover mode.
