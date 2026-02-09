@@ -6,8 +6,8 @@
 .command-palette-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(var(--backdrop-blur, 4px));
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -27,7 +27,7 @@
   background: var(--bg-primary);
   border-radius: 12px;
   box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 20px 40px var(--card-shadow, rgba(0, 0, 0, 0.3)),
     0 0 0 1px var(--border-color);
   overflow: hidden;
   animation: slideIn 0.15s ease-out;
@@ -69,14 +69,14 @@
 }
 
 .command-input::placeholder {
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .command-shortcut-hint {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   font-size: 12px;
   flex-shrink: 0;
 }
@@ -122,7 +122,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 /* Command items */
@@ -147,7 +147,7 @@
 }
 
 .command-item.selected {
-  background: var(--accent-subtle);
+  background: var(--accent-lighter);
 }
 
 .command-item.disabled {
@@ -161,7 +161,7 @@
 }
 
 .command-item.selected .command-item-icon {
-  color: var(--accent-color);
+  color: var(--accent-primary);
 }
 
 .command-item-content {
@@ -245,19 +245,26 @@ kbd {
 }
 
 .command-palette-body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: var(--text-muted);
 }
 
 /* Dark mode adjustments */
 @media (prefers-color-scheme: dark) {
   .command-palette-overlay {
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--overlay-bg, rgba(0, 0, 0, 0.7));
   }
 
   .command-palette {
     box-shadow:
-      0 20px 40px rgba(0, 0, 0, 0.5),
+      0 20px 40px var(--card-shadow, rgba(0, 0, 0, 0.5)),
       0 0 0 1px var(--border-color);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette-overlay,
+  .command-palette {
+    animation: none;
   }
 }
 

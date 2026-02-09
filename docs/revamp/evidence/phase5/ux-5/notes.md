@@ -32,3 +32,8 @@
 ## Slice: Revamp Shell Tokenization (Nav + Topbar Controls)
 - Tokenized revamp shell nav/topbar surfaces to avoid scattered hardcoded rgba values.
 - Reused existing semantic tokens (`--card-bg`, `--bg-hover`, `--input-bg`, `--accent-*`) and added two shell-scoped surface tokens in the revamp theme (`--as-shell-nav-bg`, `--as-shell-topbar-bg`) to preserve the glass treatment without ad-hoc CSS.
+
+## Slice: Command Palette Polish (Token + Reduced Motion)
+- Tokenized command palette overlay/shadows to reuse existing semantic tokens and avoid hardcoded rgba values.
+- Removed undefined CSS variable usage (`--text-tertiary`, `--accent-subtle`, `--accent-color`) in favor of existing semantic tokens.
+- Added reduced-motion handling so the palette does not animate for `prefers-reduced-motion`.
