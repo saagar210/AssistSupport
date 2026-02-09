@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
+import { useChatStore } from "./chatStore";
+import { useDocumentStore } from "./documentStore";
 import type { Collection, PaginatedResponse } from "../types";
 
 interface CollectionState {
@@ -44,7 +46,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
-  setActiveCollection: (id) => set({ activeCollectionId: id }),
+  setActiveCollection: (id) => {
+    set({ activeCollectionId: id });
+    useChatStore.getState().resetState();
+    useDocumentStore.setState({ documents: [] });
+  },
 
   createCollection: async (name, description) => {
     try {

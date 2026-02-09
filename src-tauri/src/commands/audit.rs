@@ -25,8 +25,8 @@ pub fn get_audit_log(
     page_size: Option<usize>,
 ) -> Result<AuditLogResponse, AppError> {
     let conn = get_conn(state.inner())?;
-    let page = page.unwrap_or(1);
-    let page_size = page_size.unwrap_or(50);
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(50).clamp(1, 500);
 
     let (entries, total) = audit::query_audit_log(
         &conn,

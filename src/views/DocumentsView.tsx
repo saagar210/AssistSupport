@@ -187,13 +187,11 @@ export function DocumentsView() {
       setDragging(false);
       dragCounter.current = 0;
 
-      const files = Array.from(e.dataTransfer.files);
-      const paths = files.map((f) => f.name);
-      if (paths.length > 0) {
-        handleFileDrop(paths);
-      }
+      // HTML5 drag API does not expose full file paths, only file names.
+      // Use the "Add Documents" button (Tauri file dialog) to get proper paths.
+      addToast("info", "Please use the 'Add Documents' button to import files");
     },
-    [handleFileDrop],
+    [addToast],
   );
 
   const handleOpenDialog = useCallback(async () => {
@@ -352,6 +350,9 @@ export function DocumentsView() {
           {sorted.map((doc) => (
             <div
               key={doc.id}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleDocumentClick(doc); } }}
               className="group relative cursor-pointer rounded-lg border border-border bg-card p-4 transition-all duration-150 hover:border-accent/50 hover:shadow-md"
               onClick={() => handleDocumentClick(doc)}
             >

@@ -255,12 +255,32 @@ pub fn keyword_search(
     Ok(results)
 }
 
+/// Sanitize user input for FTS5 MATCH queries.
+/// Wraps each word in double quotes to prevent FTS operator injection.
+fn sanitize_fts_query(query: &str) -> String {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return "\"\"".to_string();
+    }
+    // Quote each whitespace-delimited token to prevent FTS5 operator injection
+    trimmed
+        .split_whitespace()
+        .map(|word| {
+            // Escape any double quotes within the token
+            let escaped = word.replace('"', "\"\"");
+            format!("\"{}\"", escaped)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(crate) fn keyword_search_in_db(
     conn: &rusqlite::Connection,
     collection_id: &str,
     query: &str,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, AppError> {
+    let sanitized_query = sanitize_fts_query(query);
     // FTS5 query — filter by collection_id, rank by BM25
     let mut stmt = conn.prepare(
         "SELECT f.chunk_id, f.document_id, f.content, bm25(chunks_fts) AS rank
@@ -271,7 +291,7 @@ pub(crate) fn keyword_search_in_db(
          LIMIT ?3",
     )?;
 
-    let rows = stmt.query_map(rusqlite::params![query, collection_id, top_k as i64], |row| {
+    let rows = stmt.query_map(rusqlite::params![sanitized_query, collection_id, top_k as i64], |row| {
         let chunk_id: String = row.get(0)?;
         let document_id: String = row.get(1)?;
         let content: String = row.get(2)?;

@@ -7,11 +7,6 @@ interface SetupWizardProps {
   onComplete: () => void;
 }
 
-interface OllamaCheckResult {
-  connected: boolean;
-  version: string;
-}
-
 export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState(0);
 
@@ -29,9 +24,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const checkOllama = useCallback(async () => {
     setOllamaChecking(true);
     try {
-      const result = await invoke<OllamaCheckResult>("check_ollama_connection");
-      setOllamaConnected(result.connected);
-      setOllamaVersion(result.version);
+      const result = await invoke<[boolean, string]>("check_ollama_connection");
+      setOllamaConnected(result[0]);
+      setOllamaVersion(result[1]);
     } catch {
       setOllamaConnected(false);
       setOllamaVersion("");

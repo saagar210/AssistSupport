@@ -126,6 +126,11 @@ impl VectorIndex {
         self.indices.remove(collection_id);
     }
 
+    /// Drop all collection indices.
+    pub fn clear(&mut self) {
+        self.indices.clear();
+    }
+
     /// Check if a collection has an index built.
     pub fn has_index(&self, collection_id: &str) -> bool {
         self.indices.contains_key(collection_id)

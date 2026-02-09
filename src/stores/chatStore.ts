@@ -35,6 +35,7 @@ interface ChatState {
   finishStreaming: (message: Message, newCitations: Citation[]) => void;
   updateConversationTitle: (conversationId: string, title: string) => void;
   clearMessages: () => void;
+  resetState: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -90,7 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteConversation: async (id: string, collectionId: string) => {
     try {
-      await invoke("delete_conversation", { id });
+      await invoke("delete_conversation", { conversationId: id });
       const state = get();
       if (state.activeConversationId === id) {
         set({ activeConversationId: null, messages: [], citations: {} });
@@ -108,7 +109,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     collectionId: string,
   ) => {
     try {
-      await invoke("rename_conversation", { id, title });
+      await invoke("rename_conversation", { conversationId: id, title });
       await get().fetchConversations(collectionId);
     } catch (error) {
       console.error("Failed to rename conversation:", error);
@@ -175,5 +176,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearMessages: () => {
     set({ messages: [], citations: {}, activeConversationId: null });
+  },
+
+  resetState: () => {
+    set({
+      conversations: [],
+      messages: [],
+      activeConversationId: null,
+      citations: {},
+      streaming: false,
+      streamingContent: "",
+      isGenerating: false,
+    });
   },
 }));

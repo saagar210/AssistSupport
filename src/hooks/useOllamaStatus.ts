@@ -7,11 +7,6 @@ interface OllamaStatus {
   loading: boolean;
 }
 
-interface OllamaCheckResult {
-  connected: boolean;
-  version: string;
-}
-
 export function useOllamaStatus(): OllamaStatus {
   const [connected, setConnected] = useState(false);
   const [version, setVersion] = useState("");
@@ -19,11 +14,11 @@ export function useOllamaStatus(): OllamaStatus {
 
   const check = useCallback(async () => {
     try {
-      const result = await invoke<OllamaCheckResult>(
+      const result = await invoke<[boolean, string]>(
         "check_ollama_connection",
       );
-      setConnected(result.connected);
-      setVersion(result.version);
+      setConnected(result[0]);
+      setVersion(result[1]);
     } catch {
       setConnected(false);
       setVersion("");

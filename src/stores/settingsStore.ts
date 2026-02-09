@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
-import type { Setting, OllamaModel } from "../types";
+import type { OllamaModel } from "../types";
 
 interface SettingsState {
   settings: Record<string, string>;
@@ -20,12 +20,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   fetchSettings: async () => {
     set({ loading: true });
     try {
-      const settingsList = await invoke<Setting[]>("get_settings");
-      const settings: Record<string, string> = {};
-      for (const s of settingsList) {
-        settings[s.key] = s.value;
-      }
-      set({ settings, loading: false });
+      const settingsMap = await invoke<Record<string, string>>("get_settings");
+      set({ settings: settingsMap, loading: false });
     } catch (error) {
       console.error("Failed to fetch settings:", error);
       useToastStore.getState().addToast("error", "Failed to fetch settings: " + String(error));

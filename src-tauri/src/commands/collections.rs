@@ -51,7 +51,7 @@ pub fn list_collections(
 ) -> Result<PaginatedResponse<Collection>, AppError> {
     let conn = get_conn(state.inner())?;
     let page = page.unwrap_or(1).max(1);
-    let page_size = page_size.unwrap_or(50).max(1);
+    let page_size = page_size.unwrap_or(50).clamp(1, 500);
     let offset = (page - 1) * page_size;
 
     let total: i64 = conn.query_row(
@@ -144,11 +144,20 @@ pub fn update_collection(
         &serde_json::json!({"name": name}),
     );
 
+    // Fetch the actual created_at from the database
+    let created_at: String = conn
+        .query_row(
+            "SELECT created_at FROM collections WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )
+        .unwrap_or_default();
+
     Ok(Collection {
         id,
         name,
         description,
-        created_at: String::new(), // Will be fetched if needed
+        created_at,
         updated_at: now,
     })
 }

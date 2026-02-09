@@ -16,7 +16,7 @@ pub fn get_or_create_db_key() -> Result<String, AppError> {
     match entry.get_password() {
         Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => {
-            let key = generate_key();
+            let key = generate_key()?;
             entry
                 .set_password(&key)
                 .map_err(|e| AppError::Crypto(format!("Failed to store key in keychain: {}", e)))?;
@@ -37,7 +37,7 @@ pub fn rotate_db_key() -> Result<String, AppError> {
     let entry = keyring::Entry::new(SERVICE_NAME, KEY_ENTRY_NAME)
         .map_err(|e| AppError::Crypto(format!("Failed to create keyring entry: {}", e)))?;
 
-    let new_key = generate_key();
+    let new_key = generate_key()?;
     entry
         .set_password(&new_key)
         .map_err(|e| AppError::Crypto(format!("Failed to store rotated key: {}", e)))?;
@@ -84,16 +84,17 @@ pub fn get_encryption_status() -> EncryptionStatus {
 }
 
 /// Generate a cryptographically random 256-bit key as a hex string.
-fn generate_key() -> String {
+fn generate_key() -> Result<String, AppError> {
     use std::fmt::Write;
     let mut bytes = [0u8; 32];
-    // Use getrandom (available via std on all supported platforms)
-    getrandom::fill(&mut bytes).expect("Failed to generate random bytes");
+    getrandom::fill(&mut bytes)
+        .map_err(|e| AppError::Crypto(format!("Failed to generate random bytes: {}", e)))?;
     let mut hex = String::with_capacity(64);
     for b in &bytes {
-        write!(hex, "{:02x}", b).expect("hex write failed");
+        write!(hex, "{:02x}", b)
+            .map_err(|e| AppError::Crypto(format!("Failed to encode hex: {}", e)))?;
     }
-    hex
+    Ok(hex)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -109,13 +110,13 @@ mod tests {
 
     #[test]
     fn test_generate_key_length() {
-        let key = generate_key();
+        let key = generate_key().expect("key generation failed");
         assert_eq!(key.len(), 64, "Key should be 64 hex chars (256 bits)");
     }
 
     #[test]
     fn test_generate_key_is_hex() {
-        let key = generate_key();
+        let key = generate_key().expect("key generation failed");
         assert!(
             key.chars().all(|c| c.is_ascii_hexdigit()),
             "Key should be valid hex"
@@ -124,8 +125,8 @@ mod tests {
 
     #[test]
     fn test_generate_key_uniqueness() {
-        let key1 = generate_key();
-        let key2 = generate_key();
+        let key1 = generate_key().expect("key generation failed");
+        let key2 = generate_key().expect("key generation failed");
         assert_ne!(key1, key2, "Two generated keys should differ");
     }
 

@@ -44,6 +44,7 @@ export function Header() {
         <select
           value={activeCollectionId ?? ""}
           onChange={(e) => setActiveCollection(e.target.value)}
+          aria-label="Select collection"
           className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-accent"
         >
           {collections.length === 0 && (

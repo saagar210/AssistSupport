@@ -460,7 +460,7 @@ pub fn list_conversations(
 ) -> Result<PaginatedResponse<Conversation>, AppError> {
     let conn = get_conn(state.inner())?;
     let page = page.unwrap_or(1).max(1);
-    let page_size = page_size.unwrap_or(30).max(1);
+    let page_size = page_size.unwrap_or(30).clamp(1, 500);
     let offset = (page - 1) * page_size;
 
     let total: i64 = conn.query_row(
@@ -509,7 +509,7 @@ pub fn get_conversation_messages(
 ) -> Result<PaginatedResponse<Message>, AppError> {
     let conn = get_conn(state.inner())?;
     let page = page.unwrap_or(1).max(1);
-    let page_size = page_size.unwrap_or(50).max(1);
+    let page_size = page_size.unwrap_or(50).clamp(1, 500);
     let offset = (page - 1) * page_size;
 
     let total: i64 = conn.query_row(

@@ -369,6 +369,9 @@ export function SearchView() {
                     className="rounded-lg border border-border bg-card p-4 transition-all duration-150 hover:border-accent/50 hover:shadow-md"
                   >
                     <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleResultClick(result); } }}
                       onClick={() => handleResultClick(result)}
                       className="cursor-pointer"
                     >

@@ -6,9 +6,12 @@ import { useOllamaStatus } from "../hooks/useOllamaStatus";
 export function OllamaStatusBanner() {
   const { connected, loading } = useOllamaStatus();
   const [retrying, setRetrying] = useState(false);
-  const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryingRef = useRef(false);
 
   const handleRetry = useCallback(async () => {
+    if (retryingRef.current) return;
+    retryingRef.current = true;
     setRetrying(true);
     try {
       await invoke("check_ollama_connection");
@@ -16,20 +19,29 @@ export function OllamaStatusBanner() {
       // Status will update via the hook
     } finally {
       setRetrying(false);
+      retryingRef.current = false;
     }
   }, []);
 
-  // Auto-retry every 10 seconds when disconnected
+  // Auto-retry every 10 seconds when disconnected, using setTimeout chaining
   useEffect(() => {
-    if (!connected && !loading) {
-      retryTimerRef.current = setInterval(() => {
-        handleRetry();
+    if (connected || loading) return;
+
+    function scheduleRetry() {
+      retryTimerRef.current = setTimeout(async () => {
+        await handleRetry();
+        // Schedule next retry only if still mounted (cleanup hasn't run)
+        if (retryTimerRef.current !== null) {
+          scheduleRetry();
+        }
       }, 10_000);
     }
 
+    scheduleRetry();
+
     return () => {
       if (retryTimerRef.current) {
-        clearInterval(retryTimerRef.current);
+        clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
     };

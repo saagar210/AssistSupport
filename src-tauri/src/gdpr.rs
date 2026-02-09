@@ -30,11 +30,20 @@ pub fn export_all_data(conn: &Connection) -> Result<HashMap<String, String>, App
     let tables = [
         "collections",
         "documents",
+        "chunks",
+        "chunk_embeddings",
+        "graph_edges",
         "conversations",
         "messages",
+        "citations",
         "search_history",
         "settings",
         "audit_log",
+        "entities",
+        "entity_mentions",
+        "entity_relationships",
+        "data_retention_policies",
+        "consent_records",
     ];
 
     let mut result = HashMap::new();
@@ -305,6 +314,27 @@ pub fn enforce_retention_policies(conn: &Connection) -> Result<usize, AppError> 
                 "DELETE FROM audit_log WHERE timestamp < ?1",
                 rusqlite::params![cutoff_str],
             )?,
+            "conversation" => {
+                // Cascade: citations -> messages -> conversations
+                conn.execute(
+                    "DELETE FROM citations WHERE message_id IN (
+                        SELECT m.id FROM messages m
+                        JOIN conversations c ON m.conversation_id = c.id
+                        WHERE c.created_at < ?1
+                    )",
+                    rusqlite::params![cutoff_str],
+                )?;
+                conn.execute(
+                    "DELETE FROM messages WHERE conversation_id IN (
+                        SELECT id FROM conversations WHERE created_at < ?1
+                    )",
+                    rusqlite::params![cutoff_str],
+                )?;
+                conn.execute(
+                    "DELETE FROM conversations WHERE created_at < ?1",
+                    rusqlite::params![cutoff_str],
+                )?
+            }
             _ => 0,
         };
 
@@ -343,6 +373,11 @@ pub fn update_retention_policy(
     retention_days: i64,
     auto_delete: bool,
 ) -> Result<(), AppError> {
+    if retention_days < 0 {
+        return Err(AppError::Validation(
+            "retention_days must be non-negative (0 = keep forever)".to_string(),
+        ));
+    }
     let now = chrono::Utc::now().to_rfc3339();
     let rows_affected = conn.execute(
         "UPDATE data_retention_policies SET retention_days = ?1, auto_delete = ?2, updated_at = ?3 WHERE id = ?4",

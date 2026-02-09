@@ -7,11 +7,6 @@ import { useToastStore } from "../stores/toastStore";
 import { useTheme } from "../hooks/useTheme";
 import type { OllamaModel } from "../types";
 
-interface TestResult {
-  connected: boolean;
-  version: string;
-}
-
 export function SettingsView() {
   const settings = useSettingsStore((state) => state.settings);
   const updateSetting = useSettingsStore((state) => state.updateSetting);
@@ -83,13 +78,13 @@ export function SettingsView() {
   async function handleTestConnection() {
     setTestStatus("testing");
     try {
-      const result = await invoke<TestResult>("test_ollama_connection", {
+      const result = await invoke<[boolean, string]>("test_ollama_connection", {
         host: ollamaHost,
         port: ollamaPort,
       });
-      if (result.connected) {
+      if (result[0]) {
         setTestStatus("success");
-        setTestMessage(`Connected - v${result.version}`);
+        setTestMessage(`Connected - v${result[1]}`);
         await updateSetting("ollama_host", ollamaHost);
         await updateSetting("ollama_port", ollamaPort);
         fetchModels();

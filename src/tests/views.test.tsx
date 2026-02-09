@@ -112,8 +112,12 @@ describe("ChatView", () => {
 describe("GraphView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Return proper graph data structure
-    mockedInvoke.mockResolvedValue({ nodes: [], links: [] } as never);
+    // Return proper data structures per command
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_graph") return Promise.resolve({ nodes: [], links: [] });
+      if (cmd === "detect_graph_communities") return Promise.resolve([]);
+      return Promise.resolve({});
+    });
     useCollectionStore.setState({
       collections: [defaultCollection],
       activeCollectionId: "col1",
