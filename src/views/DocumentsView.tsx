@@ -20,6 +20,7 @@ import { useCollectionStore } from "../stores/collectionStore";
 import { useDocumentStore } from "../stores/documentStore";
 import { useAppStore } from "../stores/appStore";
 import { useToastStore } from "../stores/toastStore";
+import { ContextualHelp } from "../components/ContextualHelp";
 import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
 import { DocumentGridSkeleton } from "../components/LoadingSkeleton";
 import { EmptyState } from "../components/EmptyState";
@@ -305,6 +306,7 @@ export function DocumentsView() {
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">
+          <ContextualHelp topic="documents" />
           <button
             onClick={handleOpenDialog}
             disabled={ingesting}
@@ -345,12 +347,12 @@ export function DocumentsView() {
       </div>
 
       {/* Document Grid */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {sorted.map((doc) => (
             <div
               key={doc.id}
-              className="group relative cursor-pointer rounded-lg border border-border bg-card p-4 transition-all hover:border-accent/50 hover:shadow-sm"
+              className="group relative cursor-pointer rounded-lg border border-border bg-card p-4 transition-all duration-150 hover:border-accent/50 hover:shadow-md"
               onClick={() => handleDocumentClick(doc)}
             >
               <div className="mb-3 flex items-start justify-between">

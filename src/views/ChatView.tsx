@@ -26,6 +26,7 @@ import { useChatStore } from "../stores/chatStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useToastStore } from "../stores/toastStore";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { ContextualHelp } from "../components/ContextualHelp";
 import type { Message, Citation } from "../types";
 
 interface ChatTokenPayload {
@@ -297,11 +298,11 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex min-w-0 flex-1 overflow-hidden">
       {/* Conversation Sidebar */}
       {sidebarOpen && (
         <div className="flex w-[250px] shrink-0 flex-col border-r border-border bg-muted/30">
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <div className="flex items-center justify-between border-b border-border px-4 py-2">
             <button
               onClick={handleNewConversation}
               className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
@@ -317,9 +318,9 @@ export function ChatView() {
               <PanelLeftClose size={14} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
             {sortedConversations.length === 0 ? (
-              <p className="p-3 text-xs text-muted-foreground">No conversations yet</p>
+              <p className="p-4 text-xs text-muted-foreground">No conversations yet</p>
             ) : (
               sortedConversations.map((conv) => (
                 <div
@@ -385,6 +386,7 @@ export function ChatView() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Chat Toolbar */}
         <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+          <ContextualHelp topic="chat" />
           {!sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(true)}
@@ -431,7 +433,7 @@ export function ChatView() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 scrollbar-thin">
           {messages.length === 0 && !streaming ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
               <BookOpen size={40} strokeWidth={1.5} />
@@ -602,11 +604,11 @@ export function ChatView() {
 
       {/* Sources Panel */}
       {sourcesOpen && (
-        <div className="flex w-[300px] shrink-0 flex-col border-l border-border bg-muted/30">
-          <div className="border-b border-border px-3 py-2">
+        <div className="hidden w-[300px] shrink-0 flex-col border-l border-border bg-muted/30 md:flex">
+          <div className="border-b border-border px-4 py-2">
             <h3 className="text-xs font-semibold text-foreground">Sources</h3>
           </div>
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
             {selectedCitations.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 {selectedMessageId
@@ -618,11 +620,11 @@ export function ChatView() {
                 {selectedCitations.map((cit) => (
                   <div
                     key={cit.id}
-                    className="rounded-lg border border-border bg-card p-3"
+                    className="rounded-lg border border-border bg-card p-4 transition-shadow hover:shadow-sm"
                   >
                     <div className="mb-1 flex items-center gap-2">
-                      <FileText size={12} className="text-accent" />
-                      <span className="truncate text-xs font-medium text-card-foreground">
+                      <FileText size={12} className="shrink-0 text-accent" />
+                      <span className="min-w-0 truncate text-xs font-medium text-card-foreground">
                         {cit.document_title}
                       </span>
                     </div>

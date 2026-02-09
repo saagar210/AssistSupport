@@ -13,6 +13,7 @@ import {
 import { useCollectionStore } from "../stores/collectionStore";
 import { useAppStore } from "../stores/appStore";
 import { getFileTypeBadgeColor } from "../utils/fileTypeColors";
+import { ContextualHelp } from "../components/ContextualHelp";
 import { SearchSkeleton } from "../components/LoadingSkeleton";
 import { EmptyState } from "../components/EmptyState";
 import type { SearchResult, SearchHistoryEntry } from "../types";
@@ -212,6 +213,7 @@ export function SearchView() {
 
           <div className="mt-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <ContextualHelp topic="search" />
               <span className="text-xs text-muted-foreground">Mode:</span>
               {(["hybrid", "semantic", "keyword"] as const).map((m) => (
                 <label
@@ -316,7 +318,7 @@ export function SearchView() {
       )}
 
       {/* Results */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
         <div className="mx-auto max-w-3xl">
           <div aria-live="polite" className="sr-only">
             {loading && "Searching..."}
@@ -351,7 +353,7 @@ export function SearchView() {
               description="Find anything by meaning, not just keywords. Use hybrid mode for best results."
             />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <p className="mb-4 text-xs text-muted-foreground">
                 {filteredResults.length} result{filteredResults.length !== 1 ? "s" : ""} found
                 {typeFilters.size > 0 && ` (filtered from ${results.length})`}
@@ -364,7 +366,7 @@ export function SearchView() {
                 return (
                   <div
                     key={result.chunk_id}
-                    className="rounded-lg border border-border bg-card p-4 transition-all hover:border-accent/50 hover:shadow-sm"
+                    className="rounded-lg border border-border bg-card p-4 transition-all duration-150 hover:border-accent/50 hover:shadow-md"
                   >
                     <div
                       onClick={() => handleResultClick(result)}
@@ -373,7 +375,7 @@ export function SearchView() {
                       <div className="mb-2 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <FileText size={14} className="text-muted-foreground" />
-                          <span className="text-sm font-medium text-card-foreground">
+                          <span className="min-w-0 truncate text-sm font-medium text-card-foreground">
                             {result.document_title}
                           </span>
                           <span

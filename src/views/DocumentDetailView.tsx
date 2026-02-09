@@ -157,7 +157,7 @@ export function DocumentDetailView() {
     <div className="flex flex-1 overflow-hidden">
       {/* Section Navigation Sidebar */}
       {sections.length > 0 && (
-        <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-muted/30 p-3">
+        <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-muted/30 p-4 scrollbar-thin">
           <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
             Sections
           </h3>
@@ -192,7 +192,7 @@ export function DocumentDetailView() {
 
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold text-foreground">
+              <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">
                 {document.title || document.filename}
               </h1>
               <span
@@ -273,13 +273,13 @@ export function DocumentDetailView() {
         </div>
 
         {/* Chunks */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
           {chunks.length === 0 ? (
             <p className="text-center text-sm text-muted-foreground">
               No chunks available
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-2">
               {chunks.map((chunk, idx) => (
                 <div
                   key={chunk.id}

@@ -21,6 +21,7 @@ const SUPPORTED_EXTENSIONS = [
 export function useKeyboardShortcuts() {
   const setActiveView = useAppStore((state) => state.setActiveView);
   const toggleCommandPalette = useAppStore((state) => state.toggleCommandPalette);
+  const toggleShortcutCheatsheet = useAppStore((state) => state.toggleShortcutCheatsheet);
   const activeView = useAppStore((state) => state.activeView);
   const activeCollectionId = useCollectionStore((state) => state.activeCollectionId);
   const createConversation = useChatStore((state) => state.createConversation);
@@ -59,11 +60,27 @@ export function useKeyboardShortcuts() {
     function handleKeyDown(e: KeyboardEvent) {
       // Handle Escape before the meta/ctrl gate
       if (e.key === "Escape") {
+        if (useAppStore.getState().shortcutCheatsheetOpen) {
+          e.preventDefault();
+          toggleShortcutCheatsheet();
+          return;
+        }
         if (useAppStore.getState().commandPaletteOpen) {
           e.preventDefault();
           toggleCommandPalette();
         }
         return;
+      }
+
+      // ? key (Shift+/) to toggle keyboard shortcut cheatsheet
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement;
+        const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+        if (!isInput) {
+          e.preventDefault();
+          toggleShortcutCheatsheet();
+          return;
+        }
       }
 
       if (!e.metaKey && !e.ctrlKey) return;
@@ -109,5 +126,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setActiveView, toggleCommandPalette, handleFileImport, handleNewConversation, activeView]);
+  }, [setActiveView, toggleCommandPalette, toggleShortcutCheatsheet, handleFileImport, handleNewConversation, activeView]);
 }

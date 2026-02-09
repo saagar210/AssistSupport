@@ -14,6 +14,9 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { IngestionPanel } from "./components/IngestionPanel";
 import { SetupWizard } from "./components/SetupWizard";
 import { OllamaStatusBanner } from "./components/OllamaStatusBanner";
+import { LoadingBar } from "./components/LoadingBar";
+import { OnboardingTour } from "./components/OnboardingTour";
+import { ShortcutCheatsheet } from "./components/ShortcutCheatsheet";
 import { GraphView } from "./views/GraphView";
 import { ChatView } from "./views/ChatView";
 import { DocumentsView } from "./views/DocumentsView";
@@ -51,7 +54,7 @@ function ActiveView() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.15 }}
-        className="flex flex-1 overflow-auto"
+        className="flex min-w-0 flex-1 overflow-auto"
       >
         {getViewComponent(activeView)}
       </motion.div>
@@ -86,10 +89,11 @@ function App() {
 
   return (
     <>
+      <LoadingBar />
       {showSetup && <SetupWizard onComplete={() => setShowSetup(false)} />}
-      <div className="flex h-full bg-background text-foreground">
+      <div className="flex h-full min-w-0 bg-background text-foreground">
         <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Header />
           <OllamaStatusBanner />
           <ErrorBoundary>
@@ -102,6 +106,8 @@ function App() {
         <CommandPalette />
         <ToastContainer />
         <IngestionPanel />
+        <ShortcutCheatsheet />
+        <OnboardingTour />
       </div>
     </>
   );

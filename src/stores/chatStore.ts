@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "./toastStore";
+import { useAppStore } from "./appStore";
 import type { Conversation, Message, Citation, PaginatedResponse } from "../types";
 
 interface ChatState {
@@ -122,6 +123,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     modelOverride?: string,
   ) => {
     set({ streaming: true, isGenerating: true, streamingContent: "" });
+    useAppStore.getState().startLoading();
     try {
       await invoke("send_chat_message", {
         conversationId,
@@ -133,6 +135,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.error("Failed to send message:", error);
       useToastStore.getState().addToast("error", "Failed to send message: " + String(error));
       set({ streaming: false, isGenerating: false, streamingContent: "" });
+      useAppStore.getState().stopLoading();
     }
   },
 
@@ -159,6 +162,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [message.id]: newCitations,
       },
     }));
+    useAppStore.getState().stopLoading();
   },
 
   updateConversationTitle: (conversationId: string, title: string) => {

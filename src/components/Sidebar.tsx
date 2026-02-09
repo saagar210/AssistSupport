@@ -20,7 +20,7 @@ export function Sidebar() {
   const setActiveView = useAppStore((state) => state.setActiveView);
 
   return (
-    <div className="flex w-14 flex-col items-center border-r border-border bg-sidebar py-3">
+    <div className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-sidebar py-4">
       <div className="flex flex-1 flex-col gap-1">
         {NAV_ITEMS.map(({ view, icon: Icon, label }) => {
           const isActive = activeView === view;

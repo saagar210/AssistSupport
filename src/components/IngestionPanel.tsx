@@ -99,7 +99,7 @@ export function IngestionPanel() {
 
       {/* File list */}
       {!collapsed && (
-        <div className="max-h-60 overflow-y-auto border-t border-border px-3 py-2 space-y-2">
+        <div className="max-h-60 overflow-y-auto border-t border-border px-4 py-2 space-y-2 scrollbar-thin">
           {fileList.map((file) => (
             <div key={file.document_id} className="space-y-1">
               <div className="flex items-center justify-between">

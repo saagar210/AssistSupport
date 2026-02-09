@@ -23,6 +23,7 @@ import { FILE_TYPE_COLORS, getFileTypeColor } from "../utils/fileTypeColors";
 import { GraphSkeleton } from "../components/LoadingSkeleton";
 import { EmptyState } from "../components/EmptyState";
 import { GraphLegend } from "../components/GraphLegend";
+import { ContextualHelp } from "../components/ContextualHelp";
 import { GraphSidebar, communityColor } from "../components/GraphSidebar";
 import type { GraphData, GraphNode, Community, GraphStats } from "../types";
 
@@ -789,14 +790,17 @@ export function GraphView() {
       {/* Filter Panel */}
       <div className="absolute left-4 top-4">
         <div className="rounded-md border border-border bg-background/90 shadow-sm backdrop-blur">
-          <button
-            onClick={() => setFilterOpen(!filterOpen)}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-foreground"
-          >
+          <div className="flex items-center gap-1 px-3 py-2">
+            <ContextualHelp topic="graph" placement="right" />
+            <button
+              onClick={() => setFilterOpen(!filterOpen)}
+              className="flex items-center gap-2 text-xs font-medium text-foreground"
+            >
             <Filter size={12} />
             Filters
-            {filterOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </button>
+              {filterOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
+          </div>
           {filterOpen && (
             <div className="border-t border-border px-3 py-2">
               <p className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">

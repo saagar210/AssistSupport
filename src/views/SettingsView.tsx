@@ -104,7 +104,7 @@ export function SettingsView() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
       <h1 className="mb-6 text-xl font-semibold text-foreground">Settings</h1>
 
       <div className="mx-auto max-w-2xl space-y-8">
