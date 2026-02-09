@@ -362,16 +362,13 @@ pub fn validate_loopback_http_base_url(url_str: &str) -> Result<String, Validati
         ));
     }
 
-    let host = parsed.host_str().ok_or_else(|| {
-        ValidationError::InvalidFormat("Base URL must include a hostname".into())
-    })?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ValidationError::InvalidFormat("Base URL must include a hostname".into()))?;
 
     // Normalize host to avoid trivial bypasses (e.g., localhost.)
     let normalized_host = host.trim_end_matches('.').to_ascii_lowercase();
-    let host_ok = matches!(
-        normalized_host.as_str(),
-        "localhost" | "127.0.0.1" | "::1"
-    );
+    let host_ok = matches!(normalized_host.as_str(), "localhost" | "127.0.0.1" | "::1");
     if !host_ok {
         return Err(ValidationError::InvalidFormat(format!(
             "Base URL host '{}' is not allowed. Only loopback hosts are permitted (localhost, 127.0.0.1, ::1).",
@@ -386,7 +383,8 @@ pub fn validate_loopback_http_base_url(url_str: &str) -> Result<String, Validati
         ));
     }
     let path = parsed.path();
-    if path != "" && path != "/" {
+    // `url::Url::path()` normalizes an "empty" path to "/".
+    if path != "/" {
         return Err(ValidationError::InvalidFormat(
             "Base URL must not include a path".into(),
         ));
