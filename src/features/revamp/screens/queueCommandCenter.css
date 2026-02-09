@@ -55,6 +55,12 @@
   gap: var(--as-space-3);
 }
 
+.as-queue__count {
+  font-size: var(--as-font-size-0);
+  color: var(--as-text-3);
+  white-space: nowrap;
+}
+
 .as-queue__metricKey {
   font-size: var(--as-font-size-0);
   color: var(--as-text-3);
@@ -132,11 +138,27 @@
   padding: var(--as-space-4);
   display: grid;
   gap: var(--as-space-2);
+  cursor: pointer;
+  transition: border-color var(--as-dur-1) var(--as-ease-out), background var(--as-dur-1) var(--as-ease-out);
+}
+
+.as-queue__item:hover {
+  border-color: var(--as-border-2);
 }
 
 .as-queue__item.is-selected {
   border-color: var(--as-accent-border-1);
   background: var(--as-accent-surface-1);
+}
+
+.as-queue__errorState {
+  display: grid;
+  gap: var(--as-space-3);
+}
+
+.as-queue__errorActions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .as-queue__itemTop {
@@ -215,5 +237,15 @@
   }
   .as-queue__detail {
     position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  .as-queue__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .as-queue__controls {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 }

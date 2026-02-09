@@ -53,3 +53,7 @@
 ## Slice: Revamp Style Guardrail
 - Added `pnpm run check:revamp-style` (via `scripts/check_revamp_style.sh`) to prevent reintroducing hardcoded rgba/hex colors in revamp CSS outside token/theme files.
 - This is a developer guardrail only; it does not change runtime behavior.
+
+## Slice: Queue Command Center Clarity Polish
+- Added explicit “queue unavailable” state with a retry action when draft loading fails (still local-only; no new network surfaces).
+- Improved list accessibility and operator flow: listbox semantics, active descendant tracking, and click-to-select without changing keyboard triage behavior.

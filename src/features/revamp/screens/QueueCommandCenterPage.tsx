@@ -68,7 +68,7 @@ export function QueueCommandCenterPage({
   onQueueViewConsumed,
 }: QueueCommandCenterPageProps) {
   const { logEvent } = useAnalytics();
-  const { drafts, loading, loadDrafts } = useDrafts();
+  const { drafts, loading, error: draftsError, loadDrafts } = useDrafts();
   const [queueMetaMap, setQueueMetaMap] = useState<QueueMetaMap>(() => loadQueueMeta());
   const [queueView, setQueueView] = useState<QueueView>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -246,12 +246,39 @@ export function QueueCommandCenterPage({
     [filteredItems.length, handleClaim, handleReopen, handleResolve, logEvent, onLoadDraft, operatorName, withCurrentItem],
   );
 
+  const listActions = (
+    <div className="as-queue__count" aria-label="Visible work item count">
+      {loading ? 'Loading…' : `${filteredItems.length} shown`}
+    </div>
+  );
+
   const listContent = (
     <Panel
       title="Work Items"
       subtitle="Keyboard triage: J/K move · C claim · X resolve · O reopen · Enter open"
+      actions={listActions}
     >
       {loading && <Skeleton lines={6} />}
+      {!loading && draftsError && (
+        <div className="as-queue__errorState">
+          <EmptyState
+            title="Queue unavailable"
+            description="Drafts could not be loaded. Retry, or switch back to Draft to continue working offline."
+            icon={<Icon name="alert-triangle" size={18} />}
+          />
+          <div className="as-queue__errorActions">
+            <AsButton
+              tone="primary"
+              size="small"
+              onClick={() => {
+                loadDrafts(100);
+              }}
+            >
+              Retry Load
+            </AsButton>
+          </div>
+        </div>
+      )}
       {!loading && filteredItems.length === 0 && (
         <EmptyState
           title="No work items in this view"
@@ -260,7 +287,14 @@ export function QueueCommandCenterPage({
         />
       )}
       {!loading && filteredItems.length > 0 && (
-        <ul data-testid="queue-items-list" tabIndex={0} className="as-queue__items">
+        <ul
+          data-testid="queue-items-list"
+          tabIndex={0}
+          role="listbox"
+          aria-label="Work items"
+          aria-activedescendant={currentItem ? `as-queue-item-${currentItem.draft.id}` : undefined}
+          className="as-queue__items"
+        >
           {filteredItems.map((item, index) => {
             const prev = filteredItems[index - 1] ?? null;
             const label = bandLabel(item);
@@ -272,8 +306,12 @@ export function QueueCommandCenterPage({
               <li key={item.draft.id}>
                 {showSection && <div className="as-queue__sectionLabel">{label}</div>}
                 <div
+                  id={`as-queue-item-${item.draft.id}`}
+                  role="option"
+                  aria-selected={selected}
                   className={['as-queue__item', selected ? 'is-selected' : ''].filter(Boolean).join(' ')}
                   data-selected={selected ? 'true' : 'false'}
+                  onClick={() => setSelectedIndex(index)}
                 >
                   <div className="as-queue__itemTop">
                     <div>
