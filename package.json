@@ -38,6 +38,10 @@
     "check:monorepo-readiness:full": "bash scripts/run_monorepo_readiness.sh full",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+    ,
+    "vaultmind:lint": "pnpm --dir tools/vaultmind lint",
+    "vaultmind:test": "pnpm --dir tools/vaultmind test",
+    "vaultmind:build": "pnpm --dir tools/vaultmind build"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",

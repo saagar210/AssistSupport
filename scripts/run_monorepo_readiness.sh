@@ -29,6 +29,8 @@ run_step pnpm run test:memorykernel-contract
 
 if [[ "$MODE" == "full" ]]; then
   run_step pnpm run test:ci
+  run_step pnpm run vaultmind:lint
+  run_step pnpm run vaultmind:test
 
   pushd services/memorykernel >/dev/null
   run_step cargo fmt --all -- --check

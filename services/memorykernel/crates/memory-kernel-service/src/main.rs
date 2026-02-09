@@ -142,8 +142,7 @@ struct Args {
 fn parse_bool_flag(raw: Option<&str>, default: bool) -> bool {
     raw.map(str::trim)
         .map(str::to_ascii_lowercase)
-        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(default)
+        .map_or(default, |value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
 }
 
 fn auth_token_required_by_policy() -> bool {
@@ -369,11 +368,7 @@ fn app(state: ServiceState) -> Router {
         .layer(axum::middleware::from_fn_with_state(state, auth_guard))
 }
 
-async fn auth_guard(
-    State(state): State<ServiceState>,
-    request: Request,
-    next: Next,
-) -> Response {
+async fn auth_guard(State(state): State<ServiceState>, request: Request, next: Next) -> Response {
     let Some(expected_token) = state.auth_token.as_deref() else {
         return next.run(request).await;
     };
@@ -386,9 +381,7 @@ async fn auth_guard(
             None,
         )
         .into_response();
-        response
-            .headers_mut()
-            .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        response.headers_mut().insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         return response;
     };
 
@@ -402,10 +395,7 @@ async fn auth_guard(
         .into_response();
     };
 
-    let token = header_str
-        .strip_prefix("Bearer ")
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let token = header_str.strip_prefix("Bearer ").map(str::trim).filter(|value| !value.is_empty());
 
     if token != Some(expected_token) {
         return ServiceState::failure(
@@ -430,15 +420,12 @@ async fn main() -> Result<()> {
         );
     }
 
-    let auth_token = args
-        .auth_token
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+    let auth_token =
+        args.auth_token.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
     let auth_token_required = auth_token_required_by_policy();
     if auth_token_required && auth_token.is_none() {
         anyhow::bail!(
-            "Refusing startup without auth token while {} is enabled. Set --auth-token or MEMORYKERNEL_SERVICE_AUTH_TOKEN.",
-            SERVICE_REQUIRE_AUTH_TOKEN_ENV
+            "Refusing startup without auth token while {SERVICE_REQUIRE_AUTH_TOKEN_ENV} is enabled. Set --auth-token or MEMORYKERNEL_SERVICE_AUTH_TOKEN."
         );
     }
 
@@ -654,7 +641,7 @@ mod tests {
             api,
             operation_timeout: Duration::from_millis(timeout_ms),
             telemetry: Arc::new(ServiceTelemetry::default()),
-            auth_token: auth_token.map(|value| value.to_string()),
+            auth_token: auth_token.map(ToString::to_string),
         }
     }
 
@@ -715,7 +702,11 @@ mod tests {
     // Test IDs: TSVC-021
     #[tokio::test]
     async fn auth_guard_rejects_missing_or_invalid_bearer_token() {
-        let state = test_state_with_auth(MemoryKernelApi::new(unique_temp_db_path()), 2500, Some("secret-token"));
+        let state = test_state_with_auth(
+            MemoryKernelApi::new(unique_temp_db_path()),
+            2500,
+            Some("secret-token"),
+        );
         let router = app(state);
 
         let missing_auth = router
