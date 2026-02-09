@@ -64,6 +64,12 @@
   - typography uses `--as-font-size-*` and `--as-text-*`
 - No behavior changes: this is styling only, scoped to the revamp shell.
 
+## Slice: Draft Workbench Revamp Coherence (Readiness + Funnel)
+- Added `.app-shell-revamp`-scoped styling for the Draft workbench “AI readiness” banner and the 4-stage workflow strip so they match the revamp console visual system:
+  - surfaces/borders/radii use `--as-*` tokens (no ad-hoc colors)
+  - active/selected states use the existing accent-surface tokens
+- No behavior changes: this is styling only, scoped to the revamp shell.
+
 ## Slice: Draft Readiness + Workflow Strip Revamp Coherence
 - Added `.app-shell-revamp`-scoped styling for:
   - AI readiness banner surface
