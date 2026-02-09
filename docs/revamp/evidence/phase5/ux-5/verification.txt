@@ -133,3 +133,12 @@
 - pnpm run test:ci: PASS (Vitest + cargo test)
 - pnpm run test:e2e:revamp: PASS (Playwright)
 - pnpm run test:e2e:smoke: PASS (Playwright)
+
+
+## Slice Verification (revamp shell e2e: copy override gating)
+- pnpm run check:revamp-style: PASS
+- pnpm run typecheck: PASS
+- pnpm run test: PASS (Vitest: 130 tests)
+- pnpm run test:ci: PASS (Vitest + cargo test)
+- pnpm run test:e2e:revamp: PASS (Playwright: 3 tests)
+- pnpm run test:e2e:smoke: PASS (Playwright: 7 tests)

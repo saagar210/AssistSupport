@@ -99,3 +99,8 @@
 - Tokenized remaining Draft “odd-one-out” controls inside `.app-shell-revamp`:
   - Batch toggle now uses revamp pill sizing + glass/accent surfaces (no behavior changes).
   - Removed an ad-hoc rgba fallback from a Diagnosis hover surface to stay compliant with Phase 5 token rules.
+
+## Slice: Revamp Shell E2E Coverage (Copy Override Gating)
+- Extended revamp E2E coverage to run with the revamp shell enabled (`ASSISTSUPPORT_REVAMP_APP_SHELL=1`) and to validate the "no citation = no claim" handoff gate:
+  - E2E mock supports a no-citation scenario marker (`[e2e-no-citations]`) that returns `confidence.mode=clarify` with zero sources.
+  - New E2E assertion proves Copy triggers the override dialog, requires a reason, and logs the override path (without testing any network behavior).

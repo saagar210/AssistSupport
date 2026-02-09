@@ -366,6 +366,36 @@ export function setupE2eTauriMock(): void {
         }
         case 'generate_streaming':
         case 'generate_with_context':
+          {
+            // Allow tests to exercise citation gating + copy override paths without changing
+            // production behavior. Marker is only used in the e2e mock layer.
+            const userInput = String((payload as any)?.params?.user_input ?? '');
+            const wantsNoCitations = userInput.includes('[e2e-no-citations]');
+
+            if (wantsNoCitations) {
+              return {
+                text: 'I cannot provide a confident response without citations. Please verify manually or expand the knowledge base search.',
+                tokens_generated: 36,
+                duration_ms: 520,
+                source_chunk_ids: [],
+                sources: [],
+                metrics: {
+                  tokens_per_second: 69.2,
+                  sources_used: 0,
+                  word_count: 20,
+                  length_target_met: true,
+                  context_utilization: 0.08,
+                },
+                prompt_template_version: 'e2e-mock',
+                confidence: {
+                  mode: 'clarify',
+                  score: 0.42,
+                  rationale: 'No supporting knowledge base sources were found for this query.',
+                },
+                grounding: [],
+              };
+            }
+
           return {
             text: 'Per Remote Work Policy, use the approved VPN and complete MFA before accessing internal systems.',
             tokens_generated: 48,
@@ -393,6 +423,7 @@ export function setupE2eTauriMock(): void {
               },
             ],
           };
+          }
         case 'get_deployment_health_summary': {
           const lastRun = deploymentRuns[deploymentRuns.length - 1] ?? null;
           const signedArtifacts = deploymentArtifacts.filter(a => a.is_signed).length;

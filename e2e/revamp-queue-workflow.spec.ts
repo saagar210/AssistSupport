@@ -4,6 +4,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('onboarding-completed', 'true');
     localStorage.setItem('sidebar-collapsed', 'false');
+    localStorage.setItem('assistsupport.flag.ASSISTSUPPORT_REVAMP_APP_SHELL', 'true');
     localStorage.setItem('assistsupport.flag.ASSISTSUPPORT_REVAMP_INBOX', 'true');
     localStorage.setItem('assistsupport.flag.ASSISTSUPPORT_REVAMP_WORKSPACE', 'true');
     localStorage.setItem('assistsupport.flag.ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2', 'true');
@@ -63,4 +64,27 @@ test('@smoke at-risk queue opens draft and generates response', async ({ page })
     page.getByText(/Per Remote Work Policy, use the approved VPN and complete MFA/i),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Hide Sources|Sources \(1\)/i })).toBeVisible();
+});
+
+test('@smoke draft handoff enforces copy override when citations missing', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+  await page.goto('/');
+
+  const input = page.getByPlaceholder('Paste ticket content or describe the issue...');
+  await input.fill('Test response without citations [e2e-no-citations]');
+
+  await page.getByRole('button', { name: 'Generate Full Response' }).click();
+  await expect(page.getByText(/cannot provide a confident response without citations/i)).toBeVisible();
+
+  // "Copy" can appear in multiple places (response actions, templates, etc). Target the response actions strip.
+  await page.locator('.response-actions').getByRole('button', { name: 'Copy' }).click();
+  await expect(page.getByRole('dialog', { name: 'Copy override' })).toBeVisible();
+
+  await page.getByPlaceholder('Explain why copying without citations is acceptable here.').fill(
+    'E2E validation: confirming override gating works in revamp shell.',
+  );
+
+  await page.getByRole('button', { name: 'Copy with override' }).click();
+  await expect(page.getByText('Response copied (override logged)')).toBeVisible();
 });
