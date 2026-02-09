@@ -4,6 +4,15 @@ Status: Approved for execution
 Scope: AssistSupport UX rebuild only (MemoryKernel runtime contract remains service.v2/api.v1 pinned)  
 Audience: Internal IT support engineers on macOS workstations
 
+## 0) Locked Inputs (Do Not Reinterpret)
+
+This Phase 5 plan is constrained by Phase 4 artifacts. If any of these change, Phase 5 must pause and re-plan.
+
+1. Locked UX input contract: `/Users/d/Projects/AssistSupport/docs/revamp/UX_REVAMP_INPUT_SPEC.md`
+2. Locked workflow boundaries: `/Users/d/Projects/AssistSupport/docs/revamp/FEATURE_LOCK_WORKFLOW.md`
+3. Locked local AI contract: `/Users/d/Projects/AssistSupport/docs/revamp/LOCAL_AI_CONTRACT.md`
+4. Phase 4 closeout (entry criteria): `/Users/d/Projects/AssistSupport/docs/revamp/PHASE4_CLOSEOUT_2026-02-09.md`
+
 ## 1) Objective and Definition of Done
 
 ### Objective
@@ -31,6 +40,49 @@ The revamp is complete only when all of the following are true:
    - auditability
    - deterministic evidence generation
    - rollback readiness artifacts
+
+## 3) Design Direction (Explicit, So We Don’t “Wing It”)
+
+The revamp should feel like a modern operations console: calm, dense, legible, and intentionally designed.
+
+1. Visual theme: warm graphite surfaces with high-contrast text, a restrained accent, and “serious” intent colors.
+2. Typography: expressive but professional; avoid default stacks (Inter/Roboto/system). Ship fonts locally.
+   - Default recommendation:
+     - UI sans: `IBM Plex Sans` (variable or weights 400/500/600)
+     - Mono: `JetBrains Mono` (400/500)
+3. Layout: 3-rail model (left nav, center workspace, right rail) with keyboard-first flows.
+4. Motion: limited to meaningful transitions.
+   - Page/section entrance fades and staggered list reveals.
+   - No excessive micro-animations; keep it calm for long sessions.
+5. Density: default to dense with clear hierarchy; allow a “Comfort” toggle later if needed, but not in Phase 5 scope.
+6. Accessibility: focus visibility must be unmistakable; do not rely on color alone for state.
+
+## 4) Operator Keyboard Contract (Must Not Regress)
+
+Keyboard-first is part of “ops-grade”. The revamp must preserve (and where possible unify) key actions.
+
+1. Command palette: `Cmd+K` opens palette in all revamp screens.
+2. Settings: `Cmd+0` always navigates to Settings (revamp + legacy).
+3. Global nav: `Cmd+1..Cmd+6` reserved for primary nav targets if we implement numeric nav (optional, but if present must be consistent).
+4. Queue actions: up/down moves selection, `Enter` opens, `Cmd+Enter` opens in Draft (or the inverse, but pick one and keep it).
+5. Draft actions:
+   - `Cmd+Enter`: Generate (when enabled)
+   - `Cmd+S`: Save draft
+   - Copy/export uses existing gating rules; keyboard triggers must respect the same gate as buttons.
+
+## 5) Evidence Artifacts (What We Must Produce While Building)
+
+To avoid “it looks good on my machine”, Phase 5 produces lightweight, local evidence at each gate.
+
+1. Baseline snapshot (before first visual PR):
+   - `docs/revamp/evidence/phase5/baseline/screenshots/`
+   - `docs/revamp/evidence/phase5/baseline/notes.md` (operator friction notes)
+2. Per-phase evidence:
+   - `docs/revamp/evidence/phase5/ux-1/`, `ux-2/`, … `ux-6/`
+   - Each folder includes:
+     - `screenshots/` (happy path + degraded state)
+     - `verification.txt` (commands run + pass)
+     - `notes.md` (tradeoffs + follow-ups explicitly deferred)
 
 ## 3) What We Are Solving
 
@@ -64,7 +116,7 @@ Reference inputs:
    - <https://docs.github.com/en/get-started/accessibility/keyboard-shortcuts>
    - <https://docs.github.com/en/get-started/accessibility/github-command-palette>
 
-## 5) Revamp Architecture (Target UX Operating Model)
+## 7) Revamp Architecture (Target UX Operating Model)
 
 1. One operations shell with three primary modes:
    - Queue Command Center
@@ -83,7 +135,21 @@ Reference inputs:
    - each with exact operator next steps
 5. Design-token driven theming with consistent spacing/typography/state colors.
 
-## 6) Detailed Phase Plan
+## 8) Detailed Phase Plan
+
+### Global execution rules (apply to every phase)
+1. All new UI must live behind the revamp flags in `/Users/d/Projects/AssistSupport/docs/revamp/UX_REVAMP_INPUT_SPEC.md`.
+2. No behavior changes unless a bug is discovered:
+   - If a behavior change is required, it must be documented as:
+     - “Bug fix” (current behavior incorrect) or
+     - “Approved exception” (explicit workflow change approved)
+3. Every phase ends with:
+   - updated evidence folder
+   - required verification commands run and recorded
+4. If verification fails:
+   - stop new scope
+   - fix until green
+   - re-run required verification
 
 ## Phase UX-1: Foundation and Information Architecture Reset
 
@@ -105,11 +171,24 @@ Create a stable revamp foundation that standardizes layout, navigation, and desi
    - empty-state cards
    - degraded-state panel with fallback explanation
 4. Normalize nav IA labels and page routing names for operator mental model.
+5. Create the revamp folder structure (so later phases don’t sprawl):
+   - `src/styles/revamp/` (tokens, theme, motion, utilities)
+   - `src/features/revamp/ui/` (primitives only)
+   - `src/features/revamp/shell/` (layout + nav + right rail)
+   - `src/features/revamp/screens/` (screen components)
+6. Add local, bundled fonts (no network fetch):
+   - `src/assets/fonts/IBMPlexSans/`
+   - `src/assets/fonts/JetBrainsMono/`
+   - Reference via `@font-face` in `src/styles/revamp/theme.css`.
+7. Add a “revamp style lint rule” (lightweight):
+   - Prefer tokens over hardcoded colors in revamp code.
+   - This can be implemented as a small `rg`-based CI check later; for Phase 5, keep it manual and documented in `notes.md`.
 
 ### Exit criteria
 1. All major screens use shared layout primitives.
 2. No ad-hoc color/spacing values remain in revamp paths.
 3. Shared state components are used in Draft, Queue, Analytics.
+4. Revamp flags can turn the shell on/off without breaking navigation.
 
 ### Required verification
 1. `pnpm run typecheck`
@@ -132,11 +211,15 @@ Make triage fast, legible, and keyboard-dominant under high ticket volume.
 3. Standardize queue actions with consistent keybindings and command palette parity.
 4. Add operator workload and SLA risk indicators with deterministic thresholds.
 5. Add degraded behavior messaging when enrichment is unavailable.
+6. Add virtualization threshold policy:
+   - If queue > 200 rows, use list virtualization to keep scrolling stable.
+   - If queue <= 200 rows, keep it simple (no virtualization).
 
 ### Exit criteria
 1. Full queue triage can be completed with keyboard only.
 2. Queue actions are test-covered for click + keyboard parity.
 3. At-risk and unassigned workflows are visibly and behaviorally deterministic.
+4. Queue degraded states are explicit and non-blocking.
 
 ### Required verification
 1. `pnpm run test:e2e:revamp`
@@ -162,11 +245,15 @@ Turn Draft into a focused operator workbench with clear progression and faster r
 4. Add stronger guidance for first response + follow-up drafts.
 5. Improve copy/export/handoff ergonomics and reduce pointer travel.
 6. Ensure all MemoryKernel statuses map to explicit operator-readable messages.
+7. Lock “copy gating” UX:
+   - If citations missing, show why copy is blocked and how to fix (open evidence panel, regenerate, adjust confidence mode).
+   - Override path must always prompt for reason; reason is logged via existing audit command.
 
 ### Exit criteria
 1. Draft flow presents explicit current step and next step at all times.
 2. Operators can generate, refine, and hand off without leaving Draft context.
 3. No hidden failure states; all errors/fallbacks are actionable.
+4. Copy/export gating is visually obvious and consistent.
 
 ### Required verification
 1. `pnpm run test`
@@ -187,6 +274,9 @@ Make analytics directly actionable for team leads and shift operators.
 2. Add operator scorecard with explicit top remediation actions.
 3. Add drill-down links from scorecards to affected drafts/queues.
 4. Add shift handoff packet UX with one-click export and audit trace.
+5. Ensure analytics never implies “model accuracy”:
+   - analytics can report usage, throughput, failure rates, and operator actions
+   - analytics must not infer correctness of AI output without explicit evaluation data
 
 ### Exit criteria
 1. Every analytics panel includes “what to do next.”
@@ -209,8 +299,12 @@ Bring revamp to production-grade quality for workstation deployment.
    - focus-visible behavior on all keyboard-interactive elements
    - semantic ARIA pattern conformance for dialogs/menus/tables
 2. Performance hardening:
-   - initial render budget guardrails
+   - initial render budget guardrails (measured, not vibes)
    - expensive view memoization and virtualization where needed
+   - add lightweight perf marks:
+     - `revamp_shell_mount_ms`
+     - `queue_first_paint_ms`
+     - `draft_generate_to_render_ms`
 3. Reliability hardening:
    - revamp-specific regression tests
    - deterministic degraded-mode rendering tests
