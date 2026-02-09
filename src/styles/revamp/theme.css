@@ -9,6 +9,73 @@
   font-family: var(--as-font-sans);
   line-height: var(--as-line-default);
   letter-spacing: 0.1px;
+
+  /* Legacy token bridge: keep older components visually coherent when mounted in the revamp shell.
+     This avoids a huge mechanical CSS rewrite and keeps Phase 5 focused on UX. */
+  --bg-primary: var(--as-surface-1);
+  --bg-secondary: var(--as-surface-2);
+  --bg-tertiary: var(--as-surface-3);
+  --bg-elevated: var(--as-surface-2);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.10);
+  --bg-inverse: rgba(255, 255, 255, 0.92);
+
+  --text-primary: var(--as-text-1);
+  --text-secondary: var(--as-text-2);
+  --text-muted: var(--as-text-3);
+  --text-inverse: rgba(11, 13, 16, 0.92);
+  --text-link: var(--as-accent-1);
+  --text-link-hover: var(--as-accent-2);
+
+  --border-light: var(--as-border-1);
+  --border-color: var(--as-border-1);
+  --border-strong: var(--as-border-2);
+  --border-inverse: rgba(255, 255, 255, 0.75);
+
+  --accent-primary: var(--as-accent-1);
+  --accent-hover: var(--as-accent-2);
+  --accent-active: rgba(42, 161, 152, 0.95);
+  --accent-light: rgba(79, 209, 197, 0.14);
+  --accent-lighter: rgba(79, 209, 197, 0.08);
+  --accent-gradient: linear-gradient(135deg, var(--as-accent-1) 0%, var(--as-accent-2) 100%);
+  --border-color-hover: rgba(255, 255, 255, 0.18);
+
+  --success: var(--as-good);
+  --success-hover: rgba(45, 212, 191, 0.95);
+  --success-light: rgba(45, 212, 191, 0.12);
+  --success-lighter: rgba(45, 212, 191, 0.08);
+
+  --warning: var(--as-warn);
+  --warning-hover: rgba(251, 191, 36, 0.95);
+  --warning-light: rgba(251, 191, 36, 0.12);
+  --warning-lighter: rgba(251, 191, 36, 0.08);
+
+  --error: var(--as-bad);
+  --error-hover: rgba(251, 113, 133, 0.95);
+  --error-light: rgba(251, 113, 133, 0.12);
+  --error-lighter: rgba(251, 113, 133, 0.08);
+
+  --info: var(--as-info);
+  --info-hover: rgba(96, 165, 250, 0.95);
+  --info-light: rgba(96, 165, 250, 0.12);
+  --info-lighter: rgba(96, 165, 250, 0.08);
+
+  --input-bg: rgba(255, 255, 255, 0.03);
+  --input-border: var(--as-border-1);
+  --input-border-hover: var(--as-border-2);
+  --input-focus: var(--as-accent-1);
+  --input-placeholder: rgba(255, 255, 255, 0.38);
+
+  --card-bg: rgba(255, 255, 255, 0.02);
+  --card-border: var(--as-border-1);
+  --card-shadow: rgba(0, 0, 0, 0.35);
+
+  --overlay-bg: rgba(0, 0, 0, 0.68);
+  --backdrop-blur: 12px;
+
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.10);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
 }
 
 .app-shell-revamp * {
@@ -40,4 +107,3 @@
   outline: 2px solid var(--as-focus);
   outline-offset: 2px;
 }
-

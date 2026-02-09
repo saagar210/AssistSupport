@@ -28,3 +28,10 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --as-dur-1: 0ms;
+    --as-dur-2: 0ms;
+    --as-dur-3: 0ms;
+  }
+}
