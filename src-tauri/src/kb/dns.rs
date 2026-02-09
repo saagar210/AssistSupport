@@ -174,63 +174,16 @@ impl PinnedDnsResolver {
             .unwrap_or(false)
     }
 
-    /// Clear all pinned entries (useful for testing or session reset)
-    #[allow(dead_code)]
-    pub fn clear(&self) {
-        if let Ok(mut pinned) = self.pinned.write() {
-            pinned.clear();
-        }
-    }
-
     /// Get SSRF config reference
     pub fn ssrf_config(&self) -> &SsrfConfig {
         &self.ssrf_config
     }
 }
 
-// Note: We use IP-based URLs to completely bypass DNS resolution at connection time.
-// This is more secure than custom DNS resolvers because it eliminates all DNS lookups
-// during the actual HTTP request. The Host header is set explicitly to maintain
-// proper HTTP semantics.
-
-/// Build a URL that connects via IP with proper Host header
-///
-/// This bypasses DNS resolution entirely by connecting directly to the IP,
-/// which is the most secure approach for preventing DNS rebinding.
-pub fn build_ip_url(validated: &ValidatedUrl) -> Result<(String, String), DnsError> {
-    let ip = validated
-        .pinned_ips
-        .first()
-        .ok_or_else(|| DnsError::NoAddresses("No pinned IPs".into()))?;
-
-    // Build URL with IP instead of hostname
-    let scheme = validated.url.scheme();
-    let path = validated.url.path();
-    let query = validated
-        .url
-        .query()
-        .map(|q| format!("?{}", q))
-        .unwrap_or_default();
-
-    let ip_url = match ip {
-        IpAddr::V4(v4) => format!("{}://{}:{}{}{}", scheme, v4, validated.port, path, query),
-        IpAddr::V6(v6) => format!("{}://[{}]:{}{}{}", scheme, v6, validated.port, path, query),
-    };
-
-    // The original Host header value
-    let host_header = if validated.port == 80 || validated.port == 443 {
-        validated.host.clone()
-    } else {
-        format!("{}:{}", validated.host, validated.port)
-    };
-
-    Ok((ip_url, host_header))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::Ipv4Addr;
 
     #[test]
     fn test_validated_url_socket_addrs() {
@@ -247,48 +200,6 @@ mod tests {
         let addrs = validated.socket_addrs();
         assert_eq!(addrs.len(), 2);
         assert_eq!(addrs[0].port(), 443);
-    }
-
-    #[test]
-    fn test_build_ip_url_ipv4() {
-        let validated = ValidatedUrl {
-            url: url::Url::parse("https://example.com/path?query=1").unwrap(),
-            host: "example.com".to_string(),
-            port: 443,
-            pinned_ips: vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))],
-        };
-
-        let (ip_url, host_header) = build_ip_url(&validated).unwrap();
-        assert_eq!(ip_url, "https://93.184.216.34:443/path?query=1");
-        assert_eq!(host_header, "example.com");
-    }
-
-    #[test]
-    fn test_build_ip_url_ipv6() {
-        let validated = ValidatedUrl {
-            url: url::Url::parse("https://example.com/path").unwrap(),
-            host: "example.com".to_string(),
-            port: 443,
-            pinned_ips: vec![IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))],
-        };
-
-        let (ip_url, host_header) = build_ip_url(&validated).unwrap();
-        assert_eq!(ip_url, "https://[2001:db8::1]:443/path");
-        assert_eq!(host_header, "example.com");
-    }
-
-    #[test]
-    fn test_build_ip_url_nonstandard_port() {
-        let validated = ValidatedUrl {
-            url: url::Url::parse("https://example.com:8443/path").unwrap(),
-            host: "example.com".to_string(),
-            port: 8443,
-            pinned_ips: vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))],
-        };
-
-        let (ip_url, host_header) = build_ip_url(&validated).unwrap();
-        assert_eq!(ip_url, "https://93.184.216.34:8443/path");
-        assert_eq!(host_header, "example.com:8443");
     }
 
     #[tokio::test]

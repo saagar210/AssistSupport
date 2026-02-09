@@ -6,8 +6,9 @@ use super::{
     ProgressCallback,
 };
 use crate::db::{Database, IngestRunCompletion, IngestSource};
+use crate::kb::dns::PinnedDnsResolver;
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
-use crate::kb::network::NetworkError;
+use crate::kb::network::{validate_url_for_ssrf_with_pinning, NetworkError, SsrfConfig};
 use std::process::Command;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -62,6 +63,23 @@ pub struct YouTubeIngester {
 fn is_youtube_domain(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
     host == "youtube.com" || host.ends_with(".youtube.com")
+}
+
+async fn validate_caption_url_for_fetch(caption_url: &str) -> IngestResult<crate::kb::dns::ValidatedUrl> {
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+    let validated = validate_url_for_ssrf_with_pinning(caption_url, &resolver).await?;
+
+    // SECURITY: captions must be fetched over HTTPS to avoid downgrade/MITM.
+    if validated.url.scheme() != "https" {
+        return Err(IngestError::Network(NetworkError::InvalidUrl(
+            "Caption URL must use https://".to_string(),
+        )));
+    }
+
+    Ok(validated)
 }
 
 impl YouTubeIngester {
@@ -242,16 +260,39 @@ impl YouTubeIngester {
             .ok_or_else(|| IngestError::Parse("Caption URL missing".into()))?;
         let caption_ext = selected.get("ext").and_then(|v| v.as_str()).unwrap_or("");
 
-        let client = reqwest::Client::builder()
+        // SECURITY: Validate caption URL with DNS pinning so we cannot be tricked into
+        // fetching from internal/private address space (SSRF) or via DNS rebinding.
+        let validated = validate_caption_url_for_fetch(caption_url).await?;
+
+        // Build a per-request client with pinned DNS resolution so TLS/SNI remains correct.
+        let mut client_builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(self.config.timeout_secs))
+            .redirect(reqwest::redirect::Policy::none());
+
+        if !validated.pinned_ips.is_empty() {
+            let pinned_addrs = validated.socket_addrs();
+            let should_override_dns = validated.host.parse::<std::net::IpAddr>().is_err();
+            if should_override_dns {
+                client_builder = client_builder.resolve_to_addrs(&validated.host, &pinned_addrs);
+            }
+        }
+
+        let client = client_builder
             .build()
             .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
 
         let response = client
-            .get(caption_url)
+            .get(validated.url.as_str())
             .send()
             .await
             .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
+
+        if response.status().is_redirection() {
+            return Err(IngestError::Network(NetworkError::RequestFailed(format!(
+                "Unexpected redirect (HTTP {}) fetching captions",
+                response.status()
+            ))));
+        }
 
         if !response.status().is_success() {
             return Err(IngestError::Network(NetworkError::RequestFailed(format!(
@@ -760,5 +801,20 @@ mod tests {
         let entries = parse_plain_transcript(body);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn test_validate_caption_url_for_fetch_blocks_loopback() {
+        let err = validate_caption_url_for_fetch("https://127.0.0.1/").await.unwrap_err();
+        assert!(err.to_string().to_ascii_lowercase().contains("ssrf blocked"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_caption_url_for_fetch_requires_https() {
+        let err = validate_caption_url_for_fetch("http://1.1.1.1/").await.unwrap_err();
+        assert!(err
+            .to_string()
+            .to_ascii_lowercase()
+            .contains("must use https"));
     }
 }

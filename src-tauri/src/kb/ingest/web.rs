@@ -10,7 +10,7 @@ use super::{
     ProgressCallback,
 };
 use crate::db::{Database, IngestRunCompletion, IngestSource};
-use crate::kb::dns::{build_ip_url, PinnedDnsResolver, ValidatedUrl};
+use crate::kb::dns::{PinnedDnsResolver, ValidatedUrl};
 use crate::kb::indexer::{KbIndexer, ParsedDocument, Section};
 use crate::kb::network::{
     canonicalize_url, extract_same_origin_links, is_login_page, validate_url_for_ssrf_with_pinning,
@@ -152,20 +152,31 @@ impl WebIngester {
                 )));
             }
 
-            // Build request URL - use IP directly to bypass DNS
-            let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
-                build_ip_url(&validated)
-                    .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?
+            // Build a per-request client with pinned DNS resolution so TLS/SNI remains correct.
+            // SECURITY: must not allow the HTTP client to re-resolve DNS after validation.
+            let client = if !validated.pinned_ips.is_empty() {
+                let pinned_addrs = validated.socket_addrs();
+                let should_override_dns = validated.host.parse::<std::net::IpAddr>().is_err();
+                let mut builder = Client::builder()
+                    .timeout(Duration::from_secs(self.config.timeout_secs))
+                    .user_agent(&self.config.user_agent)
+                    .redirect(reqwest::redirect::Policy::none());
+
+                if should_override_dns {
+                    builder = builder.resolve_to_addrs(&validated.host, &pinned_addrs);
+                }
+
+                builder
+                    .build()
+                    .map_err(|e| {
+                        IngestError::Network(NetworkError::RequestFailed(e.to_string()))
+                    })?
             } else {
-                // Allowlisted host - use original URL
-                (validated.url.to_string(), validated.host.clone())
+                self.client.clone()
             };
 
-            // Make request with proper Host header
-            let response = self
-                .client
-                .get(&request_url)
-                .header("Host", &host_header)
+            let response = client
+                .get(validated.url.as_str())
                 .send()
                 .await
                 .map_err(|e| {
@@ -311,16 +322,29 @@ impl WebIngester {
         // Validate URL with DNS pinning
         let validated = validate_url_for_ssrf_with_pinning(url, &self.resolver).await?;
 
-        // Build request URL using pinned IP
-        let (request_url, host_header) = if !validated.pinned_ips.is_empty() {
-            build_ip_url(&validated)
+        // Build a per-request client with pinned DNS resolution so TLS/SNI remains correct.
+        // SECURITY: must not allow the HTTP client to re-resolve DNS after validation.
+        let client = if !validated.pinned_ips.is_empty() {
+            let pinned_addrs = validated.socket_addrs();
+            let should_override_dns = validated.host.parse::<std::net::IpAddr>().is_err();
+            let mut builder = Client::builder()
+                .timeout(Duration::from_secs(self.config.timeout_secs))
+                .user_agent(&self.config.user_agent)
+                .redirect(reqwest::redirect::Policy::none());
+
+            if should_override_dns {
+                builder = builder.resolve_to_addrs(&validated.host, &pinned_addrs);
+            }
+
+            builder
+                .build()
                 .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?
         } else {
-            (validated.url.to_string(), validated.host.clone())
+            self.client.clone()
         };
 
         // Build conditional request
-        let mut request = self.client.head(&request_url).header("Host", &host_header);
+        let mut request = client.head(validated.url.as_str());
 
         if let Some(etag) = etag {
             request = request.header("If-None-Match", etag);
@@ -912,19 +936,6 @@ mod tests {
         assert_eq!(validated.port, 80);
     }
 
-    #[test]
-    fn test_build_ip_url() {
-        let validated = ValidatedUrl {
-            url: Url::parse("https://example.com/path").unwrap(),
-            host: "example.com".to_string(),
-            port: 443,
-            pinned_ips: vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
-                93, 184, 216, 34,
-            ))],
-        };
-
-        let (ip_url, host_header) = build_ip_url(&validated).unwrap();
-        assert_eq!(ip_url, "https://93.184.216.34:443/path");
-        assert_eq!(host_header, "example.com");
-    }
+    // NOTE: We intentionally do not test reqwest DNS override wiring here.
+    // That behavior is integration-level (depends on reqwest internals and TLS).
 }
