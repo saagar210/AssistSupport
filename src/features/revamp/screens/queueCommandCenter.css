@@ -41,12 +41,12 @@
   padding: 10px 12px;
   border-radius: var(--as-radius-2);
   border: 1px solid var(--as-border-1);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--as-glass-2);
   color: var(--as-text-1);
 }
 
 .as-queue__input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--as-placeholder);
 }
 
 .as-queue__metrics {
@@ -128,15 +128,15 @@
 .as-queue__item {
   border: 1px solid var(--as-border-1);
   border-radius: var(--as-radius-2);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--as-glass-1);
   padding: var(--as-space-4);
   display: grid;
   gap: var(--as-space-2);
 }
 
 .as-queue__item.is-selected {
-  border-color: rgba(79, 209, 197, 0.35);
-  background: rgba(79, 209, 197, 0.07);
+  border-color: var(--as-accent-border-1);
+  background: var(--as-accent-surface-1);
 }
 
 .as-queue__itemTop {
@@ -198,7 +198,7 @@
   padding: 10px 12px;
   border-radius: var(--as-radius-2);
   border: 1px solid var(--as-border-1);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--as-glass-2);
   color: var(--as-text-1);
 }
 

@@ -37,3 +37,7 @@
 - Tokenized command palette overlay/shadows to reuse existing semantic tokens and avoid hardcoded rgba values.
 - Removed undefined CSS variable usage (`--text-tertiary`, `--accent-subtle`, `--accent-color`) in favor of existing semantic tokens.
 - Added reduced-motion handling so the palette does not animate for `prefers-reduced-motion`.
+
+## Slice: Queue Command Center Token Cleanup
+- Introduced a small set of revamp “glass” + accent surface tokens in `src/styles/revamp/tokens.css`.
+- Updated queue command center inputs and selection styling to use those tokens (no raw rgba values).

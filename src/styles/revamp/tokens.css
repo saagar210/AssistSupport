@@ -56,5 +56,14 @@
 
   /* Focus */
   --as-focus: rgba(79, 209, 197, 0.55);
-}
 
+  /* Glass surfaces (revamp primitives) */
+  --as-glass-1: rgba(255, 255, 255, 0.02);
+  --as-glass-2: rgba(255, 255, 255, 0.03);
+  --as-glass-3: rgba(255, 255, 255, 0.06);
+  --as-placeholder: rgba(255, 255, 255, 0.38);
+
+  /* Accent surfaces (revamp primitives) */
+  --as-accent-surface-1: rgba(79, 209, 197, 0.07);
+  --as-accent-border-1: rgba(79, 209, 197, 0.35);
+}
