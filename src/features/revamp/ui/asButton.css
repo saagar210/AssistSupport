@@ -9,7 +9,7 @@
   font-size: var(--as-font-size-1);
   line-height: var(--as-line-compact);
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--as-glass-2);
   color: var(--as-text-1);
   transition: background var(--as-dur-1) var(--as-ease-out), border-color var(--as-dur-1) var(--as-ease-out),
     transform var(--as-dur-1) var(--as-ease-out);
@@ -17,7 +17,7 @@
 }
 
 .as-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--as-glass-3);
   border-color: var(--as-border-2);
   transform: translateY(-1px);
 }
@@ -32,14 +32,14 @@
 }
 
 .as-btn--primary {
-  background: rgba(79, 209, 197, 0.16);
-  border-color: rgba(79, 209, 197, 0.30);
-  color: rgba(225, 255, 252, 0.96);
+  background: var(--as-accent-btn-bg);
+  border-color: var(--as-accent-btn-border);
+  color: var(--as-accent-btn-text);
 }
 
 .as-btn--primary:hover:not(:disabled) {
-  background: rgba(79, 209, 197, 0.22);
-  border-color: rgba(79, 209, 197, 0.40);
+  background: var(--as-accent-btn-bg-hover);
+  border-color: var(--as-accent-btn-border-hover);
 }
 
 .as-btn--ghost {
@@ -49,20 +49,20 @@
 }
 
 .as-btn--ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-hover);
   border-color: var(--as-border-1);
   color: var(--as-text-1);
 }
 
 .as-btn--danger {
-  background: rgba(251, 113, 133, 0.14);
-  border-color: rgba(251, 113, 133, 0.30);
-  color: rgba(255, 229, 233, 0.98);
+  background: var(--as-danger-btn-bg);
+  border-color: var(--as-danger-btn-border);
+  color: var(--as-danger-btn-text);
 }
 
 .as-btn--danger:hover:not(:disabled) {
-  background: rgba(251, 113, 133, 0.20);
-  border-color: rgba(251, 113, 133, 0.38);
+  background: var(--as-danger-btn-bg-hover);
+  border-color: var(--as-danger-btn-border-hover);
 }
 
 .as-btn--small {
@@ -76,4 +76,3 @@
   height: 36px;
   padding: 0;
 }
-

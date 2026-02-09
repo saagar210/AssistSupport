@@ -8,31 +8,30 @@
   font-size: var(--as-font-size-0);
   line-height: var(--as-line-compact);
   color: var(--as-text-2);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--as-glass-2);
   user-select: none;
 }
 
 .as-badge--good {
-  border-color: rgba(45, 212, 191, 0.35);
-  color: rgba(45, 212, 191, 0.95);
-  background: rgba(45, 212, 191, 0.08);
+  border-color: var(--as-good-border);
+  color: var(--as-good-text);
+  background: var(--as-good-surface);
 }
 
 .as-badge--warn {
-  border-color: rgba(251, 191, 36, 0.35);
-  color: rgba(251, 191, 36, 0.98);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: var(--as-warn-border);
+  color: var(--as-warn-text);
+  background: var(--as-warn-surface);
 }
 
 .as-badge--bad {
-  border-color: rgba(251, 113, 133, 0.38);
-  color: rgba(251, 113, 133, 0.98);
-  background: rgba(251, 113, 133, 0.08);
+  border-color: var(--as-bad-border);
+  color: var(--as-bad-text);
+  background: var(--as-bad-surface);
 }
 
 .as-badge--info {
-  border-color: rgba(96, 165, 250, 0.35);
-  color: rgba(96, 165, 250, 0.98);
-  background: rgba(96, 165, 250, 0.08);
+  border-color: var(--as-info-border);
+  color: var(--as-info-text);
+  background: var(--as-info-surface);
 }
-

@@ -6,7 +6,6 @@
 .as-skeleton__line {
   height: 10px;
   border-radius: var(--as-radius-pill);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--as-glass-3);
   animation: as-pulse var(--as-dur-3) var(--as-ease-out) infinite;
 }
-

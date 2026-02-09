@@ -41,3 +41,7 @@
 ## Slice: Queue Command Center Token Cleanup
 - Introduced a small set of revamp “glass” + accent surface tokens in `src/styles/revamp/tokens.css`.
 - Updated queue command center inputs and selection styling to use those tokens (no raw rgba values).
+
+## Slice: Revamp UI Primitives Token Cleanup
+- Added intent/button/panel surface tokens in `src/styles/revamp/tokens.css` to keep primitives consistent without scattering ad-hoc rgba values.
+- Updated revamp primitives to be token-only (no raw rgba/hex): buttons, badges, panels, empty states, skeletons.

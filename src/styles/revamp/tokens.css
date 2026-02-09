@@ -66,4 +66,38 @@
   /* Accent surfaces (revamp primitives) */
   --as-accent-surface-1: rgba(79, 209, 197, 0.07);
   --as-accent-border-1: rgba(79, 209, 197, 0.35);
+
+  /* Accent button surfaces (revamp primitives) */
+  --as-accent-btn-bg: rgba(79, 209, 197, 0.16);
+  --as-accent-btn-bg-hover: rgba(79, 209, 197, 0.22);
+  --as-accent-btn-border: rgba(79, 209, 197, 0.30);
+  --as-accent-btn-border-hover: rgba(79, 209, 197, 0.40);
+  --as-accent-btn-text: rgba(225, 255, 252, 0.96);
+
+  /* Danger button surfaces (revamp primitives) */
+  --as-danger-btn-bg: rgba(251, 113, 133, 0.14);
+  --as-danger-btn-bg-hover: rgba(251, 113, 133, 0.20);
+  --as-danger-btn-border: rgba(251, 113, 133, 0.30);
+  --as-danger-btn-border-hover: rgba(251, 113, 133, 0.38);
+  --as-danger-btn-text: rgba(255, 229, 233, 0.98);
+
+  /* Intent badge surfaces (revamp primitives) */
+  --as-good-border: rgba(45, 212, 191, 0.35);
+  --as-good-surface: rgba(45, 212, 191, 0.08);
+  --as-good-text: rgba(45, 212, 191, 0.95);
+
+  --as-warn-border: rgba(251, 191, 36, 0.35);
+  --as-warn-surface: rgba(251, 191, 36, 0.08);
+  --as-warn-text: rgba(251, 191, 36, 0.98);
+
+  --as-bad-border: rgba(251, 113, 133, 0.38);
+  --as-bad-surface: rgba(251, 113, 133, 0.08);
+  --as-bad-text: rgba(251, 113, 133, 0.98);
+
+  --as-info-border: rgba(96, 165, 250, 0.35);
+  --as-info-surface: rgba(96, 165, 250, 0.08);
+  --as-info-text: rgba(96, 165, 250, 0.98);
+
+  /* Panel surfaces (revamp primitives) */
+  --as-panel-header-bg: rgba(0, 0, 0, 0.18);
 }
