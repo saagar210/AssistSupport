@@ -116,3 +116,15 @@
   outline: 2px solid var(--as-focus);
   outline-offset: 2px;
 }
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-shell-revamp {
+    /* Disable vibrancy/blur and switch to solid surfaces for readability. */
+    --backdrop-blur: 0px;
+    --as-shell-nav-bg: var(--as-surface-2);
+    --as-shell-topbar-bg: var(--as-surface-2);
+    --as-glass-1: var(--as-surface-2);
+    --as-glass-2: var(--as-surface-2);
+    --as-glass-3: var(--as-surface-3);
+  }
+}

@@ -1,4 +1,4 @@
-# Phase 5 Design Standard (Enterprise Ops Console)
+# Phase 5 Design Standard (Apple-Native Ops Console)
 
 Status: Active (execution contract)  
 Scope: Revamp UI/UX only; no behavioral/security changes unless explicitly approved as a bug fix  
@@ -9,7 +9,8 @@ This document is the single source of truth for how Phase 5 should look and feel
 ## 1) Design Intent (Non-Negotiable)
 
 1. Calm operations console: dense, legible, low-noise, long-session friendly.
-2. Trust through clarity: state, provenance, and policy posture must be obvious.
+2. Apple-native clarity: the UI should feel at-home on macOS (calm, precise, subtle depth).
+3. Trust through clarity: state, provenance, and policy posture must be obvious.
 3. Speed over novelty: keyboard-first, low friction, no “cute” UI.
 4. Consistency over variety: one system, not a collage of styles.
 
@@ -20,8 +21,9 @@ This document is the single source of truth for how Phase 5 should look and feel
    - No ad-hoc hex/rgba for hover/active/focus/shadows in revamp surfaces.
    - Intent colors are reserved for meaning (risk/warn/info/success), not decoration.
 2. Typography:
-   - Body: IBM Plex Sans (bundled locally via npm, no runtime network fetch).
-   - Mono: JetBrains Mono (bundled locally via npm, no runtime network fetch).
+   - Body: macOS-native system font stack (SF via `system-ui` on macOS).
+   - Mono: system mono stack (`ui-monospace`/`SF Mono`).
+   - Note: revamp currently imports bundled fonts for consistency; Phase 5 may remove those imports once the Apple-native token set is finalized.
    - Use weight and spacing for hierarchy before using color.
 3. Density:
    - Default is dense, with clear hierarchy.
@@ -29,6 +31,9 @@ This document is the single source of truth for how Phase 5 should look and feel
 4. Elevation:
    - Use shared shadow tokens only (e.g. `--shadow-xs`, `--card-shadow`).
    - Avoid strong drop shadows; prefer subtle separation via borders and surface contrast.
+5. Vibrancy (default):
+   - Revamp surfaces default to macOS-style “vibrancy” (translucent surfaces + blur).
+   - Must honor `prefers-reduced-transparency: reduce` by disabling blur/translucency and using solid surfaces.
 5. Motion:
    - Allowed: calm entrance fades and small opacity transitions.
    - Disallowed: bouncy easing, continuous animations, attention-stealing micro-motion.
@@ -94,4 +99,3 @@ This document is the single source of truth for how Phase 5 should look and feel
 3. Motion + reduced-motion rules: `/Users/d/Projects/AssistSupport/src/styles/revamp/motion.css`
 4. Revamp shell gating: `/Users/d/Projects/AssistSupport/src/App.tsx`
 5. Flag policy (env authoritative outside dev for policy flags): `/Users/d/Projects/AssistSupport/src/features/revamp/flags.ts`
-

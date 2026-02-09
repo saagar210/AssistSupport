@@ -63,19 +63,21 @@ Phase 5 is not “done” by visual preference. It is done only when these gates
 
 ## 3) Design Direction (Explicit, So We Don’t “Wing It”)
 
-The revamp should feel like a modern operations console: calm, dense, legible, and intentionally designed.
+The revamp should feel like a modern operations console that is Apple-native on macOS: calm, dense, legible, subtle depth, and intentionally designed.
 
 1. Visual theme: warm graphite surfaces with high-contrast text, a restrained accent, and “serious” intent colors.
-2. Typography: expressive but professional; avoid default stacks (Inter/Roboto/system). Ship fonts locally.
+2. Typography: Apple-native system stack (SF via `system-ui`), professional and legible.
    - Default recommendation:
-     - UI sans: `IBM Plex Sans` (variable or weights 400/500/600)
-     - Mono: `JetBrains Mono` (400/500)
+     - UI sans: `system-ui` (macOS: SF)
+     - Mono: `ui-monospace` (macOS: SF Mono)
+   - No runtime network fetch for fonts. Bundled fonts are allowed, but the end-state should not require them for the Apple-native direction.
 3. Layout: 3-rail model (left nav, center workspace, right rail) with keyboard-first flows.
 4. Motion: limited to meaningful transitions.
    - Page/section entrance fades and staggered list reveals.
    - No excessive micro-animations; keep it calm for long sessions.
 5. Density: default to dense with clear hierarchy; allow a “Comfort” toggle later if needed, but not in Phase 5 scope.
 6. Accessibility: focus visibility must be unmistakable; do not rely on color alone for state.
+7. Vibrancy: default revamp surfaces use translucent blur, with a solid-surface fallback for `prefers-reduced-transparency`.
 
 ## 4) Operator Keyboard Contract (Must Not Regress)
 
