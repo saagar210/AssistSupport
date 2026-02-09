@@ -65,7 +65,9 @@ fn is_youtube_domain(host: &str) -> bool {
     host == "youtube.com" || host.ends_with(".youtube.com")
 }
 
-async fn validate_caption_url_for_fetch(caption_url: &str) -> IngestResult<crate::kb::dns::ValidatedUrl> {
+async fn validate_caption_url_for_fetch(
+    caption_url: &str,
+) -> IngestResult<crate::kb::dns::ValidatedUrl> {
     let resolver = PinnedDnsResolver::new(SsrfConfig::default())
         .await
         .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?;
@@ -805,13 +807,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_caption_url_for_fetch_blocks_loopback() {
-        let err = validate_caption_url_for_fetch("https://127.0.0.1/").await.unwrap_err();
-        assert!(err.to_string().to_ascii_lowercase().contains("ssrf blocked"));
+        let err = validate_caption_url_for_fetch("https://127.0.0.1/")
+            .await
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .to_ascii_lowercase()
+            .contains("ssrf blocked"));
     }
 
     #[tokio::test]
     async fn test_validate_caption_url_for_fetch_requires_https() {
-        let err = validate_caption_url_for_fetch("http://1.1.1.1/").await.unwrap_err();
+        let err = validate_caption_url_for_fetch("http://1.1.1.1/")
+            .await
+            .unwrap_err();
         assert!(err
             .to_string()
             .to_ascii_lowercase()

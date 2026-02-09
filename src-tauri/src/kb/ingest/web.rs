@@ -168,9 +168,7 @@ impl WebIngester {
 
                 builder
                     .build()
-                    .map_err(|e| {
-                        IngestError::Network(NetworkError::RequestFailed(e.to_string()))
-                    })?
+                    .map_err(|e| IngestError::Network(NetworkError::RequestFailed(e.to_string())))?
             } else {
                 self.client.clone()
             };

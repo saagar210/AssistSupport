@@ -643,8 +643,7 @@ pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPrefligh
     let base_url = match integration_base_url(&pin) {
         Ok(value) => value,
         Err(message) => {
-            let mut status =
-                preflight_status_template(&pin, false, pin.default_base_url.clone());
+            let mut status = preflight_status_template(&pin, false, pin.default_base_url.clone());
             status.status = "invalid-config".to_string();
             status.message = message;
             return Ok(status);

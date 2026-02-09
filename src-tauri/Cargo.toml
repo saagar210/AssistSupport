@@ -47,10 +47,10 @@ base64 = "0.22"
 llama-cpp-2 = "0.1"
 
 # Embeddings & Vectors
-lancedb = "0.17"
-arrow = "53"
-arrow-array = "53"
-arrow-schema = "53"
+lancedb = "0.26.2"
+arrow = "57.2"
+arrow-array = "57.2"
+arrow-schema = "57.2"
 
 # KB Processing
 pulldown-cmark = "0.12"
@@ -100,3 +100,6 @@ criterion = { version = "0.6", features = ["html_reports"] }
 [[bench]]
 name = "performance"
 harness = false
+
+[patch.crates-io]
+tantivy = { path = "vendor/tantivy" }

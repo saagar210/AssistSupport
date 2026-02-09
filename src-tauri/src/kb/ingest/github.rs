@@ -556,11 +556,7 @@ impl GitHubIngester {
         general_purpose::STANDARD.encode(auth.as_bytes())
     }
 
-    fn build_git_command(
-        args: &[&str],
-        token: Option<&str>,
-        workdir: Option<&Path>,
-    ) -> Command {
+    fn build_git_command(args: &[&str], token: Option<&str>, workdir: Option<&Path>) -> Command {
         let mut command = Command::new("git");
 
         if let Some(token) = token {
