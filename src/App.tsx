@@ -19,6 +19,7 @@ import {
 } from './features/app-shell';
 import { isTabEnabled } from './features/app-shell/tabPolicy';
 import { getEnabledRevampFlags, resolveRevampFlags } from './features/revamp';
+import { RevampShell } from './features/revamp/shell/RevampShell';
 import './App.css';
 
 function AppContent() {
@@ -122,10 +123,25 @@ function AppContent() {
     );
   }
 
-  const appShellClassName = revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? 'app app-shell-revamp' : 'app';
+  const activeTabContent = (
+    <main className="app-main">
+      {renderActiveTab({
+        activeTab,
+        draftRef,
+        sourceSearchQuery,
+        pendingQueueView,
+        onSearchQueryConsumed: consumeSourceSearchQuery,
+        onQueueViewConsumed: consumePendingQueueView,
+        onNavigateToSource: handleNavigateToSource,
+        onNavigateToQueue: handleNavigateToQueue,
+        onLoadDraft: handleLoadDraft,
+        revampFlags,
+      })}
+    </main>
+  );
 
-  return (
-    <div className={appShellClassName} data-revamp-shell={revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? '1' : '0'}>
+  const legacyLayout = (
+    <div className="app">
       {/* Mobile navigation - visible only on small screens */}
       <div className="mobile-nav">
         <TabBar activeTab={activeTab} onTabChange={setActiveTab} revampFlags={revampFlags} />
@@ -146,21 +162,28 @@ function AppContent() {
           onOpenCommandPalette={commandPalette.open}
           onOpenShortcuts={shortcutsHelp.open}
         />
-        <main className="app-main">
-          {renderActiveTab({
-            activeTab,
-            draftRef,
-            sourceSearchQuery,
-            pendingQueueView,
-            onSearchQueryConsumed: consumeSourceSearchQuery,
-            onQueueViewConsumed: consumePendingQueueView,
-            onNavigateToSource: handleNavigateToSource,
-            onNavigateToQueue: handleNavigateToQueue,
-            onLoadDraft: handleLoadDraft,
-            revampFlags,
-          })}
-        </main>
+        {activeTabContent}
       </div>
+    </div>
+  );
+
+  const revampLayout = (
+    <div className="app app-shell-revamp" data-revamp-shell="1">
+      <RevampShell
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        revampFlags={revampFlags}
+        onOpenCommandPalette={commandPalette.open}
+        onOpenShortcuts={shortcutsHelp.open}
+      >
+        {activeTabContent}
+      </RevampShell>
+    </div>
+  );
+
+  return (
+    <>
+      {revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? revampLayout : legacyLayout}
 
       <ToastContainer>
         {toasts.map(toast => (
@@ -191,7 +214,7 @@ function AppContent() {
           onSkip={handleOnboardingSkip}
         />
       )}
-    </div>
+    </>
   );
 }
 

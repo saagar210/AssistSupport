@@ -1,0 +1,43 @@
+@import "@fontsource-variable/ibm-plex-sans/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+.app-shell-revamp {
+  color: var(--as-text-1);
+  background: radial-gradient(1200px 800px at 15% -10%, rgba(79, 209, 197, 0.16), transparent 55%),
+    radial-gradient(900px 600px at 85% 0%, rgba(96, 165, 250, 0.12), transparent 50%),
+    linear-gradient(180deg, var(--as-surface-0), var(--as-surface-1));
+  font-family: var(--as-font-sans);
+  line-height: var(--as-line-default);
+  letter-spacing: 0.1px;
+}
+
+.app-shell-revamp * {
+  box-sizing: border-box;
+}
+
+.app-shell-revamp :where(h1, h2, h3, h4) {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.app-shell-revamp :where(code, pre, kbd) {
+  font-family: var(--as-font-mono);
+}
+
+.app-shell-revamp :where(a) {
+  color: var(--as-accent-1);
+}
+
+.app-shell-revamp :where(button, input, textarea, select) {
+  font: inherit;
+}
+
+.app-shell-revamp :where(button) {
+  cursor: pointer;
+}
+
+.app-shell-revamp :where(:focus-visible) {
+  outline: 2px solid var(--as-focus);
+  outline-offset: 2px;
+}
+

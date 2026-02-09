@@ -1,0 +1,30 @@
+:root {
+  --as-ease-out: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --as-ease-in: cubic-bezier(0.4, 0, 0.6, 1);
+
+  --as-dur-1: 120ms;
+  --as-dur-2: 180ms;
+  --as-dur-3: 240ms;
+}
+
+@keyframes as-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes as-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+

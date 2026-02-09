@@ -1,0 +1,60 @@
+:root {
+  /* Typography */
+  --as-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --as-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Density + rhythm */
+  --as-font-size-0: 12px;
+  --as-font-size-1: 13px;
+  --as-font-size-2: 14px;
+  --as-font-size-3: 16px;
+  --as-font-size-4: 18px;
+  --as-font-size-5: 22px;
+  --as-line-compact: 1.25;
+  --as-line-default: 1.4;
+
+  /* Spacing */
+  --as-space-0: 0;
+  --as-space-1: 4px;
+  --as-space-2: 8px;
+  --as-space-3: 12px;
+  --as-space-4: 16px;
+  --as-space-5: 20px;
+  --as-space-6: 24px;
+  --as-space-7: 32px;
+
+  /* Radii */
+  --as-radius-1: 8px;
+  --as-radius-2: 12px;
+  --as-radius-pill: 999px;
+
+  /* Elevation */
+  --as-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.25), 0 12px 30px rgba(0, 0, 0, 0.24);
+
+  /* Core palette (warm graphite) */
+  --as-surface-0: #0b0d10;
+  --as-surface-1: #0f1218;
+  --as-surface-2: #141a22;
+  --as-surface-3: #1b2330;
+  --as-border-1: rgba(255, 255, 255, 0.08);
+  --as-border-2: rgba(255, 255, 255, 0.12);
+
+  --as-text-1: rgba(255, 255, 255, 0.92);
+  --as-text-2: rgba(255, 255, 255, 0.72);
+  --as-text-3: rgba(255, 255, 255, 0.55);
+
+  /* Accent */
+  --as-accent-1: #4fd1c5;
+  --as-accent-2: #2aa198;
+  --as-accent-ink: #061615;
+
+  /* Intent */
+  --as-good: #2dd4bf;
+  --as-warn: #fbbf24;
+  --as-bad: #fb7185;
+  --as-info: #60a5fa;
+
+  /* Focus */
+  --as-focus: rgba(79, 209, 197, 0.55);
+}
+
