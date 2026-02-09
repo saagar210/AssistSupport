@@ -10,3 +10,10 @@
 - pnpm run test: PASS
 - pnpm run test:ci: PASS
 - pnpm run test:e2e:smoke: PASS
+
+## Slice Verification (queue calm entrance)
+- pnpm run typecheck: PASS
+- pnpm run test: PASS
+- pnpm run test:ci: PASS
+- pnpm run test:e2e:revamp: PASS
+- pnpm run test:e2e:smoke: PASS

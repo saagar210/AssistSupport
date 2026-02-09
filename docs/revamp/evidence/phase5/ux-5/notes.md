@@ -19,3 +19,7 @@
 - Bridged legacy `--font-*` vars to revamp fonts in `.app-shell-revamp`.
 - Updated Draft readiness borders to use semantic tokens (`--success/--warning/--info`).
 - Updated copy override modal overlay/shadow to prefer theme tokens (`--overlay-bg`, `--card-shadow`).
+
+## Slice: Queue Calm Entrance
+- Added a single, calm `as-fade-in` entrance animation to the Queue Command Center container (`.as-queue`).
+- Reduced-motion is respected via the revamp motion tokens.

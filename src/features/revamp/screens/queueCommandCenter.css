@@ -1,6 +1,7 @@
 .as-queue {
   display: grid;
   gap: var(--as-space-5);
+  animation: as-fade-in var(--as-dur-2) var(--as-ease-out) both;
 }
 
 .as-queue__header {
@@ -216,4 +217,3 @@
     position: static;
   }
 }
-
