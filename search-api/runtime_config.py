@@ -23,6 +23,7 @@ class RuntimeConfig:
     api_key: str
     api_port: int
     rate_limit_storage_uri: str
+    store_raw_query_text: bool
     db_host: str
     db_port: int
     db_user: str
@@ -71,6 +72,13 @@ def load_runtime_config(environ: Mapping[str, str] | None = None) -> RuntimeConf
         "ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI", DEFAULT_RATE_LIMIT_STORAGE_URI
     )
 
+    store_raw_query_text = _parse_bool(
+        env.get("ASSISTSUPPORT_SEARCH_API_STORE_RAW_QUERY_TEXT"),
+        key="ASSISTSUPPORT_SEARCH_API_STORE_RAW_QUERY_TEXT",
+        # Default-off minimization. Opt-in only.
+        default=False,
+    )
+
     db_host = env.get("ASSISTSUPPORT_DB_HOST", "localhost")
     db_port = _parse_int(env.get("ASSISTSUPPORT_DB_PORT", "5432"), key="ASSISTSUPPORT_DB_PORT")
     db_user = env.get("ASSISTSUPPORT_DB_USER", "assistsupport_dev")
@@ -83,6 +91,7 @@ def load_runtime_config(environ: Mapping[str, str] | None = None) -> RuntimeConf
         api_key=api_key,
         api_port=api_port,
         rate_limit_storage_uri=rate_limit_storage_uri,
+        store_raw_query_text=store_raw_query_text,
         db_host=db_host,
         db_port=db_port,
         db_user=db_user,

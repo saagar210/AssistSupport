@@ -19,6 +19,12 @@ ASSISTSUPPORT_API_KEY=local-dev-search-token \
 python3 search_api.py
 ```
 
+Query logging minimization (default-off raw query storage):
+
+- By default, `query_performance.query_text` stores `sha256:<hex>` fingerprints, not raw query text.
+- To opt in to raw query storage for local/dev analytics only, set:
+  - `ASSISTSUPPORT_SEARCH_API_STORE_RAW_QUERY_TEXT=1`
+
 Insecure local-only override (not recommended):
 
 ```bash

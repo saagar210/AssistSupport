@@ -57,7 +57,7 @@ def _get_engine():
     if _engine is None:
         from hybrid_search import HybridSearchEngine
 
-        _engine = HybridSearchEngine()
+        _engine = HybridSearchEngine(store_raw_query_text=_RUNTIME_CONFIG.store_raw_query_text)
         app.logger.info("Search engine initialized")
     return _engine
 
@@ -366,10 +366,24 @@ def run_server():
     app.logger.info("Starting AssistSupport Search API on port %s", runtime_config.api_port)
     app.logger.info("Environment: %s", runtime_config.environment)
 
+    # Flask's debug mode implicitly enables the reloader, which forks a second process.
+    # That is convenient for local iteration but confusing for "run the full stack"
+    # workflows (multiple PIDs, double log lines, and easier to trip over port reuse).
+    # Default: debug on (non-production), reloader off unless explicitly enabled.
+    debug_enabled = runtime_config.environment != "production" and os.environ.get(
+        "ASSISTSUPPORT_SEARCH_API_DEBUG", "1"
+    ) in ("1", "true", "yes")
+    use_reloader = debug_enabled and os.environ.get("ASSISTSUPPORT_SEARCH_API_RELOAD", "0") in (
+        "1",
+        "true",
+        "yes",
+    )
+
     app.run(
         host="localhost",
         port=runtime_config.api_port,
-        debug=runtime_config.environment != "production",
+        debug=debug_enabled,
+        use_reloader=use_reloader,
         threaded=True,
     )
 

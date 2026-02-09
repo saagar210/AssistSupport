@@ -191,6 +191,7 @@ def load_real_queries():
         SELECT DISTINCT query_text, category_filter, intent_confidence
         FROM query_performance
         WHERE intent_confidence >= 0.4
+          AND query_text NOT LIKE 'sha256:%'
         ORDER BY intent_confidence DESC
     """)
     rows = cur.fetchall()

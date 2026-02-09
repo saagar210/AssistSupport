@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import logging
+import hashlib
 from typing import List, Dict, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 class HybridSearchEngine:
     """Production hybrid search combining FTS + vector + intent detection"""
 
-    def __init__(self):
+    def __init__(self, *, store_raw_query_text: bool = False):
         self.conn = connect_db()
         self.conn.autocommit = True
         self.cur = self.conn.cursor()
@@ -33,6 +34,7 @@ class HybridSearchEngine:
         self.vector_search_enabled = self._detect_vector_capability()
         self.embedder = EmbeddingService()
         self.reranker = Reranker()
+        self.store_raw_query_text = store_raw_query_text
         logger.info("Hybrid search engine initialized")
 
     def _detect_vector_capability(self) -> bool:
@@ -333,6 +335,11 @@ class HybridSearchEngine:
     ):
         """Log search query to query_performance table"""
         try:
+            query_text = (
+                query
+                if self.store_raw_query_text
+                else f"sha256:{hashlib.sha256(query.encode('utf-8')).hexdigest()}"
+            )
             self.cur.execute(
                 """
                 INSERT INTO query_performance
@@ -343,7 +350,7 @@ class HybridSearchEngine:
                 RETURNING id
                 """,
                 (
-                    query,
+                    query_text,
                     100,
                     bm25_count,
                     vector_count,
