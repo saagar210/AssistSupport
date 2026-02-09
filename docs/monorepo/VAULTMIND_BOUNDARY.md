@@ -44,6 +44,49 @@ VaultMind is intentionally buildable without modifying AssistSupport’s depende
 - Test: `pnpm run vaultmind:test`
 - Build: `pnpm run vaultmind:build`
 
+## Git Subtree Maintenance (How To Update VaultMind)
+VaultMind is vendored into this repository as a **git subtree** rooted at `tools/vaultmind/`.
+
+This gives us:
+- A single AssistSupport clone for the workstation.
+- Clean history separation (VaultMind history remains in the VaultMind repo).
+- Predictable updates (pull latest VaultMind changes into this monorepo when we choose).
+
+### One-Time Setup (Per Workstation Clone)
+1. Verify `tools/vaultmind/` exists and is a subtree root.
+2. Add a remote for the VaultMind source repository:
+   - `git remote add vaultmind <VAULTMIND_REPO_URL>`
+   - If it already exists, update it: `git remote set-url vaultmind <VAULTMIND_REPO_URL>`
+3. Fetch:
+   - `git fetch vaultmind --prune`
+
+### Pull Latest VaultMind Changes Into This Monorepo
+Use this when VaultMind advances in its own repo and we want to bring those changes into `tools/vaultmind/` here.
+
+1. Fetch the latest refs:
+   - `git fetch vaultmind --prune`
+2. Pull the desired branch into the subtree:
+   - `git subtree pull --prefix tools/vaultmind vaultmind main --squash`
+3. Run the canonical monorepo gate (recommended):
+   - `pnpm run check:monorepo-readiness:full`
+
+Notes:
+- If VaultMind uses a different default branch (e.g. `master`), replace `main` above.
+- We keep subtree pulls squashed to avoid spamming AssistSupport history with VaultMind internal commits.
+
+### Push Subtree Changes Back To VaultMind (Rare)
+Use this only if we intentionally edit VaultMind code from inside this monorepo and want to upstream those changes.
+
+1. Ensure your changes are committed locally in this monorepo.
+2. Push the subtree prefix back to the VaultMind remote:
+   - `git subtree push --prefix tools/vaultmind vaultmind main`
+
+### Common Failure Modes
+- “prefix … does not exist”: you’re not in the repo root or the subtree directory moved.
+- Conflicts during `subtree pull`: VaultMind diverged. Resolve conflicts, re-run tests, then commit the merge result.
+- Accidental Linux build scope: if you are enabling Linux distribution, follow the guardrail guidance in
+  `scripts/check_vaultmind_platform_scope.sh` and update this document’s platform scope accordingly.
+
 ## When This Boundary Changes
 If we introduce a formal “Knowledge Pack” contract (file format + schema) that is validated in CI, add:
 1. A versioned spec under `docs/implementation/` or `docs/monorepo/`.
