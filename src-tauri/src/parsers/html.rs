@@ -25,6 +25,25 @@ pub fn parse(path: &Path) -> Result<ParsedDocument, AppError> {
         skip_ids.insert(el.id());
     }
 
+    // Skip Confluence/generic boilerplate elements: nav, footer, aside, and
+    // elements with boilerplate class names
+    let boilerplate_selectors = [
+        "nav", "footer", "aside",
+        ".breadcrumb", ".breadcrumbs",
+        ".page-metadata", ".page-metadata-modification-info",
+        ".navigation", ".nav-breadcrumb",
+        ".confluence-information-macro",
+        ".footer-body", ".page-restrictions",
+        "#footer", "#breadcrumbs", "#navigation",
+    ];
+    for sel_str in &boilerplate_selectors {
+        if let Ok(sel) = Selector::parse(sel_str) {
+            for el in document.select(&sel) {
+                skip_ids.insert(el.id());
+            }
+        }
+    }
+
     // Extract title
     let title_sel =
         Selector::parse("title").map_err(|e| AppError::Parse(format!("Invalid selector: {}", e)))?;
@@ -107,4 +126,90 @@ fn extract_text_recursive(
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn parse_html_string(html: &str) -> Result<ParsedDocument, AppError> {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let file_path = dir.path().join("test.html");
+        let mut f = std::fs::File::create(&file_path).expect("create file");
+        f.write_all(html.as_bytes()).expect("write html");
+        parse(&file_path)
+    }
+
+    #[test]
+    fn test_html_strips_nav_element() {
+        let html = r#"<html><body>
+            <nav><a href="/">Home</a> > <a href="/docs">Docs</a></nav>
+            <h1>API Guide</h1>
+            <p>This is the real content.</p>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(!doc.text.contains("Home"), "Nav content should be stripped");
+        assert!(doc.text.contains("real content"));
+    }
+
+    #[test]
+    fn test_html_strips_footer_element() {
+        let html = r#"<html><body>
+            <h1>Page</h1>
+            <p>Content here.</p>
+            <footer>Powered by Confluence 7.19</footer>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(!doc.text.contains("Powered by"), "Footer should be stripped");
+        assert!(doc.text.contains("Content here."));
+    }
+
+    #[test]
+    fn test_html_strips_breadcrumb_class() {
+        let html = r#"<html><body>
+            <div class="breadcrumb">Space > Parent > Child</div>
+            <h1>Child Page</h1>
+            <p>Body text.</p>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(!doc.text.contains("Space > Parent"), "Breadcrumb class should be stripped");
+        assert!(doc.text.contains("Body text."));
+    }
+
+    #[test]
+    fn test_html_strips_page_metadata_class() {
+        let html = r#"<html><body>
+            <h1>Setup</h1>
+            <div class="page-metadata">Last modified by admin on 2024-01-15</div>
+            <p>Installation steps below.</p>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(!doc.text.contains("Last modified"), "Page metadata should be stripped");
+        assert!(doc.text.contains("Installation steps"));
+    }
+
+    #[test]
+    fn test_html_strips_aside_element() {
+        let html = r#"<html><body>
+            <aside>Related pages: Foo, Bar</aside>
+            <h1>Main</h1>
+            <p>Main content.</p>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(!doc.text.contains("Related pages"), "Aside should be stripped");
+        assert!(doc.text.contains("Main content."));
+    }
+
+    #[test]
+    fn test_html_preserves_normal_content() {
+        let html = r#"<html><body>
+            <h1>Normal Page</h1>
+            <p>Paragraph one.</p>
+            <p>Paragraph two.</p>
+        </body></html>"#;
+        let doc = parse_html_string(html).unwrap();
+        assert!(doc.text.contains("Paragraph one."));
+        assert!(doc.text.contains("Paragraph two."));
+    }
 }

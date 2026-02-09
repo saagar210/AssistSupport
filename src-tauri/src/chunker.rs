@@ -186,13 +186,28 @@ fn split_paragraphs(text: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Build a sorted list of (byte_offset, section_title) for quick lookup
+/// Build a sorted list of (byte_offset, section_title) for quick lookup.
+/// Tracks used positions to handle duplicate section titles correctly —
+/// each section gets matched to a unique occurrence in the text.
 fn build_section_map(text: &str, sections: &[Section]) -> Vec<(usize, String)> {
     let mut entries: Vec<(usize, String)> = Vec::new();
+    let mut used_positions: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     for section in sections {
-        if let Some(pos) = text.find(&section.title) {
-            entries.push((pos, section.title.clone()));
+        let mut search_from = 0;
+        while search_from < text.len() {
+            if let Some(relative_pos) = text[search_from..].find(&section.title) {
+                let absolute_pos = search_from + relative_pos;
+                if !used_positions.contains(&absolute_pos) {
+                    entries.push((absolute_pos, section.title.clone()));
+                    used_positions.insert(absolute_pos);
+                    break;
+                }
+                // Position already used by another section — keep searching
+                search_from = absolute_pos + 1;
+            } else {
+                break;
+            }
         }
     }
 
@@ -320,5 +335,44 @@ mod tests {
         let chunks = chunk_text(text, &[], 100, 10);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].token_count, 5);
+    }
+
+    #[test]
+    fn test_duplicate_section_titles_assigned_correctly() {
+        // Two sections both titled "Overview" — each chunk should get the correct one
+        let text = "Overview\n\nThis is Product A overview with enough words to be a real paragraph for testing.\n\nDetails\n\nProduct A details paragraph here.\n\nOverview\n\nThis is Product B overview with enough words to be a real paragraph for testing.\n\nDetails\n\nProduct B details paragraph here.";
+
+        let sections = vec![
+            Section { title: "Overview".to_string(), content: "This is Product A overview".to_string(), level: 2 },
+            Section { title: "Details".to_string(), content: "Product A details".to_string(), level: 2 },
+            Section { title: "Overview".to_string(), content: "This is Product B overview".to_string(), level: 2 },
+            Section { title: "Details".to_string(), content: "Product B details".to_string(), level: 2 },
+        ];
+
+        let chunks = chunk_text(text, &sections, 500, 10);
+        assert!(!chunks.is_empty());
+
+        // The section map should have 4 entries (not 2)
+        let map = build_section_map(text, &sections);
+        assert_eq!(map.len(), 4, "Should have 4 section entries for 4 sections, got {:?}", map);
+
+        // First "Overview" should be at a different position than second "Overview"
+        let overview_positions: Vec<usize> = map.iter()
+            .filter(|(_, title)| title == "Overview")
+            .map(|(pos, _)| *pos)
+            .collect();
+        assert_eq!(overview_positions.len(), 2, "Should find both Overview positions");
+        assert_ne!(overview_positions[0], overview_positions[1], "Duplicate titles should map to different positions");
+    }
+
+    #[test]
+    fn test_section_map_handles_missing_title() {
+        let text = "Some text without any matching headings here.";
+        let sections = vec![
+            Section { title: "Nonexistent".to_string(), content: String::new(), level: 1 },
+        ];
+
+        let map = build_section_map(text, &sections);
+        assert!(map.is_empty(), "Should not find nonexistent section title");
     }
 }
