@@ -442,7 +442,7 @@
 }
 
 .tree-result-clear:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-hover, rgba(0, 0, 0, 0.1));
   color: var(--text-primary);
 }
 

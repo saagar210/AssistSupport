@@ -23,3 +23,8 @@
 ## Slice: Queue Calm Entrance
 - Added a single, calm `as-fade-in` entrance animation to the Queue Command Center container (`.as-queue`).
 - Reduced-motion is respected via the revamp motion tokens.
+
+## Slice: Draft Revamp Motion + Token Cleanup
+- Added a calm mount animation for the revamp draft workbench container only when running inside the revamp shell.
+- Swapped the view-toggle active shadow to tokenized `--shadow-xs` with a safe fallback.
+- Tokenized diagnosis clear-button hover background to `--bg-hover`.
