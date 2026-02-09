@@ -63,3 +63,10 @@
   - surfaces/radii/borders use `--as-*` tokens
   - typography uses `--as-font-size-*` and `--as-text-*`
 - No behavior changes: this is styling only, scoped to the revamp shell.
+
+## Slice: Draft Readiness + Workflow Strip Revamp Coherence
+- Added `.app-shell-revamp`-scoped styling for:
+  - AI readiness banner surface
+  - workflow strip surface + step cards
+  - layout toggle surface + active state
+- Purpose: reduce “mixed UI” artifacts when the revamp shell is enabled by using the `--as-*` tokens for the highest-frequency Draft surfaces.

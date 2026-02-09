@@ -26,6 +26,17 @@
     var(--bg-secondary);
 }
 
+/* Revamp shell coherence: prefer revamp tokens and a calmer surface treatment. */
+.app-shell-revamp .ai-readiness-banner {
+  border-bottom-color: var(--as-border-1);
+  background: linear-gradient(180deg, var(--as-glass-2), var(--as-glass-1));
+  padding: var(--as-space-4) var(--as-space-5);
+}
+
+.app-shell-revamp .ai-readiness-banner.ai-readiness-needs-attention {
+  background: linear-gradient(180deg, var(--as-glass-2), var(--as-glass-1));
+}
+
 .ai-readiness-header {
   display: flex;
   align-items: flex-start;
@@ -129,6 +140,30 @@
   color: var(--text-primary);
 }
 
+.app-shell-revamp .draft-workflow-strip {
+  border-bottom-color: var(--as-border-1);
+  background: var(--as-glass-1);
+  padding: var(--as-space-4) var(--as-space-5);
+  gap: var(--as-space-2);
+}
+
+.app-shell-revamp .draft-workflow-step {
+  border-color: var(--as-border-1);
+  border-radius: var(--as-radius-2);
+  background: var(--as-glass-2);
+  padding: var(--as-space-3) var(--as-space-4);
+}
+
+.app-shell-revamp .draft-workflow-step h4 {
+  color: var(--as-text-3);
+  font-size: var(--as-font-size-0);
+}
+
+.app-shell-revamp .draft-workflow-step p {
+  color: var(--as-text-1);
+  font-size: var(--as-font-size-1);
+}
+
 .draft-workflow-actions {
   display: flex;
   align-items: center;
@@ -165,6 +200,25 @@
   background: var(--accent-light);
   color: var(--accent-primary);
   font-weight: 600;
+}
+
+.app-shell-revamp .draft-layout-mode-toggle {
+  border-color: var(--as-border-1);
+  border-radius: var(--as-radius-2);
+  background: var(--as-glass-2);
+}
+
+.app-shell-revamp .draft-layout-mode-btn {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .draft-layout-mode-btn:hover {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .draft-layout-mode-btn.active {
+  background: var(--as-glass-3);
+  color: var(--as-text-1);
 }
 
 .draft-workflow-shortcuts {
