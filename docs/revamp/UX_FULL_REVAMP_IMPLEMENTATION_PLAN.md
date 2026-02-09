@@ -26,6 +26,26 @@ The revamp is complete only when all of the following are true:
 4. The app remains compliant-ready for existing internal control requirements.
 5. All revamp feature flags can be safely disabled without breaking legacy operation paths until final cutover.
 
+### Phase 5 exit gates (testable)
+Phase 5 is not “done” by visual preference. It is done only when these gates are met:
+1. Revamp shell can be enabled without “mixed UI” artifacts across Queue, Draft, Settings, and Command Palette.
+2. Keyboard-first operator loop is complete:
+   - queue -> open draft -> generate -> handoff -> return to queue (mouse optional, not required).
+3. Funnel clarity is unambiguous and consistent with `FEATURE_LOCK_WORKFLOW.md`:
+   - Intake -> Diagnose -> Draft -> Handoff with state-driven copy and gating.
+4. AI trust surfaces are explicit:
+   - readiness and degraded mode are visible
+   - “no citation = no claim” copy gating remains enforceable
+   - copy override requires a reason and emits an audit event without logging response text.
+5. Policy safety is preserved:
+   - admin tabs and network ingest remain disabled by default and env-authoritative outside dev.
+6. Verification suite is green on the branch that closes Phase 5:
+   - `pnpm run typecheck`
+   - `pnpm run test`
+   - `pnpm run test:ci`
+   - `pnpm run test:e2e:smoke`
+   - `pnpm run test:e2e:revamp`
+
 ## 2) Non-Negotiable Constraints
 
 1. MemoryKernel integration boundary remains in the adapter layer only.
@@ -176,10 +196,11 @@ Create a stable revamp foundation that standardizes layout, navigation, and desi
    - `src/features/revamp/ui/` (primitives only)
    - `src/features/revamp/shell/` (layout + nav + right rail)
    - `src/features/revamp/screens/` (screen components)
-6. Add local, bundled fonts (no network fetch):
-   - `src/assets/fonts/IBMPlexSans/`
-   - `src/assets/fonts/JetBrainsMono/`
-   - Reference via `@font-face` in `src/styles/revamp/theme.css`.
+6. Add local, bundled fonts (no runtime network fetch):
+   - Use the vendored npm font packages already pinned in `package.json`:
+     - `@fontsource-variable/ibm-plex-sans`
+     - `@fontsource-variable/jetbrains-mono`
+   - Import them once in `src/styles/revamp/theme.css` and bridge via CSS variables.
 7. Add a “revamp style lint rule” (lightweight):
    - Prefer tokens over hardcoded colors in revamp code.
    - This can be implemented as a small `rg`-based CI check later; for Phase 5, keep it manual and documented in `notes.md`.
