@@ -164,6 +164,32 @@ AssistSupport maintains an audit log for security-relevant events. The log is st
 - **Thread-safe**: Safe for concurrent writes
 - **No Secrets**: Never logs tokens, keys, or passwords
 
+### Pilot Logging and Export (Default-Off)
+
+The "Pilot" feature can persist operator-entered text (queries, generated responses, and feedback comments) for quality iteration. For compliance defaults, Pilot persistence and export are **disabled unless explicitly enabled**.
+
+Enable Pilot logging/export:
+
+- `ASSISTSUPPORT_ENABLE_PILOT_LOGGING=1`
+
+Retention/minimization controls (applies when Pilot logging is enabled):
+
+- `ASSISTSUPPORT_PILOT_RETENTION_DAYS` (default `14`, clamp `1..365`)
+- `ASSISTSUPPORT_PILOT_MAX_ROWS` (default `500`, clamp `50..50000`)
+
+Notes:
+
+- Pilot identifiers are **pseudonymous operator IDs**, not names/emails.
+- Persisted Pilot text is truncated and best-effort redacted for common PII patterns.
+- Pilot CSV export paths are restricted to files under the user's home directory, excluding sensitive subdirectories.
+
+### Search API Query Logging Minimization (Default-Off Raw Query Storage)
+
+If you run the optional Search API component, it records query performance metrics. By default it stores a deterministic fingerprint in `query_performance.query_text` instead of raw query text:
+
+- default: `sha256:<hex>`
+- opt-in raw query storage (local/dev analytics only): `ASSISTSUPPORT_SEARCH_API_STORE_RAW_QUERY_TEXT=1`
+
 ### Logged Events
 
 | Event Type | Severity | Description |

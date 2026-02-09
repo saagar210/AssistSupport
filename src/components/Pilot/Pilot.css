@@ -314,6 +314,17 @@
   margin-bottom: 0.75rem;
 }
 
+.pilot-operator-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pilot-operator-row .pilot-user-input {
+  flex: 1;
+  width: auto;
+}
+
 .pilot-user-input {
   width: 200px;
   padding: 0.375rem 0.5rem;

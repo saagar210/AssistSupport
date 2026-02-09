@@ -5,9 +5,133 @@
 pub mod export;
 
 use crate::db::Database;
-use chrono::Utc;
+use chrono::{Duration, Utc};
+use once_cell::sync::Lazy;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+const PILOT_RETENTION_DAYS_ENV: &str = "ASSISTSUPPORT_PILOT_RETENTION_DAYS";
+const PILOT_MAX_ROWS_ENV: &str = "ASSISTSUPPORT_PILOT_MAX_ROWS";
+
+// Defensive caps: pilot logging is for operational quality signals, not full data retention.
+const MAX_OPERATOR_ID_LEN: usize = 64;
+const MAX_QUERY_LEN: usize = 1_024;
+const MAX_RESPONSE_LEN: usize = 4_096;
+const MAX_COMMENT_LEN: usize = 1_024;
+
+static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
+        .expect("invalid email regex")
+});
+static US_PHONE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
+        .expect("invalid phone regex")
+});
+static SSN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("invalid ssn regex"));
+static API_TOKEN_PREFIX_RE: Lazy<Regex> = Lazy::new(|| {
+    // Common token-ish prefixes (best-effort; we still want to avoid leaking real secrets in pilot logs).
+    Regex::new(r"(?i)\b(ghp_[a-z0-9]{16,}|github_pat_[a-z0-9_]{16,}|hf_[a-z0-9]{16,}|xox[baprs]-[a-z0-9-]{10,}|sk-[a-z0-9]{16,})\b")
+        .expect("invalid token prefix regex")
+});
+
+fn parse_i64_env(var: &str, default: i64) -> i64 {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(default)
+}
+
+fn pilot_retention_days() -> i64 {
+    // Default: 14 days. Clamp to a sane range.
+    parse_i64_env(PILOT_RETENTION_DAYS_ENV, 14).clamp(1, 365)
+}
+
+fn pilot_max_rows() -> i64 {
+    // Default: 500 rows. Clamp to a sane range.
+    parse_i64_env(PILOT_MAX_ROWS_ENV, 500).clamp(50, 50_000)
+}
+
+fn sanitize_operator_id(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Operator ID is required".into());
+    }
+    if trimmed.len() > MAX_OPERATOR_ID_LEN {
+        return Err(format!(
+            "Operator ID too long (max {} characters)",
+            MAX_OPERATOR_ID_LEN
+        ));
+    }
+    // Hard-reject obvious PII patterns.
+    if trimmed.contains('@') || trimmed.contains('.') {
+        return Err("Operator ID must be pseudonymous (no email addresses)".into());
+    }
+
+    let normalized = trimmed.to_ascii_lowercase();
+    if normalized.starts_with('-') || normalized.ends_with('-') {
+        return Err("Operator ID cannot start or end with a hyphen".into());
+    }
+    for c in normalized.chars() {
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' {
+            return Err(
+                "Operator ID contains invalid characters (allowed: a-z, 0-9, '-')".into(),
+            );
+        }
+    }
+    Ok(normalized)
+}
+
+fn sanitize_pilot_text(input: &str, max_len: usize) -> String {
+    let mut s = input.trim().to_string();
+    if s.len() > max_len {
+        s.truncate(max_len);
+    }
+
+    // Best-effort redaction to reduce accidental PII/secret persistence in pilot artifacts.
+    s = EMAIL_RE.replace_all(&s, "<redacted-email>").into_owned();
+    s = US_PHONE_RE.replace_all(&s, "<redacted-phone>").into_owned();
+    s = SSN_RE.replace_all(&s, "<redacted-ssn>").into_owned();
+    s = API_TOKEN_PREFIX_RE
+        .replace_all(&s, "<redacted-token>")
+        .into_owned();
+
+    s
+}
+
+fn enforce_pilot_retention(db: &Database) -> Result<(), String> {
+    let cutoff = (Utc::now() - Duration::days(pilot_retention_days())).to_rfc3339();
+    let max_rows = pilot_max_rows();
+
+    db.conn()
+        .execute(
+            "DELETE FROM pilot_feedback WHERE created_at < ?1",
+            rusqlite::params![cutoff],
+        )
+        .map_err(|e| format!("Failed to enforce pilot retention: {}", e))?;
+    db.conn()
+        .execute(
+            "DELETE FROM pilot_query_logs WHERE created_at < ?1",
+            rusqlite::params![cutoff],
+        )
+        .map_err(|e| format!("Failed to enforce pilot retention: {}", e))?;
+
+    // Cap total rows to bound local persistence footprint (query log deletion cascades feedback).
+    db.conn()
+        .execute(
+            "DELETE FROM pilot_query_logs
+             WHERE id NOT IN (
+               SELECT id FROM pilot_query_logs
+               ORDER BY created_at DESC
+               LIMIT ?1
+             )",
+            rusqlite::params![max_rows],
+        )
+        .map_err(|e| format!("Failed to enforce pilot max rows: {}", e))?;
+
+    Ok(())
+}
 
 /// A logged query-response pair
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,16 +208,30 @@ pub fn log_query(
     user_id: &str,
 ) -> Result<String, String> {
     let id = Uuid::new_v4().to_string();
-    let category = detect_query_category(query);
+    let operator_id = sanitize_operator_id(user_id)?;
+    let query = sanitize_pilot_text(query, MAX_QUERY_LEN);
+    let response = sanitize_pilot_text(response, MAX_RESPONSE_LEN);
+    let category = detect_query_category(&query);
     let now = Utc::now().to_rfc3339();
 
     db.conn()
         .execute(
             "INSERT INTO pilot_query_logs (id, query, response, category, user_id, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, query, response, category.to_string(), user_id, now],
+            rusqlite::params![
+                id,
+                query,
+                response,
+                category.to_string(),
+                operator_id,
+                now
+            ],
         )
         .map_err(|e| format!("Failed to log query: {}", e))?;
+
+    if let Err(e) = enforce_pilot_retention(db) {
+        tracing::warn!("pilot retention cleanup failed: {}", e);
+    }
 
     Ok(id)
 }
@@ -129,14 +267,29 @@ pub fn submit_feedback(
 
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
+    let operator_id = sanitize_operator_id(user_id)?;
+    let comment = comment.map(|value| sanitize_pilot_text(value, MAX_COMMENT_LEN));
 
     db.conn()
         .execute(
             "INSERT INTO pilot_feedback (id, query_log_id, user_id, accuracy, clarity, helpfulness, comment, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, query_log_id, user_id, accuracy, clarity, helpfulness, comment, now],
+            rusqlite::params![
+                id,
+                query_log_id,
+                operator_id,
+                accuracy,
+                clarity,
+                helpfulness,
+                comment,
+                now
+            ],
         )
         .map_err(|e| format!("Failed to save feedback: {}", e))?;
+
+    if let Err(e) = enforce_pilot_retention(db) {
+        tracing::warn!("pilot retention cleanup failed: {}", e);
+    }
 
     Ok(id)
 }
@@ -350,6 +503,32 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].query, "Can I get a flash drive?");
         assert_eq!(logs[0].category, QueryCategory::Policy);
+    }
+
+    #[test]
+    fn test_log_query_redacts_basic_pii() {
+        let (_dir, db) = setup_test_db();
+        let _id = log_query(
+            &db,
+            "Email me at alice@example.com about this",
+            "Call +1 (555) 555-5555 and send to bob@example.com",
+            "op-1234",
+        )
+        .unwrap();
+
+        let logs = get_query_logs(&db).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert!(!logs[0].query.contains("alice@example.com"));
+        assert!(logs[0].query.contains("<redacted-email>"));
+        assert!(logs[0].response.contains("<redacted-phone>"));
+        assert!(logs[0].response.contains("<redacted-email>"));
+    }
+
+    #[test]
+    fn test_operator_id_rejects_email() {
+        let (_dir, db) = setup_test_db();
+        let err = log_query(&db, "q", "r", "alice@example.com").unwrap_err();
+        assert!(err.to_lowercase().contains("pseudonymous"));
     }
 
     #[test]

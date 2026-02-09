@@ -30,6 +30,16 @@ use parking_lot::RwLock;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock as TokioRwLock;
 
+#[cfg(target_os = "macos")]
+fn configure_ggml_metal_env() {
+    // Work around a class of macOS Metal crashes/aborts observed in ggml's
+    // residency-set teardown (ggml_metal_rsets_free). If the user explicitly set
+    // the env var we respect it; otherwise default to the safer setting.
+    if std::env::var_os("GGML_METAL_NO_RESIDENCY").is_none() {
+        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+    }
+}
+
 /// Application state
 pub struct AppState {
     /// Shared llama.cpp backend — initialized once, shared by LLM and embedding engines
@@ -57,6 +67,9 @@ impl Default for AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    configure_ggml_metal_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -312,6 +325,7 @@ pub fn run() {
             commands::get_model_state,
             commands::get_startup_metrics,
             // v0.6.0: Pilot Feedback
+            commands::get_pilot_logging_policy,
             commands::log_pilot_query,
             commands::submit_pilot_feedback,
             commands::get_pilot_stats,

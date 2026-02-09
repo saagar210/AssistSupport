@@ -278,6 +278,75 @@ pub fn validate_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
     Ok(target_path)
 }
 
+/// Validate that an output *file* path is within the user's home directory.
+///
+/// Differences vs `validate_within_home`:
+/// - This is for *files*, not directories.
+/// - It does **not** auto-create directories.
+/// - If the file does not exist yet, it validates the canonical parent directory.
+///
+/// Blocks access to sensitive subdirectories (.ssh, .aws, .gnupg, .config, Library/Keychains).
+pub fn validate_output_file_within_home(path: &Path) -> Result<PathBuf, ValidationError> {
+    let home = dirs::home_dir().ok_or(ValidationError::InvalidFormat(
+        "Cannot determine home directory".into(),
+    ))?;
+    let canonical_home = home
+        .canonicalize()
+        .map_err(|_| ValidationError::PathNotFound(home.display().to_string()))?;
+
+    if path.exists() {
+        let canonical = path
+            .canonicalize()
+            .map_err(|_| ValidationError::PathNotFound(path.display().to_string()))?;
+
+        if !canonical.starts_with(&canonical_home) {
+            return Err(ValidationError::PathTraversal);
+        }
+        if is_sensitive_path(&canonical, &canonical_home) {
+            return Err(ValidationError::InvalidFormat(
+                "This directory contains sensitive data and cannot be used".into(),
+            ));
+        }
+        if canonical.is_dir() {
+            return Err(ValidationError::InvalidFormat(
+                "Output path must be a file, not a directory".into(),
+            ));
+        }
+        return Ok(canonical);
+    }
+
+    let parent = path
+        .parent()
+        .ok_or(ValidationError::InvalidFormat("Invalid path".into()))?;
+
+    if !parent.exists() {
+        return Err(ValidationError::PathNotFound(
+            "Parent directory does not exist".into(),
+        ));
+    }
+
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|_| ValidationError::PathNotFound(parent.display().to_string()))?;
+
+    if !canonical_parent.starts_with(&canonical_home) {
+        return Err(ValidationError::PathTraversal);
+    }
+
+    let file_name = path
+        .file_name()
+        .ok_or(ValidationError::InvalidFormat("Invalid path".into()))?;
+    let target_path = canonical_parent.join(file_name);
+
+    if is_sensitive_path(&target_path, &canonical_home) {
+        return Err(ValidationError::InvalidFormat(
+            "This directory contains sensitive data and cannot be used".into(),
+        ));
+    }
+
+    Ok(target_path)
+}
+
 /// Validate text input size
 pub fn validate_text_size(text: &str, max_bytes: usize) -> Result<(), ValidationError> {
     let size = text.len();

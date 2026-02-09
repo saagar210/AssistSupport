@@ -9,6 +9,7 @@ use assistsupport_lib::validation::{validate_within_home, ValidationError};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use uuid::Uuid;
 
 // ============================================================================
 // Home Directory Enforcement Tests
@@ -246,6 +247,61 @@ fn test_auto_create_new_directory() {
 
         // Cleanup
         let _ = fs::remove_dir(&new_path);
+    }
+}
+
+// ============================================================================
+// Output File Validation Tests
+// ============================================================================
+
+#[test]
+fn test_output_file_within_home_validates_parent_and_does_not_create_file() {
+    use assistsupport_lib::validation::validate_output_file_within_home;
+
+    let home = dirs::home_dir().expect("Home directory should exist");
+    let parent = home.join(format!("assistsupport_test_exports_{}", Uuid::new_v4()));
+    fs::create_dir_all(&parent).expect("Failed to create test export dir");
+
+    let out = parent.join("pilot_export.csv");
+    assert!(!out.exists(), "Output file should not exist yet");
+
+    let validated = validate_output_file_within_home(&out).expect("Expected valid output path");
+    assert_eq!(validated, out);
+    assert!(
+        !validated.exists(),
+        "Validation should not create the output file"
+    );
+
+    // Best-effort cleanup (avoid leaving test artifacts under $HOME).
+    let _ = fs::remove_dir_all(&parent);
+}
+
+#[test]
+fn test_output_file_outside_home_blocked() {
+    use assistsupport_lib::validation::validate_output_file_within_home;
+
+    let result = validate_output_file_within_home(Path::new("/tmp/pilot_export.csv"));
+    assert!(
+        matches!(
+            result,
+            Err(ValidationError::PathTraversal) | Err(ValidationError::PathNotFound(_))
+        ),
+        "Output file outside home should be blocked"
+    );
+}
+
+#[test]
+fn test_output_file_in_sensitive_home_path_blocked() {
+    use assistsupport_lib::validation::validate_output_file_within_home;
+
+    let home = dirs::home_dir().expect("Home directory should exist");
+    let path = home.join(".ssh").join("pilot_export.csv");
+    if home.join(".ssh").exists() {
+        let result = validate_output_file_within_home(&path);
+        assert!(
+            matches!(result, Err(ValidationError::InvalidFormat(_))),
+            "Sensitive output path should be blocked"
+        );
     }
 }
 

@@ -5,12 +5,12 @@ import './Pilot.css';
 
 interface FeedbackFormProps {
   logId: string;
-  userId: string;
+  operatorId: string;
   query: string;
   onSubmitted?: () => void;
 }
 
-export function FeedbackForm({ logId, userId, query: _query, onSubmitted }: FeedbackFormProps) {
+export function FeedbackForm({ logId, operatorId, query: _query, onSubmitted }: FeedbackFormProps) {
   const [accuracy, setAccuracy] = useState(3);
   const [clarity, setClarity] = useState(3);
   const [helpfulness, setHelpfulness] = useState(3);
@@ -27,7 +27,7 @@ export function FeedbackForm({ logId, userId, query: _query, onSubmitted }: Feed
     try {
       await invoke('submit_pilot_feedback', {
         queryLogId: logId,
-        userId,
+        operatorId,
         accuracy,
         clarity,
         helpfulness,
@@ -41,7 +41,7 @@ export function FeedbackForm({ logId, userId, query: _query, onSubmitted }: Feed
     } finally {
       setSubmitting(false);
     }
-  }, [logId, userId, accuracy, clarity, helpfulness, comment, submitting, onSubmitted]);
+  }, [logId, operatorId, accuracy, clarity, helpfulness, comment, submitting, onSubmitted]);
 
   if (submitted) {
     return (

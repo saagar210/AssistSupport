@@ -14,7 +14,7 @@ pub fn export_to_csv(db: &Database, path: &Path) -> Result<usize, String> {
 
     // Query logs section
     writeln!(file, "# Query Logs").map_err(|e| format!("Write error: {}", e))?;
-    writeln!(file, "id,query,response,category,user_id,created_at")
+    writeln!(file, "id,query,response,category,operator_id,created_at")
         .map_err(|e| format!("Write error: {}", e))?;
 
     for log in &logs {
@@ -36,7 +36,7 @@ pub fn export_to_csv(db: &Database, path: &Path) -> Result<usize, String> {
     writeln!(file, "# Feedback").map_err(|e| format!("Write error: {}", e))?;
     writeln!(
         file,
-        "id,query_log_id,user_id,accuracy,clarity,helpfulness,comment,created_at"
+        "id,query_log_id,operator_id,accuracy,clarity,helpfulness,comment,created_at"
     )
     .map_err(|e| format!("Write error: {}", e))?;
 

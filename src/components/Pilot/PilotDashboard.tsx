@@ -3,6 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import './Pilot.css';
 
+interface PilotDashboardProps {
+  pilotLoggingEnabled: boolean;
+  policy: { enabled: boolean; retention_days: number; max_rows: number } | null;
+}
+
 interface CategoryStat {
   category: string;
   query_count: number;
@@ -30,7 +35,7 @@ interface QueryLog {
   created_at: string;
 }
 
-export function PilotDashboard() {
+export function PilotDashboard({ pilotLoggingEnabled, policy }: PilotDashboardProps) {
   const [stats, setStats] = useState<PilotStats | null>(null);
   const [logs, setLogs] = useState<QueryLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -38,6 +43,13 @@ export function PilotDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
+    if (!pilotLoggingEnabled) {
+      setLoading(false);
+      setStats(null);
+      setLogs([]);
+      setError(null);
+      return;
+    }
     try {
       const [statsData, logsData] = await Promise.all([
         invoke<PilotStats>('get_pilot_stats'),
@@ -52,17 +64,22 @@ export function PilotDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pilotLoggingEnabled]);
 
   useEffect(() => {
     loadData();
+    if (!pilotLoggingEnabled) return;
     const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
   }, [loadData]);
 
   const handleExport = useCallback(async () => {
+    if (!pilotLoggingEnabled) {
+      alert('Pilot logging is disabled by policy.');
+      return;
+    }
     try {
-      const home = await invoke<string>('get_home_dir').catch(() => '/tmp');
+      const home = await invoke<string>('get_home_dir');
       const path = `${home}/pilot_export_${Date.now()}.csv`;
       const count = await invoke<number>('export_pilot_data', { path });
       alert(`Exported ${count} records to ${path}`);
@@ -70,12 +87,25 @@ export function PilotDashboard() {
       console.error('Export failed:', err);
       alert('Export failed: ' + (typeof err === 'string' ? err : 'Unknown error'));
     }
-  }, []);
+  }, [pilotLoggingEnabled]);
 
   if (loading) {
     return (
       <div className="pilot-dashboard">
         <div className="pilot-loading">Loading pilot data...</div>
+      </div>
+    );
+  }
+
+  if (!pilotLoggingEnabled) {
+    return (
+      <div className="pilot-dashboard">
+        <div className="pilot-empty">
+          Pilot logging is disabled by policy. Set <code>ASSISTSUPPORT_ENABLE_PILOT_LOGGING=1</code> and restart to enable.
+          {policy && (
+            <> Current defaults: retention {policy.retention_days} days, max {policy.max_rows} rows.</>
+          )}
+        </div>
       </div>
     );
   }
@@ -181,7 +211,7 @@ export function PilotDashboard() {
                     <span className={`pilot-log-category cat-${log.category}`}>
                       {log.category}
                     </span>
-                    <span className="pilot-log-user">{log.user_id}</span>
+                    <span className="pilot-log-user">Operator: {log.user_id}</span>
                     <span className="pilot-log-time">
                       {new Date(log.created_at).toLocaleString()}
                     </span>
