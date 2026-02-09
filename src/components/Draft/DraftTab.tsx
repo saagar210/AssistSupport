@@ -48,6 +48,7 @@ export interface DraftTabHandle {
 interface DraftTabProps {
   initialDraft?: SavedDraft | null;
   onNavigateToSource?: (searchQuery: string) => void;
+  revampModeEnabled?: boolean;
 }
 
 type DraftPanelDensityMode = 'balanced' | 'focus-intake' | 'focus-response';
@@ -67,7 +68,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab({ initialDraft, onNavigateToSource }, ref) {
+export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function DraftTab(
+  { initialDraft, onNavigateToSource, revampModeEnabled = false },
+  ref
+) {
   const { error: showError, success: showSuccess } = useToastContext();
   const {
     generateStreaming,
@@ -1008,7 +1012,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
 
   if (isConversation) {
     return (
-      <div className="draft-tab conversation-mode">
+      <div className={['draft-tab', 'conversation-mode', revampModeEnabled ? 'draft-tab--revamp' : ''].filter(Boolean).join(' ')}>
         {viewToggle}
         <AiReadinessBanner
           modelLoaded={modelLoaded}
@@ -1042,7 +1046,16 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   }
 
   return (
-    <div className={`draft-tab panel-density-${panelDensityMode} ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
+    <div
+      className={[
+        'draft-tab',
+        `panel-density-${panelDensityMode}`,
+        diagnosisCollapsed ? 'diagnosis-collapsed' : '',
+        revampModeEnabled ? 'draft-tab--revamp' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {viewToggle}
       <AiReadinessBanner
         modelLoaded={modelLoaded}

@@ -6,6 +6,8 @@ import type { RevampFlags } from '../flags';
 import { isTabEnabled } from '../../app-shell/tabPolicy';
 import { useAppStatus } from '../../../contexts/AppStatusContext';
 import { Badge, Panel } from '../ui';
+import { WorkspaceQueueContext } from '../../workspace/WorkspaceQueueContext';
+import type { QueueView } from '../../inbox/queueModel';
 import '../../../styles/revamp/index.css';
 import './revampShell.css';
 
@@ -13,6 +15,7 @@ export interface RevampShellProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
   revampFlags: RevampFlags;
+  onNavigateToQueue?: (queueView: QueueView) => void;
   onOpenCommandPalette: () => void;
   onOpenShortcuts: () => void;
   children: ReactNode;
@@ -68,6 +71,7 @@ export function RevampShell({
   activeTab,
   onTabChange,
   revampFlags,
+  onNavigateToQueue,
   onOpenCommandPalette,
   onOpenShortcuts,
   children,
@@ -204,6 +208,19 @@ export function RevampShell({
             <div className="as-shell__workspaceInner">{children}</div>
           </main>
           <aside className="as-shell__rail" aria-label="Diagnostics and guidance">
+            {activeTab === 'draft' && revampFlags.ASSISTSUPPORT_REVAMP_WORKSPACE && (
+              <>
+                <WorkspaceQueueContext onNavigateToQueue={onNavigateToQueue} />
+                <Panel title="Response playbook" subtitle="Keep responses consistent across the team">
+                  <ol className="as-shell__railBullets">
+                    <li>Capture the issue in plain language.</li>
+                    <li>Validate policy and approval requirements.</li>
+                    <li>Generate and edit response with cited context.</li>
+                    <li>Save to follow-ups for handoff continuity.</li>
+                  </ol>
+                </Panel>
+              </>
+            )}
             <Panel
               title="AI Status & Guarantees"
               subtitle="Predictable local AI; never blocking"
@@ -257,4 +274,3 @@ function StatusRow({ label, value, tone }: { label: string; value: string; tone:
     </div>
   );
 }
-

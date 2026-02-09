@@ -11,6 +11,7 @@ import {
   type QueueMetaMap,
   type QueueView,
 } from '../inbox/queueModel';
+import './WorkspaceQueueContext.css';
 
 interface WorkspaceQueueContextProps {
   onNavigateToQueue?: (queueView: QueueView) => void;

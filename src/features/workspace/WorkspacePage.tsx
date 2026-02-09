@@ -7,16 +7,21 @@ interface WorkspacePageProps {
   onNavigateToSource: (searchQuery: string) => void;
   onNavigateToQueue?: (queueView: QueueView) => void;
   revampModeEnabled?: boolean;
+  appShellRevampEnabled?: boolean;
 }
 
 export const WorkspacePage = forwardRef<DraftTabHandle, WorkspacePageProps>(
-  function WorkspacePage({ onNavigateToSource, onNavigateToQueue, revampModeEnabled = false }, ref) {
+  function WorkspacePage(
+    { onNavigateToSource, onNavigateToQueue, revampModeEnabled = false, appShellRevampEnabled = false },
+    ref
+  ) {
     if (revampModeEnabled) {
       return (
         <WorkspaceRevampPage
           ref={ref}
           onNavigateToSource={onNavigateToSource}
           onNavigateToQueue={onNavigateToQueue}
+          appShellRevampEnabled={appShellRevampEnabled}
         />
       );
     }

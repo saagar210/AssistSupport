@@ -50,6 +50,7 @@ export function renderActiveTab({
             onNavigateToSource={onNavigateToSource}
             onNavigateToQueue={onNavigateToQueue}
             revampModeEnabled={revampFlags.ASSISTSUPPORT_REVAMP_WORKSPACE}
+            appShellRevampEnabled={revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL}
           />
         </ErrorBoundary>
       );

@@ -173,6 +173,7 @@ function AppContent() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         revampFlags={revampFlags}
+        onNavigateToQueue={handleNavigateToQueue}
         onOpenCommandPalette={commandPalette.open}
         onOpenShortcuts={shortcutsHelp.open}
       >

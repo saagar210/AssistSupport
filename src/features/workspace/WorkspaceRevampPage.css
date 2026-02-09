@@ -5,14 +5,20 @@
   height: 100%;
 }
 
+.workspace-revamp--solo {
+  grid-template-columns: 1fr;
+}
+
 .workspace-revamp__rail {
   display: flex;
   flex-direction: column;
   gap: var(--space-3, 12px);
-  border: 1px solid var(--color-border, #2f343f);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg, 12px);
   padding: var(--space-4, 16px);
-  background: color-mix(in srgb, var(--color-surface, #11151b) 88%, var(--color-accent, #10b981));
+  background:
+    radial-gradient(700px 200px at 20% 0%, rgba(79, 209, 197, 0.10), transparent 60%),
+    var(--bg-secondary);
 }
 
 .workspace-revamp__playbook h3 {
@@ -26,82 +32,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  color: var(--color-text-secondary, #a6adbb);
+  color: var(--text-secondary);
   font-size: 0.9rem;
-}
-
-.workspace-queue-context {
-  border: 1px solid var(--color-border, #2f343f);
-  border-radius: 10px;
-  background: var(--color-surface, #11151b);
-  padding: 10px;
-}
-
-.workspace-queue-context__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.workspace-queue-context__header h2 {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.workspace-queue-context__stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.workspace-queue-context__stats div {
-  border: 1px solid var(--color-border, #2f343f);
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-
-.workspace-queue-context__stats span {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary, #a6adbb);
-}
-
-.workspace-queue-context__stats strong {
-  font-size: 1rem;
-}
-
-.workspace-queue-context__risk h3 {
-  margin: 0 0 6px;
-  font-size: 0.88rem;
-}
-
-.workspace-queue-context__risk ul {
-  margin: 0;
-  padding-left: 1rem;
-  color: var(--color-text-secondary, #a6adbb);
-  font-size: 0.84rem;
-}
-
-.workspace-queue-context__hint {
-  margin: 0;
-  color: var(--color-text-secondary, #a6adbb);
-  font-size: 0.84rem;
-}
-
-.workspace-queue-context__footer {
-  margin-top: 8px;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary, #a6adbb);
-}
-
-.workspace-queue-context__quick-actions {
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .workspace-revamp__main {

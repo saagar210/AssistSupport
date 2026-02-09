@@ -102,7 +102,7 @@
 
 .draft-workflow-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-color);
@@ -204,6 +204,67 @@
 
 .draft-tab.panel-density-focus-response .draft-panels-container {
   grid-template-columns: minmax(320px, 0.8fr) minmax(280px, 0.85fr) minmax(420px, 1.35fr);
+}
+
+/* Revamp: Draft workbench (ops-grade 2-column) */
+.draft-tab--revamp .draft-panels-container {
+  grid-template-columns: minmax(440px, 0.95fr) minmax(520px, 1.05fr);
+  grid-template-rows: minmax(220px, 0.8fr) minmax(220px, 1.2fr);
+}
+
+.draft-tab--revamp .draft-panel.input-panel {
+  grid-column: 1;
+  grid-row: 1;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.draft-tab--revamp .draft-panel.diagnosis-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.draft-tab--revamp .draft-panel.response-panel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border-right: none;
+}
+
+/* When diagnosis is collapsed, revert to a 3-column split so the existing vertical strip UX stays intact. */
+.draft-tab--revamp.diagnosis-collapsed .draft-panels-container {
+  grid-template-columns: minmax(440px, 0.95fr) 40px minmax(520px, 1.05fr);
+  grid-template-rows: 1fr;
+}
+
+.draft-tab--revamp.diagnosis-collapsed .draft-panel.input-panel {
+  grid-column: 1;
+  grid-row: 1;
+  border-bottom: none;
+}
+
+.draft-tab--revamp.diagnosis-collapsed .draft-panel.diagnosis-panel {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.draft-tab--revamp.diagnosis-collapsed .draft-panel.response-panel {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.draft-tab--revamp.panel-density-focus-intake .draft-panels-container {
+  grid-template-columns: minmax(520px, 1.2fr) minmax(480px, 0.9fr);
+}
+
+.draft-tab--revamp.panel-density-focus-response .draft-panels-container {
+  grid-template-columns: minmax(440px, 0.85fr) minmax(620px, 1.35fr);
+}
+
+.draft-tab--revamp.panel-density-focus-intake.diagnosis-collapsed .draft-panels-container {
+  grid-template-columns: minmax(520px, 1.2fr) 40px minmax(480px, 0.9fr);
+}
+
+.draft-tab--revamp.panel-density-focus-response.diagnosis-collapsed .draft-panels-container {
+  grid-template-columns: minmax(440px, 0.85fr) 40px minmax(620px, 1.35fr);
 }
 
 /* View Toggle */
@@ -321,6 +382,38 @@
   .draft-panels-container {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto 1fr;
+  }
+
+  .draft-tab--revamp .draft-panels-container {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(240px, 1fr);
+    overflow: auto;
+  }
+
+  .draft-tab--revamp .draft-panel.input-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .draft-tab--revamp .draft-panel.diagnosis-panel {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .draft-tab--revamp .draft-panel.response-panel {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .draft-tab--revamp.diagnosis-collapsed .draft-panels-container {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 56px minmax(240px, 1fr);
+  }
+
+  .draft-tab--revamp.diagnosis-collapsed .draft-panel.diagnosis-panel {
+    grid-row: 2;
   }
 
   .draft-tab.panel-density-focus-intake .draft-panels-container,
