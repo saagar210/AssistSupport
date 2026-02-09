@@ -1,7 +1,7 @@
 import { FollowUpsTab } from '../../components/FollowUps/FollowUpsTab';
 import type { SavedDraft } from '../../types';
-import { QueueFirstInboxPage } from './QueueFirstInboxPage';
 import type { QueueView } from './queueModel';
+import { QueueCommandCenterPage } from '../revamp';
 
 interface InboxPageProps {
   onLoadDraft: (draft: SavedDraft) => void;
@@ -18,7 +18,7 @@ export function InboxPage({
 }: InboxPageProps) {
   if (queueFirstModeEnabled) {
     return (
-      <QueueFirstInboxPage
+      <QueueCommandCenterPage
         onLoadDraft={onLoadDraft}
         initialQueueView={initialQueueView}
         onQueueViewConsumed={onQueueViewConsumed}

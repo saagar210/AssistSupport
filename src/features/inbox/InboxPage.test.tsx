@@ -7,8 +7,8 @@ vi.mock('../../components/FollowUps/FollowUpsTab', () => ({
   FollowUpsTab: () => <div data-testid="legacy-followups-tab">Legacy FollowUps</div>,
 }));
 
-vi.mock('./QueueFirstInboxPage', () => ({
-  QueueFirstInboxPage: () => <div data-testid="queue-first-inbox">Queue First Inbox</div>,
+vi.mock('../revamp', () => ({
+  QueueCommandCenterPage: () => <div data-testid="queue-first-inbox">Queue Command Center</div>,
 }));
 
 const sampleDraft = {
@@ -34,6 +34,6 @@ describe('InboxPage', () => {
     render(<InboxPage onLoadDraft={(draft) => { expect(draft).toEqual(sampleDraft); }} queueFirstModeEnabled />);
 
     expect(screen.getByTestId('queue-first-inbox')).toBeInTheDocument();
-    expect(screen.getByText(/Queue First Inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Queue Command Center/i)).toBeInTheDocument();
   });
 });

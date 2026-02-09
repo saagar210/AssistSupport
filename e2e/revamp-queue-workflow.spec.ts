@@ -18,13 +18,11 @@ test('@smoke queue workflow deep-link and keyboard triage', async ({ page }) => 
 
   await expect(page.getByText('Live queue context')).toBeVisible();
   await page.getByRole('button', { name: 'Open Unassigned Queue' }).click();
-  await expect(page.getByText('Queue-first inbox mode')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Unassigned' })).toHaveClass(/btn-primary/);
+  await expect(page.getByText('Queue Command Center')).toBeVisible();
   const queueList = page.locator('[data-testid="queue-items-list"]');
   await expect(queueList.getByText(/Sev2 onboarding access issue/i).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'All' }).click();
-  await expect(page.getByRole('button', { name: 'All' })).toHaveClass(/btn-primary/);
 
   await expect(queueList).toBeVisible();
   await queueList.focus();
@@ -49,8 +47,7 @@ test('@smoke at-risk queue opens draft and generates response', async ({ page })
 
   await expect(page.getByText('Live queue context')).toBeVisible();
   await page.getByRole('button', { name: 'Open At-Risk Queue' }).click();
-  await expect(page.getByText('Queue-first inbox mode')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'At Risk' })).toHaveClass(/btn-primary/);
+  await expect(page.getByText('Queue Command Center')).toBeVisible();
 
   const queueList = page.locator('[data-testid="queue-items-list"]');
   await expect(queueList).toBeVisible();

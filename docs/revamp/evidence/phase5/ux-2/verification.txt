@@ -1,0 +1,14 @@
+Phase: UX-2 (Queue Command Center)
+Date: 2026-02-09
+
+Commands run (PASS):
+- pnpm run typecheck
+- pnpm run test
+- pnpm run test:ci
+- pnpm run test:e2e:revamp
+- pnpm run test:revamp-queue-rehearsal
+
+Notes:
+- Queue Command Center is behind VITE_ASSISTSUPPORT_REVAMP_INBOX=1.
+- Keyboard triage contract preserved (J/K, C, X, O, Enter).
+
