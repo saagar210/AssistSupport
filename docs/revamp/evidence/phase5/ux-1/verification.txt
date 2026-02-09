@@ -1,0 +1,14 @@
+Phase: UX-1 (Revamp Shell Foundation)
+Date: 2026-02-09
+
+Commands run (PASS):
+- pnpm install
+- pnpm run typecheck
+- pnpm run test
+- pnpm run test:ci
+- pnpm run test:e2e:smoke
+
+Notes:
+- Revamp shell remains flag-gated behind VITE_ASSISTSUPPORT_REVAMP_APP_SHELL=1.
+- Policy gates (admin tabs, network ingest) remain disabled by default.
+
