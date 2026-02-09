@@ -33,9 +33,7 @@ pub async fn check_ollama_connection(
 }
 
 #[tauri::command]
-pub async fn list_ollama_models(
-    state: State<'_, AppState>,
-) -> Result<Vec<OllamaModel>, AppError> {
+pub async fn list_ollama_models(state: State<'_, AppState>) -> Result<Vec<OllamaModel>, AppError> {
     let (host, port) = {
         let conn = get_conn(state.inner())?;
 

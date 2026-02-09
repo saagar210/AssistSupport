@@ -62,10 +62,7 @@ pub fn parse_entity_response(response: &str) -> Vec<ExtractedEntity> {
         .strip_prefix("```json")
         .or_else(|| trimmed.strip_prefix("```"))
         .unwrap_or(trimmed);
-    let stripped = stripped
-        .strip_suffix("```")
-        .unwrap_or(stripped)
-        .trim();
+    let stripped = stripped.strip_suffix("```").unwrap_or(stripped).trim();
 
     if let Ok(entities) = serde_json::from_str::<Vec<ExtractedEntity>>(stripped) {
         return entities;
@@ -81,7 +78,10 @@ pub fn parse_entity_response(response: &str) -> Vec<ExtractedEntity> {
         }
     }
 
-    tracing::warn!("Failed to parse NER response as JSON, returning empty: {}", trimmed);
+    tracing::warn!(
+        "Failed to parse NER response as JSON, returning empty: {}",
+        trimmed
+    );
     Vec::new()
 }
 
@@ -228,10 +228,7 @@ pub fn parse_relationship_response(response: &str) -> Vec<ExtractedRelationship>
         .strip_prefix("```json")
         .or_else(|| trimmed.strip_prefix("```"))
         .unwrap_or(trimmed);
-    let stripped = stripped
-        .strip_suffix("```")
-        .unwrap_or(stripped)
-        .trim();
+    let stripped = stripped.strip_suffix("```").unwrap_or(stripped).trim();
 
     if let Ok(rels) = serde_json::from_str::<Vec<ExtractedRelationship>>(stripped) {
         return rels;
@@ -267,9 +264,7 @@ pub fn load_collection_data(
     conn: &rusqlite::Connection,
     collection_id: &str,
 ) -> Result<(Vec<(String, String)>, Vec<(String, String)>), AppError> {
-    let mut entity_stmt = conn.prepare(
-        "SELECT id, name FROM entities WHERE collection_id = ?1",
-    )?;
+    let mut entity_stmt = conn.prepare("SELECT id, name FROM entities WHERE collection_id = ?1")?;
     let entity_rows: Vec<(String, String)> = entity_stmt
         .query_map(rusqlite::params![collection_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -280,9 +275,8 @@ pub fn load_collection_data(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let mut chunk_stmt = conn.prepare(
-        "SELECT id, content FROM chunks WHERE collection_id = ?1 ORDER BY chunk_index",
-    )?;
+    let mut chunk_stmt = conn
+        .prepare("SELECT id, content FROM chunks WHERE collection_id = ?1 ORDER BY chunk_index")?;
     let chunks: Vec<(String, String)> = chunk_stmt
         .query_map(rusqlite::params![collection_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -303,8 +297,7 @@ pub async fn extract_relationships_for_chunks(
     let mut results = Vec::new();
 
     for (chunk_id, content) in chunks {
-        let relationships =
-            extract_relationships(host, port, model, content, entity_names).await?;
+        let relationships = extract_relationships(host, port, model, content, entity_names).await?;
         results.push(ChunkRelationships {
             chunk_id: chunk_id.clone(),
             relationships,
@@ -504,7 +497,8 @@ mod tests {
         conn.execute(
             "UPDATE entities SET mention_count = ?1 WHERE id = ?2",
             rusqlite::params![count + 1, existing_id],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify updated count
         let new_count: i32 = conn
@@ -563,7 +557,8 @@ mod tests {
     #[test]
     fn test_parse_relationship_response_default_confidence() {
         // confidence is missing -- serde default should give 0.0
-        let json = r#"[{"source_entity": "A", "target_entity": "B", "relationship_type": "related_to"}]"#;
+        let json =
+            r#"[{"source_entity": "A", "target_entity": "B", "relationship_type": "related_to"}]"#;
         let rels = parse_relationship_response(json);
         assert_eq!(rels.len(), 1);
         assert!((rels[0].confidence - 0.0).abs() < f64::EPSILON);

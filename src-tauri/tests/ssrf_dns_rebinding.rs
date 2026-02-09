@@ -206,13 +206,13 @@ fn test_allows_ipv4_mapped_public() {
 #[test]
 fn test_dns_rebinding_scenario() {
     // Simulate validation phase - DNS returns public IP
-    let validation_ips = vec![PUBLIC_IP];
+    let validation_ips = [PUBLIC_IP];
 
     // All validation IPs should be public
     assert!(validation_ips.iter().all(|ip| !is_private_ip(*ip)));
 
     // Simulate attack - attacker changes DNS to return localhost
-    let attack_ips = vec![LOCALHOST_V4];
+    let attack_ips = [LOCALHOST_V4];
 
     // Attack IPs should be blocked
     assert!(attack_ips.iter().all(|ip| is_private_ip(*ip)));
@@ -224,21 +224,18 @@ fn test_dns_rebinding_scenario() {
 #[test]
 fn test_dns_rebinding_ipv6_variant() {
     // Attacker returns public IPv6 during validation
-    let validation_ips = vec![PUBLIC_V6];
+    let validation_ips = [PUBLIC_V6];
     assert!(validation_ips.iter().all(|ip| !is_private_ip(*ip)));
 
     // Then returns IPv4-mapped localhost during connection
-    let attack_ips = vec![MAPPED_LOCALHOST];
+    let attack_ips = [MAPPED_LOCALHOST];
     assert!(attack_ips.iter().all(|ip| is_private_ip(*ip)));
 }
 
 #[test]
 fn test_dns_returns_mixed_ips() {
     // DNS might return multiple IPs (some public, some private)
-    let mixed_ips = vec![
-        PUBLIC_IP,
-        LOCALHOST_V4, // Attacker injects this
-    ];
+    let mixed_ips = [PUBLIC_IP, LOCALHOST_V4]; // Attacker injects localhost
 
     // Should reject if ANY IP is private
     let has_private = mixed_ips.iter().any(|ip| is_private_ip(*ip));

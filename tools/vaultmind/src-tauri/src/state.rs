@@ -17,7 +17,8 @@ pub struct AppState {
 pub fn get_conn(
     state: &AppState,
 ) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, AppError> {
-    state.db_pool.get().map_err(|e| {
-        AppError::LockFailed(format!("Failed to get DB connection from pool: {}", e))
-    })
+    state
+        .db_pool
+        .get()
+        .map_err(|e| AppError::LockFailed(format!("Failed to get DB connection from pool: {}", e)))
 }

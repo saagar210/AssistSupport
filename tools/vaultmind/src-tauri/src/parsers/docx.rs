@@ -74,8 +74,9 @@ fn extract_paragraphs(xml: &str) -> Result<Vec<String>, AppError> {
             }
             Ok(Event::Text(ref e)) => {
                 if in_text {
-                    let text = reader.decoder().decode(e.as_ref())
-                        .map_err(|err| AppError::Parse(format!("XML text decode error: {}", err)))?;
+                    let text = reader.decoder().decode(e.as_ref()).map_err(|err| {
+                        AppError::Parse(format!("XML text decode error: {}", err))
+                    })?;
                     current_paragraph.push_str(&text);
                 }
             }

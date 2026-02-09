@@ -35,7 +35,13 @@ pub fn store_embeddings(
 
     for (chunk_id, collection_id, document_id, embedding, preview) in chunks {
         let bytes = f64_vec_to_bytes(embedding);
-        stmt.execute(rusqlite::params![chunk_id, collection_id, document_id, bytes, preview])?;
+        stmt.execute(rusqlite::params![
+            chunk_id,
+            collection_id,
+            document_id,
+            bytes,
+            preview
+        ])?;
     }
 
     Ok(())
@@ -50,9 +56,8 @@ pub fn search_vectors(
     query_vec: &[f64],
     top_k: usize,
 ) -> Result<Vec<(String, f64)>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT chunk_id, embedding FROM chunk_embeddings WHERE collection_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT chunk_id, embedding FROM chunk_embeddings WHERE collection_id = ?1")?;
 
     let rows = stmt.query_map(rusqlite::params![collection_id], |row| {
         let chunk_id: String = row.get(0)?;
@@ -92,7 +97,6 @@ pub fn delete_collection_vectors(conn: &Connection, collection_id: &str) -> Resu
     )?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -134,7 +138,10 @@ mod tests {
         let results = search_vectors(&conn, "col1", &[1.0, 0.0, 0.0], 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "chunk1");
-        assert!((results[0].1 - 1.0).abs() < 1e-9, "Identical vectors should have similarity ~1.0");
+        assert!(
+            (results[0].1 - 1.0).abs() < 1e-9,
+            "Identical vectors should have similarity ~1.0"
+        );
     }
 
     #[test]
@@ -160,10 +167,34 @@ mod tests {
         let conn = setup_db();
 
         let chunks = vec![
-            ("c1".into(), "col1".into(), "doc1".into(), vec![1.0, 0.0, 0.0], "p1".into()),
-            ("c2".into(), "col1".into(), "doc1".into(), vec![0.9, 0.1, 0.0], "p2".into()),
-            ("c3".into(), "col1".into(), "doc1".into(), vec![0.0, 1.0, 0.0], "p3".into()),
-            ("c4".into(), "col1".into(), "doc1".into(), vec![0.5, 0.5, 0.0], "p4".into()),
+            (
+                "c1".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![1.0, 0.0, 0.0],
+                "p1".into(),
+            ),
+            (
+                "c2".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![0.9, 0.1, 0.0],
+                "p2".into(),
+            ),
+            (
+                "c3".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![0.0, 1.0, 0.0],
+                "p3".into(),
+            ),
+            (
+                "c4".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![0.5, 0.5, 0.0],
+                "p4".into(),
+            ),
         ];
         store_embeddings(&conn, &chunks).unwrap();
 
@@ -172,15 +203,30 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, "c1", "Most similar should be first");
-        assert!(results[0].1 >= results[1].1, "Results should be sorted descending by score");
+        assert!(
+            results[0].1 >= results[1].1,
+            "Results should be sorted descending by score"
+        );
     }
 
     #[test]
     fn test_delete_by_document() {
         let conn = setup_db();
         let chunks = vec![
-            ("c1".into(), "col1".into(), "doc1".into(), vec![1.0, 0.0], "p1".into()),
-            ("c2".into(), "col1".into(), "doc2".into(), vec![0.0, 1.0], "p2".into()),
+            (
+                "c1".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![1.0, 0.0],
+                "p1".into(),
+            ),
+            (
+                "c2".into(),
+                "col1".into(),
+                "doc2".into(),
+                vec![0.0, 1.0],
+                "p2".into(),
+            ),
         ];
         store_embeddings(&conn, &chunks).unwrap();
 
@@ -195,8 +241,20 @@ mod tests {
     fn test_delete_by_collection() {
         let conn = setup_db();
         let chunks = vec![
-            ("c1".into(), "col1".into(), "doc1".into(), vec![1.0, 0.0], "p1".into()),
-            ("c2".into(), "col2".into(), "doc2".into(), vec![0.0, 1.0], "p2".into()),
+            (
+                "c1".into(),
+                "col1".into(),
+                "doc1".into(),
+                vec![1.0, 0.0],
+                "p1".into(),
+            ),
+            (
+                "c2".into(),
+                "col2".into(),
+                "doc2".into(),
+                vec![0.0, 1.0],
+                "p2".into(),
+            ),
         ];
         store_embeddings(&conn, &chunks).unwrap();
 

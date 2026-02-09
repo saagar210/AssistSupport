@@ -94,7 +94,10 @@ pub async fn vector_search(
         }
     };
 
-    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state
+        .inner()
+        .metrics
+        .increment(MetricCounter::SearchesExecuted);
     state.inner().metrics.record_latency(
         LatencyMetric::SearchLatency,
         search_start.elapsed().as_secs_f64() * 1000.0,
@@ -153,7 +156,11 @@ fn vector_search_in_db(
     for row_result in rows {
         let (chunk_id, blob) = row_result?;
         if blob.len() % 8 != 0 {
-            tracing::warn!("Invalid embedding blob length {} for chunk {}, skipping", blob.len(), chunk_id);
+            tracing::warn!(
+                "Invalid embedding blob length {} for chunk {}, skipping",
+                blob.len(),
+                chunk_id
+            );
             continue;
         }
         let embedding = bytes_to_f64_vec(&blob);
@@ -246,7 +253,10 @@ pub fn keyword_search(
     let conn = get_conn(state.inner())?;
     let results = keyword_search_in_db(&conn, &collection_id, &query, top_k)?;
 
-    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state
+        .inner()
+        .metrics
+        .increment(MetricCounter::SearchesExecuted);
     state.inner().metrics.record_latency(
         LatencyMetric::SearchLatency,
         search_start.elapsed().as_secs_f64() * 1000.0,
@@ -291,13 +301,16 @@ pub(crate) fn keyword_search_in_db(
          LIMIT ?3",
     )?;
 
-    let rows = stmt.query_map(rusqlite::params![sanitized_query, collection_id, top_k as i64], |row| {
-        let chunk_id: String = row.get(0)?;
-        let document_id: String = row.get(1)?;
-        let content: String = row.get(2)?;
-        let bm25_rank: f64 = row.get(3)?;
-        Ok((chunk_id, document_id, content, bm25_rank))
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params![sanitized_query, collection_id, top_k as i64],
+        |row| {
+            let chunk_id: String = row.get(0)?;
+            let document_id: String = row.get(1)?;
+            let content: String = row.get(2)?;
+            let bm25_rank: f64 = row.get(3)?;
+            Ok((chunk_id, document_id, content, bm25_rank))
+        },
+    )?;
 
     let mut results = Vec::new();
     for row_result in rows {
@@ -392,7 +405,14 @@ pub async fn hybrid_search(
                 |row| row.get(0),
             )
             .unwrap_or_else(|_| "20".to_string());
-        (host, port, embedding_model, rrf_k, vector_top_k, keyword_top_k)
+        (
+            host,
+            port,
+            embedding_model,
+            rrf_k,
+            vector_top_k,
+            keyword_top_k,
+        )
     };
 
     let rrf_k_val: f64 = rrf_k.parse().unwrap_or(60.0);
@@ -430,7 +450,10 @@ pub async fn hybrid_search(
     // Apply Reciprocal Rank Fusion
     let fused = reciprocal_rank_fusion(vector_results, keyword_results, rrf_k_val, top_k);
 
-    state.inner().metrics.increment(MetricCounter::SearchesExecuted);
+    state
+        .inner()
+        .metrics
+        .increment(MetricCounter::SearchesExecuted);
     state.inner().metrics.record_latency(
         LatencyMetric::SearchLatency,
         search_start.elapsed().as_secs_f64() * 1000.0,
@@ -488,8 +511,7 @@ pub async fn advanced_search(
 
     match (use_qr, use_hyde_flag) {
         (false, false) => {
-            let emb =
-                ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
+            let emb = ollama::generate_embedding(&host, &port, &embedding_model, &query).await?;
             all_embeddings.push(emb);
         }
         (true, false) => {
@@ -505,14 +527,9 @@ pub async fn advanced_search(
             all_embeddings = embs;
         }
         (false, true) => {
-            let emb = rag::generate_hyde_embedding(
-                &host,
-                &port,
-                &chat_model,
-                &embedding_model,
-                &query,
-            )
-            .await?;
+            let emb =
+                rag::generate_hyde_embedding(&host, &port, &chat_model, &embedding_model, &query)
+                    .await?;
             hyde_embedding = Some(emb);
         }
         (true, true) => {
@@ -527,14 +544,9 @@ pub async fn advanced_search(
             rewritten_queries = Some(rq);
             all_embeddings = embs;
 
-            let emb = rag::generate_hyde_embedding(
-                &host,
-                &port,
-                &chat_model,
-                &embedding_model,
-                &query,
-            )
-            .await?;
+            let emb =
+                rag::generate_hyde_embedding(&host, &port, &chat_model, &embedding_model, &query)
+                    .await?;
             hyde_embedding = Some(emb);
         }
     }
@@ -554,15 +566,14 @@ pub async fn advanced_search(
             .map_err(|e| AppError::LockFailed(e.to_string()))?;
         let conn = get_conn(state.inner())?;
 
-        let do_search =
-            |embedding: &[f64], k: usize| -> Result<Vec<SearchResult>, AppError> {
-                if index.has_index(&collection_id) {
-                    let scored = index.search(&collection_id, embedding, k)?;
-                    enrich_search_results(&conn, &scored)
-                } else {
-                    vector_search_in_db(&conn, &collection_id, embedding, k)
-                }
-            };
+        let do_search = |embedding: &[f64], k: usize| -> Result<Vec<SearchResult>, AppError> {
+            if index.has_index(&collection_id) {
+                let scored = index.search(&collection_id, embedding, k)?;
+                enrich_search_results(&conn, &scored)
+            } else {
+                vector_search_in_db(&conn, &collection_id, embedding, k)
+            }
+        };
 
         match (use_qr, use_hyde_flag) {
             (false, false) => do_search(&all_embeddings[0], top_k)?,
@@ -883,7 +894,10 @@ mod tests {
         assert!(json2_str.contains("rewritten_queries"));
 
         let deserialized: Result<AdvancedSearchResponse, _> = serde_json::from_str(&json_str);
-        assert!(deserialized.is_ok(), "AdvancedSearchResponse should deserialize");
+        assert!(
+            deserialized.is_ok(),
+            "AdvancedSearchResponse should deserialize"
+        );
         let deser = deserialized.expect("deserialization succeeded");
         assert_eq!(deser.results.len(), 1);
         assert_eq!(deser.results[0].chunk_id, "chunk_1");

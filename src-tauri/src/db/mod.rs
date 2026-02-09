@@ -80,7 +80,9 @@ impl Database {
 
         // Use WAL journal mode for better concurrent read performance.
         // For defense in depth, do not silently ignore failures; log the effective mode.
-        match conn.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get::<_, String>(0)) {
+        match conn.query_row("PRAGMA journal_mode = WAL;", [], |row| {
+            row.get::<_, String>(0)
+        }) {
             Ok(mode) => tracing::info!("SQLite journal_mode set to {}", mode),
             Err(e) => tracing::warn!("Failed to set journal_mode=WAL: {}", e),
         }

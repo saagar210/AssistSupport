@@ -66,10 +66,14 @@ fn migrate_v5(conn: &Connection) -> Result<(), AppError> {
     let tx = conn.unchecked_transaction()?;
 
     // Each ALTER TABLE uses .ok() for idempotent re-runs (won't fail if column exists)
-    tx.execute_batch("ALTER TABLE citations ADD COLUMN start_char INTEGER DEFAULT 0;").ok();
-    tx.execute_batch("ALTER TABLE citations ADD COLUMN end_char INTEGER DEFAULT 0;").ok();
-    tx.execute_batch("ALTER TABLE citations ADD COLUMN confidence REAL DEFAULT 0.0;").ok();
-    tx.execute_batch("ALTER TABLE citations ADD COLUMN hop_distance INTEGER DEFAULT 0;").ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN start_char INTEGER DEFAULT 0;")
+        .ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN end_char INTEGER DEFAULT 0;")
+        .ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN confidence REAL DEFAULT 0.0;")
+        .ok();
+    tx.execute_batch("ALTER TABLE citations ADD COLUMN hop_distance INTEGER DEFAULT 0;")
+        .ok();
 
     set_schema_version(&tx, 5)?;
     tx.commit()?;
@@ -160,9 +164,9 @@ fn get_schema_version(conn: &Connection) -> Result<i64, AppError> {
     );
 
     match result {
-        Ok(val) => val.parse::<i64>().map_err(|_| {
-            AppError::Validation("Invalid schema_version value".to_string())
-        }),
+        Ok(val) => val
+            .parse::<i64>()
+            .map_err(|_| AppError::Validation("Invalid schema_version value".to_string())),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
         Err(e) => Err(AppError::Database(e)),
     }
@@ -181,9 +185,8 @@ fn migrate_v1(conn: &Connection) -> Result<(), AppError> {
     let tx = conn.unchecked_transaction()?;
 
     // Tags support on documents
-    tx.execute_batch(
-        "ALTER TABLE documents ADD COLUMN tags TEXT DEFAULT '[]';",
-    ).ok(); // OK if column already exists (idempotent re-run)
+    tx.execute_batch("ALTER TABLE documents ADD COLUMN tags TEXT DEFAULT '[]';")
+        .ok(); // OK if column already exists (idempotent re-run)
 
     // Search history table
     tx.execute_batch(
@@ -274,13 +277,17 @@ mod tests {
             )
             .map(|c| c > 0)
             .unwrap();
-        assert!(exists, "search_history table should exist after migration v1");
+        assert!(
+            exists,
+            "search_history table should exist after migration v1"
+        );
 
         // tags column should exist on documents
-        let has_tags: bool = conn
-            .prepare("SELECT tags FROM documents LIMIT 0")
-            .is_ok();
-        assert!(has_tags, "documents.tags column should exist after migration v1");
+        let has_tags: bool = conn.prepare("SELECT tags FROM documents LIMIT 0").is_ok();
+        assert!(
+            has_tags,
+            "documents.tags column should exist after migration v1"
+        );
     }
 
     #[test]
@@ -307,17 +314,40 @@ mod tests {
         let version = get_schema_version(&conn).unwrap();
         assert_eq!(version, CURRENT_VERSION);
         let entities_exist: bool = conn
-            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entities'", [], |row| row.get::<_, i64>(0))
-            .map(|c| c > 0).unwrap();
-        assert!(entities_exist, "entities table should exist after migration v3");
-        let mentions_exist: bool = conn
-            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entity_mentions'", [], |row| row.get::<_, i64>(0))
-            .map(|c| c > 0).unwrap();
-        assert!(mentions_exist, "entity_mentions table should exist after migration v3");
-        let idx_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_entit%'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entities'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
             .unwrap();
-        assert!(idx_count >= 5, "Should have at least 5 entity-related indexes");
+        assert!(
+            entities_exist,
+            "entities table should exist after migration v3"
+        );
+        let mentions_exist: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entity_mentions'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(
+            mentions_exist,
+            "entity_mentions table should exist after migration v3"
+        );
+        let idx_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_entit%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            idx_count >= 5,
+            "Should have at least 5 entity-related indexes"
+        );
     }
 
     #[test]
@@ -334,7 +364,10 @@ mod tests {
             )
             .map(|c| c > 0)
             .unwrap();
-        assert!(exists, "entity_relationships table should exist after migration v4");
+        assert!(
+            exists,
+            "entity_relationships table should exist after migration v4"
+        );
 
         // Verify indexes exist
         let idx_count: i64 = conn
@@ -357,22 +390,34 @@ mod tests {
         let has_start_char: bool = conn
             .prepare("SELECT start_char FROM citations LIMIT 0")
             .is_ok();
-        assert!(has_start_char, "citations.start_char column should exist after migration v5");
+        assert!(
+            has_start_char,
+            "citations.start_char column should exist after migration v5"
+        );
 
         let has_end_char: bool = conn
             .prepare("SELECT end_char FROM citations LIMIT 0")
             .is_ok();
-        assert!(has_end_char, "citations.end_char column should exist after migration v5");
+        assert!(
+            has_end_char,
+            "citations.end_char column should exist after migration v5"
+        );
 
         let has_confidence: bool = conn
             .prepare("SELECT confidence FROM citations LIMIT 0")
             .is_ok();
-        assert!(has_confidence, "citations.confidence column should exist after migration v5");
+        assert!(
+            has_confidence,
+            "citations.confidence column should exist after migration v5"
+        );
 
         let has_hop_distance: bool = conn
             .prepare("SELECT hop_distance FROM citations LIMIT 0")
             .is_ok();
-        assert!(has_hop_distance, "citations.hop_distance column should exist after migration v5");
+        assert!(
+            has_hop_distance,
+            "citations.hop_distance column should exist after migration v5"
+        );
     }
 
     #[test]
@@ -390,7 +435,10 @@ mod tests {
             )
             .map(|c| c > 0)
             .unwrap();
-        assert!(policies_exist, "data_retention_policies table should exist after migration v6");
+        assert!(
+            policies_exist,
+            "data_retention_policies table should exist after migration v6"
+        );
 
         // consent_records table should exist
         let consent_exist: bool = conn
@@ -401,11 +449,16 @@ mod tests {
             )
             .map(|c| c > 0)
             .unwrap();
-        assert!(consent_exist, "consent_records table should exist after migration v6");
+        assert!(
+            consent_exist,
+            "consent_records table should exist after migration v6"
+        );
 
         // Verify default retention policies were seeded
         let policy_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM data_retention_policies", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM data_retention_policies", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(policy_count, 4, "Should have 4 default retention policies");
 

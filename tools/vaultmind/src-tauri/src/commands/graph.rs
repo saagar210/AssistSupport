@@ -7,10 +7,7 @@ use crate::state::{get_conn, AppState};
 
 /// Build knowledge graph edges for a collection using the similarity_threshold from settings.
 #[tauri::command]
-pub fn build_graph(
-    state: State<'_, AppState>,
-    collection_id: String,
-) -> Result<(), AppError> {
+pub fn build_graph(state: State<'_, AppState>, collection_id: String) -> Result<(), AppError> {
     let conn = get_conn(state.inner())?;
 
     let threshold: String = conn
@@ -52,10 +49,7 @@ pub fn build_graph(
 
 /// Get graph visualization data (nodes = documents, links = semantic edges).
 #[tauri::command]
-pub fn get_graph(
-    state: State<'_, AppState>,
-    collection_id: String,
-) -> Result<GraphData, AppError> {
+pub fn get_graph(state: State<'_, AppState>, collection_id: String) -> Result<GraphData, AppError> {
     let conn = get_conn(state.inner())?;
     graph::get_graph_data(&conn, &collection_id)
 }

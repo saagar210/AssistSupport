@@ -19,8 +19,7 @@ pub fn initialize_encryption() -> Result<crypto::EncryptionStatus, AppError> {
 pub fn rotate_encryption_key() -> Result<crypto::EncryptionStatus, AppError> {
     crypto::rotate_db_key()?;
 
-    let conn_for_audit =
-        rusqlite::Connection::open_in_memory().ok();
+    let conn_for_audit = rusqlite::Connection::open_in_memory().ok();
     if let Some(ref _c) = conn_for_audit {
         tracing::info!("Encryption key rotated via command");
     }

@@ -102,7 +102,6 @@ pub struct Setting {
     pub value: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub id: String,

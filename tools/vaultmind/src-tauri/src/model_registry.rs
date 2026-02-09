@@ -48,7 +48,8 @@ pub fn get_recommended_models() -> Vec<RecommendedModel> {
         },
         RecommendedModel {
             name: "phi4:14b".to_string(),
-            description: "Microsoft Phi-4 14B, high-quality responses for complex tasks".to_string(),
+            description: "Microsoft Phi-4 14B, high-quality responses for complex tasks"
+                .to_string(),
             use_case: "chat".to_string(),
             min_ram_gb: 16,
             parameters: "14B".to_string(),
@@ -57,7 +58,8 @@ pub fn get_recommended_models() -> Vec<RecommendedModel> {
         // Embedding models
         RecommendedModel {
             name: "nomic-embed-text".to_string(),
-            description: "Nomic Embed Text, versatile embedding model with long context".to_string(),
+            description: "Nomic Embed Text, versatile embedding model with long context"
+                .to_string(),
             use_case: "embedding".to_string(),
             min_ram_gb: 1,
             parameters: "137M".to_string(),
@@ -82,7 +84,8 @@ pub fn get_recommended_models() -> Vec<RecommendedModel> {
         // Code models
         RecommendedModel {
             name: "qwen2.5-coder:7b".to_string(),
-            description: "Qwen 2.5 Coder 7B, specialized for code generation and analysis".to_string(),
+            description: "Qwen 2.5 Coder 7B, specialized for code generation and analysis"
+                .to_string(),
             use_case: "code".to_string(),
             min_ram_gb: 8,
             parameters: "7B".to_string(),
@@ -90,7 +93,8 @@ pub fn get_recommended_models() -> Vec<RecommendedModel> {
         },
         RecommendedModel {
             name: "deepseek-coder-v2:16b".to_string(),
-            description: "DeepSeek Coder V2 16B, advanced code model for complex programming tasks".to_string(),
+            description: "DeepSeek Coder V2 16B, advanced code model for complex programming tasks"
+                .to_string(),
             use_case: "code".to_string(),
             min_ram_gb: 16,
             parameters: "16B".to_string(),
@@ -123,11 +127,17 @@ mod tests {
     #[test]
     fn test_recommended_models_not_empty() {
         let models = get_recommended_models();
-        assert!(!models.is_empty(), "Recommended models list should not be empty");
+        assert!(
+            !models.is_empty(),
+            "Recommended models list should not be empty"
+        );
         // Verify we have models across all use cases
         let use_cases: Vec<&str> = models.iter().map(|m| m.use_case.as_str()).collect();
         assert!(use_cases.contains(&"chat"), "Should have chat models");
-        assert!(use_cases.contains(&"embedding"), "Should have embedding models");
+        assert!(
+            use_cases.contains(&"embedding"),
+            "Should have embedding models"
+        );
         assert!(use_cases.contains(&"code"), "Should have code models");
     }
 
@@ -155,7 +165,10 @@ mod tests {
         );
 
         let nonexistent = get_models_by_use_case("nonexistent");
-        assert!(nonexistent.is_empty(), "Unknown use case should return empty");
+        assert!(
+            nonexistent.is_empty(),
+            "Unknown use case should return empty"
+        );
     }
 
     #[test]

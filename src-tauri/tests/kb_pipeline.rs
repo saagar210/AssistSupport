@@ -73,7 +73,7 @@ fn test_basic_ingest_index_search() {
     // Search for something in both
     let support_results = HybridSearch::fts_search(&ctx.db, "support", 10).expect("Search failed");
     assert!(
-        support_results.len() >= 1,
+        !support_results.is_empty(),
         "Should find at least 1 result for 'support'"
     );
 }

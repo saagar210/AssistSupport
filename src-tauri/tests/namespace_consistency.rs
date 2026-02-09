@@ -8,8 +8,7 @@
 fn normalize_namespace_id(id: &str) -> String {
     let normalized = id
         .to_lowercase()
-        .replace(' ', "-")
-        .replace('_', "-")
+        .replace([' ', '_'], "-")
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect::<String>();

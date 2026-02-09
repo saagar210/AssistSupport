@@ -352,9 +352,7 @@ pub fn rebuild_graph_edges(
     )?;
 
     // Get all chunk IDs for this collection
-    let mut stmt = conn.prepare(
-        "SELECT id FROM chunks WHERE collection_id = ?1",
-    )?;
+    let mut stmt = conn.prepare("SELECT id FROM chunks WHERE collection_id = ?1")?;
     let all_chunk_ids: Vec<String> = stmt
         .query_map(rusqlite::params![collection_id], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -470,9 +468,7 @@ fn load_adjacency(
 
     for row in rows {
         let (src, tgt, w) = row?;
-        adj.entry(src.clone())
-            .or_default()
-            .push((tgt.clone(), w));
+        adj.entry(src.clone()).or_default().push((tgt.clone(), w));
         adj.entry(tgt).or_default().push((src, w));
     }
 
@@ -536,11 +532,7 @@ pub fn traverse_graph(
             for (neighbor_id, weight) in neighbors {
                 if !visited.contains(neighbor_id) {
                     visited.insert(neighbor_id.clone());
-                    queue.push_back((
-                        neighbor_id.clone(),
-                        depth + 1,
-                        path_weight * weight,
-                    ));
+                    queue.push_back((neighbor_id.clone(), depth + 1, path_weight * weight));
                 }
             }
         }
@@ -826,9 +818,15 @@ mod tests {
 
         let edges = build_graph_edges(&conn, "col1", 0.5).unwrap();
 
-        let semantic: Vec<_> = edges.iter().filter(|e| e.relationship_type == "semantic").collect();
+        let semantic: Vec<_> = edges
+            .iter()
+            .filter(|e| e.relationship_type == "semantic")
+            .collect();
         // c1 (1,0,0) and c3 (0.95,0.05,0) are from different docs and very similar
-        assert!(!semantic.is_empty(), "Should have semantic edges between similar cross-doc chunks");
+        assert!(
+            !semantic.is_empty(),
+            "Should have semantic edges between similar cross-doc chunks"
+        );
     }
 
     #[test]
@@ -838,9 +836,16 @@ mod tests {
 
         let edges = build_graph_edges(&conn, "col1", 0.5).unwrap();
 
-        let same_doc: Vec<_> = edges.iter().filter(|e| e.relationship_type == "same_document").collect();
+        let same_doc: Vec<_> = edges
+            .iter()
+            .filter(|e| e.relationship_type == "same_document")
+            .collect();
         // c1->c2 (doc1, index 0->1) and c3->c4 (doc2, index 0->1)
-        assert_eq!(same_doc.len(), 2, "Should have 2 same_document edges (one per doc)");
+        assert_eq!(
+            same_doc.len(),
+            2,
+            "Should have 2 same_document edges (one per doc)"
+        );
 
         for edge in &same_doc {
             assert_eq!(edge.weight, 1.0);
@@ -876,7 +881,10 @@ mod tests {
 
         // Links are aggregated semantic edges between documents
         // There should be at least one since c1 and c3 are very similar
-        assert!(!data.links.is_empty(), "Should have at least one semantic link between docs");
+        assert!(
+            !data.links.is_empty(),
+            "Should have at least one semantic link between docs"
+        );
     }
 
     #[test]
@@ -904,11 +912,20 @@ mod tests {
         let edges = build_graph_edges_incremental(&conn, &index, "col1", &new_ids, 0.5).unwrap();
 
         // Should have semantic edges (c3 is similar to c1/c2 across docs)
-        let semantic: Vec<_> = edges.iter().filter(|e| e.relationship_type == "semantic").collect();
-        assert!(!semantic.is_empty(), "Should create semantic edges for new chunks");
+        let semantic: Vec<_> = edges
+            .iter()
+            .filter(|e| e.relationship_type == "semantic")
+            .collect();
+        assert!(
+            !semantic.is_empty(),
+            "Should create semantic edges for new chunks"
+        );
 
         // Should have same_document edge for c3->c4
-        let same_doc: Vec<_> = edges.iter().filter(|e| e.relationship_type == "same_document").collect();
+        let same_doc: Vec<_> = edges
+            .iter()
+            .filter(|e| e.relationship_type == "same_document")
+            .collect();
         assert!(
             same_doc.iter().any(|e| {
                 (e.source_chunk_id == "c3" && e.target_chunk_id == "c4")
@@ -919,9 +936,17 @@ mod tests {
 
         // Verify edges were persisted to DB
         let db_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(db_count, edges.len() as i64, "All edges should be persisted to DB");
+        assert_eq!(
+            db_count,
+            edges.len() as i64,
+            "All edges should be persisted to DB"
+        );
     }
 
     #[test]
@@ -932,7 +957,11 @@ mod tests {
         // First, build full graph edges (the original O(n^2) way)
         let _original_edges = build_graph_edges(&conn, "col1", 0.5).unwrap();
         let original_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(original_count > 0, "Should have original edges");
 
@@ -959,12 +988,17 @@ mod tests {
         let index = build_test_index(&conn, "col1");
 
         // Run incremental build for only the new chunk
-        let new_edges = build_graph_edges_incremental(&conn, &index, "col1", &["c5".to_string()], 0.5).unwrap();
+        let new_edges =
+            build_graph_edges_incremental(&conn, &index, "col1", &["c5".to_string()], 0.5).unwrap();
         assert!(!new_edges.is_empty(), "Should create edges for new chunk");
 
         // Verify original edges are still present
         let total_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM graph_edges WHERE collection_id = 'col1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(
             total_count >= original_count + new_edges.len() as i64,
@@ -1008,7 +1042,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(semantic_count > 0, "Should have semantic edges from HNSW-based rebuild");
+        assert!(
+            semantic_count > 0,
+            "Should have semantic edges from HNSW-based rebuild"
+        );
 
         // Verify same_document edges
         let same_doc_count: i64 = conn
@@ -1018,7 +1055,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(same_doc_count, 2, "Should have 2 same_document edges (one per doc)");
+        assert_eq!(
+            same_doc_count, 2,
+            "Should have 2 same_document edges (one per doc)"
+        );
 
         // Total should match what rebuild returned
         let total: i64 = conn
@@ -1028,7 +1068,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(total, edge_count as i64, "DB edge count should match returned count");
+        assert_eq!(
+            total, edge_count as i64,
+            "DB edge count should match returned count"
+        );
     }
 
     /// Helper: seed a graph with known structure for algorithm tests.
@@ -1054,8 +1097,11 @@ mod tests {
 
         // Chunks
         let chunks = vec![
-            ("a1", "docA", 0), ("a2", "docA", 1), ("a3", "docA", 2),
-            ("b1", "docB", 0), ("b2", "docB", 1),
+            ("a1", "docA", 0),
+            ("a2", "docA", 1),
+            ("a3", "docA", 2),
+            ("b1", "docB", 0),
+            ("b2", "docB", 1),
         ];
         for (cid, did, idx) in &chunks {
             conn.execute(
@@ -1089,7 +1135,11 @@ mod tests {
         let result = traverse_graph(&conn, "col1", "a1", 2, 0.5).unwrap();
 
         // Should find a1 (depth 0), a2 (depth 1), a3 (depth 2)
-        assert_eq!(result.len(), 3, "BFS with depth=2 from a1 should find 3 nodes");
+        assert_eq!(
+            result.len(),
+            3,
+            "BFS with depth=2 from a1 should find 3 nodes"
+        );
         assert_eq!(result[0].chunk_id, "a1");
         assert_eq!(result[0].depth, 0);
         assert_eq!(result[1].chunk_id, "a2");
@@ -1099,7 +1149,10 @@ mod tests {
 
         // b1 and b2 should NOT be included (edge a3->b1 is 0.4, below min_weight 0.5)
         let chunk_ids: Vec<&str> = result.iter().map(|n| n.chunk_id.as_str()).collect();
-        assert!(!chunk_ids.contains(&"b1"), "b1 should be excluded by min_weight filter");
+        assert!(
+            !chunk_ids.contains(&"b1"),
+            "b1 should be excluded by min_weight filter"
+        );
 
         // Verify document metadata is populated
         assert_eq!(result[0].document_id, "docA");
@@ -1133,7 +1186,10 @@ mod tests {
         ).unwrap();
 
         let path = find_path(&conn, "col1", "a1", "isolated").unwrap();
-        assert!(path.is_empty(), "Path to disconnected chunk should be empty");
+        assert!(
+            path.is_empty(),
+            "Path to disconnected chunk should be empty"
+        );
     }
 
     #[test]
@@ -1144,7 +1200,11 @@ mod tests {
         // Use min_weight=0.5 to cut the weak a3->b1 edge (0.4)
         let communities = detect_communities(&conn, "col1", 0.5).unwrap();
 
-        assert_eq!(communities.len(), 2, "Should detect 2 communities with min_weight=0.5");
+        assert_eq!(
+            communities.len(),
+            2,
+            "Should detect 2 communities with min_weight=0.5"
+        );
 
         // Largest community should have 3 members (a1, a2, a3)
         assert_eq!(communities[0].size, 3);

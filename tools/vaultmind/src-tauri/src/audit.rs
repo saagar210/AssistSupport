@@ -134,7 +134,9 @@ pub fn query_audit_log(
     let query_sql = format!(
         "SELECT id, timestamp, action, entity_type, entity_id, details, ip_address, user_agent
          FROM audit_log {} ORDER BY timestamp DESC LIMIT ?{} OFFSET ?{}",
-        where_clause, param_idx, param_idx + 1
+        where_clause,
+        param_idx,
+        param_idx + 1
     );
 
     let mut query_params: Vec<Box<dyn rusqlite::types::ToSql>> = params;
@@ -207,9 +209,7 @@ mod tests {
         assert_eq!(count, 1);
 
         let action: String = conn
-            .query_row("SELECT action FROM audit_log LIMIT 1", [], |row| {
-                row.get(0)
-            })
+            .query_row("SELECT action FROM audit_log LIMIT 1", [], |row| row.get(0))
             .unwrap();
         assert_eq!(action, "collection.create");
     }

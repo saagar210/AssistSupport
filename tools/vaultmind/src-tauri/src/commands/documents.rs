@@ -95,8 +95,12 @@ async fn ingest_single_file(
     let (chunk_size, chunk_overlap, ollama_host, ollama_port, embedding_model) = {
         let conn = get_conn_arc(app_state)?;
         (
-            get_setting(&conn, "chunk_size", "512").parse::<usize>().unwrap_or(512),
-            get_setting(&conn, "chunk_overlap", "64").parse::<usize>().unwrap_or(64),
+            get_setting(&conn, "chunk_size", "512")
+                .parse::<usize>()
+                .unwrap_or(512),
+            get_setting(&conn, "chunk_overlap", "64")
+                .parse::<usize>()
+                .unwrap_or(64),
             get_setting(&conn, "ollama_host", "localhost"),
             get_setting(&conn, "ollama_port", "11434"),
             get_setting(&conn, "embedding_model", "nomic-embed-text"),
@@ -105,12 +109,7 @@ async fn ingest_single_file(
 
     // Stage: chunking
     emit_progress(app, doc_id, filename, "chunking", 0, 0, None);
-    let chunks = chunker::chunk_text(
-        &parsed.text,
-        &parsed.sections,
-        chunk_size,
-        chunk_overlap,
-    );
+    let chunks = chunker::chunk_text(&parsed.text, &parsed.sections, chunk_size, chunk_overlap);
     let chunks_total = chunks.len();
 
     // Insert chunks into DB
@@ -170,13 +169,29 @@ async fn ingest_single_file(
                 "UPDATE documents SET status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![e.to_string(), now, doc_id],
             );
-            emit_progress(app, doc_id, filename, "failed", 0, chunks_total, Some(&e.to_string()));
+            emit_progress(
+                app,
+                doc_id,
+                filename,
+                "failed",
+                0,
+                chunks_total,
+                Some(&e.to_string()),
+            );
             return Err(e);
         }
     };
 
     // Stage: indexing
-    emit_progress(app, doc_id, filename, "indexing", chunks_total, chunks_total, None);
+    emit_progress(
+        app,
+        doc_id,
+        filename,
+        "indexing",
+        chunks_total,
+        chunks_total,
+        None,
+    );
     {
         let conn = get_conn_arc(app_state)?;
 
@@ -254,11 +269,23 @@ async fn ingest_single_file(
     }
 
     // Stage: complete
-    emit_progress(app, doc_id, filename, "complete", chunks_total, chunks_total, None);
+    emit_progress(
+        app,
+        doc_id,
+        filename,
+        "complete",
+        chunks_total,
+        chunks_total,
+        None,
+    );
 
     // Track metrics
-    app_state.metrics.increment(MetricCounter::DocumentsIngested);
-    app_state.metrics.increment_by(MetricCounter::ChunksCreated, chunks_total as u64);
+    app_state
+        .metrics
+        .increment(MetricCounter::DocumentsIngested);
+    app_state
+        .metrics
+        .increment_by(MetricCounter::ChunksCreated, chunks_total as u64);
 
     Ok(())
 }
@@ -369,7 +396,13 @@ pub async fn ingest_files(
                 ],
             )?;
 
-            let _ = audit::log_audit(&conn, AuditAction::DocumentIngest, Some("document"), Some(&doc_id), &serde_json::json!({"filename": filename}));
+            let _ = audit::log_audit(
+                &conn,
+                AuditAction::DocumentIngest,
+                Some("document"),
+                Some(&doc_id),
+                &serde_json::json!({"filename": filename}),
+            );
         }
 
         doc_entries.push((doc_id, file_path_str.clone(), filename, file_type));
@@ -404,7 +437,10 @@ pub async fn ingest_files(
             }
         }
         // Signal all files done
-        let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
+        let _ = app.emit(
+            "ingestion-all-complete",
+            serde_json::json!({ "collection_id": cid }),
+        );
     });
 
     Ok(created_ids)
@@ -419,23 +455,25 @@ pub async fn reingest_document(
     // Load document info
     let (collection_id, file_path, filename, file_type) = {
         let conn = get_conn(state.inner())?;
-        let row = conn.query_row(
-            "SELECT collection_id, file_path, filename, file_type FROM documents WHERE id = ?1",
-            rusqlite::params![document_id],
-            |row: &rusqlite::Row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            },
-        ).map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                AppError::NotFound(format!("Document '{}' not found", document_id))
-            }
-            other => AppError::Database(other),
-        })?;
+        let row = conn
+            .query_row(
+                "SELECT collection_id, file_path, filename, file_type FROM documents WHERE id = ?1",
+                rusqlite::params![document_id],
+                |row: &rusqlite::Row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::NotFound(format!("Document '{}' not found", document_id))
+                }
+                other => AppError::Database(other),
+            })?;
 
         // Clear old data
         clear_document_data(&conn, &document_id)?;
@@ -447,7 +485,13 @@ pub async fn reingest_document(
             rusqlite::params![now, document_id],
         )?;
 
-        let _ = audit::log_audit(&conn, AuditAction::DocumentReingest, Some("document"), Some(&document_id), &serde_json::json!({}));
+        let _ = audit::log_audit(
+            &conn,
+            AuditAction::DocumentReingest,
+            Some("document"),
+            Some(&document_id),
+            &serde_json::json!({}),
+        );
 
         row
     };
@@ -560,7 +604,10 @@ pub async fn reingest_collection(
                 let _ = index.rebuild_collection_index(&conn, &cid);
             }
         }
-        let _ = app.emit("ingestion-all-complete", serde_json::json!({ "collection_id": cid }));
+        let _ = app.emit(
+            "ingestion-all-complete",
+            serde_json::json!({ "collection_id": cid }),
+        );
     });
 
     Ok(())
@@ -590,26 +637,29 @@ pub fn list_documents(
     )?;
 
     let documents = stmt
-        .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row: &rusqlite::Row| {
-            Ok(Document {
-                id: row.get(0)?,
-                collection_id: row.get(1)?,
-                filename: row.get(2)?,
-                file_path: row.get(3)?,
-                file_type: row.get(4)?,
-                file_size: row.get(5)?,
-                file_hash: row.get(6)?,
-                title: row.get(7)?,
-                author: row.get(8)?,
-                page_count: row.get(9)?,
-                word_count: row.get(10)?,
-                chunk_count: row.get(11)?,
-                status: row.get(12)?,
-                error_message: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-            })
-        })?
+        .query_map(
+            rusqlite::params![collection_id, page_size as i64, offset as i64],
+            |row: &rusqlite::Row| {
+                Ok(Document {
+                    id: row.get(0)?,
+                    collection_id: row.get(1)?,
+                    filename: row.get(2)?,
+                    file_path: row.get(3)?,
+                    file_type: row.get(4)?,
+                    file_size: row.get(5)?,
+                    file_hash: row.get(6)?,
+                    title: row.get(7)?,
+                    author: row.get(8)?,
+                    page_count: row.get(9)?,
+                    word_count: row.get(10)?,
+                    chunk_count: row.get(11)?,
+                    status: row.get(12)?,
+                    error_message: row.get(13)?,
+                    created_at: row.get(14)?,
+                    updated_at: row.get(15)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
     let has_more = (offset + documents.len()) < total as usize;
@@ -624,10 +674,7 @@ pub fn list_documents(
 }
 
 #[tauri::command]
-pub fn get_document(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<Document, AppError> {
+pub fn get_document(state: tauri::State<'_, AppState>, id: String) -> Result<Document, AppError> {
     let conn = get_conn(state.inner())?;
 
     let document = conn
@@ -667,10 +714,7 @@ pub fn get_document(
 }
 
 #[tauri::command]
-pub fn delete_document(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), AppError> {
+pub fn delete_document(state: tauri::State<'_, AppState>, id: String) -> Result<(), AppError> {
     let conn = get_conn(state.inner())?;
 
     // Get collection_id before deleting (needed for HNSW rebuild)
@@ -687,14 +731,17 @@ pub fn delete_document(
             other => AppError::Database(other),
         })?;
 
-    let _ = audit::log_audit(&conn, AuditAction::DocumentDelete, Some("document"), Some(&id), &serde_json::json!({}));
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::DocumentDelete,
+        Some("document"),
+        Some(&id),
+        &serde_json::json!({}),
+    );
 
     clear_document_data(&conn, &id)?;
 
-    let rows = conn.execute(
-        "DELETE FROM documents WHERE id = ?1",
-        rusqlite::params![id],
-    )?;
+    let rows = conn.execute("DELETE FROM documents WHERE id = ?1", rusqlite::params![id])?;
 
     if rows == 0 {
         return Err(AppError::NotFound(format!("Document '{}' not found", id)));
@@ -732,21 +779,24 @@ pub fn get_document_chunks(
     )?;
 
     let chunks = stmt
-        .query_map(rusqlite::params![document_id, page_size as i64, offset as i64], |row: &rusqlite::Row| {
-            Ok(Chunk {
-                id: row.get(0)?,
-                document_id: row.get(1)?,
-                collection_id: row.get(2)?,
-                content: row.get(3)?,
-                chunk_index: row.get(4)?,
-                start_offset: row.get(5)?,
-                end_offset: row.get(6)?,
-                page_number: row.get(7)?,
-                section_title: row.get(8)?,
-                token_count: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?
+        .query_map(
+            rusqlite::params![document_id, page_size as i64, offset as i64],
+            |row: &rusqlite::Row| {
+                Ok(Chunk {
+                    id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    collection_id: row.get(2)?,
+                    content: row.get(3)?,
+                    chunk_index: row.get(4)?,
+                    start_offset: row.get(5)?,
+                    end_offset: row.get(6)?,
+                    page_number: row.get(7)?,
+                    section_title: row.get(8)?,
+                    token_count: row.get(9)?,
+                    created_at: row.get(10)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
     let has_more = (offset + chunks.len()) < total as usize;
@@ -808,8 +858,7 @@ pub fn add_document_tag(
             other => AppError::Database(other),
         })?;
 
-    let mut tags: Vec<String> = serde_json::from_str(&tags_json)
-        .unwrap_or_default();
+    let mut tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
 
     if !tags.contains(&tag) {
         tags.push(tag);
@@ -848,8 +897,7 @@ pub fn remove_document_tag(
             other => AppError::Database(other),
         })?;
 
-    let mut tags: Vec<String> = serde_json::from_str(&tags_json)
-        .unwrap_or_default();
+    let mut tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
 
     tags.retain(|t| t != &tag);
 
@@ -872,9 +920,8 @@ pub fn list_all_tags(
 ) -> Result<Vec<String>, AppError> {
     let conn = get_conn(state.inner())?;
 
-    let mut stmt = conn.prepare(
-        "SELECT COALESCE(tags, '[]') FROM documents WHERE collection_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT COALESCE(tags, '[]') FROM documents WHERE collection_id = ?1")?;
 
     let rows = stmt
         .query_map(rusqlite::params![collection_id], |row: &rusqlite::Row| {
@@ -934,11 +981,13 @@ mod tests {
     ) -> PaginatedResponse<crate::models::Document> {
         let offset = (page - 1) * page_size;
 
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM documents WHERE collection_id = ?1",
-            rusqlite::params![collection_id],
-            |row| row.get(0),
-        ).expect("failed to count documents");
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM documents WHERE collection_id = ?1",
+                rusqlite::params![collection_id],
+                |row| row.get(0),
+            )
+            .expect("failed to count documents");
 
         let mut stmt = conn.prepare(
             "SELECT id, collection_id, filename, file_path, file_type, file_size, file_hash, title, author, page_count, word_count, chunk_count, status, error_message, created_at, updated_at
@@ -946,26 +995,29 @@ mod tests {
         ).expect("failed to prepare statement");
 
         let documents: Vec<crate::models::Document> = stmt
-            .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row| {
-                Ok(crate::models::Document {
-                    id: row.get(0)?,
-                    collection_id: row.get(1)?,
-                    filename: row.get(2)?,
-                    file_path: row.get(3)?,
-                    file_type: row.get(4)?,
-                    file_size: row.get(5)?,
-                    file_hash: row.get(6)?,
-                    title: row.get(7)?,
-                    author: row.get(8)?,
-                    page_count: row.get(9)?,
-                    word_count: row.get(10)?,
-                    chunk_count: row.get(11)?,
-                    status: row.get(12)?,
-                    error_message: row.get(13)?,
-                    created_at: row.get(14)?,
-                    updated_at: row.get(15)?,
-                })
-            })
+            .query_map(
+                rusqlite::params![collection_id, page_size as i64, offset as i64],
+                |row| {
+                    Ok(crate::models::Document {
+                        id: row.get(0)?,
+                        collection_id: row.get(1)?,
+                        filename: row.get(2)?,
+                        file_path: row.get(3)?,
+                        file_type: row.get(4)?,
+                        file_size: row.get(5)?,
+                        file_hash: row.get(6)?,
+                        title: row.get(7)?,
+                        author: row.get(8)?,
+                        page_count: row.get(9)?,
+                        word_count: row.get(10)?,
+                        chunk_count: row.get(11)?,
+                        status: row.get(12)?,
+                        error_message: row.get(13)?,
+                        created_at: row.get(14)?,
+                        updated_at: row.get(15)?,
+                    })
+                },
+            )
             .expect("failed to query documents")
             .collect::<Result<Vec<_>, _>>()
             .expect("failed to collect documents");
@@ -984,11 +1036,13 @@ mod tests {
     #[test]
     fn test_list_documents_pagination_defaults() {
         let conn = setup_db();
-        let col_id: String = conn.query_row(
-            "SELECT id FROM collections WHERE name = 'General'",
-            [],
-            |row| row.get(0),
-        ).expect("General collection not found");
+        let col_id: String = conn
+            .query_row(
+                "SELECT id FROM collections WHERE name = 'General'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("General collection not found");
 
         for i in 0..3 {
             insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
@@ -1005,11 +1059,13 @@ mod tests {
     #[test]
     fn test_list_documents_pagination_page_2() {
         let conn = setup_db();
-        let col_id: String = conn.query_row(
-            "SELECT id FROM collections WHERE name = 'General'",
-            [],
-            |row| row.get(0),
-        ).expect("General collection not found");
+        let col_id: String = conn
+            .query_row(
+                "SELECT id FROM collections WHERE name = 'General'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("General collection not found");
 
         for i in 0..5 {
             insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
@@ -1035,11 +1091,13 @@ mod tests {
     #[test]
     fn test_paginated_response_has_more() {
         let conn = setup_db();
-        let col_id: String = conn.query_row(
-            "SELECT id FROM collections WHERE name = 'General'",
-            [],
-            |row| row.get(0),
-        ).expect("General collection not found");
+        let col_id: String = conn
+            .query_row(
+                "SELECT id FROM collections WHERE name = 'General'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("General collection not found");
 
         for i in 0..3 {
             insert_document(&conn, &col_id, &format!("doc_{}.txt", i));
@@ -1047,23 +1105,31 @@ mod tests {
 
         let exact_fit = list_documents_paginated(&conn, &col_id, 1, 3);
         assert_eq!(exact_fit.items.len(), 3);
-        assert!(!exact_fit.has_more, "has_more should be false when items fill exactly one page");
+        assert!(
+            !exact_fit.has_more,
+            "has_more should be false when items fill exactly one page"
+        );
 
         insert_document(&conn, &col_id, "doc_extra.txt");
 
         let with_more = list_documents_paginated(&conn, &col_id, 1, 3);
         assert_eq!(with_more.items.len(), 3);
-        assert!(with_more.has_more, "has_more should be true when more pages exist");
+        assert!(
+            with_more.has_more,
+            "has_more should be true when more pages exist"
+        );
     }
 
     #[test]
     fn test_pagination_beyond_last_page() {
         let conn = setup_db();
-        let col_id: String = conn.query_row(
-            "SELECT id FROM collections WHERE name = 'General'",
-            [],
-            |row| row.get(0),
-        ).expect("General collection not found");
+        let col_id: String = conn
+            .query_row(
+                "SELECT id FROM collections WHERE name = 'General'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("General collection not found");
 
         for i in 0..3 {
             insert_document(&conn, &col_id, &format!("doc_{}.txt", i));

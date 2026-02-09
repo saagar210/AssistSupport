@@ -143,9 +143,7 @@ fn strip_confluence_boilerplate(source: &str) -> String {
 
         // Skip "Powered by Confluence" / "Powered by Atlassian" footers
         let lower = trimmed.to_lowercase();
-        if lower.starts_with("powered by confluence")
-            || lower.starts_with("powered by atlassian")
-        {
+        if lower.starts_with("powered by confluence") || lower.starts_with("powered by atlassian") {
             continue;
         }
 
@@ -181,7 +179,9 @@ fn is_breadcrumb_line(line: &str) -> bool {
     };
 
     // Each segment should be short (a page title, not a sentence)
-    segments.iter().all(|s| s.trim().len() <= 60 && !s.contains('.'))
+    segments
+        .iter()
+        .all(|s| s.trim().len() <= 60 && !s.contains('.'))
 }
 
 fn is_confluence_metadata_line(line: &str) -> bool {
@@ -205,9 +205,19 @@ fn is_confluence_macro(line: &str) -> bool {
             let macro_name = macro_content.split(':').next().unwrap_or("");
             return matches!(
                 macro_name,
-                "toc" | "children" | "excerpt" | "include" | "info" | "note"
-                    | "warning" | "tip" | "panel" | "expand" | "status"
-                    | "recently-updated" | "page-tree"
+                "toc"
+                    | "children"
+                    | "excerpt"
+                    | "include"
+                    | "info"
+                    | "note"
+                    | "warning"
+                    | "tip"
+                    | "panel"
+                    | "expand"
+                    | "status"
+                    | "recently-updated"
+                    | "page-tree"
             );
         }
     }
@@ -222,7 +232,11 @@ mod tests {
     fn test_strip_confluence_boilerplate_frontmatter() {
         let source = "---\ntitle: My Page\nspace: ENG\n---\n# Real Content\n\nThis is the body.";
         let result = strip_confluence_boilerplate(source);
-        assert!(result.starts_with("# Real Content"), "Frontmatter should be stripped, got: {}", result);
+        assert!(
+            result.starts_with("# Real Content"),
+            "Frontmatter should be stripped, got: {}",
+            result
+        );
         assert!(!result.contains("title: My Page"));
     }
 
@@ -230,7 +244,10 @@ mod tests {
     fn test_strip_confluence_boilerplate_breadcrumbs() {
         let source = "Engineering > Docs > API Guide\n\n# API Guide\n\nContent here.";
         let result = strip_confluence_boilerplate(source);
-        assert!(!result.contains("Engineering > Docs"), "Breadcrumbs should be stripped");
+        assert!(
+            !result.contains("Engineering > Docs"),
+            "Breadcrumbs should be stripped"
+        );
         assert!(result.contains("# API Guide"));
     }
 
@@ -238,8 +255,14 @@ mod tests {
     fn test_strip_confluence_boilerplate_metadata_lines() {
         let source = "# Page Title\n\nCreated by John Smith on Jan 1, 2024\nLast modified by Jane Doe on Feb 15, 2024\nLabels: api, internal\n\nActual content here.";
         let result = strip_confluence_boilerplate(source);
-        assert!(!result.contains("Created by"), "Created by should be stripped");
-        assert!(!result.contains("Last modified by"), "Last modified should be stripped");
+        assert!(
+            !result.contains("Created by"),
+            "Created by should be stripped"
+        );
+        assert!(
+            !result.contains("Last modified by"),
+            "Last modified should be stripped"
+        );
         assert!(!result.contains("Labels:"), "Labels should be stripped");
         assert!(result.contains("Actual content here."));
     }
@@ -249,13 +272,17 @@ mod tests {
         let source = "# Setup Guide\n\n{toc}\n\n{children}\n\n{excerpt}Summary text{excerpt}\n\nReal paragraph content here.";
         let result = strip_confluence_boilerplate(source);
         assert!(!result.contains("{toc}"), "{{toc}} should be stripped");
-        assert!(!result.contains("{children}"), "{{children}} should be stripped");
+        assert!(
+            !result.contains("{children}"),
+            "{{children}} should be stripped"
+        );
         assert!(result.contains("Real paragraph content here."));
     }
 
     #[test]
     fn test_strip_confluence_boilerplate_powered_by() {
-        let source = "# Page\n\nContent.\n\nPowered by Confluence\nPowered by Atlassian Confluence 7.19";
+        let source =
+            "# Page\n\nContent.\n\nPowered by Confluence\nPowered by Atlassian Confluence 7.19";
         let result = strip_confluence_boilerplate(source);
         assert!(!result.to_lowercase().contains("powered by confluence"));
         assert!(result.contains("Content."));
@@ -272,14 +299,20 @@ mod tests {
     fn test_strip_confluence_boilerplate_unclosed_frontmatter() {
         let source = "---\nThis is not frontmatter, just a horizontal rule context";
         let result = strip_confluence_boilerplate(source);
-        assert_eq!(result, source, "Unclosed frontmatter should return original");
+        assert_eq!(
+            result, source,
+            "Unclosed frontmatter should return original"
+        );
     }
 
     #[test]
     fn test_strip_confluence_macro_with_params() {
         let source = "{toc:maxLevel=3}\n\n# Heading\n\nContent.";
         let result = strip_confluence_boilerplate(source);
-        assert!(!result.contains("{toc:maxLevel=3}"), "Parameterized macro should be stripped");
+        assert!(
+            !result.contains("{toc:maxLevel=3}"),
+            "Parameterized macro should be stripped"
+        );
         assert!(result.contains("# Heading"));
     }
 
@@ -294,6 +327,8 @@ mod tests {
     #[test]
     fn test_breadcrumb_not_triggered_by_prose() {
         // Long segments with periods look like prose, not breadcrumbs
-        assert!(!is_breadcrumb_line("This is a sentence. > Another sentence. > Third one."));
+        assert!(!is_breadcrumb_line(
+            "This is a sentence. > Another sentence. > Third one."
+        ));
     }
 }

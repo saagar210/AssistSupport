@@ -32,7 +32,7 @@ pub struct VectorIndex {
 struct CollectionIndex {
     hnsw: HnswMap<Point, String>, // maps points to chunk_ids
     #[allow(dead_code)]
-    chunk_ids: Vec<String>,       // for tracking what's in the index
+    chunk_ids: Vec<String>, // for tracking what's in the index
 }
 
 impl VectorIndex {
@@ -208,7 +208,10 @@ mod tests {
         );
         // Results should be sorted by similarity descending
         for w in results.windows(2) {
-            assert!(w[0].1 >= w[1].1, "Results should be sorted descending by similarity");
+            assert!(
+                w[0].1 >= w[1].1,
+                "Results should be sorted descending by similarity"
+            );
         }
     }
 

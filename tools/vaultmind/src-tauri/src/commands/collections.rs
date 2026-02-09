@@ -13,7 +13,9 @@ pub fn create_collection(
 ) -> Result<Collection, AppError> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Collection name cannot be empty".into()));
+        return Err(AppError::Validation(
+            "Collection name cannot be empty".into(),
+        ));
     }
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -54,11 +56,7 @@ pub fn list_collections(
     let page_size = page_size.unwrap_or(50).clamp(1, 500);
     let offset = (page - 1) * page_size;
 
-    let total: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM collections",
-        [],
-        |row| row.get(0),
-    )?;
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM collections", [], |row| row.get(0))?;
 
     let mut stmt = conn.prepare(
         "SELECT id, name, description, created_at, updated_at FROM collections ORDER BY created_at ASC LIMIT ?1 OFFSET ?2",
@@ -91,22 +89,26 @@ pub fn list_collections(
 pub fn get_collection(state: State<'_, AppState>, id: String) -> Result<Collection, AppError> {
     let conn = get_conn(state.inner())?;
 
-    let collection = conn.query_row(
-        "SELECT id, name, description, created_at, updated_at FROM collections WHERE id = ?1",
-        rusqlite::params![id],
-        |row| {
-            Ok(Collection {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        },
-    ).map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound(format!("Collection '{}' not found", id)),
-        other => AppError::Database(other),
-    })?;
+    let collection = conn
+        .query_row(
+            "SELECT id, name, description, created_at, updated_at FROM collections WHERE id = ?1",
+            rusqlite::params![id],
+            |row| {
+                Ok(Collection {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Collection '{}' not found", id))
+            }
+            other => AppError::Database(other),
+        })?;
 
     Ok(collection)
 }
@@ -120,7 +122,9 @@ pub fn update_collection(
 ) -> Result<Collection, AppError> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::Validation("Collection name cannot be empty".into()));
+        return Err(AppError::Validation(
+            "Collection name cannot be empty".into(),
+        ));
     }
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -167,17 +171,23 @@ pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), A
     let conn = get_conn(state.inner())?;
 
     // Check if this is the "General" collection
-    let name: String = conn.query_row(
-        "SELECT name FROM collections WHERE id = ?1",
-        rusqlite::params![id],
-        |row| row.get(0),
-    ).map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound(format!("Collection '{}' not found", id)),
-        other => AppError::Database(other),
-    })?;
+    let name: String = conn
+        .query_row(
+            "SELECT name FROM collections WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("Collection '{}' not found", id))
+            }
+            other => AppError::Database(other),
+        })?;
 
     if name == "General" {
-        return Err(AppError::Validation("Cannot delete the default 'General' collection".into()));
+        return Err(AppError::Validation(
+            "Cannot delete the default 'General' collection".into(),
+        ));
     }
 
     let _ = audit::log_audit(
@@ -188,7 +198,10 @@ pub fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), A
         &serde_json::json!({"name": name}),
     );
 
-    conn.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![id])?;
+    conn.execute(
+        "DELETE FROM collections WHERE id = ?1",
+        rusqlite::params![id],
+    )?;
 
     Ok(())
 }
@@ -240,7 +253,10 @@ mod tests {
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
             })
-        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap()
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
     }
 
     #[test]
@@ -267,7 +283,10 @@ mod tests {
             "INSERT INTO collections (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![id, "Unique", "another desc", now, now],
         );
-        assert!(result.is_err(), "Duplicate collection name should fail due to UNIQUE constraint");
+        assert!(
+            result.is_err(),
+            "Duplicate collection name should fail due to UNIQUE constraint"
+        );
     }
 
     #[test]
@@ -275,18 +294,22 @@ mod tests {
         let conn = setup_db();
 
         // Find the General collection id
-        let general_id: String = conn.query_row(
-            "SELECT id FROM collections WHERE name = 'General'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let general_id: String = conn
+            .query_row(
+                "SELECT id FROM collections WHERE name = 'General'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
 
         // Simulate the delete_collection guard
-        let name: String = conn.query_row(
-            "SELECT name FROM collections WHERE id = ?1",
-            rusqlite::params![general_id],
-            |row| row.get(0),
-        ).unwrap();
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM collections WHERE id = ?1",
+                rusqlite::params![general_id],
+                |row| row.get(0),
+            )
+            .unwrap();
 
         assert_eq!(name, "General");
         // The command would return an error here
@@ -297,13 +320,19 @@ mod tests {
         let conn = setup_db();
         let col = create_collection_direct(&conn, "Deletable", "to delete");
 
-        conn.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![col.id]).unwrap();
-
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM collections WHERE id = ?1",
+        conn.execute(
+            "DELETE FROM collections WHERE id = ?1",
             rusqlite::params![col.id],
-            |row| row.get(0),
-        ).unwrap();
+        )
+        .unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE id = ?1",
+                rusqlite::params![col.id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -316,13 +345,16 @@ mod tests {
         conn.execute(
             "UPDATE collections SET name = ?1, description = ?2, updated_at = ?3 WHERE id = ?4",
             rusqlite::params!["Updated", "new desc", now, col.id],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let updated: (String, String) = conn.query_row(
-            "SELECT name, description FROM collections WHERE id = ?1",
-            rusqlite::params![col.id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).unwrap();
+        let updated: (String, String) = conn
+            .query_row(
+                "SELECT name, description FROM collections WHERE id = ?1",
+                rusqlite::params![col.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
 
         assert_eq!(updated.0, "Updated");
         assert_eq!(updated.1, "new desc");

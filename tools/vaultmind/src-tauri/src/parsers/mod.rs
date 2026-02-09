@@ -52,9 +52,7 @@ pub fn parse_document(path: &Path, file_type: &str) -> Result<ParsedDocument, Ap
 
     const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500MB limit
 
-    let file_size = std::fs::metadata(path)
-        .map_err(AppError::Io)?
-        .len();
+    let file_size = std::fs::metadata(path).map_err(AppError::Io)?.len();
 
     if file_size > MAX_FILE_SIZE {
         return Err(AppError::Validation(format!(
@@ -102,7 +100,11 @@ mod tests {
         let result = parse_document(&path, "md").unwrap();
 
         assert!(!result.text.is_empty());
-        assert!(result.sections.len() >= 3, "Should have Title + 2 sections, got {}", result.sections.len());
+        assert!(
+            result.sections.len() >= 3,
+            "Should have Title + 2 sections, got {}",
+            result.sections.len()
+        );
 
         let titles: Vec<&str> = result.sections.iter().map(|s| s.title.as_str()).collect();
         assert!(titles.contains(&"Title"));
@@ -118,7 +120,11 @@ mod tests {
         let title_section = result.sections.iter().find(|s| s.title == "Title").unwrap();
         assert_eq!(title_section.level, 1);
 
-        let s1 = result.sections.iter().find(|s| s.title == "Section 1").unwrap();
+        let s1 = result
+            .sections
+            .iter()
+            .find(|s| s.title == "Section 1")
+            .unwrap();
         assert_eq!(s1.level, 2);
     }
 
@@ -148,7 +154,10 @@ mod tests {
         let result = parse_document(&path, "html").unwrap();
 
         assert!(result.text.contains("Title"), "Should extract h1 text");
-        assert!(result.text.contains("Paragraph text"), "Should extract p text");
+        assert!(
+            result.text.contains("Paragraph text"),
+            "Should extract p text"
+        );
     }
 
     #[test]
@@ -156,7 +165,10 @@ mod tests {
         let path = fixtures_dir().join("test.html");
         let result = parse_document(&path, "html").unwrap();
 
-        assert!(!result.text.contains("alert"), "Script content should be stripped");
+        assert!(
+            !result.text.contains("alert"),
+            "Script content should be stripped"
+        );
     }
 
     #[test]

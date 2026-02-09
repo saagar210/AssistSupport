@@ -301,8 +301,7 @@ pub fn enforce_retention_policies(conn: &Connection) -> Result<usize, AppError> 
     let mut total_deleted: usize = 0;
 
     for (entity_type, retention_days) in &policies {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::days(*retention_days);
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(*retention_days);
         let cutoff_str = cutoff.to_rfc3339();
 
         let deleted = match entity_type.as_str() {
@@ -448,7 +447,8 @@ mod tests {
     /// Create an in-memory SQLite DB with the full schema (all tables up to v6).
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().expect("Failed to open in-memory DB");
-        conn.execute_batch("PRAGMA foreign_keys = ON;").expect("PRAGMA failed");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("PRAGMA failed");
 
         conn.execute_batch(
             "CREATE TABLE collections (
@@ -662,7 +662,12 @@ mod tests {
     }
 
     /// Helper: insert a chunk and return its id.
-    fn insert_chunk(conn: &Connection, document_id: &str, collection_id: &str, content: &str) -> String {
+    fn insert_chunk(
+        conn: &Connection,
+        document_id: &str,
+        collection_id: &str,
+        content: &str,
+    ) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -706,8 +711,8 @@ mod tests {
 
         // Each value should be valid JSON
         for (table, json_str) in &exported {
-            let parsed: serde_json::Value =
-                serde_json::from_str(json_str).unwrap_or_else(|e| panic!("Invalid JSON for {}: {}", table, e));
+            let parsed: serde_json::Value = serde_json::from_str(json_str)
+                .unwrap_or_else(|e| panic!("Invalid JSON for {}: {}", table, e));
             assert!(parsed.is_array(), "Expected array for table {}", table);
         }
 
@@ -716,7 +721,7 @@ mod tests {
             serde_json::from_str(exported.get("collections").expect("missing collections"))
                 .expect("parse collections");
         assert!(
-            collections.as_array().expect("not array").len() >= 1,
+            !collections.as_array().expect("not array").is_empty(),
             "Should have at least 1 collection"
         );
     }
@@ -736,7 +741,11 @@ mod tests {
 
         // Verify data exists before erase
         let chunk_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM chunks WHERE document_id = ?1", rusqlite::params![doc_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE document_id = ?1",
+                rusqlite::params![doc_id],
+                |row| row.get(0),
+            )
             .expect("count chunks");
         assert_eq!(chunk_count, 1);
 
@@ -744,22 +753,38 @@ mod tests {
 
         // Verify everything is gone
         let doc_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM documents WHERE id = ?1", rusqlite::params![doc_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM documents WHERE id = ?1",
+                rusqlite::params![doc_id],
+                |row| row.get(0),
+            )
             .expect("count docs");
         assert_eq!(doc_count, 0);
 
         let chunk_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM chunks WHERE document_id = ?1", rusqlite::params![doc_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE document_id = ?1",
+                rusqlite::params![doc_id],
+                |row| row.get(0),
+            )
             .expect("count chunks");
         assert_eq!(chunk_count, 0);
 
         let emb_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM chunk_embeddings WHERE document_id = ?1", rusqlite::params![doc_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM chunk_embeddings WHERE document_id = ?1",
+                rusqlite::params![doc_id],
+                |row| row.get(0),
+            )
             .expect("count embeddings");
         assert_eq!(emb_count, 0);
 
         let edge_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM graph_edges WHERE id = 'ge1'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM graph_edges WHERE id = 'ge1'",
+                [],
+                |row| row.get(0),
+            )
             .expect("count edges");
         assert_eq!(edge_count, 0);
     }
@@ -786,27 +811,47 @@ mod tests {
 
         // Everything should be gone
         let coll_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM collections WHERE id = ?1", rusqlite::params![coll_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE id = ?1",
+                rusqlite::params![coll_id],
+                |row| row.get(0),
+            )
             .expect("count coll");
         assert_eq!(coll_count, 0);
 
         let doc_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM documents WHERE collection_id = ?1", rusqlite::params![coll_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM documents WHERE collection_id = ?1",
+                rusqlite::params![coll_id],
+                |row| row.get(0),
+            )
             .expect("count docs");
         assert_eq!(doc_count, 0);
 
         let chunk_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM chunks WHERE collection_id = ?1", rusqlite::params![coll_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE collection_id = ?1",
+                rusqlite::params![coll_id],
+                |row| row.get(0),
+            )
             .expect("count chunks");
         assert_eq!(chunk_count, 0);
 
         let conv_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM conversations WHERE collection_id = ?1", rusqlite::params![coll_id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM conversations WHERE collection_id = ?1",
+                rusqlite::params![coll_id],
+                |row| row.get(0),
+            )
             .expect("count convs");
         assert_eq!(conv_count, 0);
 
         let msg_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM messages WHERE conversation_id = 'conv1'", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE conversation_id = 'conv1'",
+                [],
+                |row| row.get(0),
+            )
             .expect("count msgs");
         assert_eq!(msg_count, 0);
     }
@@ -837,16 +882,25 @@ mod tests {
 
         for table in &tables_to_check {
             let count: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| row.get(0))
+                .query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| {
+                    row.get(0)
+                })
                 .expect("count");
-            assert_eq!(count, 0, "Table {} should be empty after erase_all_data", table);
+            assert_eq!(
+                count, 0,
+                "Table {} should be empty after erase_all_data",
+                table
+            );
         }
 
         // Settings should still have defaults
         let settings_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0))
             .expect("count settings");
-        assert!(settings_count > 0, "Settings should be re-seeded with defaults");
+        assert!(
+            settings_count > 0,
+            "Settings should be re-seeded with defaults"
+        );
     }
 
     #[test]

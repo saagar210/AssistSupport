@@ -33,9 +33,9 @@ pub fn create_pool(app_data_dir: &Path) -> Result<Pool<SqliteConnectionManager>,
         .map_err(|e| AppError::LockFailed(format!("Failed to create connection pool: {}", e)))?;
 
     // Initialize schema using first connection
-    let conn = pool.get().map_err(|e| {
-        AppError::LockFailed(format!("Failed to get initial connection: {}", e))
-    })?;
+    let conn = pool
+        .get()
+        .map_err(|e| AppError::LockFailed(format!("Failed to get initial connection: {}", e)))?;
     initialize_schema(&conn)?;
 
     Ok(pool)

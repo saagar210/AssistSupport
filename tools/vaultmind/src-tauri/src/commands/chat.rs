@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 
-use tauri::{AppHandle, Manager, State};
 use tauri::Emitter;
+use tauri::{AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
 
 use crate::audit::{self, AuditAction};
@@ -31,7 +31,18 @@ pub async fn send_chat_message(
     let user_msg_id = uuid::Uuid::new_v4().to_string();
 
     // 1. Save user message to DB + read all settings we need, then drop connection
-    let (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget, use_multi_hop) = {
+    let (
+        host,
+        port,
+        embedding_model,
+        chat_model,
+        rrf_k,
+        vector_top_k,
+        keyword_top_k,
+        context_token_budget,
+        history_token_budget,
+        use_multi_hop,
+    ) = {
         let conn = get_conn(state.inner())?;
 
         conn.execute(
@@ -46,43 +57,95 @@ pub async fn send_chat_message(
         )?;
 
         // Audit log for user message
-        let _ = audit::log_audit(&conn, AuditAction::ChatMessage, Some("conversation"), Some(&conversation_id), &serde_json::json!({"role": "user"}));
+        let _ = audit::log_audit(
+            &conn,
+            AuditAction::ChatMessage,
+            Some("conversation"),
+            Some(&conversation_id),
+            &serde_json::json!({"role": "user"}),
+        );
 
         // Track chat message metric
-        state.inner().metrics.increment(crate::metrics::MetricCounter::ChatMessagesSent);
+        state
+            .inner()
+            .metrics
+            .increment(crate::metrics::MetricCounter::ChatMessagesSent);
 
         let host: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'ollama_host'", [], |row: &rusqlite::Row| row.get(0),
+            "SELECT value FROM settings WHERE key = 'ollama_host'",
+            [],
+            |row: &rusqlite::Row| row.get(0),
         )?;
         let port: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'ollama_port'", [], |row: &rusqlite::Row| row.get(0),
+            "SELECT value FROM settings WHERE key = 'ollama_port'",
+            [],
+            |row: &rusqlite::Row| row.get(0),
         )?;
         let embedding_model: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'embedding_model'", [], |row: &rusqlite::Row| row.get(0),
+            "SELECT value FROM settings WHERE key = 'embedding_model'",
+            [],
+            |row: &rusqlite::Row| row.get(0),
         )?;
         let chat_model: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'chat_model'", [], |row: &rusqlite::Row| row.get(0),
+            "SELECT value FROM settings WHERE key = 'chat_model'",
+            [],
+            |row: &rusqlite::Row| row.get(0),
         )?;
-        let rrf_k: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'rrf_k'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "60".to_string());
-        let vector_top_k: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'vector_top_k'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "20".to_string());
-        let keyword_top_k: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'keyword_top_k'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "20".to_string());
-        let context_token_budget: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'context_token_budget'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "4096".to_string());
-        let history_token_budget: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'history_token_budget'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "2048".to_string());
-        let use_multi_hop: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'use_multi_hop'", [], |row: &rusqlite::Row| row.get(0),
-        ).unwrap_or_else(|_| "false".to_string());
+        let rrf_k: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'rrf_k'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "60".to_string());
+        let vector_top_k: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'vector_top_k'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "20".to_string());
+        let keyword_top_k: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'keyword_top_k'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "20".to_string());
+        let context_token_budget: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'context_token_budget'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "4096".to_string());
+        let history_token_budget: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'history_token_budget'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "2048".to_string());
+        let use_multi_hop: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'use_multi_hop'",
+                [],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap_or_else(|_| "false".to_string());
 
-        (host, port, embedding_model, chat_model, rrf_k, vector_top_k, keyword_top_k, context_token_budget, history_token_budget, use_multi_hop)
+        (
+            host,
+            port,
+            embedding_model,
+            chat_model,
+            rrf_k,
+            vector_top_k,
+            keyword_top_k,
+            context_token_budget,
+            history_token_budget,
+            use_multi_hop,
+        )
     };
 
     let rrf_k_val: f64 = rrf_k.parse().unwrap_or(60.0);
@@ -100,10 +163,16 @@ pub async fn send_chat_message(
     let candidate_results: Vec<SearchResult> = {
         let conn = get_conn(state.inner())?;
         let vr = crate::commands::search::vector_search_in_db_with_embedding(
-            &conn, &collection_id, &query_embedding, vec_top_k,
+            &conn,
+            &collection_id,
+            &query_embedding,
+            vec_top_k,
         )?;
         let kr = crate::commands::search::keyword_search_in_db(
-            &conn, &collection_id, &user_message, kw_top_k,
+            &conn,
+            &collection_id,
+            &user_message,
+            kw_top_k,
         )?;
         crate::commands::search::reciprocal_rank_fusion_pub(vr, kr, rrf_k_val, vec_top_k)
     };
@@ -120,7 +189,10 @@ pub async fn send_chat_message(
     // Merge multi-hop results into candidate results as SearchResult entries
     let mut all_candidates = candidate_results.clone();
     for hop_result in &multi_hop_results {
-        if !all_candidates.iter().any(|r| r.chunk_id == hop_result.chunk_id) {
+        if !all_candidates
+            .iter()
+            .any(|r| r.chunk_id == hop_result.chunk_id)
+        {
             all_candidates.push(SearchResult {
                 chunk_id: hop_result.chunk_id.clone(),
                 document_id: hop_result.document_id.clone(),
@@ -174,15 +246,27 @@ pub async fn send_chat_message(
     // 6. Create cancellation token and stream response
     let cancel_token = CancellationToken::new();
     {
-        let mut tokens = CANCEL_TOKENS.lock().map_err(|e| AppError::LockFailed(e.to_string()))?;
+        let mut tokens = CANCEL_TOKENS
+            .lock()
+            .map_err(|e| AppError::LockFailed(e.to_string()))?;
         tokens.insert(conversation_id.clone(), cancel_token.clone());
     }
 
-    let full_response = ollama::chat_stream(&host, &port, &active_model, &messages, &app_handle, Some(&cancel_token)).await?;
+    let full_response = ollama::chat_stream(
+        &host,
+        &port,
+        &active_model,
+        &messages,
+        &app_handle,
+        Some(&cancel_token),
+    )
+    .await?;
 
     // Remove cancel token
     {
-        let mut tokens = CANCEL_TOKENS.lock().map_err(|e| AppError::LockFailed(e.to_string()))?;
+        let mut tokens = CANCEL_TOKENS
+            .lock()
+            .map_err(|e| AppError::LockFailed(e.to_string()))?;
         tokens.remove(&conversation_id);
     }
 
@@ -307,7 +391,8 @@ pub async fn send_chat_message(
                 },
             ];
 
-            if let Ok(title) = ollama::chat_once(&host_c, &port_c, &model_c, &title_messages).await {
+            if let Ok(title) = ollama::chat_once(&host_c, &port_c, &model_c, &title_messages).await
+            {
                 let title = title.trim().trim_matches('"').to_string();
                 if !title.is_empty() {
                     let now = chrono::Utc::now().to_rfc3339();
@@ -340,10 +425,7 @@ fn build_system_prompt(context: &[SearchResult]) -> String {
     );
 
     for result in context {
-        let section = result
-            .section_title
-            .as_deref()
-            .unwrap_or("(no section)");
+        let section = result.section_title.as_deref().unwrap_or("(no section)");
         prompt.push_str(&format!(
             "[Source: {}, Section: {}] {}\n\n",
             result.document_title, section, result.content
@@ -440,7 +522,13 @@ pub async fn create_conversation(
     )?;
 
     // Audit log for conversation creation
-    let _ = audit::log_audit(&conn, AuditAction::ConversationCreate, Some("conversation"), Some(&id), &serde_json::json!({"title": title}));
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::ConversationCreate,
+        Some("conversation"),
+        Some(&id),
+        &serde_json::json!({"title": title}),
+    );
 
     Ok(Conversation {
         id,
@@ -478,15 +566,18 @@ pub fn list_conversations(
     )?;
 
     let conversations = stmt
-        .query_map(rusqlite::params![collection_id, page_size as i64, offset as i64], |row| {
-            Ok(Conversation {
-                id: row.get(0)?,
-                collection_id: row.get(1)?,
-                title: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?
+        .query_map(
+            rusqlite::params![collection_id, page_size as i64, offset as i64],
+            |row| {
+                Ok(Conversation {
+                    id: row.get(0)?,
+                    collection_id: row.get(1)?,
+                    title: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
     let has_more = (offset + conversations.len()) < total as usize;
@@ -527,15 +618,18 @@ pub fn get_conversation_messages(
     )?;
 
     let messages = stmt
-        .query_map(rusqlite::params![conversation_id, page_size as i64, offset as i64], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                conversation_id: row.get(1)?,
-                role: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-            })
-        })?
+        .query_map(
+            rusqlite::params![conversation_id, page_size as i64, offset as i64],
+            |row| {
+                Ok(Message {
+                    id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
     let has_more = (offset + messages.len()) < total as usize;
@@ -590,7 +684,13 @@ pub fn delete_conversation(
     let conn = get_conn(state.inner())?;
 
     // Audit log before deletion
-    let _ = audit::log_audit(&conn, AuditAction::ConversationDelete, Some("conversation"), Some(&conversation_id), &serde_json::json!({}));
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::ConversationDelete,
+        Some("conversation"),
+        Some(&conversation_id),
+        &serde_json::json!({}),
+    );
 
     let rows = conn.execute(
         "DELETE FROM conversations WHERE id = ?1",
@@ -624,7 +724,13 @@ pub fn rename_conversation(
     let conn = get_conn(state.inner())?;
 
     // Audit log for conversation rename
-    let _ = audit::log_audit(&conn, AuditAction::ConversationRename, Some("conversation"), Some(&conversation_id), &serde_json::json!({"title": title}));
+    let _ = audit::log_audit(
+        &conn,
+        AuditAction::ConversationRename,
+        Some("conversation"),
+        Some(&conversation_id),
+        &serde_json::json!({"title": title}),
+    );
 
     let rows = conn.execute(
         "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
@@ -697,21 +803,16 @@ pub fn export_conversation_markdown(
                 // Load citations for this assistant message
                 let citations: Vec<(String, Option<String>)> = citation_stmt
                     .query_map(rusqlite::params![msg_id], |row: &rusqlite::Row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                        ))
+                        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
 
                 if !citations.is_empty() {
                     let sources: Vec<String> = citations
                         .iter()
-                        .map(|(doc_title, section)| {
-                            match section {
-                                Some(s) if !s.is_empty() => format!("{} ({})", doc_title, s),
-                                _ => doc_title.clone(),
-                            }
+                        .map(|(doc_title, section)| match section {
+                            Some(s) if !s.is_empty() => format!("{} ({})", doc_title, s),
+                            _ => doc_title.clone(),
                         })
                         .collect();
                     md.push_str(&format!("\n> Sources: {}\n", sources.join(", ")));

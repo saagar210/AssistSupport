@@ -1308,9 +1308,11 @@ If self-service is not available, contact IT support for an admin reset.
     #[test]
     fn test_file_size_limit_constants() {
         // Verify size limits are reasonable
-        assert!(MAX_TEXT_FILE_SIZE <= 10 * 1024 * 1024); // 10MB max for text
-        assert!(MAX_BINARY_FILE_SIZE <= 50 * 1024 * 1024); // 50MB max for binary
-        assert!(MAX_IMAGE_FILE_SIZE <= 20 * 1024 * 1024); // 20MB max for images
+        const {
+            assert!(MAX_TEXT_FILE_SIZE <= 10 * 1024 * 1024); // 10MB max for text
+            assert!(MAX_BINARY_FILE_SIZE <= 50 * 1024 * 1024); // 50MB max for binary
+            assert!(MAX_IMAGE_FILE_SIZE <= 20 * 1024 * 1024); // 20MB max for images
+        };
     }
 
     #[test]

@@ -175,8 +175,8 @@ pub async fn benchmark_model(
     let mut prompt_tokens: usize = 0;
 
     while let Some(chunk_result) = stream.next().await {
-        let chunk_bytes = chunk_result
-            .map_err(|e| AppError::Ollama(format!("Stream read error: {}", e)))?;
+        let chunk_bytes =
+            chunk_result.map_err(|e| AppError::Ollama(format!("Stream read error: {}", e)))?;
 
         let chunk_str = String::from_utf8_lossy(&chunk_bytes);
 
@@ -252,10 +252,7 @@ pub async fn health_check(host: &str, port: &str) -> Result<(bool, String), AppE
     if response.status().is_success() {
         Ok((true, "connected".to_string()))
     } else {
-        Ok((
-            false,
-            format!("Unexpected status: {}", response.status()),
-        ))
+        Ok((false, format!("Unexpected status: {}", response.status())))
     }
 }
 
@@ -306,10 +303,7 @@ pub async fn generate_embedding(
         .build()
         .map_err(|e| AppError::Ollama(e.to_string()))?;
 
-    let body = EmbeddingRequest {
-        model,
-        input: text,
-    };
+    let body = EmbeddingRequest { model, input: text };
 
     let response = client
         .post(&url)
@@ -407,8 +401,8 @@ pub async fn chat_stream(
             break;
         };
 
-        let chunk_bytes = chunk_result
-            .map_err(|e| AppError::Ollama(format!("Stream read error: {}", e)))?;
+        let chunk_bytes =
+            chunk_result.map_err(|e| AppError::Ollama(format!("Stream read error: {}", e)))?;
 
         let chunk_str = String::from_utf8_lossy(&chunk_bytes);
 
@@ -422,10 +416,8 @@ pub async fn chat_stream(
                 if let Some(msg) = &parsed.message {
                     if let Some(content) = &msg.content {
                         full_response.push_str(content);
-                        let _ = app_handle.emit(
-                            "chat-token",
-                            serde_json::json!({"token": content}),
-                        );
+                        let _ =
+                            app_handle.emit("chat-token", serde_json::json!({"token": content}));
                     }
                 }
 
@@ -493,10 +485,7 @@ pub async fn chat_once(
         .await
         .map_err(|e| AppError::Ollama(format!("Failed to parse response: {}", e)))?;
 
-    Ok(resp
-        .message
-        .and_then(|m| m.content)
-        .unwrap_or_default())
+    Ok(resp.message.and_then(|m| m.content).unwrap_or_default())
 }
 
 /// GET detailed model information via POST /api/show

@@ -28,13 +28,21 @@ pub fn parse(path: &Path) -> Result<ParsedDocument, AppError> {
     // Skip Confluence/generic boilerplate elements: nav, footer, aside, and
     // elements with boilerplate class names
     let boilerplate_selectors = [
-        "nav", "footer", "aside",
-        ".breadcrumb", ".breadcrumbs",
-        ".page-metadata", ".page-metadata-modification-info",
-        ".navigation", ".nav-breadcrumb",
+        "nav",
+        "footer",
+        "aside",
+        ".breadcrumb",
+        ".breadcrumbs",
+        ".page-metadata",
+        ".page-metadata-modification-info",
+        ".navigation",
+        ".nav-breadcrumb",
         ".confluence-information-macro",
-        ".footer-body", ".page-restrictions",
-        "#footer", "#breadcrumbs", "#navigation",
+        ".footer-body",
+        ".page-restrictions",
+        "#footer",
+        "#breadcrumbs",
+        "#navigation",
     ];
     for sel_str in &boilerplate_selectors {
         if let Ok(sel) = Selector::parse(sel_str) {
@@ -45,8 +53,8 @@ pub fn parse(path: &Path) -> Result<ParsedDocument, AppError> {
     }
 
     // Extract title
-    let title_sel =
-        Selector::parse("title").map_err(|e| AppError::Parse(format!("Invalid selector: {}", e)))?;
+    let title_sel = Selector::parse("title")
+        .map_err(|e| AppError::Parse(format!("Invalid selector: {}", e)))?;
     let title = document
         .select(&title_sel)
         .next()
@@ -118,7 +126,10 @@ fn extract_text_recursive(
             result.push_str(&extract_text_recursive(&el, skip_ids));
             // Add spacing after block elements
             let tag = el.value().name();
-            if matches!(tag, "p" | "div" | "br" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "tr") {
+            if matches!(
+                tag,
+                "p" | "div" | "br" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "tr"
+            ) {
                 result.push('\n');
             }
         } else if let Some(text) = child.value().as_text() {
@@ -161,7 +172,10 @@ mod tests {
             <footer>Powered by Confluence 7.19</footer>
         </body></html>"#;
         let doc = parse_html_string(html).unwrap();
-        assert!(!doc.text.contains("Powered by"), "Footer should be stripped");
+        assert!(
+            !doc.text.contains("Powered by"),
+            "Footer should be stripped"
+        );
         assert!(doc.text.contains("Content here."));
     }
 
@@ -173,7 +187,10 @@ mod tests {
             <p>Body text.</p>
         </body></html>"#;
         let doc = parse_html_string(html).unwrap();
-        assert!(!doc.text.contains("Space > Parent"), "Breadcrumb class should be stripped");
+        assert!(
+            !doc.text.contains("Space > Parent"),
+            "Breadcrumb class should be stripped"
+        );
         assert!(doc.text.contains("Body text."));
     }
 
@@ -185,7 +202,10 @@ mod tests {
             <p>Installation steps below.</p>
         </body></html>"#;
         let doc = parse_html_string(html).unwrap();
-        assert!(!doc.text.contains("Last modified"), "Page metadata should be stripped");
+        assert!(
+            !doc.text.contains("Last modified"),
+            "Page metadata should be stripped"
+        );
         assert!(doc.text.contains("Installation steps"));
     }
 
@@ -197,7 +217,10 @@ mod tests {
             <p>Main content.</p>
         </body></html>"#;
         let doc = parse_html_string(html).unwrap();
-        assert!(!doc.text.contains("Related pages"), "Aside should be stripped");
+        assert!(
+            !doc.text.contains("Related pages"),
+            "Aside should be stripped"
+        );
         assert!(doc.text.contains("Main content."));
     }
 

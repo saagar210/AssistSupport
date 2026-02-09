@@ -138,7 +138,10 @@ fn integration_enabled() -> bool {
 }
 
 fn integration_auth_token_required() -> bool {
-    parse_bool_env(MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV, !cfg!(debug_assertions))
+    parse_bool_env(
+        MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV,
+        !cfg!(debug_assertions),
+    )
 }
 
 fn integration_base_url(pin: &MemoryKernelIntegrationPin) -> String {
@@ -640,19 +643,17 @@ pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPrefligh
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    Ok(
-        run_preflight_with_cache(
-            &client,
-            &pin,
-            enabled,
-            &base_url,
-            timeout_ms,
-            auth_required,
-            auth_token.as_deref(),
-            false,
-        )
-        .await,
+    Ok(run_preflight_with_cache(
+        &client,
+        &pin,
+        enabled,
+        &base_url,
+        timeout_ms,
+        auth_required,
+        auth_token.as_deref(),
+        false,
     )
+    .await)
 }
 
 #[tauri::command]
@@ -674,18 +675,17 @@ pub async fn memory_kernel_query_ask(
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    let preflight =
-        run_preflight_with_cache(
-            &client,
-            &pin,
-            enabled,
-            &base_url,
-            timeout_ms,
-            auth_required,
-            auth_token.as_deref(),
-            false,
-        )
-        .await;
+    let preflight = run_preflight_with_cache(
+        &client,
+        &pin,
+        enabled,
+        &base_url,
+        timeout_ms,
+        auth_required,
+        auth_token.as_deref(),
+        false,
+    )
+    .await;
 
     if !preflight.enrichment_enabled {
         return Ok(fallback_result(
@@ -703,7 +703,9 @@ pub async fn memory_kernel_query_ask(
         resource: "support_ticket".to_string(),
     };
 
-    let mut query_request = client.post(format!("{base_url}/v1/query/ask")).json(&request);
+    let mut query_request = client
+        .post(format!("{base_url}/v1/query/ask"))
+        .json(&request);
     if let Some(token) = auth_token.as_deref() {
         query_request = query_request.bearer_auth(token);
     }
@@ -836,11 +838,13 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
-    use std::sync::Mutex;
+    use std::sync::OnceLock;
     use std::thread;
     use std::time::Duration;
+    use tokio::sync::Mutex;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Tests in this module mutate process-wide env vars. Serialize them safely across async awaits.
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     #[derive(Clone)]
     struct MockResponse {
@@ -1027,7 +1031,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_reports_offline_when_service_down() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         set_test_env("http://127.0.0.1:9", 200, true);
 
         let status = get_memory_kernel_preflight_status()
@@ -1041,7 +1045,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_requires_auth_token_when_policy_enabled() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         set_test_env("http://127.0.0.1:9", 200, true);
         std::env::set_var(MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV, "true");
         std::env::remove_var(MEMORY_KERNEL_AUTH_TOKEN_ENV);
@@ -1059,7 +1063,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_reports_timeout_as_offline() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
             method: "GET",
             path: "/v1/health",
@@ -1082,7 +1086,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_detects_version_mismatch() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
                 method: "GET",
                 path: "/v1/health",
@@ -1108,7 +1112,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_detects_malformed_payload() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
             method: "GET",
             path: "/v1/health",
@@ -1131,7 +1135,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_happy_path_applies_enrichment() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let query_body = fixture_query_allow();
@@ -1184,7 +1188,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_reuses_cached_preflight_between_calls() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let query_body = fixture_query_allow();
@@ -1239,7 +1243,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_uses_deterministic_fallback_when_preflight_fails() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let (base_url, handle) = spawn_mock_server(vec![MockResponse {
                 method: "GET",
                 path: "/v1/health",
@@ -1271,7 +1275,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_keeps_deterministic_fallback_on_non_2xx_response() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_error", "validation failed");
@@ -1319,7 +1323,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_includes_machine_readable_error_code_in_fallback_message() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");
@@ -1371,7 +1375,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_preserves_transitional_legacy_error_compatibility() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_transitional_legacy_error(
@@ -1425,7 +1429,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_ask_can_map_machine_error_codes_to_specific_consumer_states() {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
         let health_body = fixture_health_ok();
         let schema_body = fixture_schema_ok();
         let error_body = fixture_typed_error("validation_failed", "Invalid query");

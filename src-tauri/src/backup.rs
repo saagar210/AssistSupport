@@ -651,9 +651,9 @@ mod tests {
     use super::sanitize_imported_setting;
     use super::{validate_zip_archive_limits, MAX_ZIP_ENTRIES};
     use std::io::Cursor;
+    use std::io::Write;
     use zip::write::SimpleFileOptions;
     use zip::{ZipArchive, ZipWriter};
-    use std::io::Write;
 
     #[test]
     fn sanitize_imported_setting_accepts_non_kb_keys() {
@@ -690,7 +690,10 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut archive = ZipArchive::new(cursor).unwrap();
         let result = validate_zip_archive_limits(&mut archive);
-        assert!(result.is_err(), "Expected archive to be rejected for too many entries");
+        assert!(
+            result.is_err(),
+            "Expected archive to be rejected for too many entries"
+        );
     }
 
     #[test]
@@ -703,7 +706,8 @@ mod tests {
 
             // Include required minimal file so ZipArchive is well-formed.
             writer.start_file("version.json", opts).unwrap();
-            writer.write_all(br#"{"version":"1","created_at":"now","app_version":"1"}"#)
+            writer
+                .write_all(br#"{"version":"1","created_at":"now","app_version":"1"}"#)
                 .unwrap();
 
             // Encoded ".." should be rejected.
@@ -716,6 +720,9 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut archive = ZipArchive::new(cursor).unwrap();
         let result = validate_zip_archive_limits(&mut archive);
-        assert!(result.is_err(), "Expected archive to be rejected for encoded traversal");
+        assert!(
+            result.is_err(),
+            "Expected archive to be rejected for encoded traversal"
+        );
     }
 }

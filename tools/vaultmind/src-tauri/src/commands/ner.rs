@@ -1,7 +1,9 @@
 use tauri::State;
 
 use crate::error::AppError;
-use crate::models::{Entity, EntityGraph, EntityGraphEdge, EntityGraphNode, EntityMention, EntityRelationship};
+use crate::models::{
+    Entity, EntityGraph, EntityGraphEdge, EntityGraphNode, EntityMention, EntityRelationship,
+};
 use crate::ner;
 use crate::state::{get_conn, AppState};
 
@@ -55,8 +57,7 @@ pub async fn extract_document_entities(
     }; // conn dropped here
 
     // Phase 2: Call LLM for entity extraction (async -- no DB held)
-    let chunk_entities =
-        ner::extract_entities_for_chunks(&host, &port, &model, &chunks).await?;
+    let chunk_entities = ner::extract_entities_for_chunks(&host, &port, &model, &chunks).await?;
 
     // Phase 3: Write results back to DB (sync scope)
     let conn = get_conn(state.inner())?;

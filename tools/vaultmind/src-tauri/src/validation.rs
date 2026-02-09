@@ -56,20 +56,13 @@ pub fn validate_file_path(raw_path: &str) -> Result<PathBuf, AppError> {
 
 // --- SSRF Protection ---
 
-const ALLOWED_OLLAMA_HOSTS: &[&str] = &[
-    "localhost",
-    "127.0.0.1",
-    "::1",
-    "0.0.0.0",
-];
+const ALLOWED_OLLAMA_HOSTS: &[&str] = &["localhost", "127.0.0.1", "::1", "0.0.0.0"];
 
 /// Validate that an Ollama host is localhost-only (prevent SSRF).
 pub fn validate_ollama_host(host: &str) -> Result<(), AppError> {
     let normalized = host.trim().to_lowercase();
     if normalized.is_empty() {
-        return Err(AppError::Validation(
-            "Ollama host cannot be empty".into(),
-        ));
+        return Err(AppError::Validation("Ollama host cannot be empty".into()));
     }
     if !ALLOWED_OLLAMA_HOSTS.contains(&normalized.as_str()) {
         return Err(AppError::Validation(format!(
@@ -85,10 +78,7 @@ pub fn validate_ollama_host(host: &str) -> Result<(), AppError> {
 pub fn validate_ollama_port(port: &str) -> Result<u16, AppError> {
     let trimmed = port.trim();
     let port_num: u16 = trimmed.parse().map_err(|_| {
-        AppError::Validation(format!(
-            "Invalid port number '{}': must be 1-65535",
-            port
-        ))
+        AppError::Validation(format!("Invalid port number '{}': must be 1-65535", port))
     })?;
     if port_num == 0 {
         return Err(AppError::Validation("Port cannot be 0".into()));
@@ -180,7 +170,10 @@ pub fn validate_setting(key: &str, value: &str) -> Result<(), AppError> {
         }
         "context_token_budget" | "history_token_budget" => {
             let budget: usize = value.parse().map_err(|_| {
-                AppError::Validation(format!("Invalid token budget '{}': must be a number", value))
+                AppError::Validation(format!(
+                    "Invalid token budget '{}': must be a number",
+                    value
+                ))
             })?;
             if !(256..=131072).contains(&budget) {
                 return Err(AppError::Validation(format!(
@@ -235,10 +228,7 @@ fn url_decode(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (
-                hex_digit(bytes[i + 1]),
-                hex_digit(bytes[i + 2]),
-            ) {
+            if let (Some(hi), Some(lo)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
                 result.push((hi << 4 | lo) as char);
                 i += 3;
                 continue;

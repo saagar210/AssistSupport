@@ -22,7 +22,11 @@ fn rebuild_index_for_collection(state: &AppState, collection_id: &str) {
         }
     };
     if let Err(e) = index.rebuild_collection_index(&conn, collection_id) {
-        tracing::warn!("Failed to rebuild HNSW index for collection {}: {}", collection_id, e);
+        tracing::warn!(
+            "Failed to rebuild HNSW index for collection {}: {}",
+            collection_id,
+            e
+        );
     }
 }
 
@@ -119,9 +123,7 @@ pub fn erase_collection_data(
 
 /// Erase ALL user data. Nuclear option (GDPR right to erasure).
 #[tauri::command]
-pub fn erase_all_user_data(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), AppError> {
+pub fn erase_all_user_data(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
     let conn = get_conn(state.inner())?;
 
     let _ = log_audit(
@@ -166,9 +168,7 @@ pub fn update_retention_policy(
 
 /// Run retention cleanup - delete data older than retention policies.
 #[tauri::command]
-pub fn run_retention_cleanup(
-    state: tauri::State<'_, AppState>,
-) -> Result<usize, AppError> {
+pub fn run_retention_cleanup(state: tauri::State<'_, AppState>) -> Result<usize, AppError> {
     let conn = get_conn(state.inner())?;
 
     let deleted = gdpr::enforce_retention_policies(&conn)?;

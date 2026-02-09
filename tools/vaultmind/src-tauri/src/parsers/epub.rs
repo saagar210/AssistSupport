@@ -21,9 +21,9 @@ pub fn parse(path: &Path) -> Result<ParsedDocument, AppError> {
     // Parse OPF to get spine items
     let mut opf_content = String::new();
     {
-        let mut opf_file = archive
-            .by_name(&opf_path)
-            .map_err(|e| AppError::Parse(format!("Failed to read OPF file '{}': {}", opf_path, e)))?;
+        let mut opf_file = archive.by_name(&opf_path).map_err(|e| {
+            AppError::Parse(format!("Failed to read OPF file '{}': {}", opf_path, e))
+        })?;
         opf_file.read_to_string(&mut opf_content)?;
     }
 
@@ -90,9 +90,7 @@ fn find_opf_path(archive: &mut zip::ZipArchive<std::fs::File>) -> Result<String,
         }
     }
 
-    Err(AppError::Parse(
-        "No OPF file found in epub".to_string(),
-    ))
+    Err(AppError::Parse("No OPF file found in epub".to_string()))
 }
 
 fn extract_rootfile_path(container_xml: &str) -> Option<String> {
@@ -126,16 +124,26 @@ fn parse_opf_spine(opf_content: &str, opf_path: &str) -> Result<Vec<String>, App
     for line in opf_content.lines() {
         let trimmed = line.trim();
         if trimmed.contains("<item") && trimmed.contains("id=") && trimmed.contains("href=") {
-            if let (Some(id), Some(href)) = (extract_attr(trimmed, "id"), extract_attr(trimmed, "href")) {
+            if let (Some(id), Some(href)) =
+                (extract_attr(trimmed, "id"), extract_attr(trimmed, "href"))
+            {
                 // Validate against path traversal (handles URL-encoded ".." too)
                 if let Err(e) = crate::validation::validate_zip_entry_path(&href) {
-                    tracing::warn!("Skipping suspicious path in EPUB manifest: {} ({})", href, e);
+                    tracing::warn!(
+                        "Skipping suspicious path in EPUB manifest: {} ({})",
+                        href,
+                        e
+                    );
                     continue;
                 }
                 let full_path = format!("{}{}", base_dir, href);
                 // Validate the resolved full path too
                 if let Err(e) = crate::validation::validate_zip_entry_path(&full_path) {
-                    tracing::warn!("Skipping suspicious resolved path in EPUB: {} ({})", full_path, e);
+                    tracing::warn!(
+                        "Skipping suspicious resolved path in EPUB: {} ({})",
+                        full_path,
+                        e
+                    );
                     continue;
                 }
                 manifest.insert(id, full_path);
@@ -225,5 +233,11 @@ fn extract_text_from_xhtml(html_content: &str, sections: &mut Vec<Section>) -> S
     }
 
     // Fallback: all text
-    document.root_element().text().collect::<Vec<_>>().join(" ").trim().to_string()
+    document
+        .root_element()
+        .text()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
 }

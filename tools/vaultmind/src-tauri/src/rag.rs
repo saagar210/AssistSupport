@@ -209,7 +209,11 @@ pub fn build_adaptive_context(
     let mut relevant = filter_by_relevance(results);
 
     // 2. Sort by score descending (highest first)
-    relevant.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    relevant.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 3. Greedily add chunks until token budget exhausted
     let mut selected_chunks = Vec::new();
@@ -310,7 +314,8 @@ pub fn multi_hop_retrieval(
             params.push(Box::new(chunk_id.clone()));
         }
 
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let mut neighbor_ids: Vec<(String, f64)> = Vec::new();
         let mut rows = stmt.query(param_refs.as_slice())?;
@@ -404,7 +409,11 @@ pub fn extract_precise_citation(chunk_content: &str, query: &str) -> PreciseCita
 
     let query_words: HashSet<String> = query
         .split_whitespace()
-        .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+        .map(|w| {
+            w.to_lowercase()
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_string()
+        })
         .filter(|w| !w.is_empty())
         .collect();
 
@@ -458,7 +467,11 @@ pub fn extract_precise_citation(chunk_content: &str, query: &str) -> PreciseCita
     for (i, (_start, _end, sentence)) in sentences.iter().enumerate() {
         let sentence_words: HashSet<String> = sentence
             .split_whitespace()
-            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
             .filter(|w| !w.is_empty())
             .collect();
 
@@ -620,7 +633,10 @@ mod tests {
         assert_eq!(estimate_tokens(ten_words), 13);
 
         // 100 words -> ceil(100 * 1.3) = 130
-        let hundred_words: String = (0..100).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
+        let hundred_words: String = (0..100)
+            .map(|i| format!("word{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert_eq!(estimate_tokens(&hundred_words), 130);
     }
 
@@ -693,7 +709,11 @@ mod tests {
         let (chunks, _) = build_adaptive_context(&results, 30, &[], 0);
 
         let total_tokens: usize = chunks.iter().map(|c| estimate_tokens(&c.content)).sum();
-        assert!(total_tokens <= 30, "Total tokens {} should be <= 30", total_tokens);
+        assert!(
+            total_tokens <= 30,
+            "Total tokens {} should be <= 30",
+            total_tokens
+        );
         assert_eq!(chunks.len(), 2);
     }
 
@@ -725,7 +745,8 @@ mod tests {
     #[test]
     fn test_multi_hop_retrieval_finds_neighbors() {
         let conn = rusqlite::Connection::open_in_memory().expect("open in-memory DB");
-        conn.execute_batch("PRAGMA foreign_keys = OFF;").expect("set pragma");
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("set pragma");
         conn.execute_batch(
             "CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT, description TEXT, created_at TEXT, updated_at TEXT);
              CREATE TABLE documents (id TEXT PRIMARY KEY, collection_id TEXT, filename TEXT, file_path TEXT, file_type TEXT, file_size INTEGER, file_hash TEXT, title TEXT, author TEXT, page_count INTEGER, word_count INTEGER DEFAULT 0, chunk_count INTEGER DEFAULT 0, status TEXT DEFAULT 'done', error_message TEXT, created_at TEXT, updated_at TEXT);
@@ -746,9 +767,24 @@ mod tests {
 
         for (cid, did, idx, content) in &[
             ("c1", "doc1", 0, "Machine learning basics and fundamentals."),
-            ("c2", "doc1", 1, "Neural networks are a subset of machine learning."),
-            ("c3", "doc1", 2, "Deep learning uses multiple neural network layers."),
-            ("c4", "doc2", 0, "Reinforcement learning is another ML approach."),
+            (
+                "c2",
+                "doc1",
+                1,
+                "Neural networks are a subset of machine learning.",
+            ),
+            (
+                "c3",
+                "doc1",
+                2,
+                "Deep learning uses multiple neural network layers.",
+            ),
+            (
+                "c4",
+                "doc2",
+                0,
+                "Reinforcement learning is another ML approach.",
+            ),
         ] {
             conn.execute(
                 "INSERT INTO chunks (id, document_id, collection_id, content, chunk_index, created_at) VALUES (?1, ?2, 'col1', ?3, ?4, ?5)",
@@ -756,7 +792,11 @@ mod tests {
             ).expect("insert chunk");
         }
 
-        for (eid, src, tgt, w) in &[("e1", "c1", "c2", 0.9), ("e2", "c2", "c3", 0.85), ("e3", "c2", "c4", 0.7)] {
+        for (eid, src, tgt, w) in &[
+            ("e1", "c1", "c2", 0.9),
+            ("e2", "c2", "c3", 0.85),
+            ("e3", "c2", "c4", 0.7),
+        ] {
             conn.execute(
                 "INSERT INTO graph_edges (id, source_chunk_id, target_chunk_id, collection_id, weight, relationship_type, created_at) VALUES (?1, ?2, ?3, 'col1', ?4, 'semantic', ?5)",
                 rusqlite::params![eid, src, tgt, w, now],
@@ -776,23 +816,35 @@ mod tests {
         // 1 hop should discover c2
         let results = multi_hop_retrieval(&conn, &initial, "col1", 1, 10).expect("multi_hop 1");
         assert!(!results.is_empty(), "Should find at least one neighbor");
-        assert!(results.iter().any(|r| r.chunk_id == "c2"), "Should discover c2 at hop 1");
-        assert!(results.iter().all(|r| r.hop_distance == 1), "All should be hop_distance=1");
+        assert!(
+            results.iter().any(|r| r.chunk_id == "c2"),
+            "Should discover c2 at hop 1"
+        );
+        assert!(
+            results.iter().all(|r| r.hop_distance == 1),
+            "All should be hop_distance=1"
+        );
 
         // 2 hops should also discover c3 and c4
-        let results_2hop = multi_hop_retrieval(&conn, &initial, "col1", 2, 10).expect("multi_hop 2");
+        let results_2hop =
+            multi_hop_retrieval(&conn, &initial, "col1", 2, 10).expect("multi_hop 2");
         let chunk_ids: HashSet<String> = results_2hop.iter().map(|r| r.chunk_id.clone()).collect();
         assert!(chunk_ids.contains("c2"), "Should contain c2 at hop 1");
         assert!(chunk_ids.contains("c3"), "Should contain c3 at hop 2");
         assert!(chunk_ids.contains("c4"), "Should contain c4 at hop 2");
 
         for r in &results_2hop {
-            if r.chunk_id == "c2" { assert_eq!(r.hop_distance, 1); }
-            if r.chunk_id == "c3" || r.chunk_id == "c4" { assert_eq!(r.hop_distance, 2); }
+            if r.chunk_id == "c2" {
+                assert_eq!(r.hop_distance, 1);
+            }
+            if r.chunk_id == "c3" || r.chunk_id == "c4" {
+                assert_eq!(r.hop_distance, 2);
+            }
         }
 
         // max_additional limit
-        let limited = multi_hop_retrieval(&conn, &initial, "col1", 2, 1).expect("multi_hop limited");
+        let limited =
+            multi_hop_retrieval(&conn, &initial, "col1", 2, 1).expect("multi_hop limited");
         assert_eq!(limited.len(), 1, "Should respect max_additional=1");
     }
 
@@ -802,10 +854,18 @@ mod tests {
         let query = "machine learning neural networks";
 
         let citation = extract_precise_citation(content, query);
-        assert!(citation.snippet.contains("Machine learning"), "Should pick ML sentence, got: '{}'", citation.snippet);
+        assert!(
+            citation.snippet.contains("Machine learning"),
+            "Should pick ML sentence, got: '{}'",
+            citation.snippet
+        );
         assert!(citation.confidence > 0.0, "Confidence should be positive");
         assert!(citation.start_char < citation.end_char, "start < end");
-        assert_eq!(&content[citation.start_char..citation.end_char], citation.snippet, "Offsets should match snippet");
+        assert_eq!(
+            &content[citation.start_char..citation.end_char],
+            citation.snippet,
+            "Offsets should match snippet"
+        );
 
         // Empty inputs
         let empty = extract_precise_citation("", "query");
@@ -822,6 +882,9 @@ mod tests {
 
         // Perfect match
         let perfect = extract_precise_citation("Alpha beta gamma.", "alpha beta gamma");
-        assert_eq!(perfect.confidence, 1.0, "Perfect overlap should give confidence 1.0");
+        assert_eq!(
+            perfect.confidence, 1.0,
+            "Perfect overlap should give confidence 1.0"
+        );
     }
 }

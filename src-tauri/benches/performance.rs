@@ -206,7 +206,7 @@ fn bench_db_operations(c: &mut Criterion) {
 fn bench_key_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("key_generation");
 
-    group.bench_function("generate_master_key", |b| b.iter(|| MasterKey::generate()));
+    group.bench_function("generate_master_key", |b| b.iter(MasterKey::generate));
 
     group.finish();
 }

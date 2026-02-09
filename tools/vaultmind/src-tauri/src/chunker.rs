@@ -49,9 +49,7 @@ pub fn chunk_text(
         }
 
         // Check if adding this paragraph would exceed chunk_size
-        if !current_tokens.is_empty()
-            && current_tokens.len() + para_tokens.len() > chunk_size
-        {
+        if !current_tokens.is_empty() && current_tokens.len() + para_tokens.len() > chunk_size {
             // Emit current chunk
             let content = current_tokens.join(" ");
             let end_offset = byte_offset;
@@ -256,13 +254,26 @@ mod tests {
     #[test]
     fn test_text_splits_at_paragraph_boundaries() {
         // Create text with multiple paragraphs that exceed chunk_size
-        let para1 = (0..30).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
-        let para2 = (30..60).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
-        let para3 = (60..90).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
+        let para1 = (0..30)
+            .map(|i| format!("word{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let para2 = (30..60)
+            .map(|i| format!("word{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let para3 = (60..90)
+            .map(|i| format!("word{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
         let text = format!("{}\n\n{}\n\n{}", para1, para2, para3);
 
         let chunks = chunk_text(&text, &[], 40, 5);
-        assert!(chunks.len() >= 2, "Should split into multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "Should split into multiple chunks, got {}",
+            chunks.len()
+        );
 
         // Verify chunk indices are sequential
         for (i, chunk) in chunks.iter().enumerate() {
@@ -273,9 +284,18 @@ mod tests {
     #[test]
     fn test_overlap_works() {
         // Create paragraphs small enough to test overlap behavior
-        let para1 = (0..25).map(|i| format!("w{}", i)).collect::<Vec<_>>().join(" ");
-        let para2 = (25..50).map(|i| format!("w{}", i)).collect::<Vec<_>>().join(" ");
-        let para3 = (50..75).map(|i| format!("w{}", i)).collect::<Vec<_>>().join(" ");
+        let para1 = (0..25)
+            .map(|i| format!("w{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let para2 = (25..50)
+            .map(|i| format!("w{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let para3 = (50..75)
+            .map(|i| format!("w{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
         let text = format!("{}\n\n{}\n\n{}", para1, para2, para3);
 
         let chunks = chunk_text(&text, &[], 30, 5);
@@ -299,7 +319,8 @@ mod tests {
 
     #[test]
     fn test_section_titles_prepended() {
-        let text = "Introduction\n\nThis is the introduction paragraph with enough words to fill it.";
+        let text =
+            "Introduction\n\nThis is the introduction paragraph with enough words to fill it.";
         let sections = vec![Section {
             title: "Introduction".to_string(),
             content: "This is the introduction paragraph with enough words to fill it.".to_string(),
@@ -325,7 +346,10 @@ mod tests {
 
         let chunks = chunk_text(&text, &[], 30, 5);
         for (i, chunk) in chunks.iter().enumerate() {
-            assert_eq!(chunk.chunk_index, i as i32, "chunk_index should be sequential");
+            assert_eq!(
+                chunk.chunk_index, i as i32,
+                "chunk_index should be sequential"
+            );
         }
     }
 
@@ -343,10 +367,26 @@ mod tests {
         let text = "Overview\n\nThis is Product A overview with enough words to be a real paragraph for testing.\n\nDetails\n\nProduct A details paragraph here.\n\nOverview\n\nThis is Product B overview with enough words to be a real paragraph for testing.\n\nDetails\n\nProduct B details paragraph here.";
 
         let sections = vec![
-            Section { title: "Overview".to_string(), content: "This is Product A overview".to_string(), level: 2 },
-            Section { title: "Details".to_string(), content: "Product A details".to_string(), level: 2 },
-            Section { title: "Overview".to_string(), content: "This is Product B overview".to_string(), level: 2 },
-            Section { title: "Details".to_string(), content: "Product B details".to_string(), level: 2 },
+            Section {
+                title: "Overview".to_string(),
+                content: "This is Product A overview".to_string(),
+                level: 2,
+            },
+            Section {
+                title: "Details".to_string(),
+                content: "Product A details".to_string(),
+                level: 2,
+            },
+            Section {
+                title: "Overview".to_string(),
+                content: "This is Product B overview".to_string(),
+                level: 2,
+            },
+            Section {
+                title: "Details".to_string(),
+                content: "Product B details".to_string(),
+                level: 2,
+            },
         ];
 
         let chunks = chunk_text(text, &sections, 500, 10);
@@ -354,23 +394,38 @@ mod tests {
 
         // The section map should have 4 entries (not 2)
         let map = build_section_map(text, &sections);
-        assert_eq!(map.len(), 4, "Should have 4 section entries for 4 sections, got {:?}", map);
+        assert_eq!(
+            map.len(),
+            4,
+            "Should have 4 section entries for 4 sections, got {:?}",
+            map
+        );
 
         // First "Overview" should be at a different position than second "Overview"
-        let overview_positions: Vec<usize> = map.iter()
+        let overview_positions: Vec<usize> = map
+            .iter()
             .filter(|(_, title)| title == "Overview")
             .map(|(pos, _)| *pos)
             .collect();
-        assert_eq!(overview_positions.len(), 2, "Should find both Overview positions");
-        assert_ne!(overview_positions[0], overview_positions[1], "Duplicate titles should map to different positions");
+        assert_eq!(
+            overview_positions.len(),
+            2,
+            "Should find both Overview positions"
+        );
+        assert_ne!(
+            overview_positions[0], overview_positions[1],
+            "Duplicate titles should map to different positions"
+        );
     }
 
     #[test]
     fn test_section_map_handles_missing_title() {
         let text = "Some text without any matching headings here.";
-        let sections = vec![
-            Section { title: "Nonexistent".to_string(), content: String::new(), level: 1 },
-        ];
+        let sections = vec![Section {
+            title: "Nonexistent".to_string(),
+            content: String::new(),
+            level: 1,
+        }];
 
         let map = build_section_map(text, &sections);
         assert!(map.is_empty(), "Should not find nonexistent section title");

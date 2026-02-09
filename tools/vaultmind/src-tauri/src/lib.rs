@@ -41,8 +41,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
 
-            let db_pool = db::create_pool(&app_data_dir)
-                .expect("Failed to create database pool");
+            let db_pool = db::create_pool(&app_data_dir).expect("Failed to create database pool");
 
             app.manage(AppState {
                 db_pool: db_pool.clone(),
@@ -52,7 +51,9 @@ pub fn run() {
 
             // Build HNSW indices for all collections
             {
-                let conn = db_pool.get().expect("Failed to get connection for index build");
+                let conn = db_pool
+                    .get()
+                    .expect("Failed to get connection for index build");
                 let mut stmt = conn
                     .prepare("SELECT id FROM collections")
                     .expect("Failed to prepare collections query");
@@ -72,7 +73,10 @@ pub fn run() {
                         tracing::warn!("Failed to build index for collection {}: {}", cid, e);
                     }
                 }
-                tracing::info!("Built HNSW indices for {} collections", collection_ids.len());
+                tracing::info!(
+                    "Built HNSW indices for {} collections",
+                    collection_ids.len()
+                );
             }
 
             Ok(())
