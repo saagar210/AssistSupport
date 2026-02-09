@@ -1,8 +1,11 @@
 pub mod audit;
 pub mod chat;
 pub mod collections;
+pub mod crypto;
 pub mod documents;
+pub mod gdpr;
 pub mod graph;
+pub mod integrity;
 pub mod ner;
 pub mod ollama;
 pub mod search;

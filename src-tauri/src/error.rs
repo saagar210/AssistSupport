@@ -22,6 +22,9 @@ pub enum AppError {
 
     #[error("Lock failed: {0}")]
     LockFailed(String),
+
+    #[error("Crypto error: {0}")]
+    Crypto(String),
 }
 
 impl Serialize for AppError {

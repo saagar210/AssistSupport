@@ -77,8 +77,54 @@ fn migrate_v5(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Migration v6: Add GDPR data lifecycle tables (retention policies, consent records).
+fn migrate_v6(conn: &Connection) -> Result<(), AppError> {
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS data_retention_policies (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            retention_days INTEGER NOT NULL,
+            auto_delete INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS consent_records (
+            id TEXT PRIMARY KEY,
+            consent_type TEXT NOT NULL,
+            granted INTEGER NOT NULL,
+            granted_at TEXT NOT NULL,
+            revoked_at TEXT
+        );",
+    )?;
+
+    // Seed default retention policies
+    let now = chrono::Utc::now().to_rfc3339();
+    let policies = [
+        ("search_history", 90, 1),
+        ("audit_log", 365, 0),
+        ("conversation", 0, 0),
+        ("document", 0, 0),
+    ];
+    for (entity_type, retention_days, auto_delete) in &policies {
+        let id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT OR IGNORE INTO data_retention_policies (id, entity_type, retention_days, auto_delete, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, entity_type, retention_days, auto_delete, now, now],
+        )?;
+    }
+
+    set_schema_version(&tx, 6)?;
+    tx.commit()?;
+    tracing::info!("Migration v6 applied (GDPR data retention policies, consent records)");
+    Ok(())
+}
+
 #[cfg(test)]
-const CURRENT_VERSION: i64 = 5;
+const CURRENT_VERSION: i64 = 6;
 
 /// Run all pending migrations. Called after initial schema creation.
 pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
@@ -98,6 +144,9 @@ pub fn run_pending(conn: &Connection) -> Result<(), AppError> {
     }
     if version < 5 {
         migrate_v5(conn)?;
+    }
+    if version < 6 {
+        migrate_v6(conn)?;
     }
 
     Ok(())
@@ -324,6 +373,51 @@ mod tests {
             .prepare("SELECT hop_distance FROM citations LIMIT 0")
             .is_ok();
         assert!(has_hop_distance, "citations.hop_distance column should exist after migration v5");
+    }
+
+    #[test]
+    fn test_migration_v6_creates_gdpr_tables() {
+        let conn = setup_db();
+        let version = get_schema_version(&conn).unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+
+        // data_retention_policies table should exist
+        let policies_exist: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='data_retention_policies'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(policies_exist, "data_retention_policies table should exist after migration v6");
+
+        // consent_records table should exist
+        let consent_exist: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='consent_records'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(consent_exist, "consent_records table should exist after migration v6");
+
+        // Verify default retention policies were seeded
+        let policy_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM data_retention_policies", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(policy_count, 4, "Should have 4 default retention policies");
+
+        // Verify search_history policy has 90 days retention
+        let search_days: i64 = conn
+            .query_row(
+                "SELECT retention_days FROM data_retention_policies WHERE entity_type = 'search_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(search_days, 90);
     }
 
     #[test]

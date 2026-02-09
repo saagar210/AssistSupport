@@ -1,10 +1,13 @@
 mod audit;
 mod chunker;
 mod commands;
+mod crypto;
 mod db;
 mod embedder;
 mod error;
+mod gdpr;
 mod graph;
+mod integrity;
 mod metrics;
 mod migrations;
 mod model_registry;
@@ -132,6 +135,24 @@ pub fn run() {
             // Audit commands
             commands::audit::get_audit_log,
             commands::audit::export_audit_log,
+            // Crypto commands
+            commands::crypto::get_encryption_status,
+            commands::crypto::initialize_encryption,
+            commands::crypto::rotate_encryption_key,
+            commands::crypto::check_secure_delete,
+            // GDPR commands
+            commands::gdpr::export_user_data,
+            commands::gdpr::erase_document_data,
+            commands::gdpr::erase_collection_data,
+            commands::gdpr::erase_all_user_data,
+            commands::gdpr::get_retention_policies,
+            commands::gdpr::update_retention_policy,
+            commands::gdpr::run_retention_cleanup,
+            commands::gdpr::record_consent,
+            commands::gdpr::get_consent_records,
+            // Integrity commands
+            commands::integrity::check_db_integrity,
+            commands::integrity::get_db_stats,
             // NER commands
             commands::ner::extract_document_entities,
             commands::ner::list_entities,

@@ -19,6 +19,9 @@ pub enum AuditAction {
     SearchExecute,
     SettingUpdate,
     GraphBuild,
+    DataExport,
+    DataErase,
+    RetentionEnforce,
 }
 
 impl AuditAction {
@@ -37,6 +40,9 @@ impl AuditAction {
             AuditAction::SearchExecute => "search.execute",
             AuditAction::SettingUpdate => "setting.update",
             AuditAction::GraphBuild => "graph.build",
+            AuditAction::DataExport => "data.export",
+            AuditAction::DataErase => "data.erase",
+            AuditAction::RetentionEnforce => "retention.enforce",
         }
     }
 }
