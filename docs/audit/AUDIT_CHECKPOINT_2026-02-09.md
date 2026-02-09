@@ -7,6 +7,14 @@ Remote: `origin` (GitHub)
 
 This file is a hard checkpoint so we can resume the security/compliance audit without losing context.
 
+## Status Update (2026-02-09)
+
+Phase 1 report artifact is now written at:
+
+- `/Users/saagarpatel/AssistSupport/docs/audit/SECURITY_COMPLIANCE_AUDIT_REPORT_2026-02-09.md`
+
+High-severity Pilot items have been addressed in the working tree (AUD-001, AUD-002). Remaining open items are AUD-003 and AUD-004.
+
 ## Where We Stopped
 
 - Phase 0 (Baseline + Repo Map): completed (all required gates were green at time of work).
@@ -76,6 +84,8 @@ These commits are already on `master`:
   - `pnpm run check:monorepo-readiness:full`
   - Add Rust tests covering gating + redaction/validation.
 
+Status: addressed in working tree (default-off gate + pseudonymous operator ID + redaction/truncation + retention caps). See `/Users/saagarpatel/AssistSupport/docs/audit/SECURITY_COMPLIANCE_AUDIT_REPORT_2026-02-09.md`.
+
 ### AUD-002
 - Severity: **High**
 - Category: **Security**
@@ -95,6 +105,8 @@ These commits are already on `master`:
   - Add unit tests ensuring unsafe paths are rejected.
   - Run `pnpm run test:ci` and `pnpm run check:monorepo-readiness:full`.
 
+Status: addressed in working tree (export path validation using `validate_output_file_within_home` + `.csv` enforcement). See `/Users/saagarpatel/AssistSupport/docs/audit/SECURITY_COMPLIANCE_AUDIT_REPORT_2026-02-09.md`.
+
 ### AUD-003
 - Severity: **Medium** (can be **High** if we claim strict minimization)
 - Category: **Compliance**, **Assumptions**
@@ -110,6 +122,8 @@ These commits are already on `master`:
   - Make query_text storage opt-in (default off), or store only a hash + metadata (counts/timing) in production.
   - Add tests to prove no raw query is stored when disabled.
 
+Status: addressed in working tree (query_text stored as `sha256:<hex>` by default; opt-in via `ASSISTSUPPORT_SEARCH_API_STORE_RAW_QUERY_TEXT=1`). See `/Users/saagarpatel/AssistSupport/docs/audit/SECURITY_COMPLIANCE_AUDIT_REPORT_2026-02-09.md`.
+
 ### AUD-004
 - Severity: **Medium**
 - Category: **Defaults**, **Compliance**
@@ -121,6 +135,8 @@ These commits are already on `master`:
   - `cargo audit` may report GTK/WebKitGTK advisories on non-macOS platforms; if AssistSupport is macOS-only, we should fail closed on unsupported platforms in CI/build unless explicitly overridden.
 - Fix (planned):
   - Add an AssistSupport platform-scope enforcement script (similar to the VaultMind approach) and wire it into monorepo readiness.
+
+Status: addressed in working tree (platform-scope guardrail added and wired into readiness). See `/Users/saagarpatel/AssistSupport/docs/audit/SECURITY_COMPLIANCE_AUDIT_REPORT_2026-02-09.md`.
 
 ## Next Fix Batch Plan (Phase 2)
 
@@ -141,4 +157,3 @@ Batch D (Platform-scope enforcement):
 ## Local Git Remotes Present (FYI)
 
 `origin` is GitHub. There are local remotes named `memorykernel` and `vaultmind` pointing at local filesystem repos; do not assume those are pushed unless explicitly done.
-
