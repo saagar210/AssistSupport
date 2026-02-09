@@ -87,3 +87,48 @@
   gap: var(--space-2);
 }
 
+/* Revamp shell coherence: when mounted inside `.app-shell-revamp`, prefer revamp tokens
+   for spacing/radii/surfaces so the rail reads like one system. */
+.app-shell-revamp .workspace-queue-context {
+  border-color: var(--as-border-1);
+  border-radius: var(--as-radius-2);
+  background: linear-gradient(180deg, var(--as-glass-2), var(--as-glass-1));
+  padding: var(--as-space-4);
+}
+
+.app-shell-revamp .workspace-queue-context__header h2 {
+  font-size: var(--as-font-size-2);
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .workspace-queue-context__stats {
+  gap: var(--as-space-2);
+}
+
+.app-shell-revamp .workspace-queue-context__stats div {
+  border-color: var(--as-border-1);
+  border-radius: var(--as-radius-2);
+  background: var(--as-glass-1);
+  padding: var(--as-space-3);
+}
+
+.app-shell-revamp .workspace-queue-context__stats span {
+  color: var(--as-text-3);
+}
+
+.app-shell-revamp .workspace-queue-context__stats strong {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .workspace-queue-context__risk h3 {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .workspace-queue-context__risk ul {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .workspace-queue-context__hint,
+.app-shell-revamp .workspace-queue-context__footer {
+  color: var(--as-text-3);
+}

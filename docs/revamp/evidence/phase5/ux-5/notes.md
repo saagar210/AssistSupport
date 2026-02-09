@@ -57,3 +57,9 @@
 ## Slice: Queue Command Center Clarity Polish
 - Added explicit “queue unavailable” state with a retry action when draft loading fails (still local-only; no new network surfaces).
 - Improved list accessibility and operator flow: listbox semantics, active descendant tracking, and click-to-select without changing keyboard triage behavior.
+
+## Slice: Workspace Queue Context Revamp Coherence
+- Added `.app-shell-revamp`-scoped styling for `WorkspaceQueueContext` so it reads like a first-class part of the revamp shell rail:
+  - surfaces/radii/borders use `--as-*` tokens
+  - typography uses `--as-font-size-*` and `--as-text-*`
+- No behavior changes: this is styling only, scoped to the revamp shell.
