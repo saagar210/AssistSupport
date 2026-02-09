@@ -1,16 +1,17 @@
 # AssistSupport Runtime GO/NO-GO Decision Record
 
-Status: Final  
-Date: 2026-02-08
+Status: Current  
+Date: 2026-02-09
 
 ## Decision Context
-1. Gate G7 and G8 closeout for AssistSupport + MemoryKernel bilateral integration.
-2. Current runtime baseline is pinned to:
-   1. `release_tag`: `v0.4.0`
-   2. `commit_sha`: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-   3. `service_contract_version`: `service.v3`
+1. Runtime cutover remains independently governed from UX revamp and must follow bilateral decision records.
+2. Current runtime baseline remains pinned to:
+   1. `release_tag`: `v0.3.2`
+   2. `commit_sha`: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+   3. `service_contract_version`: `service.v2`
    4. `api_contract_version`: `api.v1`
    5. `integration_baseline`: `integration/v1`
+3. Candidate (`service.v3`) rehearsal artifacts exist, but do not imply runtime cutover.
 
 ## Inputs Reviewed
 1. AssistSupport:
@@ -29,12 +30,15 @@ Date: 2026-02-08
 
 ## Final Decision
 1. Rehearsal continuation: GO.
-2. Runtime cutover posture: GO (already executed and stabilized on `service.v3` baseline).
+2. Runtime cutover posture: NO-GO (runtime baseline remains `service.v2` until explicit joint approval).
 
 ## Blockers
-1. None.
+1. Immutable runtime release tag+SHA not yet published/approved for cutover execution.
+2. Bilateral runtime go/no-go record not completed (explicit NO-GO currently stands).
 
 ## Signoff
 1. AssistSupport Program Owner: Approved
 2. MemoryKernel Program Owner: Approved
-3. Final Verdict: GO
+3. Final Verdict:
+   - Rehearsal continuation: GO
+   - Runtime cutover execution: NO-GO

@@ -88,3 +88,28 @@ test('@smoke draft handoff enforces copy override when citations missing', async
   await page.getByRole('button', { name: 'Copy with override' }).click();
   await expect(page.getByText('Response copied (override logged)')).toBeVisible();
 });
+
+test('@smoke draft handoff allows copy when citations are present', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+  await page.goto('/');
+
+  const input = page.getByPlaceholder('Paste ticket content or describe the issue...');
+  await input.fill('Test response with citations [e2e-citations-ok]');
+
+  await page.getByRole('button', { name: 'Generate Full Response' }).click();
+  await expect(
+    page.getByText(/Per Remote Work Policy, use the approved VPN and complete MFA/i),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Hide Sources|Sources \\(1\\)/i })).toBeVisible();
+
+  const responseActions = page.locator('.response-actions');
+  const copyButton = responseActions.getByRole('button', { name: 'Copy' });
+  await copyButton.click();
+
+  // No override dialog should appear when citations exist and confidence is "answer".
+  await expect(page.getByRole('dialog', { name: 'Copy override' })).toHaveCount(0);
+
+  // Successful copy updates the button label briefly.
+  await expect(responseActions.getByRole('button', { name: 'Copied!' })).toBeVisible();
+});

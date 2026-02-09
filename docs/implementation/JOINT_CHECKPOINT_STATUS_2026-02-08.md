@@ -1,11 +1,11 @@
 # Joint Checkpoint Status: AssistSupport + MemoryKernel
 
-Updated: 2026-02-08 (runtime cutover complete; stabilization closed; hardening extension complete)
+Updated: 2026-02-09 (runtime cutover remains NO-GO; rehearsal continues)
 
 ## Baseline
-- MemoryKernel release tag: `v0.4.0`
-- MemoryKernel commit: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
+- MemoryKernel release tag: `v0.3.2`
+- MemoryKernel commit: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
 
 ## Checkpoint Results
 - Checkpoint A (manifest mirrored + governance checks): `GO`
@@ -13,9 +13,7 @@ Updated: 2026-02-08 (runtime cutover complete; stabilization closed; hardening e
 - Checkpoint C (steady-state service.v2 window): `GO`
 - Checkpoint D (service.v3 RFC kickoff): `GO`
 - Rehearsal continuation decision: `GO`
-- Runtime cutover decision: `GO`
-- Week 1 stabilization checkpoint: `GO`
-- Workstation transfer readiness checkpoint: `GO`
+- Runtime cutover decision: `NO-GO`
 - Bilateral sign-off status: `CLOSED`
 
 ## Locked Decisions
@@ -24,17 +22,15 @@ Updated: 2026-02-08 (runtime cutover complete; stabilization closed; hardening e
 3. Pin + matrix + mirrored producer manifest update atomically in one PR.
 
 ## Current State
-- Runtime baseline is `service.v3`.
+- Runtime baseline remains `service.v2`.
 - AssistSupport fallback behavior remains deterministic and non-blocking.
-- Stabilization window is complete and closed with no regressions.
-- Post-cutover hardening extension is complete with monorepo readiness gates fully green:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/POST_CUTOVER_HARDENING_EXTENSION_2026-02-08.md`
+- Candidate (`service.v3`) artifacts remain in rehearsal/candidate mode only.
 
 ## Canonical Runtime Closure Artifacts
-- Consumer closure:
-  - `/Users/d/Projects/AssistSupport/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_2026-02-08.md`
-- Producer closure:
-  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_RUNTIME_CUTOVER_CLOSURE_PRODUCER_2026-02-08.md`
+- Consumer posture record:
+  - `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md`
+- Producer decision addendum:
+  - `/Users/d/Projects/MemoryKernel/docs/implementation/JOINT_DECISION_STATUS_ADDENDUM_2026-02-08.md`
 
 ## Historical Note
-Pre-cutover NO-GO rehearsal packets are retained for audit history and are superseded by the runtime closure artifacts listed above.
+Pre-cutover NO-GO rehearsal packets are retained for audit history; runtime cutover remains NO-GO until explicit joint approval.

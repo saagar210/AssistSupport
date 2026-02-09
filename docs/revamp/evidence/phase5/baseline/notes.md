@@ -11,14 +11,20 @@ Purpose: Establish a pre-revamp reference point for Phase 5 rollout evidence.
 
 ## How To Reproduce Locally
 
-1. Run smoke E2E:
+1. Capture baseline screenshots:
 
 ```bash
 cd /Users/d/Projects/AssistSupport
+pnpm run evidence:phase5:screenshots
+```
+
+2. Run smoke E2E:
+
+```bash
 pnpm run test:e2e:smoke
 ```
 
-2. Validate core checks:
+3. Validate core checks:
 
 ```bash
 pnpm run typecheck
@@ -30,4 +36,4 @@ pnpm run test:ci
 
 - Phase 5 revamp work is feature-flagged and can be enabled via `VITE_ASSISTSUPPORT_REVAMP_APP_SHELL=1`.
 - Network ingestion and admin tabs remain policy-gated and disabled by default.
-
+- Screenshots are stored under `docs/revamp/evidence/phase5/baseline/screenshots/`.

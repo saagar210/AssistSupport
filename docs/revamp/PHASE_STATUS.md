@@ -1,7 +1,7 @@
 # Revamp Phase Status
 
 Status: Active  
-Date: 2026-02-08
+Date: 2026-02-09
 
 | Phase | Status | Evidence | Notes |
 |---|---|---|---|
@@ -17,4 +17,7 @@ Date: 2026-02-08
 
 ## Runtime Posture
 1. Rehearsal continuation: GO
-2. Runtime cutover posture: GO (`service.v3` baseline active and stabilized).
+2. Runtime cutover posture: NO-GO (runtime baseline remains pinned to `v0.3.2` / `service.v2`).
+
+Notes:
+- `service.v3` (`v0.4.0`) artifacts are available for rehearsal/candidate validation, but are not the active runtime baseline.

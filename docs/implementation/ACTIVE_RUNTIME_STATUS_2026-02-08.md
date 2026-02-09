@@ -1,21 +1,21 @@
 # Active Runtime Status (Authoritative)
 
-Updated: 2026-02-08
+Updated: 2026-02-09
 Owner: AssistSupport
 
 This document is the authoritative consumer-side status for current MemoryKernel runtime integration.
 
 ## Active Baseline
-- MemoryKernel release tag: `v0.4.0`
-- MemoryKernel commit SHA: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
+- MemoryKernel release tag: `v0.3.2`
+- MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
 - Consumer pin file: `/Users/d/Projects/AssistSupport/config/memorykernel-integration-pin.json`
 - Producer manifest mirror: `/Users/d/Projects/AssistSupport/config/memorykernel-producer-manifest.json`
 
 ## Runtime Posture
 - Rehearsal posture: **GO**
-- Runtime cutover posture: **GO**
-- Operational posture: **STEADY-STATE GO**
+- Runtime cutover posture: **NO-GO**
+- Operational posture: **STEADY-STATE (service.v2)**
 
 ## Source-of-Truth and Boundary Rule
 - Canonical producer runtime/service contract source of truth: `/Users/d/Projects/MemoryKernel` on `main`.

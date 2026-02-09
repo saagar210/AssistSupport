@@ -1,12 +1,12 @@
 # Service.v3 Cutover Decision Checkpoint (Consumer)
 
-Updated: 2026-02-08 (runtime cutover completed)  
+Updated: 2026-02-09 (runtime cutover remains NO-GO; rehearsal may continue)  
 Owner: AssistSupport (joint decision with MemoryKernel)
 
-## Baseline (Current)
-- release_tag: `v0.4.0`
-- commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-- service_contract_version: `service.v3`
+## Baseline (Current Runtime)
+- release_tag: `v0.3.2`
+- commit_sha: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- service_contract_version: `service.v2`
 - api_contract_version: `api.v1`
 - integration baseline: `integration/v1`
 
@@ -36,7 +36,7 @@ Any one of the following remains an automatic NO-GO:
 
 ## Decision Log (Current Session)
 - Checkpoint date: 2026-02-08
-- Producer runtime target reviewed: `v0.4.0` / `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
+- Producer runtime target reviewed (candidate only): `v0.4.0` / `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
 - Commands executed + result summary:
   - `pnpm run check:memorykernel-handoff` PASS
   - `pnpm run check:memorykernel-pin` PASS
@@ -46,7 +46,7 @@ Any one of the following remains an automatic NO-GO:
 - Governance gate verdict: GO
 - Rollback gate verdict: GO
 - Rehearsal posture: GO
-- Runtime cutover decision: GO
+- Runtime cutover decision: NO-GO
 
 ## Final Decision Record (Bilateral)
 - Decision artifact:
@@ -67,7 +67,7 @@ Any one of the following remains an automatic NO-GO:
 Signature status: **COMPLETE (bilateral)**.
 
 ## Current Policy Confirmation
-1. Runtime cutover is approved and executed for `service.v3` baseline.
+1. Runtime cutover remains NO-GO; runtime baseline remains `service.v2`.
 2. Enrichment remains optional and non-blocking.
 3. Deterministic fallback remains preserved.
 4. Adapter boundary remains unchanged (no direct MemoryKernel calls outside boundary).

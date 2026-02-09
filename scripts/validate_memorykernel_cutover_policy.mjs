@@ -114,38 +114,44 @@ function validateHandoff(pin) {
   }
 
   const handoff = parseJson(handoffPath);
-  if (handoff.release_tag !== pin.release_tag) {
-    fail(`handoff release_tag mismatch; expected ${pin.release_tag}, got ${handoff.release_tag}`);
-  }
-  if (handoff.commit_sha !== pin.commit_sha) {
-    fail(`handoff commit_sha mismatch; expected ${pin.commit_sha}, got ${handoff.commit_sha}`);
-  }
-  if (handoff.expected_api_contract_version !== pin.expected_api_contract_version) {
-    fail(
-      `handoff expected_api_contract_version mismatch; expected ${pin.expected_api_contract_version}, got ${handoff.expected_api_contract_version}`
-    );
-  }
-
   if (handoff.handoff_mode === 'service-v3-candidate') {
     if (handoff.expected_service_contract_version !== 'service.v3') {
       fail(
         `candidate handoff expected_service_contract_version must be service.v3, got ${handoff.expected_service_contract_version}`
       );
     }
+
+    if (handoff.expected_api_contract_version !== pin.expected_api_contract_version) {
+      fail(
+        `candidate handoff expected_api_contract_version mismatch; expected ${pin.expected_api_contract_version}, got ${handoff.expected_api_contract_version}`
+      );
+    }
+
     if (!handoff.active_runtime_baseline || typeof handoff.active_runtime_baseline !== 'object') {
       fail('candidate handoff must include active_runtime_baseline object');
     }
-    if (
-      handoff.active_runtime_baseline.expected_service_contract_version !==
-      pin.expected_service_contract_version
-    ) {
+
+    const baseline = handoff.active_runtime_baseline;
+    if (baseline.release_tag !== pin.release_tag) {
+      fail(
+        `candidate handoff active_runtime_baseline.release_tag mismatch; expected ${pin.release_tag}, got ${baseline.release_tag}`
+      );
+    }
+    if (baseline.commit_sha !== pin.commit_sha) {
+      fail(
+        `candidate handoff active_runtime_baseline.commit_sha mismatch; expected ${pin.commit_sha}, got ${baseline.commit_sha}`
+      );
+    }
+    if (baseline.expected_service_contract_version !== pin.expected_service_contract_version) {
       fail(
         'candidate handoff active_runtime_baseline.expected_service_contract_version must match current pin'
       );
     }
+
     if (handoff.rehearsal_candidate?.requires_runtime_cutover !== false) {
       fail('candidate handoff must set rehearsal_candidate.requires_runtime_cutover=false');
     }
+
     assertArrayContainsAll(
       handoff.required_consumer_validation_commands,
       [
@@ -163,10 +169,39 @@ function validateHandoff(pin) {
     fail(`unsupported handoff_mode: ${handoff.handoff_mode}`);
   }
 
+  if (handoff.release_tag !== pin.release_tag) {
+    fail(`handoff release_tag mismatch; expected ${pin.release_tag}, got ${handoff.release_tag}`);
+  }
+  if (handoff.commit_sha !== pin.commit_sha) {
+    fail(`handoff commit_sha mismatch; expected ${pin.commit_sha}, got ${handoff.commit_sha}`);
+  }
   if (handoff.expected_service_contract_version !== pin.expected_service_contract_version) {
     fail(
       `stable handoff expected_service_contract_version mismatch; expected ${pin.expected_service_contract_version}, got ${handoff.expected_service_contract_version}`
     );
+  }
+  if (handoff.expected_api_contract_version !== pin.expected_api_contract_version) {
+    fail(
+      `stable handoff expected_api_contract_version mismatch; expected ${pin.expected_api_contract_version}, got ${handoff.expected_api_contract_version}`
+    );
+  }
+
+  if (pin.expected_service_contract_version === 'service.v2') {
+    const stablePolicy = handoff.non_2xx_envelope_policy?.service_v2_stable;
+    if (!stablePolicy || typeof stablePolicy !== 'object') {
+      fail('stable handoff must include non_2xx_envelope_policy.service_v2_stable');
+    }
+    assertArrayContainsAll(
+      stablePolicy.requires || [],
+      ['service_contract_version', 'error.code', 'error.message', 'legacy_error'],
+      'non_2xx_envelope_policy.service_v2_stable.requires'
+    );
+    assertArrayContainsAll(
+      stablePolicy.forbids || [],
+      ['api_contract_version'],
+      'non_2xx_envelope_policy.service_v2_stable.forbids'
+    );
+    return;
   }
 
   const stablePolicy = handoff.non_2xx_envelope_policy?.service_v3_stable;
@@ -174,12 +209,12 @@ function validateHandoff(pin) {
     fail('stable handoff must include non_2xx_envelope_policy.service_v3_stable');
   }
   assertArrayContainsAll(
-    stablePolicy.requires,
+    stablePolicy.requires || [],
     ['service_contract_version', 'error.code', 'error.message'],
     'non_2xx_envelope_policy.service_v3_stable.requires'
   );
   assertArrayContainsAll(
-    stablePolicy.forbids,
+    stablePolicy.forbids || [],
     ['legacy_error', 'api_contract_version'],
     'non_2xx_envelope_policy.service_v3_stable.forbids'
   );

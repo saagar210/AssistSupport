@@ -1,7 +1,9 @@
 # Phase 5 UX-6 Verification
 
+- pnpm run check:revamp-style: PASS
 - pnpm run typecheck: PASS
 - pnpm run test: PASS (Vitest: 130 tests)
 - pnpm run test:ci: PASS (Vitest + cargo test: 289 tests)
-- pnpm run test:e2e:smoke: PASS (Playwright: 6 tests)
-- pnpm run test:e2e:revamp: PASS (Playwright: 2 tests)
+- pnpm run test:e2e:smoke: PASS (Playwright: 8 tests)
+- pnpm run test:e2e:revamp: PASS (Playwright: 4 tests)
+- pnpm run evidence:phase5:screenshots: PASS (Playwright: 2 tests)

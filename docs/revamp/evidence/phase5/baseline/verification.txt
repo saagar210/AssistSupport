@@ -1,0 +1,11 @@
+# Phase 5 Baseline Verification
+#
+# This file captures the command-backed evidence that the baseline snapshot is reproducible and that
+# Phase 5 rollout can be compared against a known-good pre-revamp UI state.
+
+- pnpm run check:revamp-style: PASS
+- pnpm run typecheck: PASS
+- pnpm run test: PASS (Vitest: 130 tests)
+- pnpm run test:ci: PASS (Vitest + cargo test: 289 Rust tests)
+- pnpm run test:e2e:smoke: PASS (Playwright: 8 tests)
+- pnpm run evidence:phase5:screenshots: PASS (Playwright: 2 tests)

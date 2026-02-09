@@ -1,16 +1,16 @@
 # Joint Runtime Cutover Gate Review
 
-Updated: 2026-02-08
-Scope: Final gate review for Phase 8 runtime cutover.
+Updated: 2026-02-09
+Scope: Final gate review for Phase 8 runtime cutover (current posture: NO-GO).
 
 ## Baseline
-- release_tag: `v0.4.0`
-- commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-- service/api/integration: `service.v3` / `api.v1` / `integration/v1`
+- release_tag: `v0.3.2`
+- commit_sha: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- service/api/integration: `service.v2` / `api.v1` / `integration/v1`
 
 ## Gate Decisions
 1. Rehearsal posture: **GO**
-2. Runtime cutover: **GO**
+2. Runtime cutover: **NO-GO**
 3. Rollback readiness: **GO**
 4. Governance alignment: **GO**
 
@@ -19,5 +19,5 @@ Scope: Final gate review for Phase 8 runtime cutover.
 - `/Users/d/Projects/MemoryKernel/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_PRODUCER_2026-02-08.md`
 
 ## Closure
-- Gate review status: **CLOSED**
-- Next phase: **Post-cutover stabilization window**
+- Gate review status: **OPEN** (runtime cutover not approved/executed)
+- Next phase: **Continue rehearsal + maintain stable baseline**

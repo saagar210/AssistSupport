@@ -12,3 +12,8 @@
 - No runtime behavior changes.
 - No workflow changes.
 - No security/policy changes.
+
+## Evidence
+- Screenshots: `docs/revamp/evidence/phase5/ux-6/screenshots/`
+- Reproduce:
+  - `pnpm run evidence:phase5:screenshots`

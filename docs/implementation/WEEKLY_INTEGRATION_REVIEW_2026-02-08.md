@@ -1,16 +1,16 @@
 # Weekly Integration Review
 
-Updated: 2026-02-08
-Review Type: Runtime cutover completion checkpoint  
+Updated: 2026-02-09
+Review Type: Runtime posture checkpoint  
 Date: 2026-02-08
 
 ## Baseline
-- MemoryKernel release tag: `v0.4.0`
-- MemoryKernel commit SHA: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
-- Service/API/baseline: `service.v3` / `api.v1` / `integration/v1`
+- MemoryKernel release tag: `v0.3.2`
+- MemoryKernel commit SHA: `cf331449e1589581a5dcbb3adecd3e9ae4509277`
+- Service/API/baseline: `service.v2` / `api.v1` / `integration/v1`
 
 ## Outcomes
-1. Runtime cutover to `service.v3` is complete.
+1. Runtime cutover to `service.v3` remains **NO-GO** (rehearsal only).
 2. Consumer contract/governance suites are green.
 3. Deterministic fallback remains preserved.
 
@@ -21,5 +21,5 @@ Date: 2026-02-08
 - `pnpm run test:ci` PASS
 
 ## Decision
-- Runtime posture: GO
-- Follow-up mode: steady-state monitoring + normal release cadence
+- Runtime posture: NO-GO (cutover not executed)
+- Follow-up mode: rehearsal continuation + stable baseline monitoring
