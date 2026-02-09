@@ -221,10 +221,6 @@ export function setupE2eTauriMock(): void {
         case 'generate_kb_embeddings':
         case 'log_analytics_event':
           return null;
-        case 'create_session_token':
-          return 'mock-session-token';
-        case 'validate_session_token':
-          return true;
         case 'get_model_state':
           return {
             llm_model_id: null,

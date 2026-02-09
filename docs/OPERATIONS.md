@@ -184,8 +184,9 @@ Notes:
 - Verify audit entries are written for token set/clear actions.
 
 ### Session controls
-- Validate session token creation and invalidation paths.
-- Trigger lock flow (`lock_app`) and confirm unlock behavior.
+- There is no in-app session token or “lock/unlock” feature. This is intentional: the product trust boundary is the **local, single-user workstation**.
+- Use OS-level controls (screen lock, device encryption, user account separation) to protect data at rest and in use.
+- If you need “lock now” behavior for compliance reasons, treat it as a **Phase 2 security feature request** and implement it as a real control (not localStorage tokens).
 
 ### Security checks
 ```bash

@@ -24,7 +24,6 @@ import type {
   IntegrationConfigRecord,
   MemoryKernelPreflightStatus,
   ModelInfo,
-  StartupMetricsResult,
 } from '../../types';
 import './SettingsTab.css';
 
@@ -167,9 +166,7 @@ export function SettingsTab() {
   const [auditSearchQuery, setAuditSearchQuery] = useState('');
   const [auditPage, setAuditPage] = useState(1);
 
-  // Startup metrics and session state
-  const [startupMetrics, setStartupMetrics] = useState<StartupMetricsResult | null>(null);
-  const [lockingApp, setLockingApp] = useState(false);
+  // Deployment and integration state
   const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealthSummary | null>(null);
   const [deployPreflightChecks, setDeployPreflightChecks] = useState<string[]>([]);
   const [deployPreflightRunning, setDeployPreflightRunning] = useState(false);
@@ -251,9 +248,6 @@ export function SettingsTab() {
     Promise.resolve(loadInitialState()).catch(err => console.error('Settings init failed:', err));
     Promise.resolve(loadVariables()).catch(err => console.error('Variables load failed:', err));
     Promise.resolve(loadAuditEntries()).catch(err => console.error('Audit load failed:', err));
-    invoke<StartupMetricsResult>('get_startup_metrics')
-      .then(m => setStartupMetrics(m))
-      .catch(() => {});
   }, [loadVariables, loadAuditEntries]);
 
   async function loadInitialState() {
@@ -1778,41 +1772,6 @@ export function SettingsTab() {
             </Button>
           </div>
         </div>
-      </section>
-
-      <section className="settings-section">
-        <h2>Security &amp; Session</h2>
-        <p className="settings-description">
-          Your session auto-unlocks for 24 hours. Lock the app to require re-authentication.
-        </p>
-        <div className="settings-row">
-          <Button
-            variant="secondary"
-            size="small"
-            disabled={lockingApp}
-            onClick={async () => {
-              setLockingApp(true);
-              try {
-                await invoke('lock_app');
-                localStorage.removeItem('assistsupport_session_token');
-                showSuccess('App locked. You will need to re-authenticate on next launch.');
-              } catch (e) {
-                showError(`Failed to lock app: ${e}`);
-              } finally {
-                setLockingApp(false);
-              }
-            }}
-          >
-            {lockingApp ? 'Locking...' : 'Lock App (Require Password)'}
-          </Button>
-        </div>
-        {startupMetrics && (
-          <div className="startup-metrics">
-            <p className="text-sm text-secondary">
-              Last startup: {startupMetrics.init_app_ms}ms
-            </p>
-          </div>
-        )}
       </section>
 
       <section className="settings-section">

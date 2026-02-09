@@ -15,8 +15,13 @@ export interface AppInitState {
 // Timeout for optional initialization operations (5 seconds)
 const INIT_TIMEOUT = 5000;
 
-// Session token key in localStorage
-const SESSION_TOKEN_KEY = 'assistsupport_session_token';
+const IS_DEV = Boolean(import.meta.env?.DEV);
+
+function logNonFatal(message: string, error: unknown) {
+  if (!IS_DEV) return;
+  // eslint-disable-next-line no-console
+  console.warn(message, error);
+}
 
 // Helper to create a timeout promise
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -67,16 +72,14 @@ export function useInitialize() {
         if (modelState.llm_model_id && !modelState.llm_loaded) {
           autoLoadPromises.push(
             invoke('load_model', { modelId: modelState.llm_model_id })
-              .then(() => console.log('Auto-loaded LLM model:', modelState.llm_model_id))
-              .catch(e => console.warn('Auto-load LLM failed (non-fatal):', e))
+              .catch(e => logNonFatal('Auto-load LLM failed (non-fatal):', e))
           );
         }
 
         if (modelState.embeddings_model_path && !modelState.embeddings_loaded) {
           autoLoadPromises.push(
             invoke('load_embedding_model', { path: modelState.embeddings_model_path })
-              .then(() => console.log('Auto-loaded embedding model'))
-              .catch(e => console.warn('Auto-load embeddings failed (non-fatal):', e))
+              .catch(e => logNonFatal('Auto-load embeddings failed (non-fatal):', e))
           );
         }
 
@@ -85,11 +88,11 @@ export function useInitialize() {
         }
       } catch (e) {
         // Non-fatal - user can load models manually
-        console.warn('Model auto-load check failed:', e);
+        logNonFatal('Model auto-load check failed:', e);
       }
     } catch (e) {
       // Non-fatal - engines will init on first use
-      console.warn('Background engine init completed with warnings:', e);
+      logNonFatal('Background engine init completed with warnings:', e);
       setState(prev => ({ ...prev, enginesReady: true }));
     }
   }, []);
@@ -104,7 +107,7 @@ export function useInitialize() {
       );
       setState(prev => ({ ...prev, memoryKernelPreflight: status }));
     } catch (e) {
-      console.warn('MemoryKernel preflight failed (enrichment disabled):', e);
+      logNonFatal('MemoryKernel preflight failed (enrichment disabled):', e);
       setState(prev => ({ ...prev, memoryKernelPreflight: null }));
     }
   }, []);
@@ -126,27 +129,8 @@ export function useInitialize() {
         try {
           consent = await invoke<VectorConsent>('get_vector_consent');
         } catch (e) {
-          console.warn('Vector consent check failed (using defaults):', e);
+          logNonFatal('Vector consent check failed (using defaults):', e);
           consent = { enabled: false, consented_at: null, encryption_supported: false };
-        }
-
-        // Create or validate session token for auto-unlock
-        try {
-          const savedToken = localStorage.getItem(SESSION_TOKEN_KEY);
-          if (savedToken) {
-            const isValid = await invoke<boolean>('validate_session_token', { sessionId: savedToken });
-            if (!isValid) {
-              localStorage.removeItem(SESSION_TOKEN_KEY);
-              const newToken = await invoke<string>('create_session_token');
-              localStorage.setItem(SESSION_TOKEN_KEY, newToken);
-            }
-          } else {
-            const newToken = await invoke<string>('create_session_token');
-            localStorage.setItem(SESSION_TOKEN_KEY, newToken);
-          }
-        } catch (e) {
-          // Session token is a convenience feature, don't block on failure
-          console.warn('Session token setup failed (non-fatal):', e);
         }
 
         // Mark as initialized - UI can render now
@@ -169,7 +153,10 @@ export function useInitialize() {
         initEnginesInBackground();
 
       } catch (e) {
-        console.error('Critical initialization failed:', e);
+        if (IS_DEV) {
+          // eslint-disable-next-line no-console
+          console.error('Critical initialization failed:', e);
+        }
         setState(prev => ({
           ...prev,
           loading: false,

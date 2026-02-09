@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed
+- **Session tokens / auto-unlock**: removed `create_session_token`, `validate_session_token`, `clear_session_token`, and `lock_app` because the implementation provided misleading security guarantees (localStorage token + device-id-only validation) and did not meet compliance expectations.
+
+### Changed
+- **DB schema v13**: drops the deprecated `session_tokens` table.
+
 ## [0.6.0-pilot] - 2026-01-28
 
 ### Added

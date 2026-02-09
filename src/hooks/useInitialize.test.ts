@@ -43,10 +43,6 @@ function installInvokeMocks(overrides: InvokeOverrides = {}) {
           release_tag: 'v0.3.2',
           commit_sha: 'cf331449e1589581a5dcbb3adecd3e9ae4509277',
         };
-      case 'create_session_token':
-        return 'session-token-new';
-      case 'validate_session_token':
-        return true;
       case 'init_llm_engine':
       case 'init_embedding_engine':
       case 'load_model':
@@ -79,7 +75,7 @@ describe('useInitialize', () => {
     vi.restoreAllMocks();
   });
 
-  it('initializes app, creates a session token, and marks engines ready', async () => {
+  it('initializes app and marks engines ready', async () => {
     installInvokeMocks();
 
     const { result } = renderHook(() => useInitialize());
@@ -88,7 +84,7 @@ describe('useInitialize', () => {
     expect(result.current.initialized).toBe(true);
     expect(result.current.error).toBeNull();
     expect(result.current.vectorConsent?.enabled).toBe(true);
-    expect(localStorage.getItem('assistsupport_session_token')).toBe('session-token-new');
+    expect(localStorage.getItem('assistsupport_session_token')).toBeNull();
 
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith('get_memory_kernel_preflight_status')
@@ -98,21 +94,10 @@ describe('useInitialize', () => {
     expect(mockInvoke).toHaveBeenCalledWith('check_fts5_enabled');
     expect(mockInvoke).toHaveBeenCalledWith('init_llm_engine');
     expect(mockInvoke).toHaveBeenCalledWith('init_embedding_engine');
-  });
 
-  it('replaces an invalid saved session token', async () => {
-    localStorage.setItem('assistsupport_session_token', 'stale-token');
-    installInvokeMocks({
-      validate_session_token: () => false,
-      create_session_token: () => 'session-token-rotated',
-    });
-
-    const { result } = renderHook(() => useInitialize());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.initialized).toBe(true);
-    expect(localStorage.getItem('assistsupport_session_token')).toBe('session-token-rotated');
-    expect(mockInvoke).toHaveBeenCalledWith('validate_session_token', { sessionId: 'stale-token' });
+    // Session tokens were removed; ensure we don't call the legacy commands.
+    expect(mockInvoke).not.toHaveBeenCalledWith('create_session_token', expect.anything());
+    expect(mockInvoke).not.toHaveBeenCalledWith('validate_session_token', expect.anything());
   });
 
   it('falls back to safe vector consent defaults when consent lookup fails', async () => {
@@ -143,21 +128,6 @@ describe('useInitialize', () => {
 
     expect(result.current.initialized).toBe(false);
     expect(result.current.error).toContain('FTS5 full-text search is not available');
-  });
-
-  it('continues initialization when session token creation fails', async () => {
-    installInvokeMocks({
-      create_session_token: () => {
-        throw new Error('token subsystem down');
-      },
-    });
-
-    const { result } = renderHook(() => useInitialize());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.initialized).toBe(true);
-    expect(result.current.error).toBeNull();
-    expect(localStorage.getItem('assistsupport_session_token')).toBeNull();
   });
 
   it('continues initialization when MemoryKernel preflight fails', async () => {

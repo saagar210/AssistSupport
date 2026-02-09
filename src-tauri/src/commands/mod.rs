@@ -6094,37 +6094,6 @@ pub struct StartupMetricsResult {
     pub models_cached: bool,
 }
 
-// ============================================================================
-// Session Token Commands (v0.4.1)
-// ============================================================================
-
-/// Create a session token (auto-unlock for 24 hours)
-#[tauri::command]
-pub fn create_session_token(state: State<'_, AppState>) -> Result<String, String> {
-    security_commands::create_session_token_impl(state)
-}
-
-/// Validate a session token
-#[tauri::command]
-pub fn validate_session_token(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<bool, String> {
-    security_commands::validate_session_token_impl(state, session_id)
-}
-
-/// Clear (revoke) a session token
-#[tauri::command]
-pub fn clear_session_token(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    security_commands::clear_session_token_impl(state, session_id)
-}
-
-/// Clear all session tokens (lock the app)
-#[tauri::command]
-pub fn lock_app(state: State<'_, AppState>) -> Result<(), String> {
-    security_commands::lock_app_impl(state)
-}
-
 // ── Pilot Feedback commands ─────────────────────────────────────────────
 
 /// Log a query and its response for pilot tracking

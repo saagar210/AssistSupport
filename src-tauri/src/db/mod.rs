@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-const CURRENT_SCHEMA_VERSION: i32 = 12;
+const CURRENT_SCHEMA_VERSION: i32 = 13;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -253,6 +253,10 @@ impl Database {
 
         if from_version < 12 {
             self.migrate_v12()?;
+        }
+
+        if from_version < 13 {
+            self.migrate_v13()?;
         }
 
         tx.commit()?;
@@ -887,7 +891,7 @@ impl Database {
         Ok(())
     }
 
-    /// Migration to v10: Model state, startup metrics, and session tokens
+    /// Migration to v10: Model state and startup metrics
     fn migrate_v10(&self) -> Result<(), DbError> {
         self.conn.execute_batch(
             r#"
@@ -910,17 +914,6 @@ impl Database {
                 models_cached INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-
-            -- Session tokens for auto-unlock (24h expiry)
-            CREATE TABLE IF NOT EXISTS session_tokens (
-                session_id TEXT PRIMARY KEY,
-                token_hash BLOB NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                device_id TEXT NOT NULL,
-                last_activity TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_session_tokens_expires ON session_tokens(expires_at);
             "#,
         )?;
         Ok(())
@@ -1081,6 +1074,16 @@ impl Database {
         Ok(())
     }
 
+    /// Migration to v13: Remove deprecated session token table (was security theater).
+    fn migrate_v13(&self) -> Result<(), DbError> {
+        self.conn.execute_batch(
+            r#"
+            DROP TABLE IF EXISTS session_tokens;
+            "#,
+        )?;
+        Ok(())
+    }
+
     // -- Model state helpers --
 
     /// Record that a model was loaded (for auto-load on next startup)
@@ -1164,82 +1167,6 @@ impl Database {
         );
         match result {
             Ok(val) => Ok(Some(val)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(DbError::Sqlite(e)),
-        }
-    }
-
-    // -- Session token helpers --
-
-    /// Store a session token
-    pub fn store_session_token(
-        &self,
-        session_id: &str,
-        token_hash: &[u8],
-        expires_at: &str,
-        device_id: &str,
-    ) -> Result<(), DbError> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO session_tokens (session_id, token_hash, created_at, expires_at, device_id, last_activity)
-             VALUES (?1, ?2, datetime('now'), ?3, ?4, datetime('now'))",
-            params![session_id, token_hash, expires_at, device_id],
-        )?;
-        Ok(())
-    }
-
-    /// Validate a session token (check exists, not expired, correct device)
-    pub fn validate_session_token(
-        &self,
-        session_id: &str,
-        device_id: &str,
-    ) -> Result<bool, DbError> {
-        let result = self.conn.query_row(
-            "SELECT 1 FROM session_tokens
-             WHERE session_id = ?1 AND device_id = ?2 AND expires_at > datetime('now')",
-            params![session_id, device_id],
-            |_| Ok(()),
-        );
-        match result {
-            Ok(()) => {
-                // Update last activity
-                let _ = self.conn.execute(
-                    "UPDATE session_tokens SET last_activity = datetime('now') WHERE session_id = ?1",
-                    params![session_id],
-                );
-                Ok(true)
-            }
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
-            Err(e) => Err(DbError::Sqlite(e)),
-        }
-    }
-
-    /// Delete a session token
-    pub fn delete_session_token(&self, session_id: &str) -> Result<(), DbError> {
-        self.conn.execute(
-            "DELETE FROM session_tokens WHERE session_id = ?1",
-            params![session_id],
-        )?;
-        Ok(())
-    }
-
-    /// Delete all expired session tokens
-    pub fn cleanup_expired_sessions(&self) -> Result<usize, DbError> {
-        let deleted = self.conn.execute(
-            "DELETE FROM session_tokens WHERE expires_at <= datetime('now')",
-            [],
-        )?;
-        Ok(deleted)
-    }
-
-    /// Get the token hash for a session (for verification)
-    pub fn get_session_token_hash(&self, session_id: &str) -> Result<Option<Vec<u8>>, DbError> {
-        let result = self.conn.query_row(
-            "SELECT token_hash FROM session_tokens WHERE session_id = ?1 AND expires_at > datetime('now')",
-            params![session_id],
-            |row| row.get::<_, Vec<u8>>(0),
-        );
-        match result {
-            Ok(hash) => Ok(Some(hash)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(DbError::Sqlite(e)),
         }

@@ -311,11 +311,6 @@ pub fn run() {
             // v0.4.1: Startup & Model State
             commands::get_model_state,
             commands::get_startup_metrics,
-            // v0.4.1: Session Tokens
-            commands::create_session_token,
-            commands::validate_session_token,
-            commands::clear_session_token,
-            commands::lock_app,
             // v0.6.0: Pilot Feedback
             commands::log_pilot_query,
             commands::submit_pilot_feedback,
