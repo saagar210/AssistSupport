@@ -28,6 +28,15 @@ It is **not** a runtime dependency of AssistSupport. It can fail to build or run
    - AssistSupport does not import VaultMind code or binaries.
    - VaultMind does not import AssistSupport code or binaries.
 
+## Platform Support (Current)
+VaultMind is treated as a **macOS-first internal tool**. The monorepo readiness suite verifies it builds/tests on the
+workstation target used by operators. We do not currently ship or validate a Linux distribution.
+
+Security note:
+- A Dependabot alert on `glib` (GHSA-wrw7-89jp-8q8g) was dismissed as `not_used` because the affected dependency only
+  appears in `Cargo.lock` via the Linux-only `tauri/gtk` stack and is not present in the macOS dependency graph.
+  Reassess this if Linux distribution is added.
+
 ## Build/Test From Monorepo Root
 VaultMind is intentionally buildable without modifying AssistSupport’s dependencies.
 
@@ -40,4 +49,3 @@ If we introduce a formal “Knowledge Pack” contract (file format + schema) th
 1. A versioned spec under `docs/implementation/` or `docs/monorepo/`.
 2. A validation script under `scripts/`.
 3. A readiness check under `scripts/run_monorepo_readiness.sh full`.
-
