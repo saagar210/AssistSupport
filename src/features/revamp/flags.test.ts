@@ -6,23 +6,38 @@ const makeStorage = (values: Record<string, string>): Pick<Storage, 'getItem'> =
 });
 
 describe('resolveRevampFlags', () => {
-  it('defaults all flags to false when no values are present', () => {
+  it('defaults revamp UI flags to true and policy flags to false', () => {
     const flags = resolveRevampFlags({ env: {}, storage: makeStorage({}) });
-    expect(getEnabledRevampFlags(flags)).toEqual([]);
+    expect(flags.ASSISTSUPPORT_REVAMP_APP_SHELL).toBe(true);
+    expect(flags.ASSISTSUPPORT_REVAMP_INBOX).toBe(true);
+    expect(flags.ASSISTSUPPORT_REVAMP_WORKSPACE).toBe(true);
+    expect(flags.ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2).toBe(true);
+    expect(flags.ASSISTSUPPORT_ENABLE_ADMIN_TABS).toBe(false);
+    expect(flags.ASSISTSUPPORT_ENABLE_NETWORK_INGEST).toBe(false);
+
+    expect(getEnabledRevampFlags(flags).sort()).toEqual(
+      [
+        'ASSISTSUPPORT_REVAMP_APP_SHELL',
+        'ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2',
+        'ASSISTSUPPORT_REVAMP_INBOX',
+        'ASSISTSUPPORT_REVAMP_WORKSPACE',
+      ].sort(),
+    );
   });
 
   it('reads environment booleans for revamp toggles', () => {
     const flags = resolveRevampFlags({
       env: {
-        VITE_ASSISTSUPPORT_REVAMP_INBOX: '1',
+        VITE_ASSISTSUPPORT_REVAMP_INBOX: '0',
         VITE_ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2: 'true',
       },
       storage: makeStorage({}),
     });
 
-    expect(flags.ASSISTSUPPORT_REVAMP_INBOX).toBe(true);
+    expect(flags.ASSISTSUPPORT_REVAMP_INBOX).toBe(false);
     expect(flags.ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2).toBe(true);
-    expect(flags.ASSISTSUPPORT_REVAMP_APP_SHELL).toBe(false);
+    // Other revamp defaults remain enabled unless explicitly disabled.
+    expect(flags.ASSISTSUPPORT_REVAMP_APP_SHELL).toBe(true);
   });
 
   it('prefers local storage override over environment values', () => {
@@ -72,6 +87,10 @@ describe('resolveRevampFlags', () => {
   it('does not treat non-revamp feature policy flags as "revamp enabled"', () => {
     const flags = resolveRevampFlags({
       env: {
+        VITE_ASSISTSUPPORT_REVAMP_APP_SHELL: '0',
+        VITE_ASSISTSUPPORT_REVAMP_INBOX: '0',
+        VITE_ASSISTSUPPORT_REVAMP_WORKSPACE: '0',
+        VITE_ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2: '0',
         VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS: '1',
       },
       storage: makeStorage({}),

@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../../components/shared/Icon';
 import type { Tab } from '../../../types';
 import type { RevampFlags } from '../flags';
 import { isTabEnabled } from '../../app-shell/tabPolicy';
 import { useAppStatus } from '../../../contexts/AppStatusContext';
-import { Badge, Panel } from '../ui';
+import { AsButton, Badge, Panel } from '../ui';
 import { WorkspaceQueueContext } from '../../workspace/WorkspaceQueueContext';
 import type { QueueView } from '../../inbox/queueModel';
 import '../../../styles/revamp/index.css';
@@ -78,6 +78,8 @@ export function RevampShell({
 }: RevampShellProps) {
   const appStatus = useAppStatus();
   const [statusOpen, setStatusOpen] = useState(false);
+  const statusPopoverRef = useRef<HTMLDivElement | null>(null);
+  const statusButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const enabledNav = useMemo(() => {
     return NAV.filter((item) => isTabEnabled(item.id, revampFlags));
@@ -97,6 +99,39 @@ export function RevampShell({
   const healthLabel = healthyCount === totalChecks ? 'Ready' : healthyCount > 0 ? 'Degraded' : 'Setup required';
 
   const grouped = (section: NavItem['section']) => enabledNav.filter((n) => n.section === section);
+
+  const needsModel = !appStatus.llmLoaded;
+  const needsKb = !appStatus.kbIndexed;
+  const memoryKernelDegraded = appStatus.memoryKernelFeatureEnabled && !appStatus.memoryKernelReady;
+
+  useEffect(() => {
+    if (!statusOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+
+      const popover = statusPopoverRef.current;
+      const button = statusButtonRef.current;
+      if (popover?.contains(target) || button?.contains(target)) {
+        return;
+      }
+      setStatusOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setStatusOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [statusOpen]);
 
   return (
     <div className="as-shell">
@@ -165,6 +200,7 @@ export function RevampShell({
               className="as-shell__statusBtn"
               onClick={() => setStatusOpen((v) => !v)}
               title="View system status"
+              ref={statusButtonRef}
             >
               <Badge tone={healthTone}>{healthLabel}</Badge>
               <span className="as-shell__statusModel">
@@ -175,7 +211,12 @@ export function RevampShell({
           </div>
 
           {statusOpen && (
-            <div className="as-shell__statusPopover" role="dialog" aria-label="System status">
+            <div
+              className="as-shell__statusPopover"
+              role="dialog"
+              aria-label="System status"
+              ref={statusPopoverRef}
+            >
               <Panel
                 title="System Status"
                 subtitle="Local-only health checks"
@@ -198,6 +239,46 @@ export function RevampShell({
                   <StatusRow label="Knowledge Base" value={`${appStatus.kbDocumentCount} docs · ${appStatus.kbChunkCount} chunks`} tone={appStatus.kbIndexed ? 'good' : 'warn'} />
                   <StatusRow label="MemoryKernel" value={appStatus.memoryKernelFeatureEnabled ? (appStatus.memoryKernelStatus || 'Unknown') : 'Disabled'} tone={appStatus.memoryKernelFeatureEnabled ? (appStatus.memoryKernelReady ? 'good' : 'warn') : 'neutral'} />
                 </div>
+                {(needsModel || needsKb || memoryKernelDegraded) && (
+                  <div style={{ marginTop: 'var(--as-space-4)', display: 'flex', gap: 'var(--as-space-2)', flexWrap: 'wrap' }}>
+                    {needsModel && (
+                      <AsButton
+                        size="small"
+                        tone="primary"
+                        onClick={() => {
+                          setStatusOpen(false);
+                          onTabChange('settings');
+                        }}
+                      >
+                        Open Settings
+                      </AsButton>
+                    )}
+                    {needsKb && (
+                      <AsButton
+                        size="small"
+                        tone="primary"
+                        onClick={() => {
+                          setStatusOpen(false);
+                          onTabChange('knowledge');
+                        }}
+                      >
+                        Fix Knowledge Base
+                      </AsButton>
+                    )}
+                    {memoryKernelDegraded && (
+                      <AsButton
+                        size="small"
+                        tone="default"
+                        onClick={() => {
+                          setStatusOpen(false);
+                          onTabChange('ops');
+                        }}
+                      >
+                        Open Ops
+                      </AsButton>
+                    )}
+                  </div>
+                )}
               </Panel>
             </div>
           )}
@@ -246,13 +327,48 @@ export function RevampShell({
               subtitle="Always have a deterministic next step"
             >
               <ul className="as-shell__railBullets">
-                {!appStatus.llmLoaded && (
-                  <li>Load a local model in Settings. The app remains usable without AI.</li>
+                {needsModel && (
+                  <li>
+                    Load a local model in Settings.
+                    <div style={{ marginTop: 'var(--as-space-2)' }}>
+                      <AsButton
+                        size="small"
+                        tone="primary"
+                        onClick={() => onTabChange('settings')}
+                      >
+                        Open Settings
+                      </AsButton>
+                    </div>
+                  </li>
                 )}
-                {!appStatus.kbIndexed && (
-                  <li>Point Knowledge Base to your local docs folder, then rebuild the index.</li>
+                {needsKb && (
+                  <li>
+                    Point Knowledge Base to your local docs folder, then rebuild the index.
+                    <div style={{ marginTop: 'var(--as-space-2)' }}>
+                      <AsButton
+                        size="small"
+                        tone="primary"
+                        onClick={() => onTabChange('knowledge')}
+                      >
+                        Open Knowledge
+                      </AsButton>
+                    </div>
+                  </li>
                 )}
-                {appStatus.llmLoaded && (
+                {memoryKernelDegraded && (
+                  <li>
+                    MemoryKernel is degraded. Draft generation will continue with deterministic fallback.
+                    <div style={{ marginTop: 'var(--as-space-2)' }}>
+                      <AsButton
+                        size="small"
+                        onClick={() => onTabChange('ops')}
+                      >
+                        Open Ops
+                      </AsButton>
+                    </div>
+                  </li>
+                )}
+                {!needsModel && !needsKb && !memoryKernelDegraded && (
                   <li>Use Cmd+K to jump between Queue, Draft, Sources, and Ops.</li>
                 )}
               </ul>
