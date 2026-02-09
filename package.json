@@ -32,6 +32,7 @@
     "test:e2e:revamp": "playwright test --config=playwright.config.ts e2e/revamp-queue-workflow.spec.ts",
     "test:revamp-queue-rehearsal": "bash scripts/run_revamp_queue_rehearsal.sh",
     "test:ci": "vitest run && cd src-tauri && cargo test",
+    "check:revamp-style": "bash scripts/check_revamp_style.sh",
     "check:monorepo-readiness": "bash scripts/run_monorepo_readiness.sh quick",
     "check:monorepo-readiness:full": "bash scripts/run_monorepo_readiness.sh full",
     "lint": "tsc --noEmit",

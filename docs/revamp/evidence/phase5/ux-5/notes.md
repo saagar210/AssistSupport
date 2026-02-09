@@ -49,3 +49,7 @@
 ## Slice: Revamp Settings Shell Coherence
 - Added revamp-shell-scoped CSS overrides in `src/components/Settings/SettingsTab.css` so Settings aligns with the ops-console visual language when the revamp shell is enabled.
 - No behavior changes: only styling, scoped under `.app-shell-revamp` to keep legacy mode untouched.
+
+## Slice: Revamp Style Guardrail
+- Added `pnpm run check:revamp-style` (via `scripts/check_revamp_style.sh`) to prevent reintroducing hardcoded rgba/hex colors in revamp CSS outside token/theme files.
+- This is a developer guardrail only; it does not change runtime behavior.
