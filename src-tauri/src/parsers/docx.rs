@@ -13,6 +13,9 @@ pub fn parse(path: &Path) -> Result<ParsedDocument, AppError> {
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| AppError::Parse(format!("Failed to open docx as ZIP: {}", e)))?;
 
+    // Validate ZIP archive against decompression limits (zip bomb defense)
+    crate::validation::validate_zip_archive(&mut archive)?;
+
     let mut xml_content = String::new();
     {
         let mut doc_file = archive

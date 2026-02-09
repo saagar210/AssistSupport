@@ -26,6 +26,9 @@ pub fn update_setting(
     key: String,
     value: String,
 ) -> Result<(), AppError> {
+    // Validate the setting value before persisting
+    crate::validation::validate_setting(&key, &value)?;
+
     let conn = get_conn(state.inner())?;
 
     conn.execute(

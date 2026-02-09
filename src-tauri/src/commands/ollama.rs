@@ -62,6 +62,8 @@ pub async fn test_ollama_connection(
     host: String,
     port: String,
 ) -> Result<(bool, String), AppError> {
+    crate::validation::validate_ollama_host(&host)?;
+    crate::validation::validate_ollama_port(&port)?;
     ollama::health_check(&host, &port).await
 }
 
@@ -89,6 +91,7 @@ pub async fn pull_ollama_model(
         (host, port)
     };
 
+    crate::validation::validate_model_name(&model_name)?;
     ollama::pull_model(&host, &port, &model_name, &app_handle).await
 }
 
@@ -115,6 +118,7 @@ pub async fn delete_ollama_model(
         (host, port)
     };
 
+    crate::validation::validate_model_name(&model_name)?;
     ollama::delete_model(&host, &port, &model_name).await
 }
 
@@ -141,6 +145,7 @@ pub async fn show_ollama_model(
         (host, port)
     };
 
+    crate::validation::validate_model_name(&model_name)?;
     ollama::show_model(&host, &port, &model_name).await
 }
 
@@ -178,5 +183,6 @@ pub async fn benchmark_ollama_model(
         (host, port)
     };
 
+    crate::validation::validate_model_name(&model_name)?;
     ollama::benchmark_model(&host, &port, &model_name, is_embedding.unwrap_or(false)).await
 }

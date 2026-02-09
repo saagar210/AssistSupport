@@ -18,6 +18,7 @@ mod parsers;
 mod rag;
 mod state;
 pub mod utils;
+mod validation;
 mod vector_index;
 mod vector_store;
 

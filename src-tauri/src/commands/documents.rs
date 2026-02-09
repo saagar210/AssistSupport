@@ -292,7 +292,15 @@ pub async fn ingest_files(
     let mut doc_entries: Vec<(String, String, String, String)> = Vec::new(); // (doc_id, path, filename, file_type)
 
     for file_path_str in &file_paths {
-        let path = Path::new(file_path_str);
+        // Validate path: canonicalize, reject symlinks, restrict to home dir
+        let path = match crate::validation::validate_file_path(file_path_str) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Skipping file with invalid path '{}': {}", file_path_str, e);
+                continue;
+            }
+        };
+        let path = path.as_path();
 
         let file_type = match detect_file_type(path) {
             Some(ft) => ft,
