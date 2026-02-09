@@ -87,3 +87,10 @@
   - workflow strip surface + step cards
   - layout toggle surface + active state
 - Purpose: reduce “mixed UI” artifacts when the revamp shell is enabled by using the `--as-*` tokens for the highest-frequency Draft surfaces.
+
+## Slice: Response Panel Revamp Coherence
+- Updated the Response panel micro-surfaces to feel native inside the revamp shell without changing behavior.
+- Changes are scoped to `.app-shell-revamp` only:
+  - Confidence gate uses revamp intent border tokens (`--as-*-border`) and glass surface.
+  - Output/Instructions section tabs render as a pill segmented control using revamp glass + accent surface tokens.
+  - Sources panel and export dropdown menu use revamp glass/surface + border/shadow tokens.

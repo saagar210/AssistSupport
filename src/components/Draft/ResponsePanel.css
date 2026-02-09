@@ -692,3 +692,78 @@
 .export-option:not(:last-child) {
   border-bottom: 1px solid var(--border-light);
 }
+
+/* ============================================================================
+   Revamp Shell Coherence (Phase 5)
+   Scope: Only applies when mounted inside `.app-shell-revamp`.
+   Goal: Reduce "mixed UI" artifacts without changing behavior.
+   ============================================================================ */
+
+.app-shell-revamp .confidence-gate {
+  background: var(--as-glass-2);
+  border-color: var(--as-border-1);
+}
+
+.app-shell-revamp .confidence-gate-answer {
+  border-color: var(--as-good-border);
+}
+
+.app-shell-revamp .confidence-gate-clarify {
+  border-color: var(--as-warn-border);
+}
+
+.app-shell-revamp .confidence-gate-abstain {
+  border-color: var(--as-bad-border);
+}
+
+.app-shell-revamp .response-section-tabs {
+  border-bottom: none;
+  background: var(--as-glass-1);
+  border: 1px solid var(--as-border-1);
+  border-radius: var(--as-radius-pill);
+  padding: var(--as-space-1);
+  gap: var(--as-space-1);
+}
+
+.app-shell-revamp .response-section-tab {
+  border-bottom: none;
+  border-radius: var(--as-radius-pill);
+  padding: var(--as-space-2) var(--as-space-4);
+  color: var(--as-text-2);
+  transition:
+    color var(--as-dur-2) var(--as-ease-out),
+    background-color var(--as-dur-2) var(--as-ease-out),
+    border-color var(--as-dur-2) var(--as-ease-out);
+}
+
+.app-shell-revamp .response-section-tab:hover {
+  color: var(--as-text-1);
+  background: var(--as-glass-2);
+}
+
+.app-shell-revamp .response-section-tab.active {
+  color: var(--as-accent-1);
+  background: var(--as-accent-surface-1);
+  border: 1px solid var(--as-accent-border-1);
+}
+
+.app-shell-revamp .response-section-tab.active .section-tab-hint {
+  color: var(--as-accent-1);
+  opacity: 0.7;
+}
+
+.app-shell-revamp .sources-panel {
+  background: var(--as-glass-1);
+  border-color: var(--as-border-1);
+}
+
+.app-shell-revamp .source-type-badge {
+  background: var(--as-glass-2);
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .export-dropdown-menu {
+  background: var(--as-surface-2);
+  border-color: var(--as-border-2);
+  box-shadow: var(--as-shadow-1);
+}
