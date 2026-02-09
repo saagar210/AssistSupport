@@ -133,6 +133,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     return 'balanced';
   });
   const [conversationEntries, setConversationEntries] = useState<ConversationEntry[]>([]);
+  const [handoffTouched, setHandoffTouched] = useState(false);
 
   // Alternatives & saved responses
   const { alternatives, loadAlternatives, saveAlternative, chooseAlternative } = useAlternatives();
@@ -564,6 +565,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     setCurrentTicket(null);
     setSavedDraftId(null);
     setConversationEntries([]);
+    setHandoffTouched(false);
     setGeneratingAlternative(false);
     setShowTemplateModal(false);
     setTemplateModalRating(undefined);
@@ -934,6 +936,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
         });
       }
       await navigator.clipboard.writeText(response);
+      setHandoffTouched(true);
       logEvent('response_copied', {
         draft_id: savedDraftId,
         word_count: countWords(response),
@@ -954,6 +957,7 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     savedDraftId,
     isResponseEdited,
     originalResponse,
+    setHandoffTouched,
   ]);
 
   const handleExportResponse = useCallback(async () => {
@@ -967,12 +971,13 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
         format: 'Markdown',
       });
       if (saved) {
+        setHandoffTouched(true);
         showSuccess('Response exported successfully');
       }
     } catch (e) {
       showError(`Export failed: ${e}`);
     }
-  }, [response, showSuccess, showError]);
+  }, [response, showSuccess, showError, setHandoffTouched]);
 
   // Expose functions to parent via ref
   useImperativeHandle(ref, () => ({
@@ -1067,10 +1072,20 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
           </p>
         </div>
         <div className="draft-workflow-step">
-          <h4>3. Respond</h4>
+          <h4>3. Draft</h4>
           <p>
             {responseWordCount} words
             {isResponseEdited ? ` · edited (${Math.round(responseEditRatio * 100)}%)` : ' · unedited'}
+          </p>
+        </div>
+        <div className="draft-workflow-step">
+          <h4>4. Handoff</h4>
+          <p>
+            {response?.trim()
+              ? handoffTouched
+                ? 'Copied/exported'
+                : 'Ready to copy/export'
+              : 'No response yet'}
           </p>
         </div>
         <div className="draft-workflow-actions">

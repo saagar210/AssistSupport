@@ -105,6 +105,13 @@ function resolveStorage(
 export function resolveRevampFlags({ env, storage }: ResolveRevampFlagsOptions = {}): RevampFlags {
   const envValues = env ?? (import.meta.env as unknown as Record<string, unknown>);
   const resolvedStorage = resolveStorage(storage);
+  const mode = String(envValues.MODE ?? '').trim().toLowerCase();
+  const devFlag = parseBooleanLike(envValues.DEV);
+  const isDevelopment = devFlag ?? (mode === 'development' || mode === 'dev');
+  const policyFlagIds: ReadonlySet<RevampFlagId> = new Set([
+    'ASSISTSUPPORT_ENABLE_ADMIN_TABS',
+    'ASSISTSUPPORT_ENABLE_NETWORK_INGEST',
+  ]);
 
   return (Object.values(REVAMP_FLAG_DEFINITIONS) as RevampFlagDefinition[]).reduce<RevampFlags>(
     (acc, definition) => {
@@ -117,8 +124,12 @@ export function resolveRevampFlags({ env, storage }: ResolveRevampFlagsOptions =
         storageValue = null;
       }
 
-      // Storage override wins for local testing/rehearsal to avoid rebuilds.
-      acc[definition.id] = storageValue ?? envValue ?? definition.defaultValue;
+      // Storage overrides are useful for local rehearsal, but policy flags must be env-authoritative
+      // outside development builds so we don't "accidentally" enable admin/network surfaces.
+      const effectiveStorageValue =
+        !isDevelopment && policyFlagIds.has(definition.id) ? null : storageValue;
+
+      acc[definition.id] = effectiveStorageValue ?? envValue ?? definition.defaultValue;
       return acc;
     },
     {

@@ -9,6 +9,8 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('onboarding-completed', 'true');
     localStorage.setItem('sidebar-collapsed', 'false');
+    // Smoke tests explicitly exercise admin-only surfaces (Search) by opting in.
+    localStorage.setItem('assistsupport.flag.ASSISTSUPPORT_ENABLE_ADMIN_TABS', '1');
   });
 });
 
@@ -40,6 +42,8 @@ test('@smoke generates a draft response in degraded mode', async ({ page }) => {
   await page.getByTitle('View system status').click();
   const memoryKernelRow = page.locator('.status-item', { hasText: 'MemoryKernel' }).first();
   await expect(memoryKernelRow).toContainText(/offline|unavailable/i);
+  // Close the status panel before interacting with underlying controls.
+  await page.getByTitle('View system status').click();
 
   const input = page.getByPlaceholder('Paste ticket content or describe the issue...');
   await input.fill('Customer needs remote VPN access while traveling.');

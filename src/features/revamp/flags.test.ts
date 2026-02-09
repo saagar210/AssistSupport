@@ -38,6 +38,37 @@ describe('resolveRevampFlags', () => {
     expect(flags.ASSISTSUPPORT_REVAMP_INBOX).toBe(true);
   });
 
+  it('treats policy flags as env-authoritative outside development builds', () => {
+    const flags = resolveRevampFlags({
+      env: {
+        MODE: 'production',
+        VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS: '0',
+        VITE_ASSISTSUPPORT_ENABLE_NETWORK_INGEST: '0',
+      },
+      storage: makeStorage({
+        'assistsupport.flag.ASSISTSUPPORT_ENABLE_ADMIN_TABS': '1',
+        'assistsupport.flag.ASSISTSUPPORT_ENABLE_NETWORK_INGEST': '1',
+      }),
+    });
+
+    expect(flags.ASSISTSUPPORT_ENABLE_ADMIN_TABS).toBe(false);
+    expect(flags.ASSISTSUPPORT_ENABLE_NETWORK_INGEST).toBe(false);
+  });
+
+  it('allows policy flag storage override in development builds', () => {
+    const flags = resolveRevampFlags({
+      env: {
+        MODE: 'development',
+        VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS: '0',
+      },
+      storage: makeStorage({
+        'assistsupport.flag.ASSISTSUPPORT_ENABLE_ADMIN_TABS': '1',
+      }),
+    });
+
+    expect(flags.ASSISTSUPPORT_ENABLE_ADMIN_TABS).toBe(true);
+  });
+
   it('does not treat non-revamp feature policy flags as "revamp enabled"', () => {
     const flags = resolveRevampFlags({
       env: {

@@ -122,8 +122,10 @@ function AppContent() {
     );
   }
 
+  const appShellClassName = revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? 'app app-shell-revamp' : 'app';
+
   return (
-    <div className="app">
+    <div className={appShellClassName} data-revamp-shell={revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? '1' : '0'}>
       {/* Mobile navigation - visible only on small screens */}
       <div className="mobile-nav">
         <TabBar activeTab={activeTab} onTabChange={setActiveTab} revampFlags={revampFlags} />
