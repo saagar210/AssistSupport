@@ -11,13 +11,15 @@ import {
   type QueueMetaMap,
   type QueueView,
 } from '../inbox/queueModel';
+import { AsButton } from '../revamp/ui';
 import './WorkspaceQueueContext.css';
 
 interface WorkspaceQueueContextProps {
   onNavigateToQueue?: (queueView: QueueView) => void;
+  revampUi?: boolean;
 }
 
-export function WorkspaceQueueContext({ onNavigateToQueue }: WorkspaceQueueContextProps) {
+export function WorkspaceQueueContext({ onNavigateToQueue, revampUi = false }: WorkspaceQueueContextProps) {
   const { logEvent } = useAnalytics();
   const { drafts, loading, loadDrafts } = useDrafts();
   const [queueMetaMap, setQueueMetaMap] = useState<QueueMetaMap>(() => loadQueueMeta());
@@ -42,16 +44,29 @@ export function WorkspaceQueueContext({ onNavigateToQueue }: WorkspaceQueueConte
     <section className="workspace-queue-context" aria-label="Queue context">
       <div className="workspace-queue-context__header">
         <h2>Live queue context</h2>
-        <Button
-          size="small"
-          variant="ghost"
-          onClick={() => {
-            loadDrafts(100);
-            void logEvent('workspace_queue_context_refreshed');
-          }}
-        >
-          Refresh
-        </Button>
+        {revampUi ? (
+          <AsButton
+            size="small"
+            tone="ghost"
+            onClick={() => {
+              loadDrafts(100);
+              void logEvent('workspace_queue_context_refreshed');
+            }}
+          >
+            Refresh
+          </AsButton>
+        ) : (
+          <Button
+            size="small"
+            variant="ghost"
+            onClick={() => {
+              loadDrafts(100);
+              void logEvent('workspace_queue_context_refreshed');
+            }}
+          >
+            Refresh
+          </Button>
+        )}
       </div>
 
       <div className="workspace-queue-context__stats">
@@ -91,36 +106,73 @@ export function WorkspaceQueueContext({ onNavigateToQueue }: WorkspaceQueueConte
       </div>
       {onNavigateToQueue && (
         <div className="workspace-queue-context__quick-actions">
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={() => {
-              onNavigateToQueue('at_risk');
-              void logEvent('workspace_queue_quick_action_used', { queue_view: 'at_risk' });
-            }}
-          >
-            Open At-Risk Queue
-          </Button>
-          <Button
-            size="small"
-            variant="ghost"
-            onClick={() => {
-              onNavigateToQueue('unassigned');
-              void logEvent('workspace_queue_quick_action_used', { queue_view: 'unassigned' });
-            }}
-          >
-            Open Unassigned Queue
-          </Button>
-          <Button
-            size="small"
-            variant="ghost"
-            onClick={() => {
-              onNavigateToQueue('in_progress');
-              void logEvent('workspace_queue_quick_action_used', { queue_view: 'in_progress' });
-            }}
-          >
-            Open In-Progress Queue
-          </Button>
+          {revampUi ? (
+            <>
+              <AsButton
+                size="small"
+                tone="primary"
+                onClick={() => {
+                  onNavigateToQueue('at_risk');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'at_risk' });
+                }}
+              >
+                Open At-Risk Queue
+              </AsButton>
+              <AsButton
+                size="small"
+                tone="ghost"
+                onClick={() => {
+                  onNavigateToQueue('unassigned');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'unassigned' });
+                }}
+              >
+                Open Unassigned Queue
+              </AsButton>
+              <AsButton
+                size="small"
+                tone="ghost"
+                onClick={() => {
+                  onNavigateToQueue('in_progress');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'in_progress' });
+                }}
+              >
+                Open In-Progress Queue
+              </AsButton>
+            </>
+          ) : (
+            <>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => {
+                  onNavigateToQueue('at_risk');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'at_risk' });
+                }}
+              >
+                Open At-Risk Queue
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                onClick={() => {
+                  onNavigateToQueue('unassigned');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'unassigned' });
+                }}
+              >
+                Open Unassigned Queue
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                onClick={() => {
+                  onNavigateToQueue('in_progress');
+                  void logEvent('workspace_queue_quick_action_used', { queue_view: 'in_progress' });
+                }}
+              >
+                Open In-Progress Queue
+              </Button>
+            </>
+          )}
         </div>
       )}
     </section>

@@ -210,7 +210,7 @@ export function RevampShell({
           <aside className="as-shell__rail" aria-label="Diagnostics and guidance">
             {activeTab === 'draft' && revampFlags.ASSISTSUPPORT_REVAMP_WORKSPACE && (
               <>
-                <WorkspaceQueueContext onNavigateToQueue={onNavigateToQueue} />
+                <WorkspaceQueueContext onNavigateToQueue={onNavigateToQueue} revampUi />
                 <Panel title="Response playbook" subtitle="Keep responses consistent across the team">
                   <ol className="as-shell__railBullets">
                     <li>Capture the issue in plain language.</li>

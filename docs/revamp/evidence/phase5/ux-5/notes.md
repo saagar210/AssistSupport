@@ -70,6 +70,10 @@
   - active/selected states use the existing accent-surface tokens
 - No behavior changes: this is styling only, scoped to the revamp shell.
 
+## Slice: Revamp Rail Buttons (Queue Context)
+- Updated `WorkspaceQueueContext` to optionally use the revamp `AsButton` primitive when rendered inside the revamp shell rail.
+- This reduces “mixed UI” artifacts without changing any queue behavior or keybindings.
+
 ## Slice: Draft Readiness + Workflow Strip Revamp Coherence
 - Added `.app-shell-revamp`-scoped styling for:
   - AI readiness banner surface

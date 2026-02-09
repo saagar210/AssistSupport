@@ -92,6 +92,14 @@
 - pnpm run test:e2e:revamp: PASS (Playwright: 2 tests)
 - pnpm run test:e2e:smoke: PASS (Playwright: 6 tests)
 
+## Slice Verification (revamp rail buttons: queue context uses AsButton)
+- pnpm run check:revamp-style: PASS
+- pnpm run typecheck: PASS
+- pnpm run test: PASS (Vitest: 130 tests)
+- pnpm run test:ci: PASS (Vitest + cargo test: 289 tests)
+- pnpm run test:e2e:revamp: PASS (Playwright: 2 tests)
+- pnpm run test:e2e:smoke: PASS (Playwright: 6 tests)
+
 ## Slice Verification (draft readiness + workflow strip revamp coherence)
 - pnpm run check:revamp-style: PASS
 - pnpm run typecheck: PASS
