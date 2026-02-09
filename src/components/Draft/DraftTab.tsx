@@ -18,6 +18,7 @@ import { useSavedResponses } from '../../hooks/useSavedResponses';
 import { useMemoryKernelEnrichment } from '../../hooks/useMemoryKernelEnrichment';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useAppStatus } from '../../contexts/AppStatusContext';
+import { AiReadinessBanner } from './AiReadinessBanner';
 import { calculateEditRatio, countWords } from '../../features/analytics/qualityMetrics';
 import type { JiraTicket } from '../../hooks/useJira';
 import type {
@@ -914,6 +915,24 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   const handleCopyResponse = useCallback(async () => {
     if (!response) return;
     try {
+      const mode = confidence?.mode ?? 'answer';
+      const hasCitations = sources.length > 0;
+      const copyAllowed = mode === 'answer' && hasCitations;
+
+      if (!copyAllowed) {
+        const reason = window.prompt(
+          'Copy override required. This response is missing citations or is not in answer mode.\n\nEnter a reason to proceed (will be logged locally):',
+        );
+        if (!reason || !reason.trim()) {
+          showError('Copy cancelled (reason required).');
+          return;
+        }
+        await invoke('audit_response_copy_override', {
+          reason: reason.trim(),
+          confidenceMode: confidence?.mode ?? null,
+          sourcesCount: sources.length,
+        });
+      }
       await navigator.clipboard.writeText(response);
       logEvent('response_copied', {
         draft_id: savedDraftId,
@@ -925,7 +944,17 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     } catch (e) {
       showError('Failed to copy response');
     }
-  }, [response, showSuccess, showError, logEvent, savedDraftId, isResponseEdited, originalResponse]);
+  }, [
+    response,
+    confidence?.mode,
+    sources.length,
+    showSuccess,
+    showError,
+    logEvent,
+    savedDraftId,
+    isResponseEdited,
+    originalResponse,
+  ]);
 
   const handleExportResponse = useCallback(async () => {
     if (!response) {
@@ -976,6 +1005,20 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
     return (
       <div className="draft-tab conversation-mode">
         {viewToggle}
+        <AiReadinessBanner
+          modelLoaded={modelLoaded}
+          modelName={loadedModelName}
+          kbIndexed={appStatus.kbIndexed}
+          kbDocumentCount={appStatus.kbDocumentCount}
+          kbChunkCount={appStatus.kbChunkCount}
+          memoryKernelEnabled={appStatus.memoryKernelFeatureEnabled}
+          memoryKernelReady={appStatus.memoryKernelReady}
+          memoryKernelStatus={appStatus.memoryKernelStatus}
+          memoryKernelDetail={appStatus.memoryKernelDetail}
+          onRefreshStatus={() => {
+            void appStatus.refresh();
+          }}
+        />
         <ConversationThread
           entries={conversationEntries}
           streamingText={streamingText}
@@ -996,6 +1039,20 @@ export const DraftTab = forwardRef<DraftTabHandle, DraftTabProps>(function Draft
   return (
     <div className={`draft-tab panel-density-${panelDensityMode} ${diagnosisCollapsed ? 'diagnosis-collapsed' : ''}`}>
       {viewToggle}
+      <AiReadinessBanner
+        modelLoaded={modelLoaded}
+        modelName={loadedModelName}
+        kbIndexed={appStatus.kbIndexed}
+        kbDocumentCount={appStatus.kbDocumentCount}
+        kbChunkCount={appStatus.kbChunkCount}
+        memoryKernelEnabled={appStatus.memoryKernelFeatureEnabled}
+        memoryKernelReady={appStatus.memoryKernelReady}
+        memoryKernelStatus={appStatus.memoryKernelStatus}
+        memoryKernelDetail={appStatus.memoryKernelDetail}
+        onRefreshStatus={() => {
+          void appStatus.refresh();
+        }}
+      />
       <section className="draft-workflow-strip" aria-label="Draft workflow overview">
         <div className="draft-workflow-step">
           <h4>1. Intake</h4>
