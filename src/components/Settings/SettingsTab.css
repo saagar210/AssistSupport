@@ -240,6 +240,123 @@
   border-top: 1px solid var(--border-color);
 }
 
+/* Revamp shell overrides: keep Settings visually coherent with revamp tokens without
+   rewriting Settings behavior in Phase 5. These rules are scoped to the revamp
+   shell wrapper (`.app-shell-revamp`) so legacy mode is unaffected. */
+.app-shell-revamp .settings-tab {
+  gap: var(--as-space-6);
+  padding: var(--as-space-6);
+  max-width: 920px;
+}
+
+.app-shell-revamp .settings-error {
+  background: var(--as-bad-surface);
+  color: var(--as-bad-text);
+  border: 1px solid var(--as-bad-border);
+  border-radius: var(--as-radius-2);
+}
+
+.app-shell-revamp .settings-hero {
+  border-radius: var(--as-radius-3);
+  border: 1px solid var(--as-border-1);
+  background:
+    radial-gradient(900px 400px at 10% 0%, var(--as-accent-surface-1), transparent 55%),
+    radial-gradient(700px 360px at 90% 0%, var(--as-info-surface), transparent 55%),
+    linear-gradient(180deg, var(--as-surface-3), var(--as-surface-1));
+}
+
+.app-shell-revamp .settings-hero__title h1 {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .settings-hero__sub {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .settings-pill {
+  border-color: var(--as-border-1);
+  background: var(--as-glass-2);
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .settings-pill.is-good {
+  border-color: var(--as-good-border);
+  background: var(--as-good-surface);
+  color: var(--as-good-text);
+}
+
+.app-shell-revamp .settings-pill.is-warn {
+  border-color: var(--as-warn-border);
+  background: var(--as-warn-surface);
+  color: var(--as-warn-text);
+}
+
+.app-shell-revamp .settings-section h2 {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .settings-description {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .loaded-model-banner {
+  background: var(--as-good-surface);
+  color: var(--as-good-text);
+  border: 1px solid var(--as-good-border);
+  border-radius: var(--as-radius-2);
+}
+
+.app-shell-revamp .model-card {
+  background: linear-gradient(180deg, var(--as-glass-2), var(--as-glass-1));
+  border-color: var(--as-border-1);
+  border-radius: var(--as-radius-2);
+}
+
+.app-shell-revamp .model-card:hover {
+  border-color: var(--as-border-2);
+}
+
+.app-shell-revamp .model-card.loaded {
+  border-color: var(--as-good-border);
+  background: linear-gradient(180deg, var(--as-good-surface), var(--as-glass-1));
+}
+
+.app-shell-revamp .model-info h3 {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .model-info p {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .model-size {
+  color: var(--as-text-3);
+}
+
+.app-shell-revamp .download-progress {
+  background: var(--as-glass-1);
+}
+
+.app-shell-revamp .download-bar {
+  background: var(--as-accent-1);
+}
+
+.app-shell-revamp .download-progress span {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .download-info {
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .download-speed {
+  color: var(--as-text-3);
+}
+
+.app-shell-revamp .custom-model-section {
+  border-top-color: var(--as-border-1);
+}
+
 .custom-model-section h3 {
   margin: 0 0 8px 0;
   font-size: 14px;

@@ -45,3 +45,7 @@
 ## Slice: Revamp UI Primitives Token Cleanup
 - Added intent/button/panel surface tokens in `src/styles/revamp/tokens.css` to keep primitives consistent without scattering ad-hoc rgba values.
 - Updated revamp primitives to be token-only (no raw rgba/hex): buttons, badges, panels, empty states, skeletons.
+
+## Slice: Revamp Settings Shell Coherence
+- Added revamp-shell-scoped CSS overrides in `src/components/Settings/SettingsTab.css` so Settings aligns with the ops-console visual language when the revamp shell is enabled.
+- No behavior changes: only styling, scoped under `.app-shell-revamp` to keep legacy mode untouched.
