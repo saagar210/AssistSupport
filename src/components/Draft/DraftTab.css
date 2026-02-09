@@ -452,6 +452,36 @@
 .view-btn:hover { color: var(--text-primary); }
 .view-btn.active { background: var(--bg-primary); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.1)); }
 
+/* Revamp shell: view toggle should read like a console control (tokenized). */
+.app-shell-revamp .draft-view-header {
+  border-bottom-color: var(--as-border-1);
+  background: var(--as-glass-1);
+  padding: var(--as-space-3) var(--as-space-6);
+}
+
+.app-shell-revamp .view-toggle {
+  border: 1px solid var(--as-border-1);
+  border-radius: var(--as-radius-pill);
+  background: var(--as-glass-2);
+  padding: 3px;
+}
+
+.app-shell-revamp .view-btn {
+  border-radius: var(--as-radius-pill);
+  color: var(--as-text-2);
+}
+
+.app-shell-revamp .view-btn:hover {
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .view-btn.active {
+  background: var(--as-accent-surface-1);
+  color: var(--as-text-1);
+  font-weight: 650;
+  box-shadow: none;
+}
+
 /* Conversation Mode */
 .draft-tab.conversation-mode {
   display: flex;
@@ -465,6 +495,19 @@
   min-height: 0; /* Allow grid item to shrink, enabling panel-content scroll */
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+.app-shell-revamp .draft-tab--revamp .draft-panel {
+  border-right-color: var(--as-border-1);
+  background: linear-gradient(180deg, var(--as-glass-2), var(--as-glass-1));
+}
+
+.app-shell-revamp .draft-tab--revamp .draft-panel.input-panel {
+  border-bottom-color: var(--as-border-1);
+}
+
+.app-shell-revamp .draft-tab--revamp .draft-panel.diagnosis-panel {
+  border-right-color: var(--as-border-1);
 }
 
 .draft-panel:last-child {
@@ -486,6 +529,12 @@
   flex-shrink: 0;
 }
 
+.app-shell-revamp .draft-tab--revamp .draft-panel .panel-header {
+  border-bottom-color: var(--as-border-1);
+  background: var(--as-glass-1);
+  padding: var(--as-space-4) var(--as-space-5);
+}
+
 .panel-header h3 {
   margin: 0;
   font-family: var(--font-heading);
@@ -493,6 +542,12 @@
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   letter-spacing: var(--tracking-tight);
+}
+
+.app-shell-revamp .draft-tab--revamp .draft-panel .panel-header h3 {
+  color: var(--as-text-1);
+  font-size: var(--as-font-size-2);
+  letter-spacing: 0.2px;
 }
 
 .panel-header-actions {
@@ -505,6 +560,10 @@
   flex: 1;
   overflow: auto;
   padding: var(--space-4);
+}
+
+.app-shell-revamp .draft-tab--revamp .draft-panel .panel-content {
+  padding: var(--as-space-5);
 }
 
 /* Panel header wrapping for narrow panels */

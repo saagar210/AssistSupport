@@ -74,6 +74,13 @@
 - Updated `WorkspaceQueueContext` to optionally use the revamp `AsButton` primitive when rendered inside the revamp shell rail.
 - This reduces “mixed UI” artifacts without changing any queue behavior or keybindings.
 
+## Slice: Draft Panel Chrome Revamp Coherence
+- Tokenized the Draft view toggle + panel chrome when mounted in `.app-shell-revamp`:
+  - view toggle uses `--as-*` surfaces and pill radii
+  - draft panel backgrounds and header surfaces use `--as-glass-*` and `--as-border-*`
+  - panel padding uses `--as-space-*`
+- No behavior changes: layout and workflow logic remain unchanged.
+
 ## Slice: Draft Readiness + Workflow Strip Revamp Coherence
 - Added `.app-shell-revamp`-scoped styling for:
   - AI readiness banner surface
