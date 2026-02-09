@@ -1,0 +1,168 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedResponse<T: Serialize> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: usize,
+    pub page_size: usize,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Collection {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Document {
+    pub id: String,
+    pub collection_id: String,
+    pub filename: String,
+    pub file_path: String,
+    pub file_type: String,
+    pub file_size: i64,
+    pub file_hash: String,
+    pub title: String,
+    pub author: Option<String>,
+    pub page_count: Option<i32>,
+    pub word_count: i32,
+    pub chunk_count: i32,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Chunk {
+    pub id: String,
+    pub document_id: String,
+    pub collection_id: String,
+    pub content: String,
+    pub chunk_index: i32,
+    pub start_offset: i32,
+    pub end_offset: i32,
+    pub page_number: Option<i32>,
+    pub section_title: Option<String>,
+    pub token_count: i32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphEdge {
+    pub id: String,
+    pub source_chunk_id: String,
+    pub target_chunk_id: String,
+    pub collection_id: String,
+    pub weight: f64,
+    pub relationship_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: String,
+    pub collection_id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Citation {
+    pub id: String,
+    pub message_id: String,
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_title: String,
+    pub section_title: Option<String>,
+    pub page_number: Option<i32>,
+    pub relevance_score: f64,
+    pub snippet: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct Setting {
+    pub key: String,
+    pub value: String,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entity {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub collection_id: String,
+    pub first_seen_at: String,
+    pub mention_count: i32,
+    pub metadata: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityMention {
+    pub id: String,
+    pub entity_id: String,
+    pub chunk_id: String,
+    pub document_id: String,
+    pub start_offset: i32,
+    pub end_offset: i32,
+    pub context: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityRelationship {
+    pub id: String,
+    pub source_entity_id: String,
+    pub target_entity_id: String,
+    pub relationship_type: String,
+    pub confidence: f64,
+    pub evidence_chunk_id: Option<String>,
+    pub collection_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraphNode {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub mention_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraphEdge {
+    pub source_entity_id: String,
+    pub target_entity_id: String,
+    pub relationship_type: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityGraph {
+    pub nodes: Vec<EntityGraphNode>,
+    pub edges: Vec<EntityGraphEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaModel {
+    pub name: String,
+    pub size: i64,
+    pub family: Option<String>,
+}
