@@ -21,12 +21,24 @@ import type {
   CustomVariable,
   DeploymentHealthSummary,
   IntegrationConfigRecord,
+  MemoryKernelPreflightStatus,
   ModelInfo,
   StartupMetricsResult,
 } from '../../types';
 import './SettingsTab.css';
 
-const AVAILABLE_MODELS: ModelInfo[] = [
+const RECOMMENDED_MODELS: ModelInfo[] = [
+  {
+    id: 'llama-3.1-8b-instruct',
+    name: 'Llama 3.1 8B Instruct',
+    size: '4.9 GB',
+    description: 'Recommended: higher quality and more reliable grounding',
+  },
+];
+
+// Still supported, but intentionally hidden behind progressive disclosure to keep
+// operators focused on a single default model path.
+const OTHER_SUPPORTED_MODELS: ModelInfo[] = [
   {
     id: 'llama-3.2-1b-instruct',
     name: 'Llama 3.2 1B Instruct',
@@ -135,6 +147,7 @@ export function SettingsTab() {
 
   const [loadedModel, setLoadedModel] = useState<string | null>(null);
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
+  const [showOtherModels, setShowOtherModels] = useState(false);
   const [kbFolder, setKbFolderState] = useState<string | null>(null);
   const [indexStats, setIndexStats] = useState<{ total_chunks: number; total_files: number } | null>(null);
   const [vectorEnabled, setVectorEnabled] = useState(false);
@@ -164,6 +177,8 @@ export function SettingsTab() {
     getResponseQualityThresholds(),
   );
   const [qualityThresholdError, setQualityThresholdError] = useState<string | null>(null);
+  const [memoryKernelPreflight, setMemoryKernelPreflight] = useState<MemoryKernelPreflightStatus | null>(null);
+  const [memoryKernelLoading, setMemoryKernelLoading] = useState(false);
 
   // Custom variables state
   const [editingVariable, setEditingVariable] = useState<CustomVariable | null>(null);
@@ -183,6 +198,19 @@ export function SettingsTab() {
       setAuditLoading(false);
     }
   }, [showError]);
+
+  const refreshMemoryKernelStatus = useCallback(async () => {
+    setMemoryKernelLoading(true);
+    try {
+      const status = await invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status');
+      setMemoryKernelPreflight(status);
+    } catch (err) {
+      // Non-blocking: show as unavailable rather than failing settings load.
+      setMemoryKernelPreflight(null);
+    } finally {
+      setMemoryKernelLoading(false);
+    }
+  }, []);
 
   const filteredAuditEntries = useMemo(() => {
     const normalized = auditEntries.slice().reverse();
@@ -207,6 +235,10 @@ export function SettingsTab() {
   useEffect(() => {
     setAuditPage(prev => Math.min(prev, auditTotalPages));
   }, [auditTotalPages]);
+
+  useEffect(() => {
+    refreshMemoryKernelStatus();
+  }, [refreshMemoryKernelStatus]);
 
   const pagedAuditEntries = useMemo(() => {
     const start = (auditPage - 1) * AUDIT_PAGE_SIZE;
@@ -708,8 +740,14 @@ export function SettingsTab() {
           </div>
         )}
 
+        <div className="settings-subsection">
+          <h3>Recommended</h3>
+          <p className="setting-note">
+            For consistent results across operators, AssistSupport recommends a single default model.
+          </p>
+        </div>
         <div className="model-list">
-          {AVAILABLE_MODELS.map(model => {
+          {RECOMMENDED_MODELS.map(model => {
             const isDownloaded = downloadedModels.includes(model.id);
             const isLoaded = loadedModel === model.id;
             const isLoadingThis = loading === model.id;
@@ -773,6 +811,88 @@ export function SettingsTab() {
           })}
         </div>
 
+        <div className="settings-subsection">
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={() => setShowOtherModels(v => !v)}
+            className="btn-hover-scale"
+          >
+            {showOtherModels ? 'Hide other supported models' : 'Show other supported models'}
+          </Button>
+          {showOtherModels && (
+            <>
+              <p className="setting-note">
+                These models are supported for experimentation, but may be less reliable for production ticket responses.
+              </p>
+              <div className="model-list">
+                {OTHER_SUPPORTED_MODELS.map(model => {
+                  const isDownloaded = downloadedModels.includes(model.id);
+                  const isLoaded = loadedModel === model.id;
+                  const isLoadingThis = loading === model.id;
+                  const isDownloadingThis = isDownloading && downloadProgress?.model_id === model.id;
+
+                  return (
+                    <div key={model.id} className={`model-card ${isLoaded ? 'loaded' : ''}`}>
+                      <div className="model-info">
+                        <h3>{model.name}</h3>
+                        <p>{model.description}</p>
+                        <span className="model-size">{model.size}</span>
+                      </div>
+                      <div className="model-actions">
+                        {isDownloadingThis ? (
+                          <div className="download-progress-container">
+                            <div className="download-progress">
+                              <div
+                                className="download-bar"
+                                style={{ width: `${downloadProgress?.percent || 0}%` }}
+                              />
+                              <span className="download-percent">{Math.round(downloadProgress?.percent || 0)}%</span>
+                            </div>
+                            <div className="download-info">
+                              <span className="download-size">
+                                {formatBytes(downloadProgress?.downloaded_bytes || 0)}
+                                {downloadProgress?.total_bytes ? ` / ${formatBytes(downloadProgress.total_bytes)}` : ''}
+                              </span>
+                              <span className="download-speed">{formatSpeed(downloadProgress?.speed_bps || 0)}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="small"
+                              onClick={cancelDownload}
+                              className="download-cancel-btn"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : isDownloaded ? (
+                          <Button
+                            variant={isLoaded ? 'secondary' : 'primary'}
+                            size="small"
+                            onClick={() => isLoaded ? handleUnloadModel() : handleLoadModel(model.id)}
+                            disabled={!!loading}
+                          >
+                            {isLoadingThis ? 'Loading...' : isLoaded ? 'Unload' : 'Load'}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="small"
+                            onClick={() => handleDownloadModel(model.id)}
+                            disabled={isDownloading}
+                          >
+                            Download
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="custom-model-section">
           <h3>Custom Model</h3>
           <p className="settings-description">
@@ -785,6 +905,46 @@ export function SettingsTab() {
           >
             {loading === 'custom' ? 'Loading...' : 'Select GGUF File...'}
           </Button>
+        </div>
+
+        <div className="custom-model-section">
+          <h3>AI Status &amp; Guarantees</h3>
+          <p className="settings-description">
+            AssistSupport runs AI locally and can operate fully offline. These signals help operators trust what the AI is doing.
+          </p>
+          <div className="settings-grid">
+            <div className="settings-card">
+              <h4>Local Guarantees</h4>
+              <ul className="settings-list">
+                <li><strong>Offline-first:</strong> no cloud AI calls</li>
+                <li><strong>Copy gating:</strong> citations required (override logs locally)</li>
+                <li><strong>Prompts hidden:</strong> operators cannot edit system prompts</li>
+              </ul>
+            </div>
+            <div className="settings-card">
+              <h4>Runtime Status</h4>
+              <ul className="settings-list">
+                <li><strong>Chat model:</strong> {loadedModel ? loadedModel : 'Not loaded'}</li>
+                <li><strong>Embeddings:</strong> {isEmbeddingLoaded ? 'Loaded' : 'Not loaded'}</li>
+                <li><strong>KB folder:</strong> {kbFolder ? kbFolder : 'Not set'}</li>
+                <li>
+                  <strong>MemoryKernel:</strong>{' '}
+                  {memoryKernelPreflight ? memoryKernelPreflight.status : 'Unavailable'}
+                  {memoryKernelPreflight?.service_contract_version ? ` (svc ${memoryKernelPreflight.service_contract_version})` : ''}
+                </li>
+              </ul>
+              <div className="settings-actions-row">
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={refreshMemoryKernelStatus}
+                  disabled={memoryKernelLoading}
+                >
+                  {memoryKernelLoading ? 'Refreshing...' : 'Refresh'}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

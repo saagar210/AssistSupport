@@ -233,8 +233,11 @@ The MemoryKernel integration is intentionally optional and must never block core
   - Default: `2500ms` per HTTP call.
   - Configurable via `ASSISTSUPPORT_MEMORY_KERNEL_TIMEOUT_MS`.
 - Startup preflight checks:
-  - `GET /v1/health` must report `service.v2` and `api.v1`.
+  - `GET /v1/health` must report `service.v3` and `api.v1`.
   - `POST /v1/db/schema-version` must succeed and match the same versions.
+  - In non-dev mode, auth token is required by policy (`ASSISTSUPPORT_MEMORY_KERNEL_REQUIRE_AUTH_TOKEN=1`, default in release builds).
+  - Token source order: env `ASSISTSUPPORT_MEMORY_KERNEL_AUTH_TOKEN`, then secure-store key `memorykernel_service_auth_token`.
+  - Preflight/query requests include `Authorization: Bearer <token>` whenever token is resolved.
 - Retry/backoff policy:
   - No blocking retries in startup path.
   - Status polling is periodic via `AppStatusContext` refresh cycle.
@@ -243,8 +246,8 @@ The MemoryKernel integration is intentionally optional and must never block core
   - `disabled` -> feature flag off.
   - `checking` -> preflight in progress.
   - `ready` -> enrichment enabled.
-  - `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded` -> enrichment disabled.
+  - `auth-required`, `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded` -> enrichment disabled.
 - User-facing diagnostics:
   - Header status panel shows integration state and reason text from preflight.
   - Draft flow logs skipped enrichment and proceeds with deterministic fallback.
-  - Fallback telemetry reasons are categorized as: `feature-disabled`, `offline`, `timeout`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`, `non-2xx`, `network-error`, `query-error`, `empty-context`, `unknown`.
+  - Fallback telemetry reasons are categorized as: `feature-disabled`, `auth-required`, `offline`, `timeout`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`, `non-2xx`, `network-error`, `query-error`, `empty-context`, `unknown`.

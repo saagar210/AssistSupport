@@ -17,6 +17,11 @@ Scope: Archived decision checkpoint for Phase 7 -> Phase 8 transition.
 - Rehearsal posture: **GO**
 - Runtime cutover decision: **GO**
 
+## Explicit GO/NO-GO Register
+- Rehearsal continuation gate: **GO**
+- Runtime cutover gate: **GO**
+- Runtime cutover NO-GO override: **NOT TRIGGERED**
+
 ## Checkpoint Closure State
 - Phase 7 decision checkpoint: `CLOSED`
 - Phase 8 runtime cutover: `COMPLETE`
@@ -24,3 +29,9 @@ Scope: Archived decision checkpoint for Phase 7 -> Phase 8 transition.
 
 ## Next Phase Control
 This checkpoint is closed and superseded by stabilization + program closeout artifacts.
+
+## Bilateral Signature Block
+| Signature ID | Party | Role | Decision | Signature Method | Status |
+| --- | --- | --- | --- | --- | --- |
+| SIG-MK-2026-02-08-01 | MemoryKernel | Producer Release Owner | GO | Producer checkpoint publication | SIGNED |
+| SIG-AS-2026-02-08-01 | AssistSupport | Integration Program Owner | GO | Consumer decision record publication | SIGNED |

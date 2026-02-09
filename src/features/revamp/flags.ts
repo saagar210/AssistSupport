@@ -3,7 +3,9 @@ export type RevampFlagId =
   | 'ASSISTSUPPORT_REVAMP_INBOX'
   | 'ASSISTSUPPORT_REVAMP_WORKSPACE'
   | 'ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2'
-  | 'ASSISTSUPPORT_LLM_ROUTER_V2';
+  | 'ASSISTSUPPORT_LLM_ROUTER_V2'
+  | 'ASSISTSUPPORT_ENABLE_ADMIN_TABS'
+  | 'ASSISTSUPPORT_ENABLE_NETWORK_INGEST';
 
 interface RevampFlagDefinition {
   id: RevampFlagId;
@@ -41,6 +43,18 @@ const REVAMP_FLAG_DEFINITIONS: Record<RevampFlagId, RevampFlagDefinition> = {
     id: 'ASSISTSUPPORT_LLM_ROUTER_V2',
     envKey: 'VITE_ASSISTSUPPORT_LLM_ROUTER_V2',
     storageKey: 'assistsupport.flag.ASSISTSUPPORT_LLM_ROUTER_V2',
+    defaultValue: false,
+  },
+  ASSISTSUPPORT_ENABLE_ADMIN_TABS: {
+    id: 'ASSISTSUPPORT_ENABLE_ADMIN_TABS',
+    envKey: 'VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS',
+    storageKey: 'assistsupport.flag.ASSISTSUPPORT_ENABLE_ADMIN_TABS',
+    defaultValue: false,
+  },
+  ASSISTSUPPORT_ENABLE_NETWORK_INGEST: {
+    id: 'ASSISTSUPPORT_ENABLE_NETWORK_INGEST',
+    envKey: 'VITE_ASSISTSUPPORT_ENABLE_NETWORK_INGEST',
+    storageKey: 'assistsupport.flag.ASSISTSUPPORT_ENABLE_NETWORK_INGEST',
     defaultValue: false,
   },
 };
@@ -113,10 +127,17 @@ export function resolveRevampFlags({ env, storage }: ResolveRevampFlagsOptions =
       ASSISTSUPPORT_REVAMP_WORKSPACE: false,
       ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2: false,
       ASSISTSUPPORT_LLM_ROUTER_V2: false,
+      ASSISTSUPPORT_ENABLE_ADMIN_TABS: false,
+      ASSISTSUPPORT_ENABLE_NETWORK_INGEST: false,
     },
   );
 }
 
 export function getEnabledRevampFlags(flags: RevampFlags): RevampFlagId[] {
-  return (Object.keys(flags) as RevampFlagId[]).filter((flagId) => flags[flagId]);
+  // "Revamp enabled" is used for preview-mode messaging. Keep this narrowly scoped
+  // to actual revamp / routing toggles, not general feature policy flags.
+  const revampScoped: RevampFlagId[] = (Object.keys(flags) as RevampFlagId[]).filter((flagId) => {
+    return flagId.startsWith('ASSISTSUPPORT_REVAMP_') || flagId === 'ASSISTSUPPORT_LLM_ROUTER_V2';
+  });
+  return revampScoped.filter((flagId) => flags[flagId]);
 }

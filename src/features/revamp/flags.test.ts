@@ -37,4 +37,16 @@ describe('resolveRevampFlags', () => {
 
     expect(flags.ASSISTSUPPORT_REVAMP_INBOX).toBe(true);
   });
+
+  it('does not treat non-revamp feature policy flags as "revamp enabled"', () => {
+    const flags = resolveRevampFlags({
+      env: {
+        VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS: '1',
+      },
+      storage: makeStorage({}),
+    });
+
+    expect(flags.ASSISTSUPPORT_ENABLE_ADMIN_TABS).toBe(true);
+    expect(getEnabledRevampFlags(flags)).toEqual([]);
+  });
 });

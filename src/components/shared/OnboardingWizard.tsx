@@ -80,16 +80,16 @@ interface ModelOption {
 
 const MODEL_OPTIONS: ModelOption[] = [
   {
-    name: 'Llama 3.2 3B',
-    size: '2.0 GB',
-    description: 'Fast and efficient, great for most tasks',
-    modelId: 'llama-3.2-3b-instruct',
+    name: 'Llama 3.1 8B',
+    size: '4.9 GB',
+    description: 'Recommended: best quality and stability for agent-assist drafting',
+    modelId: 'llama-3.1-8b-instruct',
   },
   {
-    name: 'Phi 3 Mini 4K',
-    size: '2.4 GB',
-    description: 'Stronger reasoning, requires more RAM',
-    modelId: 'phi-3-mini-4k-instruct',
+    name: 'Llama 3.2 3B',
+    size: '2.0 GB',
+    description: 'Faster fallback: good for quick drafts on smaller machines',
+    modelId: 'llama-3.2-3b-instruct',
   },
 ];
 

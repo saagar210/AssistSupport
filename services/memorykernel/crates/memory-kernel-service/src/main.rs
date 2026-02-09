@@ -6,8 +6,10 @@ use std::time::Duration;
 
 use anyhow::Result;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{Path, Request, State};
+use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
+use axum::http::{HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -21,12 +23,14 @@ use serde_json::json;
 
 const SERVICE_CONTRACT_VERSION: &str = "service.v3";
 const OPENAPI_YAML: &str = include_str!("../../../openapi/openapi.yaml");
+const SERVICE_REQUIRE_AUTH_TOKEN_ENV: &str = "MEMORYKERNEL_SERVICE_REQUIRE_AUTH_TOKEN";
 
 #[derive(Debug, Clone)]
 struct ServiceState {
     api: MemoryKernelApi,
     operation_timeout: Duration,
     telemetry: Arc<ServiceTelemetry>,
+    auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +133,24 @@ struct Args {
     bind: SocketAddr,
     #[arg(long, default_value_t = 2500)]
     operation_timeout_ms: u64,
+    #[arg(long, default_value_t = true)]
+    require_loopback_bind: bool,
+    #[arg(long, env = "MEMORYKERNEL_SERVICE_AUTH_TOKEN", hide_env_values = true)]
+    auth_token: Option<String>,
+}
+
+fn parse_bool_flag(raw: Option<&str>, default: bool) -> bool {
+    raw.map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(default)
+}
+
+fn auth_token_required_by_policy() -> bool {
+    parse_bool_flag(
+        std::env::var(SERVICE_REQUIRE_AUTH_TOKEN_ENV).ok().as_deref(),
+        !cfg!(debug_assertions),
+    )
 }
 
 impl IntoResponse for ServiceFailure {
@@ -343,16 +365,88 @@ fn app(state: ServiceState) -> Router {
         .route("/v1/query/ask", post(query_ask))
         .route("/v1/query/recall", post(query_recall))
         .route("/v1/context/:context_package_id", get(context_show))
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(axum::middleware::from_fn_with_state(state, auth_guard))
+}
+
+async fn auth_guard(
+    State(state): State<ServiceState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(expected_token) = state.auth_token.as_deref() else {
+        return next.run(request).await;
+    };
+
+    let Some(header) = request.headers().get(AUTHORIZATION) else {
+        let mut response = ServiceState::failure(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Missing Authorization header",
+            None,
+        )
+        .into_response();
+        response
+            .headers_mut()
+            .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        return response;
+    };
+
+    let Ok(header_str) = header.to_str() else {
+        return ServiceState::failure(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Invalid Authorization header encoding",
+            None,
+        )
+        .into_response();
+    };
+
+    let token = header_str
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if token != Some(expected_token) {
+        return ServiceState::failure(
+            StatusCode::FORBIDDEN,
+            "unauthorized",
+            "Authorization token mismatch",
+            None,
+        )
+        .into_response();
+    }
+
+    next.run(request).await
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if args.require_loopback_bind && !args.bind.ip().is_loopback() {
+        anyhow::bail!(
+            "Refusing non-loopback bind address {} while --require-loopback-bind is enabled",
+            args.bind
+        );
+    }
+
+    let auth_token = args
+        .auth_token
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let auth_token_required = auth_token_required_by_policy();
+    if auth_token_required && auth_token.is_none() {
+        anyhow::bail!(
+            "Refusing startup without auth token while {} is enabled. Set --auth-token or MEMORYKERNEL_SERVICE_AUTH_TOKEN.",
+            SERVICE_REQUIRE_AUTH_TOKEN_ENV
+        );
+    }
+
     let state = ServiceState {
         api: MemoryKernelApi::new(args.db),
         operation_timeout: Duration::from_millis(args.operation_timeout_ms),
         telemetry: Arc::new(ServiceTelemetry::default()),
+        auth_token,
     };
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     axum::serve(listener, app(state)).await?;
@@ -548,11 +642,31 @@ mod tests {
     }
 
     fn test_state(api: MemoryKernelApi, timeout_ms: u64) -> ServiceState {
+        test_state_with_auth(api, timeout_ms, None)
+    }
+
+    fn test_state_with_auth(
+        api: MemoryKernelApi,
+        timeout_ms: u64,
+        auth_token: Option<&str>,
+    ) -> ServiceState {
         ServiceState {
             api,
             operation_timeout: Duration::from_millis(timeout_ms),
             telemetry: Arc::new(ServiceTelemetry::default()),
+            auth_token: auth_token.map(|value| value.to_string()),
         }
+    }
+
+    #[test]
+    fn parse_bool_flag_handles_common_values() {
+        assert!(parse_bool_flag(Some("true"), false));
+        assert!(parse_bool_flag(Some("1"), false));
+        assert!(parse_bool_flag(Some("YES"), false));
+        assert!(!parse_bool_flag(Some("false"), true));
+        assert!(!parse_bool_flag(Some("0"), true));
+        assert!(parse_bool_flag(None, true));
+        assert!(!parse_bool_flag(None, false));
     }
 
     async fn response_json(response: Response) -> serde_json::Value {
@@ -596,6 +710,53 @@ mod tests {
             value.get("service_contract_version").and_then(serde_json::Value::as_str),
             Some(SERVICE_CONTRACT_VERSION)
         );
+    }
+
+    // Test IDs: TSVC-021
+    #[tokio::test]
+    async fn auth_guard_rejects_missing_or_invalid_bearer_token() {
+        let state = test_state_with_auth(MemoryKernelApi::new(unique_temp_db_path()), 2500, Some("secret-token"));
+        let router = app(state);
+
+        let missing_auth = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap_or_else(|err| panic!("failed to build request: {err}")),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("request failed: {err}"));
+        assert_eq!(missing_auth.status(), StatusCode::UNAUTHORIZED);
+
+        let wrong_auth = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .method("GET")
+                    .header(AUTHORIZATION, "Bearer wrong-token")
+                    .body(axum::body::Body::empty())
+                    .unwrap_or_else(|err| panic!("failed to build request: {err}")),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("request failed: {err}"));
+        assert_eq!(wrong_auth.status(), StatusCode::FORBIDDEN);
+
+        let valid_auth = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .method("GET")
+                    .header(AUTHORIZATION, "Bearer secret-token")
+                    .body(axum::body::Body::empty())
+                    .unwrap_or_else(|err| panic!("failed to build request: {err}")),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("request failed: {err}"));
+        assert_eq!(valid_auth.status(), StatusCode::OK);
     }
 
     // Test IDs: TSVC-003

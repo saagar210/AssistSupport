@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import { buildAppShellCommands } from './commands';
 import type { TabId } from './types';
 import type { QueueView } from '../inbox/queueModel';
+import type { RevampFlags } from '../revamp';
 
 interface UseAppShellCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
   revampCommandPaletteV2Enabled: boolean;
   queueFirstInboxEnabled: boolean;
+  revampFlags: RevampFlags;
   setActiveTab: (tab: TabId) => void;
   openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
@@ -17,7 +19,6 @@ interface UseAppShellCommandsParams {
   handleCancelGeneration: () => void;
   handleToggleSidebar: () => void;
   onOpenShortcuts: () => void;
-  addToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
   clearDraft: () => void;
 }
 
@@ -26,6 +27,7 @@ export function useAppShellCommands({
   sidebarCollapsed,
   revampCommandPaletteV2Enabled,
   queueFirstInboxEnabled,
+  revampFlags,
   setActiveTab,
   openQueueView,
   handleGenerate,
@@ -35,7 +37,6 @@ export function useAppShellCommands({
   handleCancelGeneration,
   handleToggleSidebar,
   onOpenShortcuts,
-  addToast,
   clearDraft,
 }: UseAppShellCommandsParams) {
   return useMemo(() => buildAppShellCommands({
@@ -43,6 +44,7 @@ export function useAppShellCommands({
     sidebarCollapsed,
     revampCommandPaletteV2Enabled,
     queueFirstInboxEnabled,
+    revampFlags,
     setActiveTab,
     openQueueView,
     handleGenerate,
@@ -52,13 +54,13 @@ export function useAppShellCommands({
     handleCancelGeneration,
     handleToggleSidebar,
     onOpenShortcuts,
-    addToast,
     clearDraft,
   }), [
     activeTab,
     sidebarCollapsed,
     revampCommandPaletteV2Enabled,
     queueFirstInboxEnabled,
+    revampFlags,
     setActiveTab,
     openQueueView,
     handleGenerate,
@@ -68,7 +70,6 @@ export function useAppShellCommands({
     handleCancelGeneration,
     handleToggleSidebar,
     onOpenShortcuts,
-    addToast,
     clearDraft,
   ]);
 }

@@ -5,6 +5,8 @@
 
 import { Icon, IconName } from '../shared/Icon';
 import type { Tab } from '../../types';
+import type { RevampFlags } from '../../features/revamp';
+import { isTabEnabled } from '../../features/app-shell/tabPolicy';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -12,6 +14,7 @@ interface SidebarProps {
   onTabChange: (tab: Tab) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  revampFlags: RevampFlags;
 }
 
 interface NavItem {
@@ -91,11 +94,11 @@ const settingsItem: NavItem = {
   id: 'settings',
   label: 'Settings',
   icon: 'settings',
-  shortcut: '9',
+  shortcut: '0',
   description: 'Configure app and model settings'
 };
 
-export function Sidebar({ activeTab, onTabChange, collapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, collapsed, onToggleCollapse, revampFlags }: SidebarProps) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
@@ -117,7 +120,7 @@ export function Sidebar({ activeTab, onTabChange, collapsed, onToggleCollapse }:
 
       <nav className="sidebar-nav" role="navigation" aria-label="Main navigation">
         <ul className="nav-list">
-          {navItems.map(item => (
+          {navItems.filter((item) => isTabEnabled(item.id, revampFlags)).map(item => (
             <li key={item.id}>
               <button
                 className={`nav-item ${activeTab === item.id ? 'active' : ''}`}

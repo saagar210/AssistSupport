@@ -9,6 +9,13 @@ This folder is the authoritative execution track for the AssistSupport rebuild p
 4. `RISK_REGISTER.md`
 5. `PHASE_STATUS.md`
 6. `EXECUTION_CHECKLIST.md`
+7. `UX_FULL_REVAMP_IMPLEMENTATION_PLAN.md`
+8. Phase 4 (feature/workflow lock):
+   - `FEATURE_LOCK_WORKFLOW.md`
+   - `LOCAL_AI_CONTRACT.md`
+   - `PHASE4_FEATURE_INVENTORY.md`
+   - `PHASE4_FEATURE_LOCK_DECISIONS.md`
+   - `UX_REVAMP_INPUT_SPEC.md`
 
 ## Decision Records
 - `adr/`

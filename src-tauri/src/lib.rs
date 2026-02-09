@@ -98,6 +98,12 @@ pub fn run() {
             commands::has_hf_token,
             commands::set_hf_token,
             commands::clear_hf_token,
+            commands::has_search_api_token,
+            commands::set_search_api_token,
+            commands::clear_search_api_token,
+            commands::has_memorykernel_service_token,
+            commands::set_memorykernel_service_token,
+            commands::clear_memorykernel_service_token,
             commands::download_model,
             commands::cancel_download,
             // KB Indexer commands
@@ -196,6 +202,7 @@ pub fn run() {
             commands::has_github_token,
             commands::get_audit_entries,
             commands::export_audit_log,
+            commands::audit_response_copy_override,
             // Namespace commands
             commands::list_namespaces,
             commands::list_namespaces_with_counts,

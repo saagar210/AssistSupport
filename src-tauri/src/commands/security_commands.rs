@@ -18,6 +18,50 @@ pub(crate) fn clear_hf_token_impl() -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn has_search_api_token_impl() -> Result<bool, String> {
+    FileKeyStore::get_token(TOKEN_SEARCH_API)
+        .map(|token| token.is_some())
+        .map_err(|e| e.to_string())
+}
+
+pub(crate) fn set_search_api_token_impl(token: String) -> Result<(), String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+    FileKeyStore::store_token(TOKEN_SEARCH_API, token).map_err(|e| e.to_string())?;
+    audit::audit_token_set("search_api");
+    Ok(())
+}
+
+pub(crate) fn clear_search_api_token_impl() -> Result<(), String> {
+    FileKeyStore::delete_token(TOKEN_SEARCH_API).map_err(|e| e.to_string())?;
+    audit::audit_token_cleared("search_api");
+    Ok(())
+}
+
+pub(crate) fn has_memorykernel_service_token_impl() -> Result<bool, String> {
+    FileKeyStore::get_token(TOKEN_MEMORYKERNEL_SERVICE)
+        .map(|token| token.is_some())
+        .map_err(|e| e.to_string())
+}
+
+pub(crate) fn set_memorykernel_service_token_impl(token: String) -> Result<(), String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+    FileKeyStore::store_token(TOKEN_MEMORYKERNEL_SERVICE, token).map_err(|e| e.to_string())?;
+    audit::audit_token_set("memorykernel_service");
+    Ok(())
+}
+
+pub(crate) fn clear_memorykernel_service_token_impl() -> Result<(), String> {
+    FileKeyStore::delete_token(TOKEN_MEMORYKERNEL_SERVICE).map_err(|e| e.to_string())?;
+    audit::audit_token_cleared("memorykernel_service");
+    Ok(())
+}
+
 pub(crate) fn set_github_token_impl(host: String, token: String) -> Result<(), String> {
     let host = normalize_github_host(&host)?;
     let token = token.trim();

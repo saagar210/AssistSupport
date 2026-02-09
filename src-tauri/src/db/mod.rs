@@ -78,10 +78,12 @@ impl Database {
         // Set busy timeout (5 seconds) to avoid SQLITE_BUSY errors
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
 
-        // Use WAL journal mode for better concurrent read performance
-        // Note: WAL works with SQLCipher but plaintext_header_size may need adjustment
-        // for older SQLCipher versions. Default behavior is safe.
-        let _ = conn.execute_batch("PRAGMA journal_mode = WAL;");
+        // Use WAL journal mode for better concurrent read performance.
+        // For defense in depth, do not silently ignore failures; log the effective mode.
+        match conn.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get::<_, String>(0)) {
+            Ok(mode) => tracing::info!("SQLite journal_mode set to {}", mode),
+            Err(e) => tracing::warn!("Failed to set journal_mode=WAL: {}", e),
+        }
 
         // Set secure delete to overwrite deleted content
         conn.execute_batch("PRAGMA secure_delete = ON;")?;

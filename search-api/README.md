@@ -12,8 +12,19 @@ pip install -r requirements.txt
 ## Local Development
 
 ```bash
-# Development mode (no auth enforcement)
-ENVIRONMENT=development python3 search_api.py
+# Auth is enabled by default in all environments.
+# Set a non-default bearer token before starting the service.
+ENVIRONMENT=development \
+ASSISTSUPPORT_API_KEY=local-dev-search-token \
+python3 search_api.py
+```
+
+Insecure local-only override (not recommended):
+
+```bash
+ENVIRONMENT=development \
+ASSISTSUPPORT_SEARCH_API_REQUIRE_AUTH=0 \
+python3 search_api.py
 ```
 
 ## Production-like Local Run

@@ -15,6 +15,13 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+// Backup imports are an untrusted input surface. These limits prevent
+// decompression bombs and absurdly large JSON payloads from exhausting memory.
+const MAX_ZIP_ENTRIES: usize = 10_000;
+const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES: u64 = 500 * 1024 * 1024; // 500MB
+const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES: u64 = 100 * 1024 * 1024; // 100MB
+const MAX_ZIP_JSON_ENTRY_BYTES: u64 = 20 * 1024 * 1024; // 20MB per JSON file
+
 /// Current backup format version
 const BACKUP_VERSION: &str = "1";
 
@@ -292,6 +299,7 @@ pub fn preview_import(
 
         let cursor = Cursor::new(zip_data);
         let mut archive = ZipArchive::new(cursor)?;
+        validate_zip_archive_limits(&mut archive)?;
 
         let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
         if version.version != BACKUP_VERSION {
@@ -320,6 +328,7 @@ pub fn preview_import(
     // Unencrypted backup
     let file = File::open(backup_path)?;
     let mut archive = ZipArchive::new(file)?;
+    validate_zip_archive_limits(&mut archive)?;
 
     // Read version
     let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
@@ -371,6 +380,7 @@ pub fn import_backup(
         };
 
     let mut archive = archive_result?;
+    validate_zip_archive_limits(&mut archive)?;
 
     // Verify version
     let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
@@ -461,9 +471,106 @@ fn read_json_from_zip<T: serde::de::DeserializeOwned, R: Read + std::io::Seek>(
     filename: &str,
 ) -> Result<T, BackupError> {
     let mut file = archive.by_name(filename)?;
+    if file.size() > MAX_ZIP_JSON_ENTRY_BYTES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Backup entry too large: {} ({} bytes)",
+            filename,
+            file.size()
+        )));
+    }
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
+    if contents.len() as u64 > MAX_ZIP_JSON_ENTRY_BYTES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Backup entry too large after decompression: {} ({} bytes)",
+            filename,
+            contents.len()
+        )));
+    }
     Ok(serde_json::from_str(&contents)?)
+}
+
+fn is_suspicious_zip_path(path: &str) -> bool {
+    // ZIP paths are always `/` separated. Keep this conservative: no absolute paths,
+    // no parent traversal, and no backslashes (Windows separator) to avoid ambiguity.
+    //
+    // Defense in depth: percent-decode first to catch encoded traversal like %2e%2e.
+    let decoded = percent_decode_lossy(path);
+
+    if decoded.starts_with('/') || decoded.contains('\\') {
+        return true;
+    }
+    decoded.split('/').any(|part| part == "..")
+}
+
+fn percent_decode_lossy(input: &str) -> String {
+    // Minimal percent-decoder for ZIP entry names. This is intentionally small
+    // (no new dependency) and only exists to catch encoded traversal like `%2e%2e`.
+    fn hex_val(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h1), Some(h2)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push((h1 << 4) | h2);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn validate_zip_archive_limits<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+) -> Result<(), BackupError> {
+    let entry_count = archive.len();
+    if entry_count > MAX_ZIP_ENTRIES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Backup ZIP has too many entries: {} (max {})",
+            entry_count, MAX_ZIP_ENTRIES
+        )));
+    }
+
+    let mut total_uncompressed: u64 = 0;
+    for i in 0..entry_count {
+        let file = archive.by_index(i)?;
+        let name = file.name().to_string();
+        if is_suspicious_zip_path(&name) {
+            return Err(BackupError::InvalidBackup(format!(
+                "Backup ZIP contains suspicious path: {}",
+                name
+            )));
+        }
+
+        let size = file.size();
+        if size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES {
+            return Err(BackupError::InvalidBackup(format!(
+                "Backup ZIP entry too large: {} ({} bytes)",
+                name, size
+            )));
+        }
+        total_uncompressed = total_uncompressed.saturating_add(size);
+        if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES {
+            return Err(BackupError::InvalidBackup(format!(
+                "Backup ZIP total uncompressed size too large: {} bytes (max {} bytes)",
+                total_uncompressed, MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 /// Export settings from database
@@ -542,6 +649,11 @@ fn sanitize_imported_setting(key: &str, value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::sanitize_imported_setting;
+    use super::{validate_zip_archive_limits, MAX_ZIP_ENTRIES};
+    use std::io::Cursor;
+    use zip::write::SimpleFileOptions;
+    use zip::{ZipArchive, ZipWriter};
+    use std::io::Write;
 
     #[test]
     fn sanitize_imported_setting_accepts_non_kb_keys() {
@@ -559,5 +671,51 @@ mod tests {
     fn sanitize_imported_setting_rejects_missing_kb_path() {
         let result = sanitize_imported_setting("kb_folder", "/path/that/does/not/exist");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn validate_zip_archive_limits_rejects_too_many_entries() {
+        let mut buf = Vec::new();
+        {
+            let cursor = Cursor::new(&mut buf);
+            let mut writer = ZipWriter::new(cursor);
+            let opts = SimpleFileOptions::default();
+            // Create MAX_ZIP_ENTRIES + 1 empty files without writing large data.
+            for i in 0..(MAX_ZIP_ENTRIES + 1) {
+                writer.start_file(format!("f{}.txt", i), opts).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+
+        let cursor = Cursor::new(buf);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let result = validate_zip_archive_limits(&mut archive);
+        assert!(result.is_err(), "Expected archive to be rejected for too many entries");
+    }
+
+    #[test]
+    fn validate_zip_archive_limits_rejects_url_encoded_traversal_path() {
+        let mut buf = Vec::new();
+        {
+            let cursor = Cursor::new(&mut buf);
+            let mut writer = ZipWriter::new(cursor);
+            let opts = SimpleFileOptions::default();
+
+            // Include required minimal file so ZipArchive is well-formed.
+            writer.start_file("version.json", opts).unwrap();
+            writer.write_all(br#"{"version":"1","created_at":"now","app_version":"1"}"#)
+                .unwrap();
+
+            // Encoded ".." should be rejected.
+            writer.start_file("%2e%2e/evil.json", opts).unwrap();
+            writer.write_all(b"{}").unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        let cursor = Cursor::new(buf);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let result = validate_zip_archive_limits(&mut archive);
+        assert!(result.is_err(), "Expected archive to be rejected for encoded traversal");
     }
 }

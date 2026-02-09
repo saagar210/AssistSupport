@@ -58,6 +58,14 @@ Any one of the following remains an automatic NO-GO:
   - Phase 7 decision checkpoint: `CLOSED`
   - Phase 8 runtime cutover: `COMPLETE`
 
+## Bilateral Signature Attestation
+| Party | Role | Decision | Signature Method | Reference |
+| --- | --- | --- | --- | --- |
+| AssistSupport | Integration Program Owner | GO | Thread approval + decision record commit | `/Users/d/Projects/AssistSupport/docs/implementation/RUNTIME_CUTOVER_DECISION_RECORD_2026-02-08.md` |
+| MemoryKernel | Producer Release Owner | GO | Producer checkpoint + addendum commit | `/Users/d/Projects/MemoryKernel/docs/implementation/SERVICE_V3_CUTOVER_DECISION_CHECKPOINT_PRODUCER_2026-02-08.md` |
+
+Signature status: **COMPLETE (bilateral)**.
+
 ## Current Policy Confirmation
 1. Runtime cutover is approved and executed for `service.v3` baseline.
 2. Enrichment remains optional and non-blocking.

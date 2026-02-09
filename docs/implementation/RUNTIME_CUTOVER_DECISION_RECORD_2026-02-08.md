@@ -10,6 +10,11 @@ Bilateral decision artifact for Phase 8 runtime cutover execution.
 1. Rehearsal continuation: **GO**
 2. Runtime cutover execution: **GO**
 
+## Explicit GO/NO-GO Register
+- Rehearsal continuation gate: **GO**
+- Runtime cutover gate: **GO**
+- Runtime cutover NO-GO override: **NOT TRIGGERED**
+
 ## Approved Runtime Cutover Window
 - release_tag: `v0.4.0`
 - commit_sha: `7e4806a34b98e6c06ee33fa9f11499a975e7b922`
@@ -46,3 +51,9 @@ Bilateral decision artifact for Phase 8 runtime cutover execution.
 - Phase 8 runtime cutover: **COMPLETE**
 - Operational posture: **GO**
 - Phase 9 stabilization window: **ACTIVE**
+
+## Bilateral Signature Block
+| Signature ID | Party | Role | Decision | Signature Method | Status |
+| --- | --- | --- | --- | --- | --- |
+| SIG-AS-2026-02-08-01 | AssistSupport | Integration Program Owner | GO | Decision-record merge + thread approval | SIGNED |
+| SIG-MK-2026-02-08-01 | MemoryKernel | Producer Release Owner | GO | Producer checkpoint + addendum publication | SIGNED |

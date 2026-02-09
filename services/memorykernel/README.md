@@ -104,14 +104,24 @@ Top-level command groups:
 - Liveness endpoint: `GET /v1/health`
 - Readiness endpoint: `GET /v1/ready`
 - Service operation timeout: `--operation-timeout-ms` (default: `2500`)
+- Loopback bind guardrail: `--require-loopback-bind true` (default)
+- Bearer auth token: `--auth-token` or env `MEMORYKERNEL_SERVICE_AUTH_TOKEN`
+- Auth requirement policy: env `MEMORYKERNEL_SERVICE_REQUIRE_AUTH_TOKEN`
+  - release builds default to required (`true`)
+  - debug builds default to optional (`false`)
+  - recommended workstation setting: `MEMORYKERNEL_SERVICE_REQUIRE_AUTH_TOKEN=true`
 
 Example:
 
 ```bash
+export MEMORYKERNEL_SERVICE_AUTH_TOKEN="replace-with-strong-token"
+export MEMORYKERNEL_SERVICE_REQUIRE_AUTH_TOKEN=true
+
 cargo run -p memory-kernel-service -- \
   --db ./memory_kernel.sqlite3 \
   --bind 127.0.0.1:4010 \
-  --operation-timeout-ms 2500
+  --operation-timeout-ms 2500 \
+  --require-loopback-bind true
 ```
 
 ## Trilogy Integration

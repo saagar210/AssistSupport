@@ -1,12 +1,15 @@
 import type { Command } from '../../components/shared/CommandPalette';
 import type { TabId } from './types';
 import type { QueueView } from '../inbox/queueModel';
+import type { RevampFlags } from '../revamp';
+import { isTabEnabled } from './tabPolicy';
 
 interface BuildCommandsParams {
   activeTab: TabId;
   sidebarCollapsed: boolean;
   revampCommandPaletteV2Enabled: boolean;
   queueFirstInboxEnabled: boolean;
+  revampFlags: RevampFlags;
   setActiveTab: (tab: TabId) => void;
   openQueueView: (queueView: QueueView) => void;
   handleGenerate: () => void;
@@ -16,7 +19,6 @@ interface BuildCommandsParams {
   handleCancelGeneration: () => void;
   handleToggleSidebar: () => void;
   onOpenShortcuts: () => void;
-  addToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
   clearDraft?: () => void;
 }
 
@@ -25,6 +27,7 @@ export function buildAppShellCommands({
   sidebarCollapsed,
   revampCommandPaletteV2Enabled,
   queueFirstInboxEnabled,
+  revampFlags,
   setActiveTab,
   openQueueView,
   handleGenerate,
@@ -34,10 +37,22 @@ export function buildAppShellCommands({
   handleCancelGeneration,
   handleToggleSidebar,
   onOpenShortcuts,
-  addToast,
   clearDraft,
 }: BuildCommandsParams): Command[] {
-  const commands: Command[] = [
+  const makeNavCommand = (
+    tab: TabId,
+    payload: Omit<Command, 'action' | 'disabled'> & { action?: Command['action'] },
+  ): Command | null => {
+    if (!isTabEnabled(tab, revampFlags)) {
+      return null;
+    }
+    return {
+      ...payload,
+      action: () => setActiveTab(tab),
+    };
+  };
+
+  const commands: Array<Command | null> = [
     {
       id: 'nav-draft',
       label: 'Go to Draft',
@@ -65,15 +80,14 @@ export function buildAppShellCommands({
       category: 'navigation',
       action: () => setActiveTab('sources'),
     },
-    {
+    makeNavCommand('ingest', {
       id: 'nav-ingest',
       label: 'Go to Ingest',
-      description: 'Add content to knowledge base',
+      description: 'Add content to knowledge base (network ingest)',
       icon: 'ingest',
       shortcut: 'Cmd+4',
       category: 'navigation',
-      action: () => setActiveTab('ingest'),
-    },
+    }),
     {
       id: 'nav-knowledge',
       label: 'Go to Knowledge',
@@ -83,33 +97,30 @@ export function buildAppShellCommands({
       category: 'navigation',
       action: () => setActiveTab('knowledge'),
     },
-    {
+    makeNavCommand('analytics', {
       id: 'nav-analytics',
       label: 'Go to Analytics',
       description: 'View usage analytics and statistics',
       icon: 'sparkles',
       shortcut: 'Cmd+6',
       category: 'navigation',
-      action: () => setActiveTab('analytics'),
-    },
-    {
+    }),
+    makeNavCommand('pilot', {
       id: 'nav-pilot',
       label: 'Go to Pilot',
       description: 'View pilot feedback dashboard',
       icon: 'sparkles',
       shortcut: 'Cmd+7',
       category: 'navigation',
-      action: () => setActiveTab('pilot'),
-    },
-    {
+    }),
+    makeNavCommand('search', {
       id: 'nav-search',
       label: 'Go to Search',
       description: 'Hybrid PostgreSQL search',
       icon: 'database',
       shortcut: 'Cmd+8',
       category: 'navigation',
-      action: () => setActiveTab('search'),
-    },
+    }),
     {
       id: 'nav-ops',
       label: 'Go to Operations',
@@ -216,43 +227,13 @@ export function buildAppShellCommands({
       category: 'settings',
       action: onOpenShortcuts,
     },
-    {
-      id: 'feature-templates',
-      label: 'Open Templates',
-      description: 'Use response templates for common scenarios',
-      icon: 'draft',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Templates quick-launch is not available yet. Use Save Draft/History for now.', 'info');
-      },
-    },
-    {
-      id: 'feature-batch',
-      label: 'Start Batch Processing',
-      description: 'Process multiple queries at once',
-      icon: 'list',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Batch processing is planned but not available in this release.', 'info');
-      },
-    },
-    {
-      id: 'feature-voice',
-      label: 'Start Voice Input',
-      description: 'Use voice dictation for input',
-      icon: 'play',
-      category: 'action',
-      action: () => {
-        setActiveTab('draft');
-        addToast('Voice input is planned but not available in this release.', 'info');
-      },
-    },
   ];
 
+  // Filter out nulls from conditional nav commands.
+  const filtered: Command[] = commands.filter((cmd): cmd is Command => Boolean(cmd));
+
   if (revampCommandPaletteV2Enabled) {
-    commands.push(
+    filtered.push(
       {
         id: 'queue-open-unassigned',
         label: 'Queue: Unassigned',
@@ -292,5 +273,5 @@ export function buildAppShellCommands({
     );
   }
 
-  return commands;
+  return filtered;
 }

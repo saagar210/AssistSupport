@@ -110,8 +110,18 @@ describe('ResponsePanel', () => {
     const mockClipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     Object.assign(navigator, { clipboard: mockClipboard });
 
+    const sources = [
+      {
+        chunk_id: 'c1',
+        document_id: 'd1',
+        file_path: '/kb/doc.md',
+        title: 'Test Doc',
+        heading_path: 'Section',
+        score: 0.95,
+      },
+    ];
     renderWithProviders(
-      <ResponsePanel {...defaultProps} response="Copy me" />
+      <ResponsePanel {...defaultProps} response="Copy me" sources={sources} />
     );
 
     fireEvent.click(screen.getByText('Copy'));

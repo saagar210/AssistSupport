@@ -9,6 +9,11 @@
 
 - Local HTTP service.
 - Default bind: `127.0.0.1:4010`.
+- Loopback enforcement is enabled by default (`--require-loopback-bind=true`).
+- Bearer auth token may be provided via `MEMORYKERNEL_SERVICE_AUTH_TOKEN` (or `--auth-token`).
+- Auth requirement policy is controlled by `MEMORYKERNEL_SERVICE_REQUIRE_AUTH_TOKEN`:
+  - release builds default to `true` (startup fails if token missing),
+  - debug/test builds default to `false`.
 - JSON request/response bodies unless noted.
 - Service handlers execute API operations on blocking worker threads and enforce a bounded timeout (`--operation-timeout-ms`, default `2500`).
 

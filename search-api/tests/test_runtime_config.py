@@ -24,6 +24,7 @@ def test_load_runtime_config_rejects_invalid_port():
 def test_validate_runtime_config_rejects_default_key_in_production():
     config = RuntimeConfig(
         environment="production",
+        require_auth=True,
         api_key=DEFAULT_API_KEY,
         api_port=3000,
         rate_limit_storage_uri="redis://127.0.0.1:6379/0",
@@ -41,6 +42,7 @@ def test_validate_runtime_config_rejects_default_key_in_production():
 def test_validate_runtime_config_rejects_memory_rate_limit_in_production():
     config = RuntimeConfig(
         environment="production",
+        require_auth=True,
         api_key="real-key",
         api_port=3000,
         rate_limit_storage_uri="memory://",
@@ -58,6 +60,7 @@ def test_validate_runtime_config_rejects_memory_rate_limit_in_production():
 def test_validate_runtime_config_reports_backend_connectivity_errors():
     config = RuntimeConfig(
         environment="production",
+        require_auth=True,
         api_key="real-key",
         api_port=3000,
         rate_limit_storage_uri="redis://127.0.0.1:6399/0",
@@ -75,6 +78,7 @@ def test_validate_runtime_config_reports_backend_connectivity_errors():
 def test_validate_runtime_config_allows_development_defaults():
     config = RuntimeConfig(
         environment="development",
+        require_auth=False,
         api_key=DEFAULT_API_KEY,
         api_port=3000,
         rate_limit_storage_uri="memory://",
@@ -86,3 +90,21 @@ def test_validate_runtime_config_allows_development_defaults():
     )
 
     assert validate_runtime_config(config) == []
+
+
+def test_validate_runtime_config_requires_non_default_key_when_auth_enabled() -> None:
+    config = RuntimeConfig(
+        environment="development",
+        require_auth=True,
+        api_key=DEFAULT_API_KEY,
+        api_port=3000,
+        rate_limit_storage_uri="memory://",
+        db_host="localhost",
+        db_port=5432,
+        db_user="assistsupport_dev",
+        db_password=None,
+        db_name="assistsupport_dev",
+    )
+
+    errors = validate_runtime_config(config)
+    assert any("ASSISTSUPPORT_API_KEY" in e for e in errors)

@@ -96,6 +96,7 @@ def client(monkeypatch):
     fake = FakeEngine()
     monkeypatch.setattr(search_api, "_engine", fake)
     monkeypatch.setattr(search_api, "_get_engine", lambda: fake)
+    monkeypatch.setattr(search_api, "AUTH_REQUIRED", False)
     search_api.app.config["TESTING"] = True
     with search_api.app.test_client() as test_client:
         yield test_client, fake
@@ -212,6 +213,7 @@ def test_stats_and_not_found_endpoints(client):
 def test_authentication_checks_apply_in_production(client, monkeypatch):
     test_client, _ = client
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(search_api, "AUTH_REQUIRED", True)
     monkeypatch.setattr(search_api, "API_KEY", "secret-key")
 
     missing_auth = test_client.post("/search", json={"query": "policy"})
@@ -238,6 +240,7 @@ def test_authentication_checks_apply_in_production(client, monkeypatch):
 def test_production_errors_hide_internal_messages(client, monkeypatch):
     test_client, fake_engine = client
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(search_api, "AUTH_REQUIRED", True)
     monkeypatch.setattr(search_api, "API_KEY", "secret-key")
     auth = {"Authorization": "Bearer secret-key"}
 

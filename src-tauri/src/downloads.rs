@@ -483,6 +483,15 @@ pub async fn fetch_hf_file_info(
 pub fn recommended_models() -> Vec<ModelSource> {
     vec![
         ModelSource {
+            name: "Meta-Llama-3.1-8B-Instruct (Recommended)".to_string(),
+            repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
+            filename: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf".to_string(),
+            size_bytes: Some(4_920_739_232),
+            sha256: Some(
+                "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c".to_string(),
+            ),
+        },
+        ModelSource {
             name: "Llama-3.2-1B-Instruct (Fast)".to_string(),
             repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".to_string(),
             filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string(),

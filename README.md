@@ -201,6 +201,7 @@ cp .env.example .env.production
 # Edit .env.production:
 # - set ENVIRONMENT=production
 # - set ASSISTSUPPORT_API_KEY to a strong random value
+# - (optional) set ASSISTSUPPORT_SEARCH_API_REQUIRE_AUTH=1 (default)
 # - set ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0
 
 # Launch with production env
@@ -213,6 +214,8 @@ pip install -r requirements.txt
 python3 validate_runtime.py --check-backends
 python3 search_api.py
 ```
+
+Search API auth is enabled by default in all environments. AssistSupport desktop requests attach a bearer token from secure storage (`search_api_bearer_token`) or `ASSISTSUPPORT_SEARCH_API_KEY` / `ASSISTSUPPORT_API_KEY`.
 
 For a fast production smoke check without launching a long-running server:
 

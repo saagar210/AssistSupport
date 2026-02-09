@@ -334,11 +334,14 @@ fn test_token_constants() {
 
 #[test]
 fn test_file_key_store_has_master_key_false_initially() {
-    // This tests the real system, but FileKeyStore::has_master_key()
-    // just checks if the file exists, which is safe to call.
-    // Note: This may return true if app has been run before.
-    let _has_key = FileKeyStore::has_master_key();
-    // We just verify it doesn't panic
+    // Integration tests should not depend on OS keychain availability.
+    // Verify file-backed key-store config can be read without panic.
+    let mode = FileKeyStore::get_storage_mode().unwrap_or_default();
+    assert!(matches!(
+        mode,
+        assistsupport_lib::security::KeyStorageMode::Keychain
+            | assistsupport_lib::security::KeyStorageMode::Passphrase
+    ));
 }
 
 // ============================================================================

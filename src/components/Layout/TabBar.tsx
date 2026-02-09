@@ -1,9 +1,12 @@
 import type { Tab } from '../../types';
+import type { RevampFlags } from '../../features/revamp';
+import { isTabEnabled } from '../../features/app-shell/tabPolicy';
 import './TabBar.css';
 
 interface TabBarProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
+  revampFlags: RevampFlags;
 }
 
 const tabs: { id: Tab; label: string; shortcut?: string }[] = [
@@ -16,13 +19,13 @@ const tabs: { id: Tab; label: string; shortcut?: string }[] = [
   { id: 'pilot', label: 'Pilot', shortcut: '7' },
   { id: 'search', label: 'Search', shortcut: '8' },
   { id: 'ops', label: 'Ops' },
-  { id: 'settings', label: 'Settings', shortcut: '9' },
+  { id: 'settings', label: 'Settings', shortcut: '0' },
 ];
 
-export function TabBar({ activeTab, onTabChange }: TabBarProps) {
+export function TabBar({ activeTab, onTabChange, revampFlags }: TabBarProps) {
   return (
     <nav className="tab-bar">
-      {tabs.map(tab => (
+      {tabs.filter((tab) => isTabEnabled(tab.id, revampFlags)).map(tab => (
         <button
           key={tab.id}
           className={`tab-item ${activeTab === tab.id ? 'active' : ''}`}

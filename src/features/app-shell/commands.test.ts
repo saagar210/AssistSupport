@@ -7,6 +7,15 @@ function createParams(activeTab: 'draft' | 'sources' = 'draft') {
     sidebarCollapsed: false,
     revampCommandPaletteV2Enabled: false,
     queueFirstInboxEnabled: true,
+    revampFlags: {
+      ASSISTSUPPORT_REVAMP_APP_SHELL: false,
+      ASSISTSUPPORT_REVAMP_INBOX: false,
+      ASSISTSUPPORT_REVAMP_WORKSPACE: false,
+      ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2: false,
+      ASSISTSUPPORT_LLM_ROUTER_V2: false,
+      ASSISTSUPPORT_ENABLE_ADMIN_TABS: false,
+      ASSISTSUPPORT_ENABLE_NETWORK_INGEST: false,
+    },
     setActiveTab: vi.fn(),
     openQueueView: vi.fn(),
     handleGenerate: vi.fn(),
@@ -16,7 +25,6 @@ function createParams(activeTab: 'draft' | 'sources' = 'draft') {
     handleCancelGeneration: vi.fn(),
     handleToggleSidebar: vi.fn(),
     onOpenShortcuts: vi.fn(),
-    addToast: vi.fn(),
     clearDraft: vi.fn(),
   };
 }
@@ -30,6 +38,15 @@ describe('buildAppShellCommands', () => {
     expect(commands.some(c => c.id === 'nav-ops')).toBe(true);
     expect(commands.some(c => c.id === 'nav-settings')).toBe(true);
     expect(commands.some(c => c.id === 'action-generate')).toBe(true);
+  });
+
+  it('hides admin and network ingest navigation commands by default', () => {
+    const params = createParams('draft');
+    const commands = buildAppShellCommands(params);
+    expect(commands.some((c) => c.id === 'nav-ingest')).toBe(false);
+    expect(commands.some((c) => c.id === 'nav-search')).toBe(false);
+    expect(commands.some((c) => c.id === 'nav-pilot')).toBe(false);
+    expect(commands.some((c) => c.id === 'nav-analytics')).toBe(false);
   });
 
   it('disables draft-only commands when not on draft tab', () => {

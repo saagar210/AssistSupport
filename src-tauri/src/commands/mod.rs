@@ -38,11 +38,14 @@ use crate::audit::{self, AuditLogger};
 use crate::db::{get_app_data_dir, get_db_path, get_vectors_dir, Database, GenerationQualityEvent};
 use crate::kb::vectors::{VectorStore, VectorStoreConfig};
 use crate::llm::{GenerationParams, LlmEngine, ModelInfo};
-use crate::model_integrity::{verify_model_integrity, ModelAllowlist};
-use crate::security::{FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA};
+use crate::model_integrity::{verify_model_integrity, ModelAllowlist, VerificationResult};
+use crate::security::{
+    FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA, TOKEN_MEMORYKERNEL_SERVICE,
+    TOKEN_SEARCH_API,
+};
 use crate::validation::{
     is_http_url, normalize_and_validate_namespace_id, validate_non_empty, validate_text_size,
-    validate_ticket_id, validate_url, validate_within_home, ValidationError, MAX_QUERY_BYTES,
+    validate_ticket_id, validate_within_home, ValidationError, MAX_QUERY_BYTES,
     MAX_TEXT_INPUT_BYTES,
 };
 use crate::AppState;
@@ -549,6 +552,23 @@ pub fn load_custom_model(
         .and_then(|n| n.to_str())
         .unwrap_or("custom-model")
         .to_string();
+
+    // Custom models are permitted, but should be treated as unverified unless allowlisted.
+    // Log a warning/audit entry so operators understand the trust tradeoff.
+    match verify_model_integrity(&validated_path, false) {
+        Ok(VerificationResult::Verified { sha256, .. }) => {
+            audit::audit_model_integrity_verified(&model_id, &sha256);
+        }
+        Ok(VerificationResult::Unverified { sha256, .. }) => {
+            audit::audit_model_integrity_unverified(&model_id, &sha256);
+            tracing::warn!(
+                "Loading unverified model '{}' (sha256: {}). Prefer allowlisted models.",
+                model_id,
+                sha256
+            );
+        }
+        Err(e) => return Err(format!("Model integrity verification failed: {}", e)),
+    }
 
     let llm_guard = state.llm.read();
     let engine = llm_guard.as_ref().ok_or("LLM engine not initialized")?;
@@ -1947,6 +1967,9 @@ pub fn list_downloaded_models() -> Result<Vec<String>, String> {
             let filename = p.file_name()?.to_str()?;
             // Reverse lookup: filename -> model_id
             match filename {
+                "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf" => {
+                    Some("llama-3.1-8b-instruct".to_string())
+                }
                 "Llama-3.2-1B-Instruct-Q4_K_M.gguf" => Some("llama-3.2-1b-instruct".to_string()),
                 "Llama-3.2-3B-Instruct-Q4_K_M.gguf" => Some("llama-3.2-3b-instruct".to_string()),
                 "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf" => {
@@ -2040,6 +2063,42 @@ pub fn clear_hf_token() -> Result<(), String> {
     security_commands::clear_hf_token_impl()
 }
 
+/// Get Search API bearer token status (not the actual token for security)
+#[tauri::command]
+pub fn has_search_api_token() -> Result<bool, String> {
+    security_commands::has_search_api_token_impl()
+}
+
+/// Store Search API bearer token
+#[tauri::command]
+pub fn set_search_api_token(token: String) -> Result<(), String> {
+    security_commands::set_search_api_token_impl(token)
+}
+
+/// Delete Search API bearer token
+#[tauri::command]
+pub fn clear_search_api_token() -> Result<(), String> {
+    security_commands::clear_search_api_token_impl()
+}
+
+/// Get MemoryKernel service token status (not the actual token for security)
+#[tauri::command]
+pub fn has_memorykernel_service_token() -> Result<bool, String> {
+    security_commands::has_memorykernel_service_token_impl()
+}
+
+/// Store MemoryKernel service bearer token
+#[tauri::command]
+pub fn set_memorykernel_service_token(token: String) -> Result<(), String> {
+    security_commands::set_memorykernel_service_token_impl(token)
+}
+
+/// Delete MemoryKernel service bearer token
+#[tauri::command]
+pub fn clear_memorykernel_service_token() -> Result<(), String> {
+    security_commands::clear_memorykernel_service_token_impl()
+}
+
 /// Store GitHub token for a specific host (HTTPS only)
 #[tauri::command]
 pub fn set_github_token(host: String, token: String) -> Result<(), String> {
@@ -2070,11 +2129,47 @@ pub fn export_audit_log(export_path: String) -> Result<String, String> {
     security_commands::export_audit_log_impl(export_path)
 }
 
+/// Audit: operator overrode copy gating (e.g., copied without citations).
+///
+/// This is best-effort and intentionally does not include the copied text.
+#[tauri::command]
+pub fn audit_response_copy_override(
+    reason: String,
+    confidence_mode: Option<String>,
+    sources_count: usize,
+) -> Result<(), String> {
+    use crate::audit::{AuditEntry, AuditEventType, AuditSeverity};
+
+    let trimmed = reason.trim();
+    if trimmed.is_empty() {
+        return Err("Reason is required".into());
+    }
+
+    crate::audit::log_audit_best_effort(
+        AuditEntry::new(
+            AuditEventType::Custom("response_copy_override".to_string()),
+            AuditSeverity::Warning,
+            "Operator overrode copy gating".to_string(),
+        )
+        .with_context(serde_json::json!({
+            "reason": trimmed,
+            "confidence_mode": confidence_mode,
+            "sources_count": sources_count,
+        })),
+    );
+
+    Ok(())
+}
+
 use tauri::Emitter;
 
 /// Map model ID to HuggingFace repo and filename
 fn get_model_source(model_id: &str) -> Result<(&'static str, &'static str), String> {
     match model_id {
+        "llama-3.1-8b-instruct" => Ok((
+            "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+            "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        )),
         "llama-3.2-1b-instruct" => Ok((
             "bartowski/Llama-3.2-1B-Instruct-GGUF",
             "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
@@ -3511,6 +3606,19 @@ pub fn ingest_kb_from_disk(
     })
 }
 
+const NETWORK_INGEST_POLICY_ENV: &str = "ASSISTSUPPORT_ENABLE_NETWORK_INGEST";
+
+fn network_ingest_enabled_by_policy() -> bool {
+    // Offline-first default: network ingestion is disabled unless explicitly enabled.
+    // This is a product policy choice (not a security boundary by itself), but it helps
+    // keep workstation deployments predictable and reduces unexpected network dependencies.
+    std::env::var(NETWORK_INGEST_POLICY_ENV)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on" | "enabled"))
+        .unwrap_or(false)
+}
+
 /// Ingest a web page URL
 /// Uses block_in_place to run async operations while holding DB lock
 #[tauri::command]
@@ -3521,6 +3629,13 @@ pub fn ingest_url(
 ) -> Result<IngestResult, String> {
     use crate::kb::ingest::web::{WebIngestConfig, WebIngester};
     use crate::kb::ingest::CancellationToken;
+
+    if !network_ingest_enabled_by_policy() {
+        return Err(
+            "Network ingestion is disabled by policy. Set ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1 and restart AssistSupport to enable."
+                .to_string(),
+        );
+    }
 
     // Validate and normalize namespace ID
     let namespace_id =
@@ -3567,6 +3682,13 @@ pub fn ingest_youtube(
 ) -> Result<IngestResult, String> {
     use crate::kb::ingest::youtube::{YouTubeIngestConfig, YouTubeIngester};
     use crate::kb::ingest::CancellationToken;
+
+    if !network_ingest_enabled_by_policy() {
+        return Err(
+            "Network ingestion is disabled by policy. Set ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1 and restart AssistSupport to enable."
+                .to_string(),
+        );
+    }
 
     // Validate and normalize namespace ID
     let namespace_id =
@@ -3671,6 +3793,13 @@ pub fn ingest_github_remote(
 ) -> Result<Vec<IngestResult>, String> {
     use crate::kb::ingest::github::{parse_https_repo_url, GitHubIngestConfig, GitHubIngester};
     use crate::kb::ingest::CancellationToken;
+
+    if !network_ingest_enabled_by_policy() {
+        return Err(
+            "Network ingestion is disabled by policy. Set ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1 and restart AssistSupport to enable."
+                .to_string(),
+        );
+    }
 
     // Validate and normalize namespace ID
     let namespace_id =

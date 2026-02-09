@@ -347,6 +347,8 @@ impl KeychainManager {
 /// Token names for file storage
 pub const TOKEN_HUGGINGFACE: &str = "huggingface_token";
 pub const TOKEN_JIRA: &str = "jira_api_token";
+pub const TOKEN_SEARCH_API: &str = "search_api_bearer_token";
+pub const TOKEN_MEMORYKERNEL_SERVICE: &str = "memorykernel_service_auth_token";
 
 /// Wrapped key file format (JSON)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -483,9 +485,12 @@ impl FileKeyStore {
 
     /// Check if any key storage exists
     pub fn has_any_key_storage() -> bool {
-        // Check Keychain
-        if KeychainManager::get_master_key().is_ok() {
-            return true;
+        // Avoid Keychain lookup during tests to prevent UI/keychain prompts.
+        if !cfg!(test) {
+            // Check Keychain
+            if KeychainManager::get_master_key().is_ok() {
+                return true;
+            }
         }
         // Check wrapped key file
         if Self::wrapped_key_path()

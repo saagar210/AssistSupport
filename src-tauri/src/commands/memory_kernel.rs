@@ -8,9 +8,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::security::{FileKeyStore, TOKEN_MEMORYKERNEL_SERVICE};
+
 const MEMORY_KERNEL_ENABLE_ENV: &str = "ASSISTSUPPORT_ENABLE_MEMORY_KERNEL";
 const MEMORY_KERNEL_BASE_URL_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_BASE_URL";
 const MEMORY_KERNEL_TIMEOUT_MS_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_TIMEOUT_MS";
+const MEMORY_KERNEL_AUTH_TOKEN_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_AUTH_TOKEN";
+const MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_REQUIRE_AUTH_TOKEN";
 const FALLBACK_REASON_FEATURE_DISABLED: &str = "feature-disabled";
 const FALLBACK_REASON_OFFLINE: &str = "offline";
 const FALLBACK_REASON_TIMEOUT: &str = "timeout";
@@ -18,6 +22,7 @@ const FALLBACK_REASON_MALFORMED_PAYLOAD: &str = "malformed-payload";
 const FALLBACK_REASON_VERSION_MISMATCH: &str = "version-mismatch";
 const FALLBACK_REASON_SCHEMA_UNAVAILABLE: &str = "schema-unavailable";
 const FALLBACK_REASON_DEGRADED: &str = "degraded";
+const FALLBACK_REASON_AUTH_REQUIRED: &str = "auth-required";
 const FALLBACK_REASON_NON_2XX: &str = "non-2xx";
 const FALLBACK_REASON_NETWORK_ERROR: &str = "network-error";
 const FALLBACK_REASON_QUERY_ERROR: &str = "query-error";
@@ -132,6 +137,10 @@ fn integration_enabled() -> bool {
     parse_bool_env(MEMORY_KERNEL_ENABLE_ENV, true)
 }
 
+fn integration_auth_token_required() -> bool {
+    parse_bool_env(MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV, !cfg!(debug_assertions))
+}
+
 fn integration_base_url(pin: &MemoryKernelIntegrationPin) -> String {
     std::env::var(MEMORY_KERNEL_BASE_URL_ENV)
         .ok()
@@ -146,6 +155,25 @@ fn integration_timeout_ms(pin: &MemoryKernelIntegrationPin) -> u64 {
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(|v| v.clamp(100, 30_000))
         .unwrap_or(pin.default_timeout_ms)
+}
+
+fn integration_auth_token() -> Option<String> {
+    if let Ok(from_env) = std::env::var(MEMORY_KERNEL_AUTH_TOKEN_ENV) {
+        let trimmed = from_env.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    if cfg!(test) {
+        return None;
+    }
+
+    FileKeyStore::get_token(TOKEN_MEMORYKERNEL_SERVICE)
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn preflight_status_template(
@@ -175,12 +203,16 @@ fn preflight_cache_key(
     enabled: bool,
     base_url: &str,
     timeout_ms: u64,
+    auth_required: bool,
+    has_auth_token: bool,
 ) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}",
         enabled,
         base_url,
         timeout_ms,
+        auth_required,
+        has_auth_token,
         pin.expected_service_contract_version,
         pin.expected_api_contract_version,
         pin.expected_integration_baseline
@@ -250,16 +282,31 @@ async fn run_preflight_internal(
     pin: &MemoryKernelIntegrationPin,
     enabled: bool,
     base_url: &str,
+    auth_required: bool,
+    auth_token: Option<&str>,
 ) -> MemoryKernelPreflightStatus {
     let mut status = preflight_status_template(pin, enabled, base_url.to_string());
     if !enabled {
+        return status;
+    }
+    if auth_required && auth_token.is_none() {
+        status.status = "auth-required".to_string();
+        status.message = format!(
+            "MemoryKernel auth token is required. Set {} or store token key '{}' and retry.",
+            MEMORY_KERNEL_AUTH_TOKEN_ENV, TOKEN_MEMORYKERNEL_SERVICE
+        );
         return status;
     }
 
     status.status = "checking".to_string();
     status.message = "Running MemoryKernel preflight checks".to_string();
 
-    let health_response = match client.get(format!("{base_url}/v1/health")).send().await {
+    let mut health_request = client.get(format!("{base_url}/v1/health"));
+    if let Some(token) = auth_token {
+        health_request = health_request.bearer_auth(token);
+    }
+
+    let health_response = match health_request.send().await {
         Ok(resp) => resp,
         Err(err) => {
             status.status = "offline".to_string();
@@ -310,17 +357,18 @@ async fn run_preflight_internal(
     status.service_contract_version = Some(health_envelope.service_contract_version.clone());
     status.api_contract_version = Some(health_envelope.api_contract_version.clone());
 
-    if health_envelope.data.status.to_ascii_lowercase() != "ok" {
+    if !health_envelope.data.status.eq_ignore_ascii_case("ok") {
         status.status = "degraded".to_string();
         status.message = "MemoryKernel health endpoint did not report status=ok".to_string();
         return status;
     }
 
-    let schema_response = match client
-        .post(format!("{base_url}/v1/db/schema-version"))
-        .send()
-        .await
-    {
+    let mut schema_request = client.post(format!("{base_url}/v1/db/schema-version"));
+    if let Some(token) = auth_token {
+        schema_request = schema_request.bearer_auth(token);
+    }
+
+    let schema_response = match schema_request.send().await {
         Ok(resp) => resp,
         Err(err) => {
             status.status = "schema-unavailable".to_string();
@@ -375,22 +423,33 @@ async fn run_preflight_internal(
     status
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_preflight_with_cache(
     client: &reqwest::Client,
     pin: &MemoryKernelIntegrationPin,
     enabled: bool,
     base_url: &str,
     timeout_ms: u64,
+    auth_required: bool,
+    auth_token: Option<&str>,
     force_refresh: bool,
 ) -> MemoryKernelPreflightStatus {
-    let cache_key = preflight_cache_key(pin, enabled, base_url, timeout_ms);
+    let cache_key = preflight_cache_key(
+        pin,
+        enabled,
+        base_url,
+        timeout_ms,
+        auth_required,
+        auth_token.is_some(),
+    );
     if !force_refresh {
         if let Some(cached) = get_cached_preflight(&cache_key) {
             return cached;
         }
     }
 
-    let status = run_preflight_internal(client, pin, enabled, base_url).await;
+    let status =
+        run_preflight_internal(client, pin, enabled, base_url, auth_required, auth_token).await;
     set_cached_preflight(cache_key, status.clone());
     status
 }
@@ -453,6 +512,7 @@ fn preflight_fallback_reason(status: &str) -> &'static str {
         "version-mismatch" => FALLBACK_REASON_VERSION_MISMATCH,
         "malformed-payload" => FALLBACK_REASON_MALFORMED_PAYLOAD,
         "degraded" => FALLBACK_REASON_DEGRADED,
+        "auth-required" => FALLBACK_REASON_AUTH_REQUIRED,
         _ => FALLBACK_REASON_UNKNOWN,
     }
 }
@@ -574,11 +634,25 @@ pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPrefligh
     let enabled = integration_enabled();
     let base_url = integration_base_url(&pin);
     let timeout_ms = integration_timeout_ms(&pin);
+    let auth_required = integration_auth_token_required();
+    let auth_token = integration_auth_token();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    Ok(run_preflight_with_cache(&client, &pin, enabled, &base_url, timeout_ms, false).await)
+    Ok(
+        run_preflight_with_cache(
+            &client,
+            &pin,
+            enabled,
+            &base_url,
+            timeout_ms,
+            auth_required,
+            auth_token.as_deref(),
+            false,
+        )
+        .await,
+    )
 }
 
 #[tauri::command]
@@ -594,12 +668,24 @@ pub async fn memory_kernel_query_ask(
     let enabled = integration_enabled();
     let base_url = integration_base_url(&pin);
     let timeout_ms = integration_timeout_ms(&pin);
+    let auth_required = integration_auth_token_required();
+    let auth_token = integration_auth_token();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(timeout_ms))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
     let preflight =
-        run_preflight_with_cache(&client, &pin, enabled, &base_url, timeout_ms, false).await;
+        run_preflight_with_cache(
+            &client,
+            &pin,
+            enabled,
+            &base_url,
+            timeout_ms,
+            auth_required,
+            auth_token.as_deref(),
+            false,
+        )
+        .await;
 
     if !preflight.enrichment_enabled {
         return Ok(fallback_result(
@@ -617,12 +703,12 @@ pub async fn memory_kernel_query_ask(
         resource: "support_ticket".to_string(),
     };
 
-    let response = match client
-        .post(format!("{base_url}/v1/query/ask"))
-        .json(&request)
-        .send()
-        .await
-    {
+    let mut query_request = client.post(format!("{base_url}/v1/query/ask")).json(&request);
+    if let Some(token) = auth_token.as_deref() {
+        query_request = query_request.bearer_auth(token);
+    }
+
+    let response = match query_request.send().await {
         Ok(resp) => resp,
         Err(err) => {
             return Ok(fallback_result(
@@ -834,6 +920,8 @@ mod tests {
         std::env::remove_var(MEMORY_KERNEL_BASE_URL_ENV);
         std::env::remove_var(MEMORY_KERNEL_TIMEOUT_MS_ENV);
         std::env::remove_var(MEMORY_KERNEL_ENABLE_ENV);
+        std::env::remove_var(MEMORY_KERNEL_AUTH_TOKEN_ENV);
+        std::env::remove_var(MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV);
     }
 
     fn fixture_health_ok() -> String {
@@ -947,6 +1035,24 @@ mod tests {
             .expect("preflight command should not fail");
         assert!(!status.ready);
         assert_eq!(status.status, "offline");
+
+        clear_test_env();
+    }
+
+    #[tokio::test]
+    async fn preflight_requires_auth_token_when_policy_enabled() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        set_test_env("http://127.0.0.1:9", 200, true);
+        std::env::set_var(MEMORY_KERNEL_REQUIRE_AUTH_TOKEN_ENV, "true");
+        std::env::remove_var(MEMORY_KERNEL_AUTH_TOKEN_ENV);
+
+        let status = get_memory_kernel_preflight_status()
+            .await
+            .expect("preflight command should not fail");
+        assert!(!status.ready);
+        assert!(!status.enrichment_enabled);
+        assert_eq!(status.status, "auth-required");
+        assert!(status.message.contains(MEMORY_KERNEL_AUTH_TOKEN_ENV));
 
         clear_test_env();
     }

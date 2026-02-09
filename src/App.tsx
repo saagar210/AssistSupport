@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Sidebar, Header, TabBar } from './components/Layout';
 import { type DraftTabHandle } from './components/Draft/DraftTab';
 import { Toast, ToastContainer } from './components/shared/Toast';
@@ -17,6 +17,7 @@ import {
   useAppShellState,
   useDraftActions,
 } from './features/app-shell';
+import { isTabEnabled } from './features/app-shell/tabPolicy';
 import { getEnabledRevampFlags, resolveRevampFlags } from './features/revamp';
 import './App.css';
 
@@ -67,17 +68,24 @@ function AppContent() {
     onExport: handleExport,
     onSwitchTab: (n) => {
       const tab = mapShortcutIndexToTab(n);
-      if (tab) {
+      if (tab && isTabEnabled(tab, revampFlags)) {
         setActiveTab(tab);
       }
     },
   });
+
+  useEffect(() => {
+    if (!isTabEnabled(activeTab, revampFlags)) {
+      setActiveTab('draft');
+    }
+  }, [activeTab, revampFlags, setActiveTab]);
 
   const commands = useAppShellCommands({
     activeTab,
     sidebarCollapsed,
     revampCommandPaletteV2Enabled: revampFlags.ASSISTSUPPORT_REVAMP_COMMAND_PALETTE_V2,
     queueFirstInboxEnabled: revampFlags.ASSISTSUPPORT_REVAMP_INBOX,
+    revampFlags,
     setActiveTab,
     openQueueView: handleNavigateToQueue,
     handleGenerate,
@@ -87,7 +95,6 @@ function AppContent() {
     handleCancelGeneration,
     handleToggleSidebar,
     onOpenShortcuts: shortcutsHelp.open,
-    addToast,
     clearDraft,
   });
 
@@ -119,7 +126,7 @@ function AppContent() {
     <div className="app">
       {/* Mobile navigation - visible only on small screens */}
       <div className="mobile-nav">
-        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} revampFlags={revampFlags} />
       </div>
 
       {/* Desktop sidebar - hidden on small screens */}
@@ -128,6 +135,7 @@ function AppContent() {
         onTabChange={setActiveTab}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
+        revampFlags={revampFlags}
       />
 
       <div className="app-content">

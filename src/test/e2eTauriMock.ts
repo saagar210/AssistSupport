@@ -237,12 +237,12 @@ export function setupE2eTauriMock(): void {
           return true;
         case 'get_model_info':
           return {
-            id: 'llama-3.2-1b-instruct',
-            name: 'Llama 3.2 1B Instruct',
+            id: 'llama-3.1-8b-instruct',
+            name: 'Llama 3.1 8B Instruct',
             n_ctx_train: 8192,
           };
         case 'list_downloaded_models':
-          return ['llama-3.2-1b-instruct'];
+          return ['llama-3.1-8b-instruct'];
         case 'get_context_window':
           return 4096;
         case 'is_embedding_model_loaded':

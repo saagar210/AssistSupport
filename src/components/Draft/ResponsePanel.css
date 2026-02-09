@@ -9,6 +9,61 @@
   justify-content: flex-end;
 }
 
+.copy-override-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.copy-override-card {
+  width: min(640px, calc(100vw - 32px));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.copy-override-card h3 {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.copy-override-card p {
+  margin: 0 0 var(--space-3) 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.copy-override-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+}
+
+.copy-override-label textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: var(--space-2);
+  font-family: var(--font-body);
+}
+
+.copy-override-actions {
+  margin-top: var(--space-3);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .response-content {
   display: flex;
   flex-direction: column;

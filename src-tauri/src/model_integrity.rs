@@ -103,6 +103,19 @@ impl ModelAllowlist {
             },
         );
 
+        // Meta-Llama-3.1-8B-Instruct Q4_K_M - verified 2026-02
+        hashes.insert(
+            "meta-llama-3.1-8b-instruct-q4_k_m.gguf".to_lowercase(),
+            AllowedModel {
+                name: "Meta-Llama-3.1-8B-Instruct Q4_K_M".to_string(),
+                repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
+                sha256: "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c"
+                    .to_string(),
+                size_bytes: 4_920_739_232,
+                verified_date: "2026-02-09",
+            },
+        );
+
         Self { hashes }
     }
 

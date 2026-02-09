@@ -3,10 +3,13 @@
 //! These commands proxy requests to the Python Flask API running on localhost:3000,
 //! which performs hybrid BM25 + HNSW vector search against PostgreSQL.
 
+use crate::security::{FileKeyStore, TOKEN_SEARCH_API};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 const SEARCH_API_BASE: &str = "http://localhost:3000";
+const SEARCH_API_TOKEN_ENV: &str = "ASSISTSUPPORT_SEARCH_API_KEY";
+const SEARCH_API_LEGACY_TOKEN_ENV: &str = "ASSISTSUPPORT_API_KEY";
 const DEFAULT_TOP_K: usize = 10;
 const MAX_TOP_K: usize = 50;
 const MIN_TOP_K: usize = 1;
@@ -130,6 +133,32 @@ fn search_api_base() -> String {
         .unwrap_or_else(|| SEARCH_API_BASE.to_string())
 }
 
+fn search_api_auth_token() -> Result<String, String> {
+    // Avoid secure-store access in unit tests to prevent keychain prompts/hangs.
+    if !cfg!(test) {
+        if let Ok(Some(value)) = FileKeyStore::get_token(TOKEN_SEARCH_API) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
+        }
+    }
+
+    for key in [SEARCH_API_TOKEN_ENV, SEARCH_API_LEGACY_TOKEN_ENV] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
+        }
+    }
+
+    Err(
+        "Search API token is not configured. Set ASSISTSUPPORT_SEARCH_API_KEY (or ASSISTSUPPORT_API_KEY) and restart AssistSupport."
+            .to_string(),
+    )
+}
+
 fn sanitize_top_k(top_k: Option<usize>) -> usize {
     top_k.unwrap_or(DEFAULT_TOP_K).clamp(MIN_TOP_K, MAX_TOP_K)
 }
@@ -218,6 +247,7 @@ pub async fn hybrid_search(
 ) -> Result<HybridSearchResponse, String> {
     let client = reqwest::Client::new();
     let base_url = search_api_base();
+    let auth_token = search_api_auth_token()?;
 
     let request = SearchApiRequest {
         query,
@@ -228,6 +258,7 @@ pub async fn hybrid_search(
 
     let response = client
         .post(format!("{}/search", base_url))
+        .bearer_auth(auth_token)
         .json(&request)
         .send()
         .await
@@ -262,6 +293,7 @@ pub async fn submit_search_feedback(
 
     let client = reqwest::Client::new();
     let base_url = search_api_base();
+    let auth_token = search_api_auth_token()?;
 
     let feedback = FeedbackApiRequest {
         query_id,
@@ -272,6 +304,7 @@ pub async fn submit_search_feedback(
 
     let response = client
         .post(format!("{}/feedback", base_url))
+        .bearer_auth(auth_token)
         .json(&feedback)
         .send()
         .await
@@ -291,9 +324,11 @@ pub async fn submit_search_feedback(
 pub async fn get_search_api_stats() -> Result<SearchApiStatsData, String> {
     let client = reqwest::Client::new();
     let base_url = search_api_base();
+    let auth_token = search_api_auth_token()?;
 
     let response = client
         .get(format!("{}/stats", base_url))
+        .bearer_auth(auth_token)
         .send()
         .await
         .map_err(|e| format!("Stats API unavailable: {}", e))?;
@@ -451,5 +486,14 @@ mod tests {
         assert!(result
             .expect_err("must reject invalid rating")
             .contains("Invalid rating"));
+    }
+
+    #[test]
+    fn search_api_auth_token_prefers_env_fallback_when_secure_store_missing() {
+        // Avoid mutating secure storage in unit tests; assert env fallback behavior.
+        std::env::set_var(SEARCH_API_TOKEN_ENV, "test-token");
+        let token = search_api_auth_token().expect("token should resolve from env");
+        assert_eq!(token, "test-token");
+        std::env::remove_var(SEARCH_API_TOKEN_ENV);
     }
 }

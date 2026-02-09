@@ -135,6 +135,9 @@ export function ResponsePanel({
   onSaveAsTemplate,
 }: ResponsePanelProps) {
   const [copied, setCopied] = useState(false);
+  const [showCopyOverride, setShowCopyOverride] = useState(false);
+  const [copyOverrideReason, setCopyOverrideReason] = useState('');
+  const [copyOverrideSubmitting, setCopyOverrideSubmitting] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
@@ -187,8 +190,12 @@ export function ResponsePanel({
 
   const handleCopy = useCallback(async () => {
     if (!response) return;
-    if (confidence?.mode === 'abstain') {
-      showError('Confidence gate is in abstain mode. Review and edit before copying.');
+    const mode = confidence?.mode ?? 'answer';
+    const hasCitations = sources.length > 0;
+    const copyAllowed = mode === 'answer' && hasCitations;
+
+    if (!copyAllowed) {
+      setShowCopyOverride(true);
       return;
     }
     try {
@@ -200,7 +207,45 @@ export function ResponsePanel({
     } catch (err) {
       showError(`Copy failed: ${err}`);
     }
-  }, [response, parsed, confidence, showError]);
+  }, [response, parsed, confidence?.mode, sources.length, showError]);
+
+  const handleConfirmCopyOverride = useCallback(async () => {
+    if (!response) return;
+    const reason = copyOverrideReason.trim();
+    if (!reason) {
+      showError('Reason is required to override copy gating.');
+      return;
+    }
+
+    try {
+      setCopyOverrideSubmitting(true);
+      await invoke('audit_response_copy_override', {
+        reason,
+        confidenceMode: confidence?.mode ?? null,
+        sourcesCount: sources.length,
+      });
+
+      const textToCopy = parsed.hasSections ? parsed.output : response;
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      setShowCopyOverride(false);
+      setCopyOverrideReason('');
+      showSuccess('Response copied (override logged)');
+    } catch (err) {
+      showError(`Copy override failed: ${err}`);
+    } finally {
+      setCopyOverrideSubmitting(false);
+    }
+  }, [
+    response,
+    parsed,
+    copyOverrideReason,
+    confidence?.mode,
+    sources.length,
+    showError,
+    showSuccess,
+  ]);
 
   const handleSourceToggle = useCallback(async (source: ContextSource) => {
     const chunkId = source.chunk_id;
@@ -245,6 +290,47 @@ export function ResponsePanel({
 
   return (
     <>
+      {showCopyOverride && (
+        <div className="copy-override-modal" role="dialog" aria-modal="true" aria-label="Copy override">
+          <div className="copy-override-card">
+            <h3>Copy override required</h3>
+            <p>
+              This response is not eligible for copy because it is missing citations or is not in <strong>answer</strong> mode.
+              You can still copy, but the app will log an audit entry locally (no response text is logged).
+            </p>
+            <label className="copy-override-label">
+              Reason (required)
+              <textarea
+                value={copyOverrideReason}
+                onChange={(e) => setCopyOverrideReason(e.target.value)}
+                placeholder="Explain why copying without citations is acceptable here."
+                rows={3}
+              />
+            </label>
+            <div className="copy-override-actions">
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={() => {
+                  setShowCopyOverride(false);
+                  setCopyOverrideReason('');
+                }}
+                disabled={copyOverrideSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="small"
+                onClick={handleConfirmCopyOverride}
+                disabled={copyOverrideSubmitting}
+              >
+                {copyOverrideSubmitting ? 'Copying...' : 'Copy with override'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="panel-header">
         <h3>Response</h3>
         <div className="response-actions">

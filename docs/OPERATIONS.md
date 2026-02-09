@@ -72,6 +72,10 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
 ### Runtime policy
 - Timeout budget:
   - Default `2500ms` per request (`ASSISTSUPPORT_MEMORY_KERNEL_TIMEOUT_MS` override).
+- Auth policy:
+  - `ASSISTSUPPORT_MEMORY_KERNEL_REQUIRE_AUTH_TOKEN=1` is default in release builds.
+  - If required and token is missing, preflight fails closed with `auth-required` and enrichment stays disabled.
+  - Token source order: `ASSISTSUPPORT_MEMORY_KERNEL_AUTH_TOKEN`, then secure-store key `memorykernel_service_auth_token`.
 - Preflight at startup:
   - `GET /v1/health` contract/version check.
   - `POST /v1/db/schema-version` readiness check.
@@ -80,7 +84,7 @@ AssistSupport treats MemoryKernel as optional enrichment. Core drafting must rem
   - Health/preflight status naturally re-evaluates on periodic status refresh.
 - State transitions:
   - `ready`: enrichment enabled.
-  - `disabled`, `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`: enrichment disabled, fallback active.
+  - `disabled`, `auth-required`, `offline`, `schema-unavailable`, `version-mismatch`, `malformed-payload`, `degraded`: enrichment disabled, fallback active.
 
 ### User-facing diagnostics
 - Header system status includes MemoryKernel readiness detail.
@@ -165,6 +169,9 @@ Use this flow before releases and after backup/import logic changes.
 5. Import into a clean profile.
 6. Verify counts and sample records match expectations.
 
+Notes:
+- Backup imports are treated as **untrusted input**. Import/preview enforces ZIP safety limits (entry count, uncompressed size ceilings) and caps JSON entry sizes to prevent decompression bombs.
+
 ### Optional CLI-assisted checks
 - Confirm file exists and is readable.
 - Confirm encrypted backups fail to preview without password.
@@ -195,6 +202,10 @@ pip install -r requirements-test.txt
 ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 python validate_runtime.py --check-backends
 ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 python smoke_search_api.py
 ```
+
+Notes:
+- Search API bearer auth is enabled by default (`ASSISTSUPPORT_SEARCH_API_REQUIRE_AUTH=1`).
+- AssistSupport desktop requests use bearer tokens from secure storage key `search_api_bearer_token` or fallback env vars `ASSISTSUPPORT_SEARCH_API_KEY` / `ASSISTSUPPORT_API_KEY`.
 
 ### Dependency watch cadence
 - Weekly automated run: `.github/workflows/dependency-watch.yml` (Monday 14:00 UTC).

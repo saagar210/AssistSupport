@@ -122,6 +122,10 @@ describe('SettingsTab', () => {
     it('renders model list', async () => {
       await renderWithProviders(<SettingsTab />);
       expect(screen.getByText('Language Model')).toBeInTheDocument();
+      expect(screen.getByText('Llama 3.1 8B Instruct')).toBeInTheDocument();
+      // Other supported models are behind progressive disclosure.
+      expect(screen.queryByText('Llama 3.2 1B Instruct')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Show other supported models'));
       expect(screen.getByText('Llama 3.2 1B Instruct')).toBeInTheDocument();
       expect(screen.getByText('Llama 3.2 3B Instruct')).toBeInTheDocument();
       expect(screen.getByText('Phi-3 Mini 4K')).toBeInTheDocument();
@@ -130,7 +134,9 @@ describe('SettingsTab', () => {
     it('shows Download button for non-downloaded models', async () => {
       await renderWithProviders(<SettingsTab />);
       const downloadButtons = screen.getAllByText('Download');
-      expect(downloadButtons.length).toBe(3); // All 3 models need download
+      expect(downloadButtons.length).toBe(1); // Recommended model shown by default
+      fireEvent.click(screen.getByText('Show other supported models'));
+      expect(screen.getAllByText('Download').length).toBe(4); // All models need download
     });
   });
 

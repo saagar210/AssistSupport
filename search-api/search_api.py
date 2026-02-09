@@ -29,6 +29,7 @@ _RUNTIME_CONFIG = load_runtime_config()
 API_KEY = _RUNTIME_CONFIG.api_key
 API_PORT = _RUNTIME_CONFIG.api_port
 RATE_LIMIT_STORAGE_URI = _RUNTIME_CONFIG.rate_limit_storage_uri
+AUTH_REQUIRED = _RUNTIME_CONFIG.require_auth
 
 # Rate limiting: 100 requests per minute per IP
 limiter = Limiter(
@@ -78,17 +79,17 @@ def require_api_key(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if is_production() and API_KEY == DEFAULT_API_KEY:
+        if AUTH_REQUIRED and API_KEY == DEFAULT_API_KEY:
             return (
                 jsonify(
                     {
-                        "error": "Server is misconfigured: ASSISTSUPPORT_API_KEY must be set in production"
+                        "error": "Server is misconfigured: ASSISTSUPPORT_API_KEY must be set when ASSISTSUPPORT_SEARCH_API_REQUIRE_AUTH is enabled"
                     }
                 ),
                 500,
             )
 
-        if is_production():
+        if AUTH_REQUIRED:
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
                 return (

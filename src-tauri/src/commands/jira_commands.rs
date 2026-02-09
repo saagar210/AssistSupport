@@ -1,4 +1,6 @@
 use super::*;
+use crate::kb::dns::PinnedDnsResolver;
+use crate::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
 pub(crate) fn is_jira_configured_impl(state: State<'_, AppState>) -> Result<bool, String> {
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
@@ -48,8 +50,15 @@ pub(crate) async fn configure_jira_impl(
     api_token: String,
     allow_http: Option<bool>,
 ) -> Result<(), String> {
-    // Validate URL format
-    validate_url(&base_url).map_err(|e| e.to_string())?;
+    // Validate URL format + SSRF protection (blocks loopback/private by default).
+    // Jira is expected to be a public SaaS endpoint; we do not allow pointing Jira
+    // to localhost/private IPs to avoid SSRF-style abuse and credential leakage.
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .map_err(|e| e.to_string())?;
+    validate_url_for_ssrf_with_pinning(&base_url, &resolver)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Enforce HTTPS by default
     let using_http = is_http_url(&base_url);
