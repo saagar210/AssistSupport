@@ -17,6 +17,7 @@ fi
 
 cd "$ROOT_DIR"
 
+run_step bash scripts/check_vaultmind_platform_scope.sh
 run_step pnpm run check:workstation-preflight
 run_step pnpm run check:memorykernel-pin
 run_step pnpm run check:memorykernel-governance
