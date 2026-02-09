@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::security::{FileKeyStore, TOKEN_MEMORYKERNEL_SERVICE};
+use crate::validation::validate_loopback_http_base_url;
 
 const MEMORY_KERNEL_ENABLE_ENV: &str = "ASSISTSUPPORT_ENABLE_MEMORY_KERNEL";
 const MEMORY_KERNEL_BASE_URL_ENV: &str = "ASSISTSUPPORT_MEMORY_KERNEL_BASE_URL";
@@ -23,6 +24,7 @@ const FALLBACK_REASON_VERSION_MISMATCH: &str = "version-mismatch";
 const FALLBACK_REASON_SCHEMA_UNAVAILABLE: &str = "schema-unavailable";
 const FALLBACK_REASON_DEGRADED: &str = "degraded";
 const FALLBACK_REASON_AUTH_REQUIRED: &str = "auth-required";
+const FALLBACK_REASON_INVALID_CONFIG: &str = "invalid-config";
 const FALLBACK_REASON_NON_2XX: &str = "non-2xx";
 const FALLBACK_REASON_NETWORK_ERROR: &str = "network-error";
 const FALLBACK_REASON_QUERY_ERROR: &str = "query-error";
@@ -144,12 +146,15 @@ fn integration_auth_token_required() -> bool {
     )
 }
 
-fn integration_base_url(pin: &MemoryKernelIntegrationPin) -> String {
-    std::env::var(MEMORY_KERNEL_BASE_URL_ENV)
+fn integration_base_url(pin: &MemoryKernelIntegrationPin) -> Result<String, String> {
+    let candidate = std::env::var(MEMORY_KERNEL_BASE_URL_ENV)
         .ok()
         .map(|v| v.trim().trim_end_matches('/').to_string())
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| pin.default_base_url.clone())
+        .unwrap_or_else(|| pin.default_base_url.clone());
+
+    validate_loopback_http_base_url(&candidate)
+        .map_err(|e| format!("{} rejected: {}", MEMORY_KERNEL_BASE_URL_ENV, e))
 }
 
 fn integration_timeout_ms(pin: &MemoryKernelIntegrationPin) -> u64 {
@@ -635,7 +640,16 @@ pub async fn get_memory_kernel_integration_pin() -> Result<MemoryKernelIntegrati
 pub async fn get_memory_kernel_preflight_status() -> Result<MemoryKernelPreflightStatus, String> {
     let pin = INTEGRATION_PIN.clone();
     let enabled = integration_enabled();
-    let base_url = integration_base_url(&pin);
+    let base_url = match integration_base_url(&pin) {
+        Ok(value) => value,
+        Err(message) => {
+            let mut status =
+                preflight_status_template(&pin, false, pin.default_base_url.clone());
+            status.status = "invalid-config".to_string();
+            status.message = message;
+            return Ok(status);
+        }
+    };
     let timeout_ms = integration_timeout_ms(&pin);
     let auth_required = integration_auth_token_required();
     let auth_token = integration_auth_token();
@@ -667,7 +681,21 @@ pub async fn memory_kernel_query_ask(
 
     let pin = INTEGRATION_PIN.clone();
     let enabled = integration_enabled();
-    let base_url = integration_base_url(&pin);
+    let base_url = match integration_base_url(&pin) {
+        Ok(value) => value,
+        Err(message) => {
+            let mut preflight =
+                preflight_status_template(&pin, false, pin.default_base_url.clone());
+            preflight.status = "invalid-config".to_string();
+            preflight.message = message;
+            return Ok(fallback_result(
+                preflight.clone(),
+                preflight.message.clone(),
+                FALLBACK_REASON_INVALID_CONFIG,
+                None,
+            ));
+        }
+    };
     let timeout_ms = integration_timeout_ms(&pin);
     let auth_required = integration_auth_token_required();
     let auth_token = integration_auth_token();
@@ -1027,6 +1055,24 @@ mod tests {
                 "legacy_error must be absent for service.v3 compatibility"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn integration_base_url_rejects_non_loopback_override() {
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+        clear_test_env();
+
+        std::env::set_var(MEMORY_KERNEL_BASE_URL_ENV, "https://example.com");
+        let pin = INTEGRATION_PIN.clone();
+
+        // SECURITY: MemoryKernel boundary must be loopback-only. Reject non-loopback overrides.
+        let base_url = integration_base_url(&pin);
+
+        std::env::remove_var(MEMORY_KERNEL_BASE_URL_ENV);
+        assert!(
+            base_url.is_err(),
+            "non-loopback overrides must be rejected (not silently ignored)"
+        );
     }
 
     #[tokio::test]

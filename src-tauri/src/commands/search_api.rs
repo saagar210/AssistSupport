@@ -4,6 +4,7 @@
 //! which performs hybrid BM25 + HNSW vector search against PostgreSQL.
 
 use crate::security::{FileKeyStore, TOKEN_SEARCH_API};
+use crate::validation::validate_loopback_http_base_url;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -125,12 +126,17 @@ struct HealthApiResponse {
     timestamp: Option<String>,
 }
 
-fn search_api_base() -> String {
-    std::env::var("ASSISTSUPPORT_SEARCH_API_BASE_URL")
+fn search_api_base() -> Result<String, String> {
+    let from_env = std::env::var("ASSISTSUPPORT_SEARCH_API_BASE_URL")
         .ok()
         .map(|v| v.trim().trim_end_matches('/').to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| SEARCH_API_BASE.to_string())
+        .filter(|v| !v.is_empty());
+
+    match from_env {
+        Some(candidate) => validate_loopback_http_base_url(&candidate)
+            .map_err(|e| format!("ASSISTSUPPORT_SEARCH_API_BASE_URL rejected: {}", e)),
+        None => Ok(SEARCH_API_BASE.to_string()),
+    }
 }
 
 fn search_api_auth_token() -> Result<String, String> {
@@ -246,7 +252,7 @@ pub async fn hybrid_search(
     top_k: Option<usize>,
 ) -> Result<HybridSearchResponse, String> {
     let client = reqwest::Client::new();
-    let base_url = search_api_base();
+    let base_url = search_api_base()?;
     let auth_token = search_api_auth_token()?;
 
     let request = SearchApiRequest {
@@ -292,7 +298,7 @@ pub async fn submit_search_feedback(
     }
 
     let client = reqwest::Client::new();
-    let base_url = search_api_base();
+    let base_url = search_api_base()?;
     let auth_token = search_api_auth_token()?;
 
     let feedback = FeedbackApiRequest {
@@ -323,7 +329,7 @@ pub async fn submit_search_feedback(
 #[tauri::command]
 pub async fn get_search_api_stats() -> Result<SearchApiStatsData, String> {
     let client = reqwest::Client::new();
-    let base_url = search_api_base();
+    let base_url = search_api_base()?;
     let auth_token = search_api_auth_token()?;
 
     let response = client
@@ -354,7 +360,17 @@ pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, Str
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
-    let base_url = search_api_base();
+    let base_url = match search_api_base() {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(SearchApiHealthStatus {
+                healthy: false,
+                status: "invalid-config".to_string(),
+                message,
+                base_url: SEARCH_API_BASE.to_string(),
+            });
+        }
+    };
 
     match client.get(format!("{}/health", base_url)).send().await {
         Ok(response) => {
@@ -391,6 +407,9 @@ pub async fn check_search_api_health() -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn sanitize_top_k_applies_defaults_and_bounds() {
@@ -408,6 +427,21 @@ mod tests {
         assert!(is_valid_feedback_rating("incorrect"));
         assert!(!is_valid_feedback_rating("HELPFUL"));
         assert!(!is_valid_feedback_rating(" meh "));
+    }
+
+    #[test]
+    fn search_api_base_rejects_non_loopback_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("ASSISTSUPPORT_SEARCH_API_BASE_URL", "https://example.com");
+
+        // SECURITY: search API must be local-only. Reject non-loopback overrides.
+        let base = search_api_base();
+
+        std::env::remove_var("ASSISTSUPPORT_SEARCH_API_BASE_URL");
+        assert!(
+            base.is_err(),
+            "non-loopback overrides must be rejected (not silently ignored)"
+        );
     }
 
     #[test]

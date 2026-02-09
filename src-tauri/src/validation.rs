@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use url::Url;
 
 /// Sensitive directories under home that should never be indexed
 /// These contain credentials, keys, and other sensitive data
@@ -329,6 +330,78 @@ pub fn validate_https_url(url: &str) -> Result<(), ValidationError> {
         ));
     }
     Ok(())
+}
+
+/// Validate that a base URL is loopback-only and safe to use for local services.
+///
+/// This is a *deny-by-default* policy: only http://localhost, http://127.0.0.1,
+/// and http://[::1] are allowed. Any provided path/query/fragment is rejected.
+///
+/// Rationale: AssistSupport is designed for local-only operation; allowing
+/// arbitrary base URLs enables silent data exfiltration of internal operational
+/// data and bearer tokens.
+pub fn validate_loopback_http_base_url(url_str: &str) -> Result<String, ValidationError> {
+    let trimmed = url_str.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(ValidationError::EmptyInput);
+    }
+
+    let parsed = Url::parse(trimmed).map_err(|e| {
+        ValidationError::InvalidFormat(format!("Invalid base URL '{}': {}", trimmed, e))
+    })?;
+
+    if parsed.scheme() != "http" {
+        return Err(ValidationError::InvalidFormat(
+            "Base URL must use http:// for loopback-only services".into(),
+        ));
+    }
+
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ValidationError::InvalidFormat(
+            "Base URL must not include credentials".into(),
+        ));
+    }
+
+    let host = parsed.host_str().ok_or_else(|| {
+        ValidationError::InvalidFormat("Base URL must include a hostname".into())
+    })?;
+
+    // Normalize host to avoid trivial bypasses (e.g., localhost.)
+    let normalized_host = host.trim_end_matches('.').to_ascii_lowercase();
+    let host_ok = matches!(
+        normalized_host.as_str(),
+        "localhost" | "127.0.0.1" | "::1"
+    );
+    if !host_ok {
+        return Err(ValidationError::InvalidFormat(format!(
+            "Base URL host '{}' is not allowed. Only loopback hosts are permitted (localhost, 127.0.0.1, ::1).",
+            host
+        )));
+    }
+
+    // Enforce that callers provide a *base* URL, not a specific endpoint.
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(ValidationError::InvalidFormat(
+            "Base URL must not include a query string or fragment".into(),
+        ));
+    }
+    let path = parsed.path();
+    if path != "" && path != "/" {
+        return Err(ValidationError::InvalidFormat(
+            "Base URL must not include a path".into(),
+        ));
+    }
+
+    let port = parsed.port();
+    let host_render = if normalized_host.contains(':') {
+        format!("[{}]", normalized_host)
+    } else {
+        normalized_host
+    };
+    Ok(match port {
+        Some(p) => format!("http://{}:{}", host_render, p),
+        None => format!("http://{}", host_render),
+    })
 }
 
 /// Check if URL is HTTP (not HTTPS)
