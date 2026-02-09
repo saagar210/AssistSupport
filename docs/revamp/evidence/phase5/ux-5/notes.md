@@ -28,3 +28,7 @@
 - Added a calm mount animation for the revamp draft workbench container only when running inside the revamp shell.
 - Swapped the view-toggle active shadow to tokenized `--shadow-xs` with a safe fallback.
 - Tokenized diagnosis clear-button hover background to `--bg-hover`.
+
+## Slice: Revamp Shell Tokenization (Nav + Topbar Controls)
+- Tokenized revamp shell nav/topbar surfaces to avoid scattered hardcoded rgba values.
+- Reused existing semantic tokens (`--card-bg`, `--bg-hover`, `--input-bg`, `--accent-*`) and added two shell-scoped surface tokens in the revamp theme (`--as-shell-nav-bg`, `--as-shell-topbar-bg`) to preserve the glass treatment without ad-hoc CSS.

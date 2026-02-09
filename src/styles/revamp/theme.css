@@ -80,6 +80,11 @@
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(255, 255, 255, 0.10);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+
+  /* Revamp shell surfaces: keep glassy treatment tokenized so the shell stays consistent
+     without scattering ad-hoc rgba values across component CSS. */
+  --as-shell-nav-bg: rgba(0, 0, 0, 0.22);
+  --as-shell-topbar-bg: rgba(11, 13, 16, 0.72);
 }
 
 .app-shell-revamp * {
