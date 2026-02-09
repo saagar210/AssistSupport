@@ -17,6 +17,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
 use walkdir::WalkDir;
 
+const GITHUB_ALLOWED_HOSTS_ENV: &str = "ASSISTSUPPORT_GITHUB_ALLOWED_HOSTS";
+const DEFAULT_GITHUB_ALLOWED_HOSTS: &[&str] = &["github.com"];
+
 /// GitHub ingestion configuration
 #[derive(Debug, Clone)]
 pub struct GitHubIngestConfig {
@@ -186,6 +189,32 @@ fn sanitize_host_for_path(host_port: &str) -> String {
         .collect()
 }
 
+fn allowed_github_hosts() -> Vec<String> {
+    let mut allowed: Vec<String> = DEFAULT_GITHUB_ALLOWED_HOSTS
+        .iter()
+        .map(|value| value.to_string())
+        .collect();
+
+    if let Ok(raw) = std::env::var(GITHUB_ALLOWED_HOSTS_ENV) {
+        for entry in raw.split(',') {
+            let value = entry.trim().to_lowercase();
+            if value.is_empty() {
+                continue;
+            }
+            allowed.push(value);
+        }
+    }
+
+    allowed.sort();
+    allowed.dedup();
+    allowed
+}
+
+fn is_github_host_allowed(host_port: &str) -> bool {
+    let needle = host_port.trim().to_lowercase();
+    allowed_github_hosts().iter().any(|value| value == &needle)
+}
+
 /// Parse an HTTPS repo URL into host/owner/repo components
 pub fn parse_https_repo_url(url: &str) -> IngestResult<GitHubRemoteRepo> {
     let parsed =
@@ -219,6 +248,13 @@ pub fn parse_https_repo_url(url: &str) -> IngestResult<GitHubRemoteRepo> {
     } else {
         host.to_string()
     };
+
+    if !is_github_host_allowed(&host_port) {
+        return Err(IngestError::InvalidSource(format!(
+            "Repository host '{}' is not allowed. Set {} to a comma-separated allowlist (example: github.com,ghe.example.com:8443).",
+            host_port, GITHUB_ALLOWED_HOSTS_ENV
+        )));
+    }
 
     let mut path_parts = parsed
         .path()
@@ -520,20 +556,23 @@ impl GitHubIngester {
         general_purpose::STANDARD.encode(auth.as_bytes())
     }
 
-    fn run_git(
-        &self,
+    fn build_git_command(
         args: &[&str],
         token: Option<&str>,
         workdir: Option<&Path>,
-    ) -> IngestResult<()> {
+    ) -> Command {
         let mut command = Command::new("git");
 
         if let Some(token) = token {
             if !token.trim().is_empty() {
                 let header = Self::build_auth_header(token.trim());
-                command
-                    .arg("-c")
-                    .arg(format!("http.extraHeader=Authorization: Basic {}", header));
+                // SECURITY: do not put secrets in argv (visible via `ps`); pass via env-scoped config.
+                command.env("GIT_CONFIG_COUNT", "1");
+                command.env("GIT_CONFIG_KEY_0", "http.extraHeader");
+                command.env(
+                    "GIT_CONFIG_VALUE_0",
+                    format!("Authorization: Basic {}", header),
+                );
             }
         }
 
@@ -543,6 +582,17 @@ impl GitHubIngester {
 
         command.args(args);
         command.env("GIT_TERMINAL_PROMPT", "0");
+
+        command
+    }
+
+    fn run_git(
+        &self,
+        args: &[&str],
+        token: Option<&str>,
+        workdir: Option<&Path>,
+    ) -> IngestResult<()> {
+        let mut command = Self::build_git_command(args, token, workdir);
 
         let output = command.output().map_err(IngestError::Io)?;
 
@@ -1038,7 +1088,10 @@ fn extract_code_headings(content: &str, filename: &str) -> Vec<(usize, String)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_is_git_repo() {
@@ -1062,17 +1115,50 @@ mod tests {
     }
 
     #[test]
+    fn test_git_command_does_not_leak_token_via_argv() {
+        let token = "super-secret-token";
+        let cmd = GitHubIngester::build_git_command(
+            &["ls-remote", "https://github.com/owner/repo.git"],
+            Some(token),
+            None,
+        );
+        let debug = format!("{:?}", cmd);
+
+        // SECURITY: secrets must never be placed in argv (visible via `ps`).
+        assert!(
+            !debug.contains("http.extraHeader=Authorization: Basic"),
+            "git auth header must not be passed via -c argv config"
+        );
+    }
+
+    #[test]
     fn test_parse_https_repo_url() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var(GITHUB_ALLOWED_HOSTS_ENV);
+
         let repo = parse_https_repo_url("https://github.com/owner/repo").unwrap();
         assert_eq!(repo.host, "github.com");
         assert_eq!(repo.host_port, "github.com");
         assert_eq!(repo.owner, "owner");
         assert_eq!(repo.repo, "repo");
 
+        std::env::set_var(GITHUB_ALLOWED_HOSTS_ENV, "ghe.local:8443");
         let ghe = parse_https_repo_url("https://ghe.local:8443/team/core.git").unwrap();
         assert_eq!(ghe.host_port, "ghe.local:8443");
         assert_eq!(ghe.owner, "team");
         assert_eq!(ghe.repo, "core");
+
+        std::env::remove_var(GITHUB_ALLOWED_HOSTS_ENV);
+    }
+
+    #[test]
+    fn test_parse_https_repo_url_rejects_unapproved_host() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var(GITHUB_ALLOWED_HOSTS_ENV);
+
+        let err = parse_https_repo_url("https://evil.com/owner/repo").unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains(GITHUB_ALLOWED_HOSTS_ENV));
     }
 
     #[test]
