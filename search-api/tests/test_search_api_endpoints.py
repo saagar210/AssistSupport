@@ -148,6 +148,13 @@ def test_search_rejects_invalid_or_malformed_input(client):
     assert bad_top_k.status_code == 400
     assert bad_top_k.get_json()["error"] == "top_k must be an integer"
 
+    bad_strategy = test_client.post(
+        "/search",
+        json={"query": "ok", "fusion_strategy": "drop table"},
+    )
+    assert bad_strategy.status_code == 400
+    assert "Invalid fusion_strategy" in bad_strategy.get_json()["error"]
+
 
 def test_search_engine_failures_are_handled(client):
     test_client, fake_engine = client
@@ -260,6 +267,21 @@ def test_production_errors_hide_internal_messages(client, monkeypatch):
     )
     assert feedback_response.status_code == 500
     assert feedback_response.get_json()["error"] == "Internal server error"
+
+
+def test_internal_error_response_does_not_print_in_production(monkeypatch, client):
+    test_client, fake_engine = client
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(search_api, "AUTH_REQUIRED", False)
+
+    def _fail_print(*_args, **_kwargs):
+        raise AssertionError("print() should not be used for errors in production")
+
+    monkeypatch.setattr("builtins.print", _fail_print)
+
+    fake_engine.mode = "error"
+    response = test_client.post("/search", json={"query": "vpn setup"})
+    assert response.status_code == 500
 
 
 def test_run_server_rejects_default_rate_limit_storage_in_production(monkeypatch):

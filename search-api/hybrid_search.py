@@ -7,6 +7,7 @@ Combines BM25 (keyword) + HNSW (vector) + intent detection + logging
 import sys
 import os
 import time
+import logging
 from typing import List, Dict, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -16,6 +17,8 @@ from score_fusion import ScoreFusion
 from intent_detection import IntentDetector
 from reranker import Reranker
 from feedback_loop import get_quality_scores
+
+logger = logging.getLogger(__name__)
 
 
 class HybridSearchEngine:
@@ -30,7 +33,7 @@ class HybridSearchEngine:
         self.vector_search_enabled = self._detect_vector_capability()
         self.embedder = EmbeddingService()
         self.reranker = Reranker()
-        print("Hybrid search engine initialized")
+        logger.info("Hybrid search engine initialized")
 
     def _detect_vector_capability(self) -> bool:
         """Detect whether pgvector is available before issuing vector SQL."""
@@ -39,10 +42,10 @@ class HybridSearchEngine:
             row = self.cur.fetchone()
             enabled = bool(row and row[0])
             if not enabled:
-                print("Warning: pgvector extension not available; vector search disabled")
+                logger.warning("pgvector extension not available; vector search disabled")
             return enabled
         except Exception as e:
-            print(f"Warning: Failed to detect vector capability: {e}")
+            logger.exception("Failed to detect vector capability")
             return False
 
     def search(
@@ -153,7 +156,7 @@ class HybridSearchEngine:
             )
             return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
         except Exception as e:
-            print(f"BM25 search error: {e}")
+            logger.exception("BM25 search error")
             return []
 
     def _apply_category_boost(
@@ -227,7 +230,7 @@ class HybridSearchEngine:
             )
             return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
         except Exception as e:
-            print(f"Vector search unavailable, falling back to BM25 only: {e}")
+            logger.exception("Vector search unavailable; falling back to BM25 only")
             self.vector_search_enabled = False
             return []
 
@@ -355,7 +358,7 @@ class HybridSearchEngine:
             row = self.cur.fetchone()
             return str(row[0]) if row else None
         except Exception as e:
-            print(f"Warning: Failed to log query: {e}")
+            logger.exception("Failed to log query")
             return None
 
     def _log_feedback(
@@ -372,7 +375,7 @@ class HybridSearchEngine:
                 (query_id, result_rank, rating, comment, article_id),
             )
         except Exception as e:
-            print(f"Feedback logging error: {e}")
+            logger.exception("Feedback logging error")
 
     def _get_stats(self) -> dict:
         """Get search statistics for monitoring"""

@@ -6,6 +6,7 @@ Hybrid search endpoint with authentication, rate limiting, and monitoring
 
 import sys
 import os
+import logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,6 +24,9 @@ from runtime_config import (
 # Initialize Flask app
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
+# Fail closed on oversized request bodies (prevents accidental log/alloc abuse).
+# Search requests are tiny; keep the cap conservative.
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("ASSISTSUPPORT_SEARCH_API_MAX_BODY_BYTES", "262144"))
 
 # Configuration
 _RUNTIME_CONFIG = load_runtime_config()
@@ -54,13 +58,17 @@ def _get_engine():
         from hybrid_search import HybridSearchEngine
 
         _engine = HybridSearchEngine()
-        print("Search engine initialized")
+        app.logger.info("Search engine initialized")
     return _engine
 
 
 def internal_error_response(error: Exception, *, context: str):
     """Return a safe error payload and avoid leaking internals in production."""
-    print(f"{context}: {error}")
+    # Never print raw exception messages in production logs; they can contain user input.
+    if is_production():
+        app.logger.error("%s: %s", context, error.__class__.__name__)
+    else:
+        app.logger.exception("%s", context)
     error_msg = str(error) if not is_production() else "Internal server error"
     return (
         jsonify(
@@ -161,7 +169,10 @@ def search():
         fusion_strategy_raw = data.get("fusion_strategy", "adaptive")
         if not isinstance(fusion_strategy_raw, str):
             return jsonify({"error": "fusion_strategy must be a string"}), 400
-        fusion_strategy = fusion_strategy_raw
+        fusion_strategy = fusion_strategy_raw.strip().lower()
+        allowed_strategies = {"adaptive", "rrf", "weighted", "rerank"}
+        if fusion_strategy not in allowed_strategies:
+            return jsonify({"error": f"Invalid fusion_strategy: {fusion_strategy_raw}"}), 400
 
         engine = _get_engine()
 
@@ -347,8 +358,13 @@ def run_server():
     runtime_config = load_runtime_config()
     ensure_valid_runtime_config(runtime_config, check_backends=True)
 
-    print(f"Starting AssistSupport Search API on port {runtime_config.api_port}")
-    print(f"  Environment: {runtime_config.environment}")
+    # Ensure we have a sane default logger in bare CLI mode.
+    if not logging.getLogger().handlers:
+        level = logging.INFO if is_production() else logging.DEBUG
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    app.logger.info("Starting AssistSupport Search API on port %s", runtime_config.api_port)
+    app.logger.info("Environment: %s", runtime_config.environment)
 
     app.run(
         host="localhost",
