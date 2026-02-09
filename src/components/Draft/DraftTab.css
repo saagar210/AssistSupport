@@ -89,15 +89,15 @@
 }
 
 .ai-check-ok {
-  border-color: rgba(58, 185, 106, 0.35);
+  border-color: var(--success);
 }
 
 .ai-check-warn {
-  border-color: rgba(255, 171, 0, 0.45);
+  border-color: var(--warning);
 }
 
 .ai-check-info {
-  border-color: rgba(24, 160, 251, 0.35);
+  border-color: var(--info);
 }
 
 .draft-workflow-strip {

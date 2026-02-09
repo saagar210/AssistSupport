@@ -12,7 +12,7 @@
 .copy-override-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.45));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,7 +25,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px var(--card-shadow, rgba(0, 0, 0, 0.5));
 }
 
 .copy-override-card h3 {

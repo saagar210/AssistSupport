@@ -12,6 +12,10 @@
 
   /* Legacy token bridge: keep older components visually coherent when mounted in the revamp shell.
      This avoids a huge mechanical CSS rewrite and keeps Phase 5 focused on UX. */
+  --font-heading: var(--as-font-sans);
+  --font-body: var(--as-font-sans);
+  --font-mono: var(--as-font-mono);
+
   --bg-primary: var(--as-surface-1);
   --bg-secondary: var(--as-surface-2);
   --bg-tertiary: var(--as-surface-3);

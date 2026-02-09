@@ -14,3 +14,8 @@
 
 ## Follow-ups
 - As more components migrate to `--as-*` tokens directly, we can gradually reduce reliance on the bridged legacy variables.
+
+## Slice: Legacy Typography + Overlay Tokenization
+- Bridged legacy `--font-*` vars to revamp fonts in `.app-shell-revamp`.
+- Updated Draft readiness borders to use semantic tokens (`--success/--warning/--info`).
+- Updated copy override modal overlay/shadow to prefer theme tokens (`--overlay-bg`, `--card-shadow`).
