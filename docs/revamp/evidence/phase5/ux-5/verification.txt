@@ -124,3 +124,12 @@
 - pnpm run test:ci: PASS (Vitest + cargo test: 289 tests)
 - pnpm run test:e2e:revamp: PASS (Playwright: 2 tests)
 - pnpm run test:e2e:smoke: PASS (Playwright: 6 tests)
+
+
+## Slice Verification (input + diagnosis micro-surface revamp coherence)
+- pnpm run check:revamp-style: PASS
+- pnpm run typecheck: PASS
+- pnpm run test: PASS (Vitest: 130 tests)
+- pnpm run test:ci: PASS (Vitest + cargo test)
+- pnpm run test:e2e:revamp: PASS (Playwright)
+- pnpm run test:e2e:smoke: PASS (Playwright)

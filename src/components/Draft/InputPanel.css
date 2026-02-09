@@ -456,3 +456,33 @@
   color: var(--accent-primary);
   border-color: var(--accent-primary);
 }
+
+/* ============================================================================
+   Revamp Shell Coherence (Phase 5)
+   Scope: Only applies when mounted inside `.app-shell-revamp`.
+   Goal: Reduce "mixed UI" artifacts without changing behavior.
+   ============================================================================ */
+
+.app-shell-revamp .batch-toggle {
+  padding: var(--as-space-1) var(--as-space-3);
+  font-size: var(--as-font-size-1);
+  border-radius: var(--as-radius-pill);
+  border-color: var(--as-border-1);
+  background: var(--as-glass-1);
+  color: var(--as-text-2);
+  transition:
+    background-color var(--as-dur-2) var(--as-ease-out),
+    border-color var(--as-dur-2) var(--as-ease-out),
+    color var(--as-dur-2) var(--as-ease-out);
+}
+
+.app-shell-revamp .batch-toggle:hover {
+  background: var(--as-glass-2);
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .batch-toggle.active {
+  background: var(--as-accent-surface-1);
+  color: var(--as-accent-1);
+  border-color: var(--as-accent-border-1);
+}

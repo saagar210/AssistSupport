@@ -94,3 +94,8 @@
   - Confidence gate uses revamp intent border tokens (`--as-*-border`) and glass surface.
   - Output/Instructions section tabs render as a pill segmented control using revamp glass + accent surface tokens.
   - Sources panel and export dropdown menu use revamp glass/surface + border/shadow tokens.
+
+## Slice: Input + Diagnosis Micro-Surface Revamp Coherence
+- Tokenized remaining Draft “odd-one-out” controls inside `.app-shell-revamp`:
+  - Batch toggle now uses revamp pill sizing + glass/accent surfaces (no behavior changes).
+  - Removed an ad-hoc rgba fallback from a Diagnosis hover surface to stay compliant with Phase 5 token rules.
