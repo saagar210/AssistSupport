@@ -120,14 +120,70 @@ function safeParseQueueMeta(raw: string | null): QueueMetaMap {
   }
 
   try {
-    const parsed = JSON.parse(raw) as QueueMetaMap;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed !== 'object' || parsed === null) {
       return {};
     }
-    return parsed;
+
+    const normalized = Object.entries(parsed).reduce<QueueMetaMap>((acc, [draftId, value]) => {
+      const entry = normalizeQueueMetaEntry(value);
+      if (entry) {
+        acc[draftId] = entry;
+      }
+      return acc;
+    }, {});
+
+    return normalized;
   } catch {
     return {};
   }
+}
+
+function normalizeQueueMetaEntry(value: unknown): QueueMeta | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<QueueMeta>;
+  const state = normalizeQueueState(candidate.state);
+  const priority = normalizeQueuePriority(candidate.priority);
+  const owner = typeof candidate.owner === 'string' && candidate.owner.trim().length > 0 ? candidate.owner.trim() : 'unassigned';
+  const updatedAt = normalizeIsoTimestamp(candidate.updatedAt);
+
+  return {
+    state,
+    priority,
+    owner,
+    updatedAt,
+  };
+}
+
+function normalizeQueueState(state: unknown): QueueState {
+  if (state === 'open' || state === 'in_progress' || state === 'resolved') {
+    return state;
+  }
+  return 'open';
+}
+
+function normalizeQueuePriority(priority: unknown): QueuePriority {
+  if (priority === 'low' || priority === 'normal' || priority === 'high' || priority === 'urgent') {
+    return priority;
+  }
+  return 'normal';
+}
+
+function normalizeIsoTimestamp(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) {
+    return '';
+  }
+
+  return trimmed;
 }
 
 export function loadQueueMeta(storage: Pick<Storage, 'getItem'> | null = typeof window !== 'undefined' ? window.localStorage : null): QueueMetaMap {
