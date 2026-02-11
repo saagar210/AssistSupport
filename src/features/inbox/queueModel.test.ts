@@ -110,6 +110,32 @@ describe('queueModel', () => {
     expect(loadQueueMeta(storage)).toEqual({});
   });
 
+  it('normalizes malformed metadata entries loaded from storage', () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+
+    storage.setItem(
+      'assistsupport.queue.meta.v1',
+      JSON.stringify({
+        valid: { owner: 'agent-a', priority: 'high', state: 'in_progress', updatedAt: '2026-02-08T00:00:00Z' },
+        blankOwner: { owner: '  ', priority: 'low', state: 'open', updatedAt: 'not-a-date' },
+        invalidValues: { owner: 'agent-b', priority: 'critical', state: 'waiting', updatedAt: 'also-bad' },
+        primitive: 42,
+      }),
+    );
+
+    expect(loadQueueMeta(storage)).toEqual({
+      valid: { owner: 'agent-a', priority: 'high', state: 'in_progress', updatedAt: '2026-02-08T00:00:00Z' },
+      blankOwner: { owner: 'unassigned', priority: 'low', state: 'open', updatedAt: '' },
+      invalidValues: { owner: 'agent-b', priority: 'normal', state: 'open', updatedAt: '' },
+    });
+  });
+
   it('builds queue analytics and handoff snapshot', () => {
     const drafts = [
       makeDraft({ id: 'a', input_text: 'sev1 outage', ticket_id: 'INC-1', updated_at: '2026-02-08T00:00:00Z' }),
