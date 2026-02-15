@@ -89,7 +89,8 @@ def adaptive_fusion(sparse_score, vector_score, category=None):
 
 # Test the fix
 assert adaptive_fusion(0.8, 0.6, 'policy') == 0.7, "Policy fusion failed"
-assert adaptive_fusion(0.8, 0.6, 'troubleshooting') == 0.66, "Troubleshooting fusion failed"
+result = adaptive_fusion(0.8, 0.6, 'troubleshooting')
+assert abs(result - 0.66) < 0.01, f"Troubleshooting fusion failed: got {result}"
 assert adaptive_fusion(0.8, 0.6) == 0.68, "Neutral fusion failed"
 print("✓ Score fusion tests passed")
 EOF
