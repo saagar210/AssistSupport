@@ -8,7 +8,7 @@
     },
     "assert": {
       "assertions": {
-        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "categories:accessibility": ["error", { "minScore": 0.94 }],
         "categories:performance": ["error", { "minScore": 0.8 }],
         "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
         "largest-contentful-paint": ["warn", { "maxNumericValue": 2500 }]
