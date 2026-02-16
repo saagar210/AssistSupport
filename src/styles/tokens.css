@@ -1,0 +1,23 @@
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --font-size-1: 0.875rem;
+  --font-size-2: 1rem;
+  --font-size-3: 1.25rem;
+  --font-size-4: 1.5rem;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --color-bg: 0 0% 100%;
+  --color-fg: 222 47% 11%;
+  --color-muted: 215 16% 47%;
+  --color-primary: 221 83% 53%;
+  --color-danger: 0 72% 51%;
+}

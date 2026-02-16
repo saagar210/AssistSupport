@@ -187,6 +187,7 @@ export function DiagnosisPanel({
                 onChange={e => handleTreeSelect(e.target.value)}
                 disabled={loading}
                 className="tree-dropdown"
+                aria-label="Troubleshooting tree"
               >
                 <option value="">{treeResult ? 'Run another tree...' : 'Select a troubleshooting tree...'}</option>
                 {trees.map(tree => (

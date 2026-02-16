@@ -1,0 +1,2 @@
+pnpm ui:gate:static
+pnpm ui:gate:regression
