@@ -1,9 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { initWebVitals } from "./monitoring/webVitals";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import "./styles/design-tokens.css";
+import "./styles/tokens.css";
 import "./styles/themes.css";
 import "./styles/components.css";
 
@@ -51,3 +53,5 @@ async function bootstrap() {
 }
 
 void bootstrap();
+
+initWebVitals();

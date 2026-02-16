@@ -19,9 +19,9 @@
 }
 
 .as-badge--warn {
-  border-color: var(--as-warn-border);
-  color: var(--as-warn-text);
-  background: var(--as-warn-surface);
+  border-color: #d1a03c;
+  color: #5c3a00;
+  background: #ffefc2;
 }
 
 .as-badge--bad {
