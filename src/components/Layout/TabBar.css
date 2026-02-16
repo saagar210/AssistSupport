@@ -1,0 +1,51 @@
+/* ============================================================================
+   Tab Bar Component
+   ============================================================================ */
+
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--tab-bg);
+  padding: 0 var(--space-4);
+}
+
+.tab-item {
+  position: relative;
+  padding: var(--space-3) var(--space-5);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--tab-text);
+  cursor: pointer;
+  transition: var(--transition-colors);
+  margin-bottom: -1px;
+}
+
+.tab-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.tab-item.active {
+  color: var(--tab-indicator);
+  border-bottom-color: var(--tab-indicator);
+  background: var(--tab-active-bg);
+}
+
+/* Keyboard shortcut indicator */
+.tab-item-shortcut {
+  display: none;
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (min-width: 768px) {
+  .tab-item-shortcut {
+    display: inline;
+  }
+}

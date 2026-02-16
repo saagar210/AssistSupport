@@ -1,0 +1,163 @@
+.tree-runner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tree-error {
+  color: var(--error);
+  text-align: center;
+}
+
+.tree-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.breadcrumb-separator {
+  color: var(--text-muted);
+}
+
+.breadcrumb-text {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border-left: 3px solid var(--border-color);
+}
+
+.tree-node-question {
+  border-left-color: var(--info);
+}
+
+.tree-node-action {
+  border-left-color: var(--warning);
+}
+
+.tree-node-terminal {
+  border-left-color: var(--success);
+}
+
+.node-title {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.node-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.node-content p {
+  margin: 0 0 8px 0;
+}
+
+.node-content p:last-child {
+  margin-bottom: 0;
+}
+
+.node-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-option {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.node-option:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-primary);
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tree-complete {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--success);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tree-complete:hover {
+  opacity: 0.9;
+}
+
+.tree-restart {
+  padding: 10px 16px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tree-restart:hover {
+  background: var(--bg-hover);
+}
+
+.tree-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.tree-back,
+.tree-close {
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tree-back:hover,
+.tree-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

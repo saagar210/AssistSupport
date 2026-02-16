@@ -1,0 +1,51 @@
+.workspace-revamp {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: var(--space-4, 16px);
+  height: 100%;
+}
+
+.workspace-revamp--solo {
+  grid-template-columns: 1fr;
+}
+
+.workspace-revamp__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4, 16px);
+  background:
+    radial-gradient(700px 200px at 20% 0%, rgba(79, 209, 197, 0.10), transparent 60%),
+    var(--bg-secondary);
+}
+
+.workspace-revamp__playbook h3 {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: 0.95rem;
+}
+
+.workspace-revamp__playbook ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.workspace-revamp__main {
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .workspace-revamp {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-revamp__rail {
+    order: -1;
+  }
+}

@@ -1,0 +1,488 @@
+/* ============================================================================
+   Input Panel - User Input and Context Section
+   ============================================================================ */
+
+.input-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.response-length-select {
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.response-length-select:hover {
+  border-color: var(--input-border-hover);
+}
+
+.response-length-select:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.task-preset-select {
+  min-width: 170px;
+}
+
+.input-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.input-textarea {
+  flex: 1;
+  min-height: 200px;
+  padding: var(--space-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  resize: none;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: var(--transition-colors), box-shadow var(--duration-fast) var(--ease-in-out);
+}
+
+.input-textarea:hover:not(:focus) {
+  border-color: var(--input-border-hover);
+}
+
+.input-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.input-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* OCR Preview Section */
+.ocr-preview {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.ocr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.ocr-remove {
+  background: none;
+  border: none;
+  font-size: var(--text-lg);
+  cursor: pointer;
+  opacity: 0.6;
+  color: inherit;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-colors);
+}
+
+.ocr-remove:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.ocr-text {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--text-primary);
+}
+
+/* Input Footer */
+.input-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-light);
+}
+
+.word-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.model-status {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-weight: var(--weight-medium);
+}
+
+.model-warning {
+  color: var(--warning);
+  background: var(--warning-light);
+}
+
+.model-ready {
+  color: var(--success);
+  background: var(--success-light);
+}
+
+/* Jira Ticket Section */
+.ticket-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.ticket-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ticket-input-row label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.ticket-input {
+  flex: 1;
+  max-width: 140px;
+  padding: var(--space-1-5) var(--space-2-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  transition: var(--transition-colors);
+}
+
+.ticket-input:hover:not(:focus) {
+  border-color: var(--input-border-hover);
+}
+
+.ticket-input:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.ticket-input::placeholder {
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.ticket-clear {
+  background: none;
+  border: none;
+  font-size: var(--text-md);
+  cursor: pointer;
+  opacity: 0.6;
+  color: var(--text-secondary);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-colors);
+}
+
+.ticket-clear:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.ticket-loading {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ticket-error {
+  margin-top: var(--space-2);
+  padding: var(--space-1-5) var(--space-2-5);
+  background: var(--error-light);
+  color: var(--error);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.ticket-preview {
+  margin-top: var(--space-2-5);
+  padding-top: var(--space-2-5);
+  border-top: 1px solid var(--border-light);
+}
+
+.ticket-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ticket-key {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.ticket-status {
+  font-size: var(--text-xs);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--badge-radius);
+  font-weight: var(--weight-medium);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.ticket-status.status-in-progress,
+.ticket-status.status-in-review {
+  background: var(--accent-light);
+  color: var(--accent-primary);
+}
+
+.ticket-status.status-done,
+.ticket-status.status-resolved,
+.ticket-status.status-closed {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.ticket-status.status-open,
+.ticket-status.status-new,
+.ticket-status.status-to-do {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.ticket-priority {
+  font-size: var(--text-xs);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--badge-radius);
+  font-weight: var(--weight-medium);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.ticket-priority.priority-highest,
+.ticket-priority.priority-high {
+  background: var(--error-light);
+  color: var(--error);
+}
+
+.ticket-priority.priority-medium {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.ticket-priority.priority-low,
+.ticket-priority.priority-lowest {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.ticket-summary {
+  margin-top: var(--space-1-5);
+  font-size: var(--text-base);
+  line-height: var(--leading-snug);
+  color: var(--text-primary);
+}
+
+.ticket-description-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-link);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: var(--transition-colors);
+}
+
+.ticket-description-toggle:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+.ticket-description {
+  margin-top: var(--space-2);
+  padding: var(--space-2-5);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* First Response Section */
+.first-response-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2-5);
+}
+
+.first-response-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.first-response-header h4 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.first-response-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.first-response-tone {
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.first-response-tone:hover {
+  border-color: var(--input-border-hover);
+}
+
+.first-response-tone:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.first-response-textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: var(--space-2-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  resize: vertical;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: var(--transition-colors), box-shadow var(--duration-fast) var(--ease-in-out);
+}
+
+.first-response-textarea:hover:not(:focus) {
+  border-color: var(--input-border-hover);
+}
+
+.first-response-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.first-response-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Batch Toggle */
+.batch-toggle {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.batch-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.batch-toggle.active {
+  background: var(--accent-light);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+/* ============================================================================
+   Revamp Shell Coherence (Phase 5)
+   Scope: Only applies when mounted inside `.app-shell-revamp`.
+   Goal: Reduce "mixed UI" artifacts without changing behavior.
+   ============================================================================ */
+
+.app-shell-revamp .batch-toggle {
+  padding: var(--as-space-1) var(--as-space-3);
+  font-size: var(--as-font-size-1);
+  border-radius: var(--as-radius-pill);
+  border-color: var(--as-border-1);
+  background: var(--as-glass-1);
+  color: var(--as-text-2);
+  transition:
+    background-color var(--as-dur-2) var(--as-ease-out),
+    border-color var(--as-dur-2) var(--as-ease-out),
+    color var(--as-dur-2) var(--as-ease-out);
+}
+
+.app-shell-revamp .batch-toggle:hover {
+  background: var(--as-glass-2);
+  color: var(--as-text-1);
+}
+
+.app-shell-revamp .batch-toggle.active {
+  background: var(--as-accent-surface-1);
+  color: var(--as-accent-1);
+  border-color: var(--as-accent-border-1);
+}

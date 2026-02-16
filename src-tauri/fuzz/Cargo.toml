@@ -1,0 +1,40 @@
+[package]
+name = "assistsupport-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[dependencies.assistsupport_lib]
+path = ".."
+package = "assistsupport"
+
+[[bin]]
+name = "namespace_id"
+path = "fuzz_targets/namespace_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validation_inputs"
+path = "fuzz_targets/validation_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "search_api_payload"
+path = "fuzz_targets/search_api_payload.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

@@ -1,0 +1,151 @@
+{
+  "root_node_id": "email-root",
+  "nodes": {
+    "email-root": {
+      "id": "email-root",
+      "type": "question",
+      "title": "What type of email/calendar issue?",
+      "content": null,
+      "options": [
+        { "label": "Can't send email", "next_node_id": "email-send" },
+        { "label": "Not receiving email", "next_node_id": "email-receive" },
+        { "label": "Calendar problems", "next_node_id": "email-calendar" },
+        { "label": "Outlook not opening/crashing", "next_node_id": "email-client" }
+      ]
+    },
+    "email-send": {
+      "id": "email-send",
+      "type": "question",
+      "title": "Send issue details",
+      "content": "What happens when you try to send?",
+      "options": [
+        { "label": "Email stuck in Outbox", "next_node_id": "email-outbox" },
+        { "label": "Bounce back / NDR", "next_node_id": "email-bounce" },
+        { "label": "No send button / can't compose", "next_node_id": "email-compose" }
+      ]
+    },
+    "email-outbox": {
+      "id": "email-outbox",
+      "type": "action",
+      "title": "Email stuck in Outbox",
+      "content": "1. Check attachment size (limit usually 25-35MB)\n2. Check if Outlook is in offline mode (bottom status bar)\n3. Try: Send/Receive All Folders (F9)\n4. Open stuck message, cut content, delete message, paste into new\n5. Check if recipient address is valid\n6. Restart Outlook and try again",
+      "options": [
+        { "label": "Email sent", "next_node_id": "email-resolved" },
+        { "label": "Still stuck", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-bounce": {
+      "id": "email-bounce",
+      "type": "action",
+      "title": "Email bounce back",
+      "content": "Common bounce reasons:\n\n1. '550 User not found' - Check recipient email spelling\n2. '552 Message too large' - Reduce attachment size or use file sharing\n3. '554 Rejected by policy' - Recipient may be blocking external email\n4. '421 Too many connections' - Wait and retry, server is busy\n5. 'Mailbox full' - Recipient needs to clear space\n\nCheck the NDR for specific error code.",
+      "options": [
+        { "label": "Delivered now", "next_node_id": "email-resolved" },
+        { "label": "Still bouncing", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-compose": {
+      "id": "email-compose",
+      "type": "action",
+      "title": "Can't compose email",
+      "content": "1. Check if in Reading view vs Mail view\n2. Try keyboard shortcut: Ctrl+N for new email\n3. Check if account is set to send-only or restricted\n4. Verify default email account is set correctly\n5. Try composing in Outlook Web Access",
+      "options": [
+        { "label": "Can compose now", "next_node_id": "email-resolved" },
+        { "label": "Still can't", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-receive": {
+      "id": "email-receive",
+      "type": "question",
+      "title": "Receiving issue details",
+      "content": "Are you not receiving any email, or specific emails?",
+      "options": [
+        { "label": "No email at all", "next_node_id": "email-none" },
+        { "label": "Missing specific emails", "next_node_id": "email-missing" }
+      ]
+    },
+    "email-none": {
+      "id": "email-none",
+      "type": "action",
+      "title": "Not receiving any email",
+      "content": "1. Check if Outlook is in offline mode\n2. Press F9 or click Send/Receive\n3. Check mailbox size - may be at quota\n4. Verify account settings are correct\n5. Try Outlook Web Access (OWA) to test\n6. Check if new emails appear in OWA but not desktop",
+      "options": [
+        { "label": "Receiving now", "next_node_id": "email-resolved" },
+        { "label": "Still not receiving", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-missing": {
+      "id": "email-missing",
+      "type": "action",
+      "title": "Missing specific emails",
+      "content": "1. Check Junk/Spam folder\n2. Check Deleted Items (accidental delete)\n3. Review Inbox Rules - may be moving/deleting\n4. Search All Mail Items for the sender\n5. Check Focused vs Other inbox (if enabled)\n6. Ask sender to confirm they sent it (check their Sent folder)\n7. Check if email was quarantined by security",
+      "options": [
+        { "label": "Found it", "next_node_id": "email-resolved" },
+        { "label": "Can't find it", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-calendar": {
+      "id": "email-calendar",
+      "type": "question",
+      "title": "Calendar issue type",
+      "content": "What's the calendar problem?",
+      "options": [
+        { "label": "Can't see others' calendars", "next_node_id": "email-cal-share" },
+        { "label": "Meeting not showing", "next_node_id": "email-cal-meeting" },
+        { "label": "Can't book rooms", "next_node_id": "email-cal-room" }
+      ]
+    },
+    "email-cal-share": {
+      "id": "email-cal-share",
+      "type": "action",
+      "title": "Calendar sharing issues",
+      "content": "1. Other person must share their calendar with you first\n2. Request sharing: File > Open > Other User's Folder\n3. For free/busy only, check GAL (Global Address List)\n4. Manager calendars may require delegation setup\n5. External contacts need explicit sharing invitation",
+      "options": [
+        { "label": "Can see calendar", "next_node_id": "email-resolved" },
+        { "label": "Still can't see", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-cal-meeting": {
+      "id": "email-cal-meeting",
+      "type": "action",
+      "title": "Meeting not appearing",
+      "content": "1. Check correct date range in calendar view\n2. Verify time zone settings (File > Options > Calendar)\n3. Search inbox for meeting invite\n4. Check if meeting was declined or tentative\n5. Ask organizer to resend invite\n6. Check if multiple calendars exist (personal vs work)",
+      "options": [
+        { "label": "Meeting found", "next_node_id": "email-resolved" },
+        { "label": "Still missing", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-cal-room": {
+      "id": "email-cal-room",
+      "type": "action",
+      "title": "Room booking issues",
+      "content": "1. Check room availability in Scheduling Assistant\n2. Some rooms require manager approval\n3. Check if room has booking restrictions (max hours, advance notice)\n4. Try Room Finder (New Meeting > Room Finder)\n5. Check if room calendar shows accurate availability",
+      "options": [
+        { "label": "Room booked", "next_node_id": "email-resolved" },
+        { "label": "Can't book", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-client": {
+      "id": "email-client",
+      "type": "action",
+      "title": "Outlook client issues",
+      "content": "1. Close Outlook completely and restart\n2. Start Outlook in Safe Mode: outlook.exe /safe\n3. Repair Office installation (Control Panel > Programs)\n4. Check for and install Office updates\n5. Reset Outlook profile if persistent issues\n6. Clear Outlook cache: %localappdata%\\Microsoft\\Outlook",
+      "options": [
+        { "label": "Working now", "next_node_id": "email-resolved" },
+        { "label": "Still having issues", "next_node_id": "email-escalate" }
+      ]
+    },
+    "email-resolved": {
+      "id": "email-resolved",
+      "type": "terminal",
+      "title": "Email/Calendar issue resolved",
+      "content": "Issue has been resolved. Document the solution in the ticket."
+    },
+    "email-escalate": {
+      "id": "email-escalate",
+      "type": "terminal",
+      "title": "Escalate to Messaging Team",
+      "content": "Escalate to Messaging/Exchange team with:\n- User's email address\n- Outlook version (File > Office Account)\n- Specific error messages\n- Steps already attempted\n- Whether issue affects OWA too"
+    }
+  }
+}

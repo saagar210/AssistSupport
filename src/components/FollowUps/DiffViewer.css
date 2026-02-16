@@ -1,0 +1,210 @@
+/* ============================================================================
+   Diff Viewer - Inline Diff Modal
+   ============================================================================ */
+
+/* Modal overlay (same pattern as existing .modal-overlay) */
+.diff-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal content */
+.diff-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  min-width: 500px;
+  max-width: 800px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+/* Header */
+.diff-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.diff-header-labels {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-label {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-label-remove {
+  background: var(--error-light);
+  color: var(--error);
+}
+
+.diff-label-add {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.diff-label-separator {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.diff-header-stats {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.diff-stat {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+}
+
+.diff-stat-add {
+  color: var(--success);
+}
+
+.diff-stat-remove {
+  color: var(--error);
+}
+
+/* Diff content area */
+.diff-content {
+  overflow-y: auto;
+  flex: 1;
+  font-family: var(--font-mono, 'SF Mono', Monaco, 'Consolas', monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Individual diff lines */
+.diff-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 24px;
+}
+
+.diff-line.same {
+  background: var(--bg-primary);
+}
+
+.diff-line.add {
+  background: var(--success-light);
+}
+
+.diff-line.remove {
+  background: var(--error-light);
+}
+
+/* Line number gutter */
+.diff-line-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 36px;
+  padding: 0 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  user-select: none;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-light);
+}
+
+.diff-line-number-a {
+  /* Left line number column */
+}
+
+.diff-line-number-b {
+  /* Right line number column */
+}
+
+.diff-line.add .diff-line-number-a {
+  color: transparent;
+}
+
+.diff-line.remove .diff-line-number-b {
+  color: transparent;
+}
+
+/* Diff marker (+, -, space) */
+.diff-line-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  font-weight: 600;
+  user-select: none;
+}
+
+.diff-line.add .diff-line-marker {
+  color: var(--success);
+}
+
+.diff-line.remove .diff-line-marker {
+  color: var(--error);
+}
+
+.diff-line.same .diff-line-marker {
+  color: var(--text-muted);
+}
+
+/* Line content */
+.diff-line-content {
+  flex: 1;
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.diff-line.add .diff-line-content {
+  color: var(--text-primary);
+}
+
+.diff-line.remove .diff-line-content {
+  color: var(--text-primary);
+}
+
+.diff-line.same .diff-line-content {
+  color: var(--text-secondary);
+}
+
+/* Empty state */
+.diff-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-family: inherit;
+}

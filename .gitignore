@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+out/
+build/
+*.local
+
+# Tauri / Rust
+src-tauri/target/
+**/target/
+
+# Test & coverage
+coverage/
+.pytest_cache/
+test-results/
+playwright-report/
+
+# Logs
+logs/
+*.log
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive / secrets
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+master.key*
+key_storage.json
+tokens.json
+*.secret
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Model files
+*.gguf
+
+# Python
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.venv/
+venv/
+
+# Misc
+.cache/
+tmp/
+.next/
+dump.rdb
+artifacts/

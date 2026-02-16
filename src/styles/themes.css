@@ -1,0 +1,267 @@
+/* ============================================================================
+   AssistSupport Theme System v2.0
+   ============================================================================
+   Premium color palette using Tailwind Slate with intentional accent colors.
+   Supports light/dark themes with WCAG AA accessibility compliance.
+   ============================================================================ */
+
+:root {
+  /* =========================================================================
+     LIGHT THEME (Default)
+     ChatGPT-inspired neutral palette with green accent.
+     Clean whites and soft grays for professional, spacious feel.
+     ========================================================================= */
+
+  /* Backgrounds */
+  --bg-primary: #ffffff;            /* White - main content area */
+  --bg-secondary: #f7f7f8;         /* Soft gray - subtle sections */
+  --bg-tertiary: #ececf1;          /* Light gray - emphasized areas */
+  --bg-elevated: #ffffff;           /* Elevated surfaces (cards, modals) */
+  --bg-hover: #e8e8ed;             /* Hover states */
+  --bg-active: #d1d5db;            /* Pressed/active states */
+  --bg-inverse: #0d0d0d;           /* Deep black - inverse backgrounds */
+
+  /* Text */
+  --text-primary: #0d0d0d;         /* Near black - primary text */
+  --text-secondary: #565869;       /* Medium gray - secondary text */
+  --text-muted: #8e8ea0;           /* Muted gray - placeholder/hints */
+  --text-inverse: #ececf1;         /* Off-white - text on dark bg */
+  --text-link: #10a37f;            /* Green - link text */
+  --text-link-hover: #0d9466;      /* Dark green - link hover */
+
+  /* Borders */
+  --border-light: #ececf1;         /* Subtle dividers */
+  --border-color: #d9d9e3;         /* Default borders */
+  --border-strong: #c5c5d2;        /* Emphasized borders */
+  --border-inverse: #404040;       /* Inverse borders */
+
+  /* Accent - ChatGPT Green */
+  --accent-primary: #10a37f;       /* Primary green accent */
+  --accent-hover: #0d9466;         /* Darker green - hover */
+  --accent-active: #0a7d56;        /* Darkest green - pressed */
+  --accent-light: #d1f2eb;         /* Light green tint */
+  --accent-lighter: #edf9f5;       /* Subtle green bg */
+  --accent-gradient: linear-gradient(135deg, #10a37f 0%, #0d9466 100%);
+  --border-color-hover: #8e8ea0;   /* Border hover */
+
+  /* Semantic Colors - Success (Green) */
+  --success: #10a37f;              /* Same as accent */
+  --success-hover: #0d9466;
+  --success-light: #d1f2eb;
+  --success-lighter: #edf9f5;
+
+  /* Semantic Colors - Warning (Amber) */
+  --warning: #d97706;
+  --warning-hover: #b45309;
+  --warning-light: #fef3c7;
+  --warning-lighter: #fffbeb;
+
+  /* Semantic Colors - Error (Red) */
+  --error: #ef4444;
+  --error-hover: #dc2626;
+  --error-light: #fee2e2;
+  --error-lighter: #fef2f2;
+
+  /* Semantic Colors - Info (Soft blue) */
+  --info: #3b82f6;
+  --info-hover: #2563eb;
+  --info-light: #dbeafe;
+  --info-lighter: #eff6ff;
+
+  /* Component-specific tokens */
+  --input-bg: #ffffff;
+  --input-border: #d9d9e3;
+  --input-border-hover: #8e8ea0;
+  --input-focus: #10a37f;          /* Green focus ring */
+  --input-placeholder: #8e8ea0;
+
+  /* Cards */
+  --card-bg: #ffffff;
+  --card-border: #d9d9e3;
+  --card-shadow: rgba(0, 0, 0, 0.06);
+
+  /* Tab bar */
+  --tab-bg: #f7f7f8;
+  --tab-active-bg: #ffffff;
+  --tab-text: #8e8ea0;
+  --tab-active-text: #0d0d0d;
+  --tab-indicator: #10a37f;        /* Green indicator */
+
+  /* Sidebar */
+  --sidebar-bg: #f7f7f8;
+  --sidebar-border: #ececf1;
+  --sidebar-item-hover: #e8e8ed;
+  --sidebar-item-active: #d1f2eb;  /* Green tint for active */
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #d9d9e3;
+  --scrollbar-thumb-hover: #8e8ea0;
+
+  /* Overlay */
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --backdrop-blur: 8px;
+
+  /* Code/Syntax */
+  --code-bg: #f7f7f8;
+  --code-text: #0d0d0d;
+  --code-border: #ececf1;
+}
+
+/* ============================================================================
+   DARK THEME
+   ============================================================================ */
+
+:root[data-theme="dark"] {
+  /* =========================================================================
+     DARK THEME
+     Truly dark backgrounds inspired by ChatGPT desktop.
+     Deep blacks with subtle gray hierarchy.
+     ========================================================================= */
+
+  /* Backgrounds */
+  --bg-primary: #0d0d0d;           /* Deep black - main content */
+  --bg-secondary: #171717;         /* Very dark gray - subtle areas */
+  --bg-tertiary: #262626;          /* Dark gray - emphasized sections */
+  --bg-elevated: #1a1a1a;          /* Elevated surfaces */
+  --bg-hover: #2f2f2f;             /* Hover states */
+  --bg-active: #3f3f3f;            /* Pressed/active */
+  --bg-inverse: #ececf1;           /* Off-white inverse */
+
+  /* Text */
+  --text-primary: #ececf1;         /* Off-white - primary text */
+  --text-secondary: #b4b4b8;       /* Light gray - secondary text */
+  --text-muted: #6e6e80;           /* Medium gray - WCAG AA on #0d0d0d */
+  --text-inverse: #0d0d0d;         /* Near black - text on light bg */
+  --text-link: #2dd4a8;            /* Bright green - links */
+  --text-link-hover: #5eead4;      /* Light green - link hover */
+
+  /* Borders */
+  --border-light: #1e1e1e;         /* Very subtle dividers */
+  --border-color: #2f2f2f;         /* Default borders */
+  --border-strong: #404040;        /* Emphasized borders */
+  --border-inverse: #d9d9e3;       /* Inverse borders */
+
+  /* Accent - Green works in both modes */
+  --accent-primary: #10a37f;       /* Same green */
+  --accent-hover: #2dd4a8;         /* Brighter green for dark bg */
+  --accent-active: #0d9466;        /* Darker green pressed */
+  --accent-light: #1a2f2b;         /* Dark green tint */
+  --accent-lighter: #0d1f1b;       /* Very dark green */
+  --accent-gradient: linear-gradient(135deg, #10a37f 0%, #0d9466 100%);
+  --border-color-hover: #505050;   /* Border hover */
+
+  /* Semantic Colors - Success */
+  --success: #10a37f;
+  --success-hover: #2dd4a8;
+  --success-light: #1a2f2b;
+  --success-lighter: #0d1f1b;
+
+  /* Semantic Colors - Warning */
+  --warning: #f59e0b;
+  --warning-hover: #fbbf24;
+  --warning-light: #3d2800;
+  --warning-lighter: #261a00;
+
+  /* Semantic Colors - Error */
+  --error: #ef4444;
+  --error-hover: #f87171;
+  --error-light: #3b1111;
+  --error-lighter: #280c0c;
+
+  /* Semantic Colors - Info */
+  --info: #3b82f6;
+  --info-hover: #60a5fa;
+  --info-light: #1a2740;
+  --info-lighter: #111a2e;
+
+  /* Component-specific tokens */
+  --input-bg: #171717;
+  --input-border: #2f2f2f;
+  --input-border-hover: #404040;
+  --input-focus: #10a37f;          /* Green focus */
+  --input-placeholder: #6e6e80;
+
+  /* Cards */
+  --card-bg: #171717;
+  --card-border: #2f2f2f;
+  --card-shadow: rgba(0, 0, 0, 0.4);
+
+  /* Tab bar */
+  --tab-bg: #171717;
+  --tab-active-bg: #0d0d0d;
+  --tab-text: #6e6e80;
+  --tab-active-text: #ececf1;
+  --tab-indicator: #10a37f;        /* Green indicator */
+
+  /* Sidebar */
+  --sidebar-bg: #171717;
+  --sidebar-border: #1e1e1e;
+  --sidebar-item-hover: #2f2f2f;
+  --sidebar-item-active: #1a2f2b;  /* Dark green tint */
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #2f2f2f;
+  --scrollbar-thumb-hover: #404040;
+
+  /* Overlay */
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  --backdrop-blur: 8px;
+
+  /* Code/Syntax */
+  --code-bg: #1a1a1a;
+  --code-text: #d1d5db;
+  --code-border: #2f2f2f;
+}
+
+/* ============================================================================
+   GLOBAL STYLES
+   ============================================================================ */
+
+/* Scrollbar styles - thin, minimal, elegant */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Hide scrollbar until hover on containers */
+.sidebar::-webkit-scrollbar-thumb,
+.panel-content::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb,
+.panel-content:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-light);
+  color: var(--text-primary);
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring on mouse click, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}

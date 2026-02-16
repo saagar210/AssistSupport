@@ -1,0 +1,199 @@
+.batch-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.batch-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.batch-instructions p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.batch-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 160px;
+}
+
+.batch-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.batch-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.batch-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+
+/* Results Section */
+.batch-results-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.batch-progress-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.batch-status-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.batch-progress-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.batch-progress-bar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.batch-error {
+  padding: 12px;
+  background: var(--error-light);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--error);
+}
+
+.batch-results-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-result-card {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.batch-result-input {
+  margin-bottom: 12px;
+}
+
+.batch-result-response {
+  margin-bottom: 8px;
+}
+
+.batch-result-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.batch-result-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.batch-result-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Processing indicator */
+.batch-processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-primary);
+}
+
+.processing-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-light);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.batch-result-card.pending {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.batch-result-status-icon {
+  color: var(--success);
+  font-weight: 700;
+  margin-right: 4px;
+}

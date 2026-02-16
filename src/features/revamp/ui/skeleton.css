@@ -1,0 +1,11 @@
+.as-skeleton {
+  display: grid;
+  gap: var(--as-space-2);
+}
+
+.as-skeleton__line {
+  height: 10px;
+  border-radius: var(--as-radius-pill);
+  background: var(--as-glass-3);
+  animation: as-pulse var(--as-dur-3) var(--as-ease-out) infinite;
+}

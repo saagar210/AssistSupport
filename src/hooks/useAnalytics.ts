@@ -1,0 +1,133 @@
+import { useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+
+export interface AnalyticsSummary {
+  total_events: number;
+  responses_generated: number;
+  searches_performed: number;
+  drafts_saved: number;
+  daily_counts: DailyCount[];
+  average_rating: number;
+  total_ratings: number;
+  rating_distribution: number[];
+}
+
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+
+export interface ArticleUsage {
+  document_id: string;
+  title: string;
+  usage_count: number;
+}
+
+export interface LowRatingAnalysis {
+  low_rating_count: number;
+  total_rating_count: number;
+  low_rating_percentage: number;
+  feedback_categories: FeedbackCategoryCount[];
+  recent_feedback: RecentLowFeedback[];
+}
+
+export interface ResponseQualitySummary {
+  snapshots_count: number;
+  saved_count: number;
+  copied_count: number;
+  avg_word_count: number;
+  avg_edit_ratio: number;
+  edited_save_rate: number;
+  avg_time_to_draft_ms: number | null;
+  median_time_to_draft_ms: number | null;
+  copy_per_saved_ratio: number;
+}
+
+export interface ResponseQualityDrilldownExample {
+  draft_id: string;
+  metric_value: number;
+  created_at: string;
+  draft_excerpt: string | null;
+}
+
+export interface ResponseQualityDrilldownExamples {
+  edit_ratio: ResponseQualityDrilldownExample[];
+  time_to_draft: ResponseQualityDrilldownExample[];
+  copy_per_save: ResponseQualityDrilldownExample[];
+  edited_save_rate: ResponseQualityDrilldownExample[];
+}
+
+export interface FeedbackCategoryCount {
+  category: string;
+  count: number;
+}
+
+export interface RecentLowFeedback {
+  rating: number;
+  feedback_text: string;
+  feedback_category: string | null;
+  created_at: string;
+}
+
+export function useAnalytics() {
+  const logEvent = useCallback(async (eventType: string, eventData?: Record<string, unknown>): Promise<void> => {
+    try {
+      const id = crypto.randomUUID();
+      await invoke('log_analytics_event', {
+        id,
+        eventType,
+        eventDataJson: eventData ? JSON.stringify(eventData) : null,
+      });
+    } catch (err) {
+      console.error('Failed to log analytics event:', err);
+    }
+  }, []);
+
+  const getSummary = useCallback(async (periodDays?: number): Promise<AnalyticsSummary> => {
+    return invoke<AnalyticsSummary>('get_analytics_summary', {
+      periodDays: periodDays ?? null,
+    });
+  }, []);
+
+  const getKbUsage = useCallback(async (periodDays?: number): Promise<ArticleUsage[]> => {
+    return invoke<ArticleUsage[]>('get_kb_usage_stats', {
+      periodDays: periodDays ?? null,
+    });
+  }, []);
+
+  const getLowRatingAnalysis = useCallback(async (periodDays?: number): Promise<LowRatingAnalysis> => {
+    return invoke<LowRatingAnalysis>('get_low_rating_analysis', {
+      periodDays: periodDays ?? null,
+    });
+  }, []);
+
+  const getResponseQualitySummary = useCallback(async (periodDays?: number): Promise<ResponseQualitySummary> => {
+    return invoke<ResponseQualitySummary>('get_response_quality_summary', {
+      periodDays: periodDays ?? null,
+    });
+  }, []);
+
+  const getResponseQualityDrilldownExamples = useCallback(
+    async (
+      periodDays?: number,
+      limit: number = 6,
+    ): Promise<ResponseQualityDrilldownExamples> =>
+      invoke<ResponseQualityDrilldownExamples>(
+        'get_response_quality_drilldown_examples',
+        {
+          periodDays: periodDays ?? null,
+          limit,
+        },
+      ),
+    [],
+  );
+
+  return {
+    logEvent,
+    getSummary,
+    getKbUsage,
+    getLowRatingAnalysis,
+    getResponseQualitySummary,
+    getResponseQualityDrilldownExamples,
+  };
+}
