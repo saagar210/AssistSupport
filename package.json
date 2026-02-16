@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:normal": "pnpm tauri dev",
+    "dev:lean": "./scripts/dev-lean.sh",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "clean:heavy": "./scripts/clean-heavy-artifacts.sh",
+    "clean:local": "./scripts/clean-local-reproducible.sh",
     "test:security-regression": "cd src-tauri && cargo test security -- --nocapture && cargo test ssrf_dns_rebinding -- --nocapture && cargo test filter_injection -- --nocapture && cargo test path_validation -- --nocapture",
     "test:ci": "cd src-tauri && cargo test",
     "lint": "tsc --noEmit",

@@ -155,8 +155,31 @@ Operational runbooks were removed in the size-optimized profile of this reposito
 git clone https://github.com/saagar210/AssistSupport.git
 cd AssistSupport
 pnpm install
-pnpm run check:monorepo-readiness
 pnpm tauri dev
+```
+
+### Dev Modes and Cleanup
+
+Normal development (fastest restarts, keeps local build artifacts):
+
+```bash
+pnpm run dev:normal
+```
+
+Lean development (lower disk growth, uses temporary cache locations, and auto-cleans heavy artifacts when the app exits):
+
+```bash
+pnpm run dev:lean
+```
+
+Cleanup commands:
+
+```bash
+# Remove heavy build artifacts only (safe default)
+pnpm run clean:heavy
+
+# Remove all reproducible local caches (including node_modules and test/cache folders)
+pnpm run clean:local
 ```
 
 ### Build for Production
@@ -600,8 +623,7 @@ xcode-select --install
 
 **`pnpm tauri dev` fails to start**
 ```bash
-rm -rf src-tauri/target node_modules
-pnpm install
+pnpm run clean:heavy
 pnpm tauri dev
 ```
 

@@ -3,10 +3,13 @@ import react from "@vitejs/plugin-react";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process is a nodejs global
+const cacheDir = process.env.VITE_CACHE_DIR;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  cacheDir: cacheDir || "node_modules/.vite",
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
