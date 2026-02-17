@@ -38,14 +38,14 @@
     "perf:assets": "bash scripts/perf/check-assets.sh",
     "perf:memory": "node --expose-gc scripts/perf/memory-smoke.mjs",
     "perf:summary": "node scripts/perf/summarize.mjs",
-    "ui:lint": "eslint tests/ui src/main.tsx src/monitoring/webVitals.ts --max-warnings=0 && stylelint \"src/styles/tokens.css\" --allow-empty-input",
+    "ui:lint": "pnpm lint",
     "ui:typecheck": "tsc --noEmit",
     "ui:gate:static": "pnpm ui:lint && pnpm ui:typecheck",
-    "ui:test:visual": "playwright test tests/ui --grep @visual",
-    "ui:test:a11y": "playwright test tests/ui --grep @a11y",
+    "ui:test:visual": "bash scripts/ui/run-playwright-tag.sh @visual",
+    "ui:test:a11y": "bash scripts/ui/run-playwright-tag.sh @a11y",
     "ui:gate:regression": "pnpm ui:test:visual && pnpm ui:test:a11y",
     "ui:gate": "pnpm ui:gate:static && pnpm ui:gate:regression",
-    "ui:test:visual:update": "playwright test tests/ui --grep @visual --update-snapshots",
+    "ui:test:visual:update": "bash scripts/ui/run-playwright-tag.sh @visual --update-snapshots",
     "lint-staged": "lint-staged"
   },
   "config": {
