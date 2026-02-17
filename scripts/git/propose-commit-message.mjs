@@ -1,10 +1,16 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-const staged = execSync("git diff --cached --name-only --diff-filter=ACMR", {
-  encoding: "utf8",
-})
+const gitBin = "/usr/bin/git";
+
+const staged = execFileSync(
+  gitBin,
+  ["diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+  {
+    encoding: "utf8",
+  },
+)
   .split("\n")
   .map((line) => line.trim())
   .filter(Boolean);
@@ -29,9 +35,14 @@ const hasTests = lower.some(
   (f) => f.includes("/tests/") || f.includes(".test.") || f.includes(".spec."),
 );
 const hasCi = lower.some((f) => f.startsWith(".github/workflows/"));
-const hasPerf = lower.some((f) => f.includes("/perf/") || f.includes("lighthouserc"));
+const hasPerf = lower.some(
+  (f) => f.includes("/perf/") || f.includes("lighthouserc"),
+);
 const hasDeps = lower.some(
-  (f) => f.endsWith("package.json") || f.endsWith("pnpm-lock.yaml") || f.endsWith("yarn.lock"),
+  (f) =>
+    f.endsWith("package.json") ||
+    f.endsWith("pnpm-lock.yaml") ||
+    f.endsWith("yarn.lock"),
 );
 
 let type = "feat";

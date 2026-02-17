@@ -1,10 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
+const npmExecPath = process.env.npm_execpath;
+if (!npmExecPath) {
+  console.error(
+    "npm_execpath is not set; run this script through pnpm or npm.",
+  );
+  process.exit(1);
+}
+
 const start = Date.now();
-const result = spawnSync("pnpm", ["build:ui"], {
+const result = spawnSync(process.execPath, [npmExecPath, "run", "build:ui"], {
   stdio: "inherit",
-  shell: process.platform === "win32",
 });
 const end = Date.now();
 
@@ -15,7 +22,7 @@ writeFileSync(
     {
       buildMs: end - start,
       capturedAt: new Date().toISOString(),
-      command: "pnpm build:ui",
+      command: "npm_execpath run build:ui",
     },
     null,
     2,
