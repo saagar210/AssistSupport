@@ -5,13 +5,12 @@ on:
     types: [opened, synchronize, reopened, edited]
     branches: [main, master]
 
-permissions:
-  contents: read
-
 jobs:
   perf-bundle:
     if: ${{ vars.PERF_PROFILE == 'production' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
@@ -29,6 +28,8 @@ jobs:
   perf-build:
     if: ${{ vars.PERF_PROFILE == 'production' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
@@ -45,6 +46,8 @@ jobs:
   perf-assets:
     if: ${{ vars.PERF_PROFILE == 'production' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - run: ASSET_MAX_BYTES=250000 bash scripts/perf/check-assets.sh
@@ -52,6 +55,8 @@ jobs:
   perf-memory:
     if: ${{ vars.PERF_PROFILE == 'production' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
@@ -67,6 +72,8 @@ jobs:
   perf-lighthouse:
     if: ${{ vars.PERF_PROFILE == 'production' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
@@ -83,6 +90,8 @@ jobs:
   perf-api:
     if: ${{ vars.PERF_PROFILE == 'production' && vars.PERF_BASE_URL != '' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: grafana/setup-k6-action@ffe7d7290dfa715e48c2ccc924d068444c94bde2
@@ -95,6 +104,8 @@ jobs:
   perf-db:
     if: ${{ vars.PERF_PROFILE == 'production' && vars.PERF_DATABASE_URL != '' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Install PostgreSQL client
