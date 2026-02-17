@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+pnpm git:guard:branch
+pnpm git:guard:atomic
+pnpm lint-staged
+pnpm git:guard:generated
+pnpm git:guard:large-files
+pnpm git:guard:secrets

@@ -4,14 +4,67 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "prepare": "husky",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "commit": "cz",
+    "commitlint": "commitlint",
+    "git:branch:create": "bash scripts/git/create-branch.sh",
+    "git:guard:branch": "bash scripts/git/guard-branch.sh",
+    "git:guard:no-main-push": "bash scripts/git/guard-no-main-push.sh",
+    "git:guard:atomic": "bash scripts/git/guard-atomic.sh",
+    "git:guard:generated": "bash scripts/git/guard-generated.sh",
+    "git:guard:large-files": "bash scripts/git/guard-large-files.sh",
+    "git:guard:secrets": "bash scripts/git/guard-secrets.sh",
+    "git:guard:all": "pnpm git:guard:branch && pnpm git:guard:atomic && pnpm git:guard:generated && pnpm git:guard:large-files && pnpm git:guard:secrets",
+    "git:commit:propose": "node scripts/git/propose-commit-message.mjs",
+    "git:session:save": "bash scripts/git/session-save.sh",
+    "git:session:resume": "bash scripts/git/session-resume.sh",
+    "pr:notes": "bash scripts/git/generate-pr-notes.sh",
     "test:security-regression": "cd src-tauri && cargo test security -- --nocapture && cargo test ssrf_dns_rebinding -- --nocapture && cargo test filter_injection -- --nocapture && cargo test path_validation -- --nocapture",
     "test:ci": "cd src-tauri && cargo test",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:ui": "tsc && vite build",
+    "perf:bundle": "node scripts/perf/vite-bundle-report.mjs",
+    "perf:build": "node scripts/perf/measure-build-time.mjs",
+    "perf:lhci": "lhci autorun",
+    "perf:lhci:prod": "lhci autorun --config=.lighthouserc.production.json",
+    "perf:api": "k6 run tests/perf/api.k6.js --summary-export=.perf-results/api-summary.json",
+    "perf:db": "psql \"$DATABASE_URL\" -f scripts/perf/db/check-pg-stat.sql",
+    "perf:db:enforce": "bash scripts/perf/db/enforce-pg-stat.sh",
+    "perf:assets": "bash scripts/perf/check-assets.sh",
+    "perf:memory": "node --expose-gc scripts/perf/memory-smoke.mjs",
+    "perf:summary": "node scripts/perf/summarize.mjs",
+    "ui:lint": "eslint tests/ui src/main.tsx src/monitoring/webVitals.ts --max-warnings=0 && stylelint \"src/styles/tokens.css\" --allow-empty-input",
+    "ui:typecheck": "tsc --noEmit",
+    "ui:gate:static": "pnpm ui:lint && pnpm ui:typecheck",
+    "ui:test:visual": "playwright test tests/ui --grep @visual",
+    "ui:test:a11y": "playwright test tests/ui --grep @a11y",
+    "ui:gate:regression": "pnpm ui:test:visual && pnpm ui:test:a11y",
+    "ui:gate": "pnpm ui:gate:static && pnpm ui:gate:regression",
+    "ui:test:visual:update": "playwright test tests/ui --grep @visual --update-snapshots",
+    "lint-staged": "lint-staged"
+  },
+  "config": {
+    "commitizen": {
+      "path": "@commitlint/cz-commitlint"
+    }
+  },
+  "lint-staged": {
+    "src/**/*.{js,jsx,ts,tsx,mjs,cjs}": [
+      "eslint --max-warnings=0 --fix",
+      "prettier --write"
+    ],
+    "tests/ui/**/*.{js,jsx,ts,tsx,mjs,cjs}": [
+      "eslint --max-warnings=0 --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,scss,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",
@@ -24,11 +77,33 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@commitlint/cz-commitlint": "^19.8.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "commitizen": "^4.3.1",
+    "husky": "^9.1.7",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "@axe-core/playwright": "^4.11.0",
+    "@eslint/js": "^9.39.1",
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.56.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.1",
+    "@typescript-eslint/parser": "^8.46.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.4.0",
+    "lighthouse": "^12.8.2",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.7.1",
+    "stylelint": "^16.25.0",
+    "stylelint-config-standard": "^39.0.1",
+    "typescript-eslint": "^8.46.1",
+    "web-vitals": "^5.1.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

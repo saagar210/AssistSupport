@@ -17,6 +17,9 @@ coverage/
 .pytest_cache/
 test-results/
 playwright-report/
+.lighthouseci/
+.perf-results/
+.husky/_/
 
 # Logs
 logs/
