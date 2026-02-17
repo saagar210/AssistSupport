@@ -1,0 +1,5 @@
+# codex-os-managed
+pnpm git:guard:all
+pnpm perf:bundle
+pnpm perf:build
+pnpm perf:assets

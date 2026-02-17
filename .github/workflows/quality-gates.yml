@@ -1,0 +1,46 @@
+name: quality-gates
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Policy checks
+        run: node scripts/ci/require-tests-and-docs.mjs
+
+      - name: Verify commands
+        run: bash .codex/scripts/run_verify_commands.sh
+
+      - name: Diff coverage
+        run: |
+          python -m pip install --upgrade pip diff-cover
+          diff-cover coverage/lcov.info --compare-branch=origin/main --fail-under=90
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            playwright-report/
+            test-results/
+            coverage/

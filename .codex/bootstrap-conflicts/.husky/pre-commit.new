@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# codex-os-managed
+. "$(dirname -- "$0")/_/husky.sh" 2>/dev/null || true
+
+run_script() {
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+  elif command -v npm >/dev/null 2>&1; then
+    npm run "$1" --if-present
+  elif command -v yarn >/dev/null 2>&1; then
+    yarn "$@"
+  else
+    echo "No supported package manager found."
+    exit 1
+  fi
+}
+
+run_script git:guard:branch
+run_script git:guard:atomic
+run_script lint-staged
+run_script git:guard:generated
+run_script git:guard:large-files
+run_script git:guard:secrets

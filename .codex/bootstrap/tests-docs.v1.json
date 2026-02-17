@@ -1,0 +1,16 @@
+{
+  "contract": "tests-docs-bootstrap-v1",
+  "adapter": "node-ts",
+  "branch": "codex/bootstrap-tests-docs-v1",
+  "generated_at": "2026-02-17T05:34:04.366Z",
+  "generated_by": "/Users/d/.codex/scripts/bootstrap/global_tests_docs_bootstrap.mjs",
+  "changed_files": [
+    ".codex/prompts/test-critic.md",
+    ".codex/scripts/run_verify_commands.sh",
+    ".github/workflows/quality-gates.yml",
+    "docs/adr/0000-template.md",
+    "openapi/openapi.generated.json",
+    "scripts/ci/require-tests-and-docs.mjs",
+    "AGENTS.md"
+  ]
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# codex-os-managed
+. "$(dirname -- "$0")/_/husky.sh" 2>/dev/null || true
+
+if command -v pnpm >/dev/null 2>&1; then
+  pnpm git:guard:no-main-push
+elif command -v npm >/dev/null 2>&1; then
+  npm run git:guard:no-main-push --if-present
+else
+  yarn git:guard:no-main-push
+fi

@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# codex-os-managed
+. "$(dirname -- "$0")/_/husky.sh" 2>/dev/null || true
+
+if command -v pnpm >/dev/null 2>&1; then
+  pnpm commitlint --edit "$1"
+elif command -v npm >/dev/null 2>&1; then
+  npx commitlint --edit "$1"
+else
+  yarn commitlint --edit "$1"
+fi

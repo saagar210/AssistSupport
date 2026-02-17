@@ -1,0 +1,5 @@
+{
+  "schema": "codex-os-package-bootstrap/v1",
+  "managed_by": "codex-os-managed",
+  "notes": "Merged into package.json by scripts/merge_package_json.mjs"
+}
