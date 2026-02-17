@@ -1,0 +1,21 @@
+{
+  "totalBytes": 1029000,
+  "assets": {
+    "e2eTauriMock-DuOr2x7O.js": 13980,
+    "ibm-plex-sans-cyrillic-ext-wght-normal-d45eAU9y.woff2": 23568,
+    "ibm-plex-sans-cyrillic-wght-normal-BAAhND-U.woff2": 29512,
+    "ibm-plex-sans-greek-wght-normal-CmyJS8uq.woff2": 19500,
+    "ibm-plex-sans-latin-ext-wght-normal-CIII54If.woff2": 30964,
+    "ibm-plex-sans-latin-wght-normal-IvpUvPa2.woff2": 45712,
+    "ibm-plex-sans-vietnamese-wght-normal-Dg1JeJN0.woff2": 13160,
+    "index-rMDAO0mr.css": 232993,
+    "index-sYbSm2PP.js": 535395,
+    "jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2": 12108,
+    "jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2": 9004,
+    "jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2": 15196,
+    "jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2": 40404,
+    "jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2": 7504
+  },
+  "capturedAt": "2026-02-17T04:23:29.640Z",
+  "source": "dist/assets"
+}
