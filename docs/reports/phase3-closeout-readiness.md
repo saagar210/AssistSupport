@@ -6,22 +6,23 @@ Phase: Debt Closure + Release Governance (Week 3)
 ## Executive Verdict
 
 - Local readiness: **Go**
-- PR-branch readiness: **Go (pending latest remote run completion after push)**
-- Merged-branch readiness: **Pending merge + post-merge CI evidence**
+- PR-branch readiness: **In progress on latest SHA `0a8bc67`**
+- Merged-branch readiness: **Blocked by governance (approval + merge prerequisites)**
 
 ## Gate Matrix
 
-| Gate                                                        | Status  | Evidence                                                                                                  |
-| ----------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
-| Rust backend tests (`pnpm test:ci`)                         | Pass    | 292 Rust tests + integration suites passed locally on Phase 3 branch.                                     |
-| Rust security regressions (`pnpm test:security-regression`) | Pass    | Security-focused Rust test lanes passed locally.                                                          |
-| Rust audit lane (`pnpm run test:security:audit:rust`)       | Pass    | Script passes with explicit issue-backed waiver metadata.                                                 |
-| Canonical verify ladder (`.codex/verify.commands`)          | Pass    | `bash .codex/scripts/run_verify_commands.sh` passed (static, unit, visual, a11y, git guards, perf gates). |
-| UI static + regression                                      | Pass    | `pnpm ui:gate:static` and `pnpm ui:gate:regression` pass.                                                 |
-| Perf gates                                                  | Pass    | `pnpm perf:bundle`, `pnpm perf:build`, `pnpm perf:assets` pass.                                           |
-| Coverage gate inputs                                        | Pass    | `pnpm test:coverage` continues generating `coverage/frontend/lcov.info`.                                  |
-| PR branch CI gates                                          | Pending | To be updated with latest run links after push.                                                           |
-| Merged branch CI gates                                      | Pending | To be updated after merge to `master`.                                                                    |
+| Gate                                                        | Status      | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rust backend tests (`pnpm test:ci`)                         | Pass        | 292 Rust tests + integration suites passed locally on Phase 3 branch.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Rust security regressions (`pnpm test:security-regression`) | Pass        | Security-focused Rust test lanes passed locally.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Rust audit lane (`pnpm run test:security:audit:rust`)       | Pass        | Script passes with explicit issue-backed waiver metadata.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Canonical verify ladder (`.codex/verify.commands`)          | Pass        | `bash .codex/scripts/run_verify_commands.sh` passed (static, unit, visual, a11y, git guards, perf gates).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| UI static + regression                                      | Pass        | `pnpm ui:gate:static` and `pnpm ui:gate:regression` pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Perf gates                                                  | Pass        | `pnpm perf:bundle`, `pnpm perf:build`, `pnpm perf:assets` pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Coverage gate inputs                                        | Pass        | `pnpm test:coverage` continues generating `coverage/frontend/lcov.info`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| PR branch required checks (latest SHA `0a8bc67`)            | In progress | `CI`: [run 22277130997](https://github.com/saagar210/AssistSupport/actions/runs/22277130997), `quality-gates`: [run 22277130969](https://github.com/saagar210/AssistSupport/actions/runs/22277130969), `git-hygiene`: [run 22277130959](https://github.com/saagar210/AssistSupport/actions/runs/22277130959), `lockfile-rationale`: [run 22277130958](https://github.com/saagar210/AssistSupport/actions/runs/22277130958), `perf-foundation`: [run 22277130974](https://github.com/saagar210/AssistSupport/actions/runs/22277130974), `CodeQL`: [run 22277130183](https://github.com/saagar210/AssistSupport/actions/runs/22277130183). |
+| PR governance prerequisites                                 | Blocked     | `reviewDecision=REVIEW_REQUIRED`; merge attempts rejected due approval policy and unresolved code-scanning conversation requirements.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Merged branch CI gates                                      | Pending     | Cannot collect post-merge links until PR governance prerequisites are satisfied and merge is completed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Rust Waiver Governance
 
@@ -61,11 +62,22 @@ Notes:
 ## Residual Risks
 
 1. Rust advisory set remains above 25% reduction target due upstream constraints in Tauri/Lance dependency chains.
-2. Final merged-branch evidence still required before declaring full release-governance closure.
+2. Merged-branch evidence is blocked by required human approval + repository merge governance conditions outside repository code edits.
+
+## Governance Blockers (External to Code Changes)
+
+1. Required approving review from a writer/admin is still missing (`REVIEW_REQUIRED`).
+2. GitHub indicates unresolved code-scanning conversation requirements must be cleared by privileged reviewer flow.
+3. Merged-branch evidence requirement cannot be satisfied until (1) and (2) are cleared and PR #10 is merged.
+
+## Latest Phase 3 Code Delta
+
+- Commit `5789414`: Phase 3 debt closure implementation (waiver governance, bundle split, reports, changelog).
+- Commit `0a8bc67`: CI/quality workflow token permissions hardening (`permissions: contents: read`).
 
 ## Go/No-Go Recommendation
 
 - **Conditional Go** for next feature phase once:
-  1. PR head checks are green on latest commit.
-  2. Merge to `master` is completed.
+  1. PR head required checks are green on latest commit.
+  2. Required approval + governance prerequisites are satisfied and PR #10 is merged to `master`.
   3. Post-merge required checks are green and linked in this report.

@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Reconciled CI with repository reality by removing broken MemoryKernel/monorepo lane references and wiring executable jobs only.
 - Repaired quality gate coverage comparison to use repo default remote branch and actual coverage artifact paths.
 - Converted Playwright runner behavior from skip-success to explicit failure when regression suites are missing.
+- Added least-privilege workflow token permissions (`permissions: contents: read`) to CI and quality gate workflows.
 
 ### Testing
 
