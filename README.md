@@ -5,8 +5,8 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-10a37f)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Tests](https://img.shields.io/badge/tests-436_passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
+![Tests](https://img.shields.io/badge/tests-gated-blue)
+![Coverage](https://img.shields.io/badge/coverage-enforced-blue)
 [![Compliance](https://img.shields.io/badge/compliance-HIPAA%20%7C%20GDPR%20%7C%20FISMA%20%7C%20SOC2%20%7C%20ISO%2027001-blue)](#security-and-compliance)
 
 AssistSupport combines local LLM inference with an ML-powered hybrid search pipeline to generate accurate, KB-informed IT support responses. An ML intent classifier understands query meaning, a cross-encoder reranker sharpens relevance, and a feedback loop continuously improves results — all running on your machine with no data leaving your network.
@@ -34,7 +34,7 @@ You copy:     Paste into Jira — done in under a minute
 | **Trust-Gated Responses** | Confidence modes (answer/clarify/abstain), claim grounding map, citation-aware copy safety for low-confidence output |
 | **Self-Improving** | Feedback loop + KB gap detector surfaces repeated low-confidence/low-rating topics and tracks remediation |
 | **Ops-Ready** | Built-in Operations workspace for deployment preflight/rollback, eval harness runs, triage clustering, and runbook sessions |
-| **436 Tests, 90% Coverage** | 364 Rust backend + 72 frontend tests. Security, search, ingestion, encryption all covered |
+| **Quality Gates Enabled** | Frontend static checks, unit tests, visual/a11y regression, Rust tests, API smoke checks, and diff coverage gates |
 | **190+ API Commands** | Expanded Tauri command surface for trust signals, ops workflows, evaluations, integrations, and diagnostics |
 
 ---
@@ -496,19 +496,29 @@ Team-specific IT support deployment guides were removed in this trimmed reposito
 ## Testing
 
 ```bash
-# Backend tests (unit + integration + security)
-cd src-tauri && cargo test
+# Workstation and repo readiness checks
+pnpm run check:workstation-preflight
+pnpm run check:workflow-drift
+pnpm run check:monorepo-readiness
 
-# Performance benchmarks
-cd src-tauri && cargo bench
+# Frontend unit tests + coverage
+pnpm test
+pnpm test:coverage
+
+# Frontend visual/a11y regression tests
+pnpm test:e2e:smoke
+pnpm ui:gate:regression
+
+# Rust backend tests
+pnpm test:ci
+pnpm test:security-regression
 
 # Security audit
-cd src-tauri && cargo audit
+pnpm git:guard:all
+pnpm test:security:audit:rust
 ```
 
 Security-focused backend tests cover encryption, key management, path traversal, SSRF, filter injection, namespace consistency, and data migration.
-
-Frontend/e2e test documentation was removed in this trimmed repository profile.
 
 ---
 
@@ -535,6 +545,7 @@ Frontend/e2e test documentation was removed in this trimmed repository profile.
 |----------|-------------|
 | `README.md` | Consolidated setup, architecture summary, and runtime behavior |
 | `SECURITY.md` | Security scope and disclosure entry point |
+| `docs/SECURITY.md` | Security architecture and verification controls |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ---

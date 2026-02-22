@@ -33,7 +33,6 @@
    - responsive parity checks (mobile + desktop)
    - Lighthouse CI thresholds
 5. Done-state is blocked if any required gate is `fail` or `not-run`.
-
 ## Definition of Done: Tests + Docs (Blocking)
 
 - Any production code change must include meaningful test updates in the same PR.

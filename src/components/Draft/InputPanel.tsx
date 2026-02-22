@@ -260,6 +260,7 @@ export function InputPanel({
             value={taskPreset}
             onChange={e => handleTaskPresetChange(e.target.value)}
             title="Apply ticket task preset"
+            aria-label="Ticket task preset"
           >
             <option value="">Task preset</option>
             {Object.entries(TASK_PRESETS).map(([key, preset]) => (
@@ -272,6 +273,7 @@ export function InputPanel({
             className="response-length-select"
             value={responseLength}
             onChange={e => onResponseLengthChange(e.target.value as ResponseLength)}
+            aria-label="Response length"
           >
             <option value="Short">Short (~80 words)</option>
             <option value="Medium">Medium (~160 words)</option>
@@ -403,6 +405,7 @@ export function InputPanel({
                   className="first-response-tone"
                   value={firstResponseTone}
                   onChange={e => onFirstResponseToneChange(e.target.value as FirstResponseTone)}
+                  aria-label="First response tone"
                 >
                   <option value="slack">Slack (friendly)</option>
                   <option value="jira">Jira (concise)</option>

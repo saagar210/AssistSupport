@@ -1,4 +1,6 @@
+pnpm check:workstation-preflight
 pnpm ui:gate:static
+pnpm test
 pnpm ui:gate:regression
 pnpm git:guard:all
 pnpm perf:bundle

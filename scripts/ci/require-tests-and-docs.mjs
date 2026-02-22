@@ -4,7 +4,7 @@ const defaultBaseRef = (() => {
   try {
     return execSync('git symbolic-ref refs/remotes/origin/HEAD', { encoding: 'utf8' }).trim().replace('refs/remotes/', '');
   } catch {
-    return 'origin/main';
+    return 'origin/master';
   }
 })();
 

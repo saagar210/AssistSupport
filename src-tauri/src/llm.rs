@@ -339,6 +339,7 @@ impl LlmEngine {
         let mut tokens_generated = 0u32;
         let mut word_buffer = String::new();
         let mut full_output = String::new(); // Track full output for stop sequence checking
+        let mut token_decoder = encoding_rs::UTF_8.new_decoder();
         let max_stop_seq_len = params
             .stop_sequences
             .iter()
@@ -370,7 +371,7 @@ impl LlmEngine {
 
             // Decode token to text
             let piece = model
-                .token_to_str(token, llama_cpp_2::model::Special::Tokenize)
+                .token_to_piece(token, &mut token_decoder, true, None)
                 .map_err(|e| LlmError::Generate(format!("Token decode error: {}", e)))?;
 
             // Buffer and send complete words

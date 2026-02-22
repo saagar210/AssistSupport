@@ -32,8 +32,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "helpers/vision_ocr": "helpers/",
-      "resources/pdfium/libpdfium.dylib": "pdfium/"
+      "helpers/vision_ocr": "helpers/"
     }
   }
 }
