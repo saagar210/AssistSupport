@@ -45,7 +45,8 @@ jobs:
       - name: Workflow command drift
         run: pnpm run check:workflow-drift
 
-      - name: Verify commands
+      - name: Verify commands (PR only)
+        if: github.event_name == 'pull_request'
         run: bash .codex/scripts/run_verify_commands.sh
 
       - name: Generate coverage report
