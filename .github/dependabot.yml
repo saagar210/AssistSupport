@@ -1,0 +1,43 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - security
+      - intake
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      npm-security:
+        applies-to: security-updates
+        update-types:
+          - patch
+          - minor
+
+  - package-ecosystem: pip
+    directory: "/search-api"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:15"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - security
+      - intake
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      pip-security:
+        applies-to: security-updates
+        update-types:
+          - patch
+          - minor

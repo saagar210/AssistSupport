@@ -31,6 +31,13 @@ an implementation-level companion to `SECURITY.md`.
 - Coverage gates: frontend coverage artifacts with diff coverage checks.
 - Security checks: `pnpm audit` and `cargo audit`.
 
+## Dependency Intake Policy
+
+- Dependabot PRs are monitored and reviewed as intake signals.
+- Merge-ready dependency updates are re-created on codex-compliant branches
+  (`codex/<type>/<slug>`) to satisfy repository branch governance checks.
+- Superseded Dependabot PRs are closed with links to replacement PRs for traceability.
+
 ## Reporting
 
 Use the process in `SECURITY.md` to report vulnerabilities privately.
