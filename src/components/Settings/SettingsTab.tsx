@@ -17,6 +17,8 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import { resolveRevampFlags } from '../../features/revamp/flags';
+import appPackage from '../../../package.json';
+import { formatAppVersion } from './versionLabel';
 import type {
   AuditEntry,
   CustomVariable,
@@ -58,6 +60,8 @@ const OTHER_SUPPORTED_MODELS: ModelInfo[] = [
     description: 'Microsoft model, good for reasoning',
   },
 ];
+
+const APP_VERSION = appPackage.version;
 
 // Audit event types can be either a plain string (unit variants like "key_generated")
 // or an object (data variants like { custom: "value" }). Normalize for display.
@@ -1780,7 +1784,7 @@ export function SettingsTab() {
           AssistSupport - Local AI-powered support ticket assistant
         </p>
         <div className="about-info">
-          <p>Version 1.0.0</p>
+          <p>{formatAppVersion(APP_VERSION)}</p>
           <p>All processing happens locally on your machine.</p>
         </div>
       </section>
