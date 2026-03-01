@@ -118,7 +118,9 @@
   },
   "pnpm": {
     "overrides": {
-      "minimatch": "^10.2.1"
+      "basic-ftp": "^5.2.0",
+      "minimatch": "^10.2.3",
+      "rollup": "^4.59.0"
     },
     "onlyBuiltDependencies": [
       "esbuild"
