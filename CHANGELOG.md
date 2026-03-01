@@ -148,10 +148,6 @@
 * Update README with complete project documentation ([061d952](https://github.com/saagar210/AssistSupport/commit/061d9524bc2a20bf82dbbbcf900e8d404ec83b03))
 * Update README with new security and model features ([cc0a646](https://github.com/saagar210/AssistSupport/commit/cc0a6461b5fec643dc4fdca3e6a95f7b5ed8d6cb))
 
-## Changelog
-
-All notable changes to this project will be documented in this file.
-
 ## Unreleased
 
 ### Fixes
