@@ -36,7 +36,9 @@ cd "$repo_root/src-tauri"
 #
 # Tantivy/Lance chain (issue #15):
 # - RUSTSEC-2026-0002 lru
-cargo audit --deny warnings \
+# Deny unsound/unmaintained advisories but do not hard-fail on yanked crate warnings,
+# which can fluctuate transitively outside this repo's direct control.
+cargo audit --deny unsound --deny unmaintained \
   --ignore RUSTSEC-2024-0411 \
   --ignore RUSTSEC-2024-0412 \
   --ignore RUSTSEC-2024-0413 \
