@@ -18,6 +18,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import { resolveRevampFlags } from '../../features/revamp/flags';
 import appPackage from '../../../package.json';
+import { formatAppVersion } from './versionLabel';
 import type {
   AuditEntry,
   CustomVariable,
@@ -1783,7 +1784,7 @@ export function SettingsTab() {
           AssistSupport - Local AI-powered support ticket assistant
         </p>
         <div className="about-info">
-          <p>Version {APP_VERSION}</p>
+          <p>{formatAppVersion(APP_VERSION)}</p>
           <p>All processing happens locally on your machine.</p>
         </div>
       </section>
