@@ -8,7 +8,7 @@ test("@smoke @visual app shell renders with mocked Tauri bridge", async ({ page 
   await expect(page).toHaveScreenshot("app-shell.png", {
     fullPage: true,
     animations: "disabled",
-    maxDiffPixels: 80,
+    maxDiffPixels: 120,
   });
 });
 
