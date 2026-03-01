@@ -1,7 +1,7 @@
 # PR #8 Supersession Map
 
 Date: 2026-03-01
-Source PR: https://github.com/saagar210/AssistSupport/pull/8
+Source PR: [#8](https://github.com/saagar210/AssistSupport/pull/8)
 Decision: **Close as superseded; do not merge branch wholesale**
 
 ## Summary
