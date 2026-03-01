@@ -32,3 +32,6 @@ All notable changes to this project will be documented in this file.
 - Added `docs/SECURITY.md` and aligned README testing and verification commands with executable scripts.
 - Added consolidated stabilization readiness evidence report (`docs/reports/week1-2-stabilization-readiness.md`).
 - Added Week 3 carry-forward execution checklist (`docs/reports/week3-carry-forward-plan.md`).
+- Added dependency advisory baseline artifact referenced by dependency-watch workflow (`docs/security/DEPENDENCY_ADVISORY_BASELINE.md`).
+- Added stale PR #8 supersession map to support conflict-free closure (`docs/reports/pr8-supersession-map.md`).
+- Added Phase 4 governance closeout tracker (`docs/reports/phase4-security-and-governance-closeout.md`).

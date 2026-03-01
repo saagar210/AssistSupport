@@ -7,7 +7,7 @@ Phase: Debt Closure + Release Governance (Week 3)
 
 - Local readiness: **Go**
 - PR-branch readiness: **Pass on latest SHA `d159d2c`**
-- Merged-branch readiness: **In progress (post-merge `CI` still running on `master`)**
+- Merged-branch readiness: **Pass**
 
 ## Gate Matrix
 
@@ -22,7 +22,7 @@ Phase: Debt Closure + Release Governance (Week 3)
 | Coverage gate inputs                                        | Pass        | `pnpm test:coverage` continues generating `coverage/frontend/lcov.info`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | PR branch required checks (latest SHA `d159d2c`)            | Pass        | `CI`: [run 22542633620](https://github.com/saagar210/AssistSupport/actions/runs/22542633620), `quality-gates`: [run 22542633632](https://github.com/saagar210/AssistSupport/actions/runs/22542633632), `git-hygiene`: [run 22542633628](https://github.com/saagar210/AssistSupport/actions/runs/22542633628), `lockfile-rationale`: [run 22542633606](https://github.com/saagar210/AssistSupport/actions/runs/22542633606), `perf-foundation`: [run 22542633646](https://github.com/saagar210/AssistSupport/actions/runs/22542633646), `CodeQL`: [run 22542633106](https://github.com/saagar210/AssistSupport/actions/runs/22542633106). |
 | PR governance prerequisites                                 | Pass        | Unresolved thread was cleared and PR [#21](https://github.com/saagar210/AssistSupport/pull/21) was merged at 2026-03-01T12:26:20Z (merge commit `176eba41a0805c3fc868a1861a19b6a3e2b9c558`).                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Merged branch CI gates                                      | In progress | `quality-gates`: [run 22543387749](https://github.com/saagar210/AssistSupport/actions/runs/22543387749) (pass), `release-please`: [run 22543387741](https://github.com/saagar210/AssistSupport/actions/runs/22543387741) (pass), `CodeQL`: [run 22543387554](https://github.com/saagar210/AssistSupport/actions/runs/22543387554) (pass), `CI`: [run 22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732) (in progress at report update time).                                                                                                                                                              |
+| Merged branch CI gates                                      | Pass        | `quality-gates`: [run 22544595441](https://github.com/saagar210/AssistSupport/actions/runs/22544595441), `release-please`: [run 22544595449](https://github.com/saagar210/AssistSupport/actions/runs/22544595449), `CodeQL`: [run 22544595320](https://github.com/saagar210/AssistSupport/actions/runs/22544595320), `CI`: [run 22544595446](https://github.com/saagar210/AssistSupport/actions/runs/22544595446).                                                                                                                                                                                                                                                                      |
 
 ## Rust Waiver Governance
 
@@ -62,7 +62,7 @@ Notes:
 ## Residual Risks
 
 1. Rust advisory set remains above 25% reduction target due upstream constraints in Tauri/Lance dependency chains.
-2. Full merged-branch closeout still depends on the final `CI` completion for run [22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732).
+2. Release branch governance still requires codex-compliant replacement for bot-generated release PR branches under strict branch-name policy.
 
 ## Latest Phase 3 Code Delta
 
@@ -73,6 +73,5 @@ Notes:
 
 ## Go/No-Go Recommendation
 
-- **Conditional Go** for next feature phase once:
-  1. Post-merge `CI` run [22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732) reaches green completion.
-  2. This report is updated from `In progress` to final merged-branch `Pass` with completed run evidence.
+- **Go** for next feature phase with one governance follow-up:
+  1. Continue enforcing codex-branch supersession for non-compliant dependency/release bot PR branches.
