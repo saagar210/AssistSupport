@@ -1,13 +1,13 @@
 # Phase 3 Closeout Readiness Report
 
-Date: 2026-02-22  
+Date: 2026-03-01  
 Phase: Debt Closure + Release Governance (Week 3)
 
 ## Executive Verdict
 
 - Local readiness: **Go**
-- PR-branch readiness: **In progress on latest SHA `0a8bc67`**
-- Merged-branch readiness: **Blocked by governance (approval + merge prerequisites)**
+- PR-branch readiness: **Pass on latest SHA `d159d2c`**
+- Merged-branch readiness: **In progress (post-merge `CI` still running on `master`)**
 
 ## Gate Matrix
 
@@ -20,9 +20,9 @@ Phase: Debt Closure + Release Governance (Week 3)
 | UI static + regression                                      | Pass        | `pnpm ui:gate:static` and `pnpm ui:gate:regression` pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Perf gates                                                  | Pass        | `pnpm perf:bundle`, `pnpm perf:build`, `pnpm perf:assets` pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Coverage gate inputs                                        | Pass        | `pnpm test:coverage` continues generating `coverage/frontend/lcov.info`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| PR branch required checks (latest SHA `0a8bc67`)            | In progress | `CI`: [run 22277130997](https://github.com/saagar210/AssistSupport/actions/runs/22277130997), `quality-gates`: [run 22277130969](https://github.com/saagar210/AssistSupport/actions/runs/22277130969), `git-hygiene`: [run 22277130959](https://github.com/saagar210/AssistSupport/actions/runs/22277130959), `lockfile-rationale`: [run 22277130958](https://github.com/saagar210/AssistSupport/actions/runs/22277130958), `perf-foundation`: [run 22277130974](https://github.com/saagar210/AssistSupport/actions/runs/22277130974), `CodeQL`: [run 22277130183](https://github.com/saagar210/AssistSupport/actions/runs/22277130183). |
-| PR governance prerequisites                                 | Blocked     | `reviewDecision=REVIEW_REQUIRED`; merge attempts rejected due approval policy and unresolved code-scanning conversation requirements.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Merged branch CI gates                                      | Pending     | Cannot collect post-merge links until PR governance prerequisites are satisfied and merge is completed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| PR branch required checks (latest SHA `d159d2c`)            | Pass        | `CI`: [run 22542633620](https://github.com/saagar210/AssistSupport/actions/runs/22542633620), `quality-gates`: [run 22542633632](https://github.com/saagar210/AssistSupport/actions/runs/22542633632), `git-hygiene`: [run 22542633628](https://github.com/saagar210/AssistSupport/actions/runs/22542633628), `lockfile-rationale`: [run 22542633606](https://github.com/saagar210/AssistSupport/actions/runs/22542633606), `perf-foundation`: [run 22542633646](https://github.com/saagar210/AssistSupport/actions/runs/22542633646), `CodeQL`: [run 22542633106](https://github.com/saagar210/AssistSupport/actions/runs/22542633106). |
+| PR governance prerequisites                                 | Pass        | Unresolved thread was cleared and PR [#21](https://github.com/saagar210/AssistSupport/pull/21) was merged at 2026-03-01T12:26:20Z (merge commit `176eba41a0805c3fc868a1861a19b6a3e2b9c558`).                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Merged branch CI gates                                      | In progress | `quality-gates`: [run 22543387749](https://github.com/saagar210/AssistSupport/actions/runs/22543387749) (pass), `release-please`: [run 22543387741](https://github.com/saagar210/AssistSupport/actions/runs/22543387741) (pass), `CodeQL`: [run 22543387554](https://github.com/saagar210/AssistSupport/actions/runs/22543387554) (pass), `CI`: [run 22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732) (in progress at report update time).                                                                                                                                                              |
 
 ## Rust Waiver Governance
 
@@ -62,22 +62,17 @@ Notes:
 ## Residual Risks
 
 1. Rust advisory set remains above 25% reduction target due upstream constraints in Tauri/Lance dependency chains.
-2. Merged-branch evidence is blocked by required human approval + repository merge governance conditions outside repository code edits.
-
-## Governance Blockers (External to Code Changes)
-
-1. Required approving review from a writer/admin is still missing (`REVIEW_REQUIRED`).
-2. GitHub indicates unresolved code-scanning conversation requirements must be cleared by privileged reviewer flow.
-3. Merged-branch evidence requirement cannot be satisfied until (1) and (2) are cleared and PR #10 is merged.
+2. Full merged-branch closeout still depends on the final `CI` completion for run [22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732).
 
 ## Latest Phase 3 Code Delta
 
 - Commit `5789414`: Phase 3 debt closure implementation (waiver governance, bundle split, reports, changelog).
 - Commit `0a8bc67`: CI/quality workflow token permissions hardening (`permissions: contents: read`).
+- Commit `d159d2c`: Keep verify command lane active on `push` and skip only `pnpm git:guard:all` via policy regex.
+- Merge commit `176eba41`: PR #21 merged to `master`.
 
 ## Go/No-Go Recommendation
 
 - **Conditional Go** for next feature phase once:
-  1. PR head required checks are green on latest commit.
-  2. Required approval + governance prerequisites are satisfied and PR #10 is merged to `master`.
-  3. Post-merge required checks are green and linked in this report.
+  1. Post-merge `CI` run [22543387732](https://github.com/saagar210/AssistSupport/actions/runs/22543387732) reaches green completion.
+  2. This report is updated from `In progress` to final merged-branch `Pass` with completed run evidence.

@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Repaired quality gate coverage comparison to use repo default remote branch and actual coverage artifact paths.
 - Converted Playwright runner behavior from skip-success to explicit failure when regression suites are missing.
 - Added least-privilege workflow token permissions (`permissions: contents: read`) to CI and quality gate workflows.
+- Kept quality verification active on `push` while selectively skipping only `pnpm git:guard:all` to avoid invalid post-merge branch guard failures.
 
 ### Testing
 
