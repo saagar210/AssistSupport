@@ -1,0 +1,688 @@
+{
+  "schema_version": "command-lifecycle.v1",
+  "generated_at": "2026-03-06T16:06:28.360Z",
+  "current_release_cycle": 1,
+  "commands": {
+    "commands::backup::export_backup": {
+      "status": "active"
+    },
+    "commands::backup::export_draft": {
+      "status": "active"
+    },
+    "commands::backup::import_backup": {
+      "status": "active"
+    },
+    "commands::backup::preview_backup_import": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_database_stats_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_failure_modes_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_llm_resource_limits": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_resource_metrics_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_system_health": {
+      "status": "active"
+    },
+    "commands::diagnostics::get_vector_maintenance_info_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::rebuild_vector_store": {
+      "status": "active"
+    },
+    "commands::diagnostics::repair_database_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::run_database_maintenance_cmd": {
+      "status": "active"
+    },
+    "commands::diagnostics::run_quick_health_check": {
+      "status": "active"
+    },
+    "commands::diagnostics::set_llm_resource_limits": {
+      "status": "active"
+    },
+    "commands::generation_commands::cancel_generation": {
+      "status": "active"
+    },
+    "commands::generation_commands::generate_first_response": {
+      "status": "active"
+    },
+    "commands::generation_commands::generate_streaming": {
+      "status": "active"
+    },
+    "commands::generation_commands::generate_text": {
+      "status": "active"
+    },
+    "commands::generation_commands::generate_troubleshooting_checklist": {
+      "status": "active"
+    },
+    "commands::generation_commands::generate_with_context": {
+      "status": "active"
+    },
+    "commands::generation_commands::get_model_info": {
+      "status": "active"
+    },
+    "commands::generation_commands::get_search_context": {
+      "status": "active"
+    },
+    "commands::generation_commands::greet": {
+      "status": "active"
+    },
+    "commands::generation_commands::init_llm_engine": {
+      "status": "active"
+    },
+    "commands::generation_commands::is_model_loaded": {
+      "status": "active"
+    },
+    "commands::generation_commands::load_custom_model": {
+      "status": "active"
+    },
+    "commands::generation_commands::load_model": {
+      "status": "active"
+    },
+    "commands::generation_commands::search_kb": {
+      "status": "active"
+    },
+    "commands::generation_commands::search_kb_with_options": {
+      "status": "active"
+    },
+    "commands::generation_commands::test_model": {
+      "status": "active"
+    },
+    "commands::generation_commands::unload_model": {
+      "status": "active"
+    },
+    "commands::generation_commands::update_troubleshooting_checklist": {
+      "status": "active"
+    },
+    "commands::generation_commands::validate_gguf_file": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::check_db_integrity": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::check_fts5_enabled": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::check_keychain_available": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::export_pilot_data": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::get_pilot_logging_policy": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::get_pilot_query_logs": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::get_pilot_stats": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::get_vector_consent": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::initialize_app": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::log_pilot_query": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::set_vector_consent": {
+      "status": "active"
+    },
+    "commands::lifecycle_commands::submit_pilot_feedback": {
+      "status": "active"
+    },
+    "commands::memory_kernel::get_memory_kernel_integration_pin": {
+      "status": "active"
+    },
+    "commands::memory_kernel::get_memory_kernel_preflight_status": {
+      "status": "active"
+    },
+    "commands::memory_kernel::memory_kernel_query_ask": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::add_namespace_rule": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::advance_runbook_session": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::batch_generate": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::cancel_job": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::choose_alternative": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::cleanup_old_jobs": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::cluster_tickets_for_triage": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::configure_integration": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::create_job": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::delete_namespace_rule": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::export_batch_results": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::find_similar_saved_responses": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_alternatives_for_draft": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_analytics_for_article": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_analytics_summary": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_batch_status": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_deployment_health_summary": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_documents_needing_review": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_draft_rating": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_jira_transitions": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_job": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_job_counts": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_job_logs": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_kb_gap_candidates": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_kb_health_stats": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_kb_usage_stats": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_low_rating_analysis": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_rating_stats": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_response_quality_drilldown_examples": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_response_quality_summary": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::get_stale_sources": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::increment_saved_template_usage": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_deployment_artifacts": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_document_versions": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_eval_runs": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_integrations": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_jobs": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_namespace_rules": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_recent_triage_clusters": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_runbook_sessions": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_saved_response_templates": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::list_workspace_roles": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::log_analytics_event": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::mark_document_reviewed": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::post_and_transition": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::rate_response": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::record_deployment_artifact": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::restore_draft_version": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::rollback_deployment_run": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::rollback_document": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::run_deployment_preflight": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::run_eval_harness": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::save_response_alternative": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::save_response_as_template": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::set_source_pinned": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::set_source_review_status": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::set_workspace_role": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::start_runbook_session": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::transition_jira_ticket": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::update_chunk_content": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::update_kb_gap_status": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::update_source_trust": {
+      "status": "active"
+    },
+    "commands::ops_facade_commands::verify_signed_artifact": {
+      "status": "active"
+    },
+    "commands::platform_commands::audit_response_copy_override": {
+      "status": "active"
+    },
+    "commands::platform_commands::cancel_download": {
+      "status": "active"
+    },
+    "commands::platform_commands::clear_github_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::clear_hf_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::clear_memorykernel_service_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::clear_search_api_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::delete_downloaded_model": {
+      "status": "active"
+    },
+    "commands::platform_commands::download_model": {
+      "status": "active"
+    },
+    "commands::platform_commands::export_audit_log": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_audit_entries": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_context_window": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_embedding_model_path": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_model_state": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_models_dir": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_recommended_models": {
+      "status": "active"
+    },
+    "commands::platform_commands::get_startup_metrics": {
+      "status": "active"
+    },
+    "commands::platform_commands::has_github_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::has_hf_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::has_memorykernel_service_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::has_search_api_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::is_embedding_model_downloaded": {
+      "status": "active"
+    },
+    "commands::platform_commands::list_downloaded_models": {
+      "status": "active"
+    },
+    "commands::platform_commands::set_context_window": {
+      "status": "active"
+    },
+    "commands::platform_commands::set_github_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::set_hf_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::set_memorykernel_service_token": {
+      "status": "active"
+    },
+    "commands::platform_commands::set_search_api_token": {
+      "status": "active"
+    },
+    "commands::search_api::check_search_api_health": {
+      "status": "active"
+    },
+    "commands::search_api::get_search_api_health_status": {
+      "status": "active"
+    },
+    "commands::search_api::get_search_api_stats": {
+      "status": "active"
+    },
+    "commands::search_api::hybrid_search": {
+      "status": "active"
+    },
+    "commands::search_api::submit_search_feedback": {
+      "status": "active"
+    },
+    "commands::workflow_commands::add_jira_comment": {
+      "status": "active"
+    },
+    "commands::workflow_commands::archive_draft": {
+      "status": "active"
+    },
+    "commands::workflow_commands::check_ytdlp_available": {
+      "status": "active"
+    },
+    "commands::workflow_commands::cleanup_autosaves": {
+      "status": "active"
+    },
+    "commands::workflow_commands::clear_jira_config": {
+      "status": "active"
+    },
+    "commands::workflow_commands::clear_knowledge_data": {
+      "status": "active"
+    },
+    "commands::workflow_commands::configure_jira": {
+      "status": "active"
+    },
+    "commands::workflow_commands::create_draft_version": {
+      "status": "active"
+    },
+    "commands::workflow_commands::create_namespace": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_action_shortcut": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_custom_variable": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_draft": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_ingest_source": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_kb_document": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_namespace": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_playbook": {
+      "status": "active"
+    },
+    "commands::workflow_commands::delete_template": {
+      "status": "active"
+    },
+    "commands::workflow_commands::export_draft_formatted": {
+      "status": "active"
+    },
+    "commands::workflow_commands::finalize_draft": {
+      "status": "active"
+    },
+    "commands::workflow_commands::format_draft_for_clipboard": {
+      "status": "active"
+    },
+    "commands::workflow_commands::generate_kb_embeddings": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_action_shortcut": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_custom_variable": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_decision_tree": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_document_chunks": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_draft": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_draft_versions": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_embedding_model_info": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_jira_config": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_jira_ticket": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_kb_folder": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_kb_stats": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_playbook": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_source_health": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_template": {
+      "status": "active"
+    },
+    "commands::workflow_commands::get_vector_stats": {
+      "status": "active"
+    },
+    "commands::workflow_commands::index_kb": {
+      "status": "active"
+    },
+    "commands::workflow_commands::ingest_github": {
+      "status": "active"
+    },
+    "commands::workflow_commands::ingest_github_remote": {
+      "status": "active"
+    },
+    "commands::workflow_commands::ingest_kb_from_disk": {
+      "status": "active"
+    },
+    "commands::workflow_commands::ingest_url": {
+      "status": "active"
+    },
+    "commands::workflow_commands::ingest_youtube": {
+      "status": "active"
+    },
+    "commands::workflow_commands::init_embedding_engine": {
+      "status": "active"
+    },
+    "commands::workflow_commands::init_vector_store": {
+      "status": "active"
+    },
+    "commands::workflow_commands::is_embedding_model_loaded": {
+      "status": "active"
+    },
+    "commands::workflow_commands::is_jira_configured": {
+      "status": "active"
+    },
+    "commands::workflow_commands::is_kb_watcher_running": {
+      "status": "active"
+    },
+    "commands::workflow_commands::is_ocr_available": {
+      "status": "active"
+    },
+    "commands::workflow_commands::is_vector_enabled": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_action_shortcuts": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_autosaves": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_custom_variables": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_decision_trees": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_draft_versions": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_drafts": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_ingest_sources": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_kb_documents": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_namespaces": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_namespaces_with_counts": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_playbooks": {
+      "status": "active"
+    },
+    "commands::workflow_commands::list_templates": {
+      "status": "active"
+    },
+    "commands::workflow_commands::load_embedding_model": {
+      "status": "active"
+    },
+    "commands::workflow_commands::mark_stale_sources": {
+      "status": "active"
+    },
+    "commands::workflow_commands::process_ocr": {
+      "status": "active"
+    },
+    "commands::workflow_commands::process_ocr_bytes": {
+      "status": "active"
+    },
+    "commands::workflow_commands::process_source_file": {
+      "status": "active"
+    },
+    "commands::workflow_commands::push_draft_to_jira": {
+      "status": "active"
+    },
+    "commands::workflow_commands::remove_kb_document": {
+      "status": "active"
+    },
+    "commands::workflow_commands::rename_namespace": {
+      "status": "active"
+    },
+    "commands::workflow_commands::retry_source": {
+      "status": "active"
+    },
+    "commands::workflow_commands::save_action_shortcut": {
+      "status": "active"
+    },
+    "commands::workflow_commands::save_custom_variable": {
+      "status": "active"
+    },
+    "commands::workflow_commands::save_draft": {
+      "status": "active"
+    },
+    "commands::workflow_commands::save_playbook": {
+      "status": "active"
+    },
+    "commands::workflow_commands::save_template": {
+      "status": "active"
+    },
+    "commands::workflow_commands::search_drafts": {
+      "status": "active"
+    },
+    "commands::workflow_commands::set_kb_folder": {
+      "status": "active"
+    },
+    "commands::workflow_commands::set_vector_enabled": {
+      "status": "active"
+    },
+    "commands::workflow_commands::start_kb_watcher": {
+      "status": "active"
+    },
+    "commands::workflow_commands::stop_kb_watcher": {
+      "status": "active"
+    },
+    "commands::workflow_commands::unload_embedding_model": {
+      "status": "active"
+    },
+    "commands::workflow_commands::update_draft_handoff": {
+      "status": "active"
+    },
+    "commands::workflow_commands::use_playbook": {
+      "status": "active"
+    }
+  }
+}

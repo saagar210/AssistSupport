@@ -1,0 +1,11 @@
+{
+  "p95_ms": 636.24,
+  "samples_ms": [
+    567.84,
+    636.24,
+    608.07
+  ],
+  "probe": "cd src-tauri && cargo test --test command_contract_fixtures generate_with_context_result_fixture_matches_contract -- --exact",
+  "capturedAt": "2026-03-06T16:12:33.605Z",
+  "source": "bootstrap-from-runtime-probes"
+}

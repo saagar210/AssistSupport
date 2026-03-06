@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
 import { useLlm } from '../../hooks/useLlm';
 import { useKb } from '../../hooks/useKb';
@@ -19,12 +18,21 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { resolveRevampFlags } from '../../features/revamp/flags';
 import appPackage from '../../../package.json';
 import { formatAppVersion } from './versionLabel';
+import {
+  AboutSection,
+  AppearanceSection,
+  DeploymentIntegrationsSection,
+  MaintenanceDiagnosticsSection,
+  MemoryKernelSection,
+  PolicyGatesSection,
+  SettingsHeroSection,
+} from './internal/SettingsSections';
+import { SettingsModelSection } from './internal/SettingsModelSection';
+import { useSettingsOperationalState } from './internal/useSettingsOperationalState';
+import { useSettingsAuditLogs } from './internal/useSettingsAuditLogs';
+import { useSettingsWorkspaceState } from './internal/useSettingsWorkspaceState';
 import type {
-  AuditEntry,
   CustomVariable,
-  DeploymentHealthSummary,
-  IntegrationConfigRecord,
-  MemoryKernelPreflightStatus,
   ModelInfo,
 } from '../../types';
 import './SettingsTab.css';
@@ -63,17 +71,6 @@ const OTHER_SUPPORTED_MODELS: ModelInfo[] = [
 
 const APP_VERSION = appPackage.version;
 
-// Audit event types can be either a plain string (unit variants like "key_generated")
-// or an object (data variants like { custom: "value" }). Normalize for display.
-function formatAuditEvent(event: string | Record<string, string>): string {
-  if (typeof event === 'string') return event;
-  if (typeof event === 'object' && event !== null) {
-    const key = Object.keys(event)[0];
-    return key ? `${key}: ${event[key]}` : JSON.stringify(event);
-  }
-  return String(event);
-}
-
 const CONTEXT_WINDOW_OPTIONS = [
   { value: null, label: 'Model Default' },
   { value: 2048, label: '2K (2,048 tokens)' },
@@ -82,8 +79,6 @@ const CONTEXT_WINDOW_OPTIONS = [
   { value: 16384, label: '16K (16,384 tokens)' },
   { value: 32768, label: '32K (32,768 tokens)' },
 ];
-
-const AUDIT_PAGE_SIZE = 50;
 
 // Helper to format bytes for display
 function formatBytes(bytes: number): string {
@@ -118,7 +113,7 @@ function validateQualityThresholds(
   return null;
 }
 
-export function SettingsTab() {
+function SettingsTabOrchestrator() {
   const { loadModel, unloadModel, getLoadedModel, listModels, getContextWindow, setContextWindow, loadCustomModel, validateGgufFile } = useLlm();
   const { setKbFolder, getKbFolder, rebuildIndex, getIndexStats, getVectorConsent, setVectorConsent, generateEmbeddings } = useKb();
   const { downloadModel, downloadProgress, isDownloading, cancelDownload } = useDownload();
@@ -149,38 +144,10 @@ export function SettingsTab() {
     deleteVariable,
   } = useCustomVariables();
 
-  const [loadedModel, setLoadedModel] = useState<string | null>(null);
-  const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
-  const [showOtherModels, setShowOtherModels] = useState(false);
-  const [kbFolder, setKbFolderState] = useState<string | null>(null);
-  const [indexStats, setIndexStats] = useState<{ total_chunks: number; total_files: number } | null>(null);
-  const [vectorEnabled, setVectorEnabled] = useState(false);
-  const [jiraConfigured, setJiraConfigured] = useState(false);
-  const [jiraForm, setJiraForm] = useState({ baseUrl: '', email: '', apiToken: '' });
-  const [contextWindowSize, setContextWindowSize] = useState<number | null>(null);
-  const [embeddingDownloaded, setEmbeddingDownloaded] = useState(false);
-  const [generatingEmbeddings, setGeneratingEmbeddings] = useState(false);
-  const [loading, setLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [backupLoading, setBackupLoading] = useState<'export' | 'import' | null>(null);
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
-  const [auditLoading, setAuditLoading] = useState(false);
-  const [auditExporting, setAuditExporting] = useState(false);
-  const [auditSeverityFilter, setAuditSeverityFilter] = useState<'all' | 'info' | 'warning' | 'error' | 'critical'>('all');
-  const [auditSearchQuery, setAuditSearchQuery] = useState('');
-  const [auditPage, setAuditPage] = useState(1);
-
-  // Deployment and integration state
-  const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealthSummary | null>(null);
-  const [deployPreflightChecks, setDeployPreflightChecks] = useState<string[]>([]);
-  const [deployPreflightRunning, setDeployPreflightRunning] = useState(false);
-  const [integrations, setIntegrations] = useState<IntegrationConfigRecord[]>([]);
   const [qualityThresholds, setQualityThresholds] = useState<ResponseQualityThresholds>(() =>
     getResponseQualityThresholds(),
   );
   const [qualityThresholdError, setQualityThresholdError] = useState<string | null>(null);
-  const [memoryKernelPreflight, setMemoryKernelPreflight] = useState<MemoryKernelPreflightStatus | null>(null);
-  const [memoryKernelLoading, setMemoryKernelLoading] = useState(false);
   const revampFlags = useMemo(() => resolveRevampFlags(), []);
 
   // Custom variables state
@@ -188,313 +155,123 @@ export function SettingsTab() {
   const [variableForm, setVariableForm] = useState({ name: '', value: '' });
   const [showVariableForm, setShowVariableForm] = useState(false);
   const [variableFormError, setVariableFormError] = useState<string | null>(null);
-
-  const loadAuditEntries = useCallback(async () => {
-    setAuditLoading(true);
-    try {
-      const entries = await invoke<AuditEntry[]>('get_audit_entries', { limit: 200 });
-      setAuditEntries(entries ?? []);
-      setAuditPage(1);
-    } catch (err) {
-      showError(`Failed to load audit logs: ${err}`);
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [showError]);
-
-  const refreshMemoryKernelStatus = useCallback(async () => {
-    setMemoryKernelLoading(true);
-    try {
-      const status = await invoke<MemoryKernelPreflightStatus>('get_memory_kernel_preflight_status');
-      setMemoryKernelPreflight(status);
-    } catch (err) {
-      // Non-blocking: show as unavailable rather than failing settings load.
-      setMemoryKernelPreflight(null);
-    } finally {
-      setMemoryKernelLoading(false);
-    }
-  }, []);
-
-  const filteredAuditEntries = useMemo(() => {
-    const normalized = auditEntries.slice().reverse();
-    const query = auditSearchQuery.trim().toLowerCase();
-    return normalized.filter((entry) => {
-      if (auditSeverityFilter !== 'all' && entry.severity !== auditSeverityFilter) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      const eventText = formatAuditEvent(entry.event).toLowerCase();
-      return eventText.includes(query) || entry.message.toLowerCase().includes(query);
-    });
-  }, [auditEntries, auditSearchQuery, auditSeverityFilter]);
-
-  const auditTotalPages = useMemo(
-    () => Math.max(1, Math.ceil(filteredAuditEntries.length / AUDIT_PAGE_SIZE)),
-    [filteredAuditEntries.length],
-  );
+  const {
+    deploymentHealth,
+    deployPreflightChecks,
+    deployPreflightRunning,
+    integrations,
+    memoryKernelPreflight,
+    memoryKernelLoading,
+    databaseStats,
+    databaseStatsLoading,
+    databaseMaintenanceRunning,
+    databaseMaintenanceResult,
+    refreshMemoryKernelStatus,
+    refreshDatabaseStats,
+    handleRunDatabaseMaintenance,
+    refreshDeploymentAndIntegrations,
+    handleRunDeploymentPreflight,
+    handleToggleIntegration,
+  } = useSettingsOperationalState({
+    getDeploymentHealthSummary,
+    runDeploymentPreflight,
+    listIntegrations,
+    configureIntegration,
+    showSuccess,
+    showError,
+  });
+  const {
+    loadedModel,
+    downloadedModels,
+    showOtherModels,
+    kbFolder,
+    indexStats,
+    vectorEnabled,
+    jiraConfigured,
+    jiraForm,
+    contextWindowSize,
+    embeddingDownloaded,
+    generatingEmbeddings,
+    loading,
+    error,
+    backupLoading,
+    setShowOtherModels,
+    setJiraForm,
+    initializeWorkspaceState,
+    handleVectorToggle,
+    handleJiraConnect,
+    handleJiraDisconnect,
+    handleLoadModel,
+    handleUnloadModel,
+    handleDownloadModel,
+    handleLoadCustomModel,
+    handleSelectKbFolder,
+    handleRebuildIndex,
+    handleContextWindowChange,
+    handleDownloadEmbeddingModel,
+    handleLoadEmbeddingModel,
+    handleUnloadEmbeddingModel,
+    handleGenerateEmbeddings,
+    handleExportBackup,
+    handleImportBackup,
+  } = useSettingsWorkspaceState({
+    loadModel,
+    unloadModel,
+    getLoadedModel,
+    listModels,
+    getContextWindow,
+    setContextWindow,
+    loadCustomModel,
+    validateGgufFile,
+    setKbFolder,
+    getKbFolder,
+    rebuildIndex,
+    getIndexStats,
+    getVectorConsent,
+    setVectorConsent,
+    generateEmbeddings,
+    downloadModel,
+    checkJiraConfig,
+    configureJira,
+    disconnectJira,
+    initEmbeddingEngine,
+    loadEmbeddingModel,
+    unloadEmbeddingModel,
+    checkEmbeddingStatus,
+    isEmbeddingDownloaded,
+    getEmbeddingModelPath,
+    isEmbeddingLoaded,
+    refreshDeploymentAndIntegrations,
+    loadVariables,
+    showSuccess,
+    showError,
+  });
+  const {
+    auditLoading,
+    auditExporting,
+    auditSeverityFilter,
+    auditSearchQuery,
+    auditPage,
+    auditTotalPages,
+    filteredAuditEntries,
+    pagedAuditEntries,
+    setAuditPage,
+    setSeverityFilter,
+    setSearchQuery,
+    loadAuditEntries,
+    handleExportAuditLog,
+    formatAuditEvent,
+  } = useSettingsAuditLogs({
+    showSuccess,
+    showError,
+  });
 
   useEffect(() => {
-    setAuditPage(prev => Math.min(prev, auditTotalPages));
-  }, [auditTotalPages]);
-
-  useEffect(() => {
-    refreshMemoryKernelStatus();
-  }, [refreshMemoryKernelStatus]);
-
-  const pagedAuditEntries = useMemo(() => {
-    const start = (auditPage - 1) * AUDIT_PAGE_SIZE;
-    return filteredAuditEntries.slice(start, start + AUDIT_PAGE_SIZE);
-  }, [filteredAuditEntries, auditPage]);
-
-  useEffect(() => {
-    Promise.resolve(loadInitialState()).catch(err => console.error('Settings init failed:', err));
+    Promise.resolve(initializeWorkspaceState()).catch(err => console.error('Settings init failed:', err));
+    setQualityThresholds(getResponseQualityThresholds());
     Promise.resolve(loadVariables()).catch(err => console.error('Variables load failed:', err));
     Promise.resolve(loadAuditEntries()).catch(err => console.error('Audit load failed:', err));
-  }, [loadVariables, loadAuditEntries]);
-
-  async function loadInitialState() {
-    try {
-      const [loaded, downloaded, folder, stats, consent, jiraConfigResult, ctxWindow, embDownloaded, deployHealth, integrationsList] = await Promise.all([
-        getLoadedModel(),
-        listModels(),
-        getKbFolder(),
-        getIndexStats().catch(() => null),
-        getVectorConsent().catch(() => null),
-        checkJiraConfig().catch(() => false),
-        getContextWindow().catch(() => null),
-        isEmbeddingDownloaded().catch(() => false),
-        getDeploymentHealthSummary().catch(() => null),
-        listIntegrations().catch(() => []),
-      ]);
-      setLoadedModel(loaded);
-      setDownloadedModels(downloaded);
-      setKbFolderState(folder);
-      setIndexStats(stats);
-      if (consent) {
-        setVectorEnabled(consent.enabled);
-      }
-      setJiraConfigured(jiraConfigResult);
-      setContextWindowSize(ctxWindow);
-      setEmbeddingDownloaded(embDownloaded);
-      setDeploymentHealth(deployHealth);
-      setIntegrations(integrationsList ?? []);
-      setQualityThresholds(getResponseQualityThresholds());
-
-      // Check embedding model status
-      await checkEmbeddingStatus();
-    } catch (err) {
-      console.error('Failed to load settings state:', err);
-    }
-  }
-
-  async function handleVectorToggle() {
-    const newValue = !vectorEnabled;
-    try {
-      await setVectorConsent(newValue);
-      setVectorEnabled(newValue);
-    } catch (err) {
-      setError(`Failed to update vector consent: ${err}`);
-    }
-  }
-
-  async function handleJiraConnect(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await configureJira(jiraForm.baseUrl, jiraForm.email, jiraForm.apiToken);
-      setJiraConfigured(true);
-      setJiraForm({ baseUrl: '', email: '', apiToken: '' });
-    } catch (err) {
-      setError(`Failed to connect to Jira: ${err}`);
-    }
-  }
-
-  async function handleJiraDisconnect() {
-    setError(null);
-    try {
-      await disconnectJira();
-      setJiraConfigured(false);
-    } catch (err) {
-      setError(`Failed to disconnect Jira: ${err}`);
-    }
-  }
-
-  async function handleLoadModel(modelId: string) {
-    setLoading(modelId);
-    setError(null);
-    try {
-      await loadModel(modelId);
-      setLoadedModel(modelId);
-    } catch (err) {
-      setError(`Failed to load model: ${err}`);
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function handleUnloadModel() {
-    setLoading('unload');
-    setError(null);
-    try {
-      await unloadModel();
-      setLoadedModel(null);
-    } catch (err) {
-      setError(`Failed to unload model: ${err}`);
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function handleDownloadModel(modelId: string) {
-    setError(null);
-    try {
-      await downloadModel(modelId);
-      setDownloadedModels(prev => [...prev, modelId]);
-    } catch (err) {
-      setError(`Failed to download model: ${err}`);
-    }
-  }
-
-  async function handleLoadCustomModel() {
-    setError(null);
-    setLoading('custom');
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: 'GGUF Model',
-          extensions: ['gguf'],
-        }],
-        title: 'Select GGUF Model File',
-      });
-
-      if (selected && typeof selected === 'string') {
-        // Validate the file first
-        const validation = await validateGgufFile(selected);
-        if (!validation.is_valid) {
-          setError(`Invalid GGUF file: ${validation.file_name}. Please select a valid GGUF model file.`);
-          return;
-        }
-
-        // Load the model
-        await loadCustomModel(selected);
-        setLoadedModel(validation.file_name);
-        showSuccess(`Loaded custom model: ${validation.file_name}`);
-      }
-    } catch (err) {
-      setError(`Failed to load custom model: ${err}`);
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function handleSelectKbFolder() {
-    setError(null);
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Select Knowledge Base Folder',
-      });
-      if (selected && typeof selected === 'string') {
-        await setKbFolder(selected);
-        setKbFolderState(selected);
-        const stats = await getIndexStats().catch(() => null);
-        setIndexStats(stats);
-      }
-    } catch (err) {
-      setError(`Failed to set KB folder: ${err}`);
-    }
-  }
-
-  async function handleRebuildIndex() {
-    if (!kbFolder) return;
-    setLoading('rebuild');
-    setError(null);
-    try {
-      await rebuildIndex();
-      const stats = await getIndexStats();
-      setIndexStats(stats);
-    } catch (err) {
-      setError(`Failed to rebuild index: ${err}`);
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function handleContextWindowChange(value: string) {
-    const newSize = value === '' ? null : parseInt(value, 10);
-    setError(null);
-    try {
-      await setContextWindow(newSize);
-      setContextWindowSize(newSize);
-      showSuccess('Context window updated');
-    } catch (err) {
-      setError(`Failed to update context window: ${err}`);
-    }
-  }
-
-  async function handleDownloadEmbeddingModel() {
-    setError(null);
-    try {
-      await downloadModel('nomic-embed-text');
-      setEmbeddingDownloaded(true);
-      showSuccess('Embedding model downloaded');
-    } catch (err) {
-      setError(`Failed to download embedding model: ${err}`);
-    }
-  }
-
-  async function handleLoadEmbeddingModel() {
-    setError(null);
-    try {
-      // Engine is initialized at startup; this is idempotent
-      await initEmbeddingEngine();
-      // Get model path
-      const path = await getEmbeddingModelPath('nomic-embed-text');
-      if (!path) {
-        showError('Embedding model file not found. Try re-downloading.');
-        return;
-      }
-      await loadEmbeddingModel(path);
-      showSuccess('Embedding model loaded');
-    } catch (err) {
-      const msg = `Failed to load embedding model: ${err}`;
-      showError(msg);
-      setError(msg);
-    }
-  }
-
-  async function handleUnloadEmbeddingModel() {
-    setError(null);
-    try {
-      await unloadEmbeddingModel();
-      showSuccess('Embedding model unloaded');
-    } catch (err) {
-      setError(`Failed to unload embedding model: ${err}`);
-    }
-  }
-
-  async function handleGenerateEmbeddings() {
-    if (!vectorEnabled || !isEmbeddingLoaded) {
-      setError('Vector search and embedding model must be enabled');
-      return;
-    }
-    setGeneratingEmbeddings(true);
-    setError(null);
-    try {
-      const result = await generateEmbeddings();
-      showSuccess(`Generated embeddings for ${result.chunks_processed} chunks`);
-    } catch (err) {
-      showError(`Failed to generate embeddings: ${err}`);
-    } finally {
-      setGeneratingEmbeddings(false);
-    }
-  }
+  }, [initializeWorkspaceState, loadVariables, loadAuditEntries]);
 
   // Custom variable handlers
   const handleEditVariable = useCallback((variable: CustomVariable) => {
@@ -560,93 +337,6 @@ export function SettingsTab() {
     }
   }, [deleteVariable, showSuccess, showError]);
 
-  // Backup handlers
-  const handleExportBackup = useCallback(async () => {
-    setBackupLoading('export');
-    setError(null);
-    try {
-      const result = await invoke<{ drafts_count: number; templates_count: number; variables_count: number; trees_count: number; path: string }>('export_backup');
-      showSuccess(`Exported ${result.drafts_count} drafts, ${result.templates_count} templates, ${result.variables_count} variables, ${result.trees_count} trees`);
-    } catch (err) {
-      if (String(err) !== 'Export cancelled') {
-        showError(`Export failed: ${err}`);
-      }
-    } finally {
-      setBackupLoading(null);
-    }
-  }, [showSuccess, showError]);
-
-  const handleImportBackup = useCallback(async () => {
-    setBackupLoading('import');
-    setError(null);
-    try {
-      const result = await invoke<{ drafts_imported: number; templates_imported: number; variables_imported: number; trees_imported: number }>('import_backup');
-      showSuccess(`Imported ${result.drafts_imported} drafts, ${result.templates_imported} templates, ${result.variables_imported} variables, ${result.trees_imported} trees`);
-      // Reload data
-      loadInitialState();
-      loadVariables();
-    } catch (err) {
-      if (String(err) !== 'Import cancelled') {
-        showError(`Import failed: ${err}`);
-      }
-    } finally {
-      setBackupLoading(null);
-    }
-  }, [showSuccess, showError, loadVariables]);
-
-  const handleExportAuditLog = useCallback(async () => {
-    setAuditExporting(true);
-    try {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const path = await save({
-        title: 'Export Audit Log',
-        defaultPath: 'assist-support-audit.json',
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      });
-      if (!path) {
-        setAuditExporting(false);
-        return;
-      }
-      const output = await invoke<string>('export_audit_log', { exportPath: path });
-      showSuccess(`Audit log exported to ${output}`);
-    } catch (err) {
-      if (String(err) !== 'Export cancelled') {
-        showError(`Audit export failed: ${err}`);
-      }
-    } finally {
-      setAuditExporting(false);
-    }
-  }, [showSuccess, showError]);
-
-  const handleRunDeploymentPreflight = useCallback(async () => {
-    setDeployPreflightRunning(true);
-    try {
-      const result = await runDeploymentPreflight('stable');
-      setDeployPreflightChecks(result.checks);
-      const latest = await getDeploymentHealthSummary().catch(() => null);
-      setDeploymentHealth(latest);
-      if (result.ok) {
-        showSuccess('Deployment preflight passed');
-      } else {
-        showError('Deployment preflight reported failures');
-      }
-    } catch (err) {
-      showError(`Deployment preflight failed: ${err}`);
-    } finally {
-      setDeployPreflightRunning(false);
-    }
-  }, [runDeploymentPreflight, getDeploymentHealthSummary, showSuccess, showError]);
-
-  const handleToggleIntegration = useCallback(async (integrationType: string, enabled: boolean) => {
-    try {
-      await configureIntegration(integrationType, enabled);
-      const updated = await listIntegrations();
-      setIntegrations(updated ?? []);
-    } catch (err) {
-      showError(`Failed to update ${integrationType}: ${err}`);
-    }
-  }, [configureIntegration, listIntegrations, showError]);
-
   const updateQualityThreshold = useCallback(
     <K extends keyof ResponseQualityThresholds>(
       key: K,
@@ -681,410 +371,57 @@ export function SettingsTab() {
     <div className="settings-tab">
       {error && <div className="settings-error">{error}</div>}
 
-      <header className="settings-hero" aria-label="Settings overview">
-        <div className="settings-hero__title">
-          <h1>Operator console</h1>
-          <p className="settings-hero__sub">
-            Local-only configuration and health checks. Offline-first by default.
-          </p>
-        </div>
-        <div className="settings-hero__pills" aria-label="System readiness summary">
-          <span className={['settings-pill', loadedModel ? 'is-good' : 'is-warn'].join(' ')}>
-            LLM: {loadedModel ? 'Loaded' : 'Not loaded'}
-          </span>
-          <span className={['settings-pill', kbFolder ? 'is-good' : 'is-warn'].join(' ')}>
-            KB: {kbFolder ? 'Set' : 'Not set'}
-          </span>
-          <span className={['settings-pill', isEmbeddingLoaded ? 'is-good' : 'is-warn'].join(' ')}>
-            Embeddings: {isEmbeddingLoaded ? 'Loaded' : embeddingDownloaded ? 'Downloaded' : 'Not downloaded'}
-          </span>
-          <span
-            className={[
-              'settings-pill',
-              memoryKernelPreflight?.status === 'ready' ? 'is-good' : 'is-warn',
-            ].join(' ')}
-          >
-            MemoryKernel: {memoryKernelPreflight ? memoryKernelPreflight.status : 'Unavailable'}
-          </span>
-        </div>
-      </header>
+      <SettingsHeroSection
+        loadedModel={loadedModel}
+        kbFolder={kbFolder}
+        isEmbeddingLoaded={isEmbeddingLoaded}
+        embeddingDownloaded={embeddingDownloaded}
+        memoryKernelPreflight={memoryKernelPreflight}
+      />
 
-      <section className="settings-section" aria-label="Policy gates">
-        <h2>Policy Gates</h2>
-        <p className="settings-description">
-          These switches control whether potentially sensitive UI surfaces can appear. Outside development builds,
-          policy flags are environment-variable authoritative (local overrides are ignored).
-        </p>
-        <div className="settings-grid">
-          <div className="settings-card">
-            <h4>Admin Tabs</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Effective (UI):</strong>{' '}
-                {revampFlags.ASSISTSUPPORT_ENABLE_ADMIN_TABS ? 'Enabled' : 'Disabled'}
-              </li>
-              <li>
-                <strong>Enable:</strong> set <code>VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS=1</code>
-              </li>
-              <li>
-                <strong>Default:</strong> disabled
-              </li>
-            </ul>
-          </div>
-          <div className="settings-card">
-            <h4>Network Ingest</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Effective (UI):</strong>{' '}
-                {revampFlags.ASSISTSUPPORT_ENABLE_NETWORK_INGEST ? 'Enabled' : 'Disabled'}
-              </li>
-              <li>
-                <strong>Enable (UI):</strong> set <code>VITE_ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1</code>
-              </li>
-              <li>
-                <strong>Enable (backend):</strong> set <code>ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1</code>
-              </li>
-              <li>
-                <strong>Default:</strong> disabled
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <PolicyGatesSection revampFlags={revampFlags} />
 
-      <section className="settings-section" aria-label="MemoryKernel integration">
-        <h2>MemoryKernel</h2>
-        <p className="settings-description">
-          Optional local enrichment. If unavailable, AssistSupport keeps running with deterministic fallback and no runtime cutover.
-        </p>
-        <div className="settings-grid">
-          <div className="settings-card">
-            <h4>Integration Status</h4>
-            <ul className="settings-list">
-              <li><strong>Enabled:</strong> {memoryKernelPreflight?.enabled ? 'Yes' : 'No'}</li>
-              <li><strong>Ready:</strong> {memoryKernelPreflight?.ready ? 'Yes' : 'No'}</li>
-              <li><strong>Enrichment:</strong> {memoryKernelPreflight?.enrichment_enabled ? 'Enabled' : 'Disabled'}</li>
-              <li><strong>Base URL:</strong> {memoryKernelPreflight?.base_url ? <code>{memoryKernelPreflight.base_url}</code> : 'Unavailable'}</li>
-            </ul>
-            <div className="settings-actions-row">
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={refreshMemoryKernelStatus}
-                disabled={memoryKernelLoading}
-              >
-                {memoryKernelLoading ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            </div>
-          </div>
-          <div className="settings-card">
-            <h4>Contract Pins</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Release:</strong>{' '}
-                {memoryKernelPreflight ? (
-                  <>
-                    <code>{memoryKernelPreflight.release_tag}</code> · <code>{memoryKernelPreflight.commit_sha}</code>
-                  </>
-                ) : (
-                  'Unavailable'
-                )}
-              </li>
-              <li>
-                <strong>Service contract:</strong>{' '}
-                {memoryKernelPreflight?.service_contract_version ? (
-                  <code>{memoryKernelPreflight.service_contract_version}</code>
-                ) : (
-                  'Unavailable'
-                )}
-                {' '}
-                (expected <code>{memoryKernelPreflight?.expected_service_contract_version ?? '—'}</code>)
-              </li>
-              <li>
-                <strong>API contract:</strong>{' '}
-                {memoryKernelPreflight?.api_contract_version ? (
-                  <code>{memoryKernelPreflight.api_contract_version}</code>
-                ) : (
-                  'Unavailable'
-                )}
-                {' '}
-                (expected <code>{memoryKernelPreflight?.expected_api_contract_version ?? '—'}</code>)
-              </li>
-              <li>
-                <strong>Baseline:</strong>{' '}
-                {memoryKernelPreflight ? <code>{memoryKernelPreflight.integration_baseline}</code> : 'Unavailable'}
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <MemoryKernelSection
+        memoryKernelPreflight={memoryKernelPreflight}
+        memoryKernelLoading={memoryKernelLoading}
+        onRefresh={refreshMemoryKernelStatus}
+      />
 
-      <section className="settings-section">
-        <h2>Appearance</h2>
-        <p className="settings-description">
-          Choose your preferred color theme.
-        </p>
-        <div className="theme-selector">
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="light"
-              checked={theme === 'light'}
-              onChange={() => setTheme('light')}
-            />
-            <span>Light</span>
-          </label>
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="dark"
-              checked={theme === 'dark'}
-              onChange={() => setTheme('dark')}
-            />
-            <span>Dark</span>
-          </label>
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="system"
-              checked={theme === 'system'}
-              onChange={() => setTheme('system')}
-            />
-            <span>System</span>
-          </label>
-        </div>
-      </section>
+      <AppearanceSection theme={theme} setTheme={setTheme} />
 
-      <section className="settings-section">
-        <h2>Language Model</h2>
-        <p className="settings-description">
-          Select and load a language model for generating responses.
-        </p>
-
-        {loadedModel && (
-          <div className="loaded-model-banner">
-            <span>Currently loaded: <strong>{loadedModel}</strong></span>
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={handleUnloadModel}
-              disabled={loading === 'unload'}
-            >
-              {loading === 'unload' ? 'Unloading...' : 'Unload'}
-            </Button>
-          </div>
-        )}
-
-        <div className="settings-subsection">
-          <h3>Recommended</h3>
-          <p className="setting-note">
-            For consistent results across operators, AssistSupport recommends a single default model.
-          </p>
-        </div>
-        <div className="model-list">
-          {RECOMMENDED_MODELS.map(model => {
-            const isDownloaded = downloadedModels.includes(model.id);
-            const isLoaded = loadedModel === model.id;
-            const isLoadingThis = loading === model.id;
-            const isDownloadingThis = isDownloading && downloadProgress?.model_id === model.id;
-
-            return (
-              <div key={model.id} className={`model-card ${isLoaded ? 'loaded' : ''}`}>
-                <div className="model-info">
-                  <h3>{model.name}</h3>
-                  <p>{model.description}</p>
-                  <span className="model-size">{model.size}</span>
-                </div>
-                <div className="model-actions">
-                  {isDownloadingThis ? (
-                    <div className="download-progress-container">
-                      <div className="download-progress">
-                        <div
-                          className="download-bar"
-                          style={{ width: `${downloadProgress?.percent || 0}%` }}
-                        />
-                        <span className="download-percent">{Math.round(downloadProgress?.percent || 0)}%</span>
-                      </div>
-                      <div className="download-info">
-                        <span className="download-size">
-                          {formatBytes(downloadProgress?.downloaded_bytes || 0)}
-                          {downloadProgress?.total_bytes ? ` / ${formatBytes(downloadProgress.total_bytes)}` : ''}
-                        </span>
-                        <span className="download-speed">{formatSpeed(downloadProgress?.speed_bps || 0)}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="small"
-                        onClick={cancelDownload}
-                        className="download-cancel-btn"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : isDownloaded ? (
-                    <Button
-                      variant={isLoaded ? 'secondary' : 'primary'}
-                      size="small"
-                      onClick={() => isLoaded ? handleUnloadModel() : handleLoadModel(model.id)}
-                      disabled={!!loading}
-                    >
-                      {isLoadingThis ? 'Loading...' : isLoaded ? 'Unload' : 'Load'}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onClick={() => handleDownloadModel(model.id)}
-                      disabled={isDownloading}
-                    >
-                      Download
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="settings-subsection">
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={() => setShowOtherModels(v => !v)}
-            className="btn-hover-scale"
-          >
-            {showOtherModels ? 'Hide other supported models' : 'Show other supported models'}
-          </Button>
-          {showOtherModels && (
-            <>
-              <p className="setting-note">
-                These models are supported for experimentation, but may be less reliable for production ticket responses.
-              </p>
-              <div className="model-list">
-                {OTHER_SUPPORTED_MODELS.map(model => {
-                  const isDownloaded = downloadedModels.includes(model.id);
-                  const isLoaded = loadedModel === model.id;
-                  const isLoadingThis = loading === model.id;
-                  const isDownloadingThis = isDownloading && downloadProgress?.model_id === model.id;
-
-                  return (
-                    <div key={model.id} className={`model-card ${isLoaded ? 'loaded' : ''}`}>
-                      <div className="model-info">
-                        <h3>{model.name}</h3>
-                        <p>{model.description}</p>
-                        <span className="model-size">{model.size}</span>
-                      </div>
-                      <div className="model-actions">
-                        {isDownloadingThis ? (
-                          <div className="download-progress-container">
-                            <div className="download-progress">
-                              <div
-                                className="download-bar"
-                                style={{ width: `${downloadProgress?.percent || 0}%` }}
-                              />
-                              <span className="download-percent">{Math.round(downloadProgress?.percent || 0)}%</span>
-                            </div>
-                            <div className="download-info">
-                              <span className="download-size">
-                                {formatBytes(downloadProgress?.downloaded_bytes || 0)}
-                                {downloadProgress?.total_bytes ? ` / ${formatBytes(downloadProgress.total_bytes)}` : ''}
-                              </span>
-                              <span className="download-speed">{formatSpeed(downloadProgress?.speed_bps || 0)}</span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="small"
-                              onClick={cancelDownload}
-                              className="download-cancel-btn"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : isDownloaded ? (
-                          <Button
-                            variant={isLoaded ? 'secondary' : 'primary'}
-                            size="small"
-                            onClick={() => isLoaded ? handleUnloadModel() : handleLoadModel(model.id)}
-                            disabled={!!loading}
-                          >
-                            {isLoadingThis ? 'Loading...' : isLoaded ? 'Unload' : 'Load'}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="secondary"
-                            size="small"
-                            onClick={() => handleDownloadModel(model.id)}
-                            disabled={isDownloading}
-                          >
-                            Download
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="custom-model-section">
-          <h3>Custom Model</h3>
-          <p className="settings-description">
-            Load any GGUF-format model file from your computer.
-          </p>
-          <Button
-            variant="secondary"
-            onClick={handleLoadCustomModel}
-            disabled={!!loading || isDownloading}
-          >
-            {loading === 'custom' ? 'Loading...' : 'Select GGUF File...'}
-          </Button>
-        </div>
-
-        <div className="custom-model-section">
-          <h3>AI Status &amp; Guarantees</h3>
-          <p className="settings-description">
-            AssistSupport runs AI locally and can operate fully offline. These signals help operators trust what the AI is doing.
-          </p>
-          <div className="settings-grid">
-            <div className="settings-card">
-              <h4>Local Guarantees</h4>
-              <ul className="settings-list">
-                <li><strong>Offline-first:</strong> no cloud AI calls</li>
-                <li><strong>Copy gating:</strong> citations required (override logs locally)</li>
-                <li><strong>Prompts hidden:</strong> operators cannot edit system prompts</li>
-              </ul>
-            </div>
-            <div className="settings-card">
-              <h4>Runtime Status</h4>
-              <ul className="settings-list">
-                <li><strong>Chat model:</strong> {loadedModel ? loadedModel : 'Not loaded'}</li>
-                <li><strong>Embeddings:</strong> {isEmbeddingLoaded ? 'Loaded' : 'Not loaded'}</li>
-                <li><strong>KB folder:</strong> {kbFolder ? kbFolder : 'Not set'}</li>
-                <li>
-                  <strong>MemoryKernel:</strong>{' '}
-                  {memoryKernelPreflight ? memoryKernelPreflight.status : 'Unavailable'}
-                  {memoryKernelPreflight?.service_contract_version ? ` (svc ${memoryKernelPreflight.service_contract_version})` : ''}
-                </li>
-              </ul>
-              <div className="settings-actions-row">
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={refreshMemoryKernelStatus}
-                  disabled={memoryKernelLoading}
-                >
-                  {memoryKernelLoading ? 'Refreshing...' : 'Refresh'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <SettingsModelSection
+        loadedModel={loadedModel}
+        downloadedModels={downloadedModels}
+        recommendedModels={RECOMMENDED_MODELS}
+        otherSupportedModels={OTHER_SUPPORTED_MODELS}
+        showOtherModels={showOtherModels}
+        loading={loading}
+        isDownloading={isDownloading}
+        downloadProgress={downloadProgress ?? null}
+        isEmbeddingLoaded={isEmbeddingLoaded}
+        kbFolder={kbFolder}
+        memoryKernelPreflight={memoryKernelPreflight}
+        memoryKernelLoading={memoryKernelLoading}
+        onUnloadModel={() => {
+          void handleUnloadModel();
+        }}
+        onLoadModel={(modelId) => {
+          void handleLoadModel(modelId);
+        }}
+        onDownloadModel={(modelId) => {
+          void handleDownloadModel(modelId);
+        }}
+        onCancelDownload={() => {
+          void cancelDownload();
+        }}
+        onToggleOtherModels={() => setShowOtherModels(v => !v)}
+        onLoadCustomModel={() => {
+          void handleLoadCustomModel();
+        }}
+        onRefreshMemoryKernelStatus={() => {
+          void refreshMemoryKernelStatus();
+        }}
+      />
 
       <section className="settings-section">
         <h2>Context Window</h2>
@@ -1433,57 +770,31 @@ export function SettingsTab() {
         )}
       </section>
 
-      <section className="settings-section">
-        <h2>Deployment &amp; Integrations</h2>
-        <p className="settings-description">
-          Deployment health, preflight validation, and integration toggles for ServiceNow/Slack/Teams.
-        </p>
-        <div className="settings-row">
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={handleRunDeploymentPreflight}
-            disabled={deployPreflightRunning}
-          >
-            {deployPreflightRunning ? 'Running preflight...' : 'Run Deployment Preflight'}
-          </Button>
-        </div>
-        {deploymentHealth && (
-          <div className="startup-metrics">
-            <p className="text-sm text-secondary">
-              Signed artifacts: {deploymentHealth.signed_artifacts}/{deploymentHealth.total_artifacts}
-            </p>
-            {deploymentHealth.last_run && (
-              <p className="text-sm text-secondary">
-                Last run: {deploymentHealth.last_run.status} ({deploymentHealth.last_run.target_channel})
-              </p>
-            )}
-          </div>
-        )}
-        {deployPreflightChecks.length > 0 && (
-          <ul className="audit-list">
-            {deployPreflightChecks.map((check, idx) => (
-              <li key={`${check}-${idx}`} className="audit-row">{check}</li>
-            ))}
-          </ul>
-        )}
-        <div className="settings-row">
-          {['servicenow', 'slack', 'teams'].map(type => {
-            const current = integrations.find(i => i.integration_type === type);
-            const enabled = current?.enabled ?? false;
-            return (
-              <label key={type} className="toggle-option">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => void handleToggleIntegration(type, e.target.checked)}
-                />
-                <span>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
-              </label>
-            );
-          })}
-        </div>
-      </section>
+      <DeploymentIntegrationsSection
+        deploymentHealth={deploymentHealth}
+        deployPreflightChecks={deployPreflightChecks}
+        deployPreflightRunning={deployPreflightRunning}
+        integrations={integrations}
+        onRunPreflight={() => {
+          void handleRunDeploymentPreflight();
+        }}
+        onToggleIntegration={(integrationType, enabled) => {
+          void handleToggleIntegration(integrationType, enabled);
+        }}
+      />
+
+      <MaintenanceDiagnosticsSection
+        databaseStats={databaseStats}
+        databaseStatsLoading={databaseStatsLoading}
+        databaseMaintenanceRunning={databaseMaintenanceRunning}
+        databaseMaintenanceResult={databaseMaintenanceResult}
+        onRefreshDatabaseStats={() => {
+          void refreshDatabaseStats();
+        }}
+        onRunDatabaseMaintenance={() => {
+          void handleRunDatabaseMaintenance();
+        }}
+      />
 
       <section className="settings-section">
         <h2>Data Backup</h2>
@@ -1718,8 +1029,7 @@ export function SettingsTab() {
               aria-label="Audit severity filter"
               value={auditSeverityFilter}
               onChange={(e) => {
-                setAuditSeverityFilter(e.target.value as typeof auditSeverityFilter);
-                setAuditPage(1);
+                setSeverityFilter(e.target.value as typeof auditSeverityFilter);
               }}
             >
               <option value="all">All</option>
@@ -1733,8 +1043,7 @@ export function SettingsTab() {
             className="input"
             value={auditSearchQuery}
             onChange={(e) => {
-              setAuditSearchQuery(e.target.value);
-              setAuditPage(1);
+              setSearchQuery(e.target.value);
             }}
             placeholder="Search event/message"
           />
@@ -1778,16 +1087,11 @@ export function SettingsTab() {
         </div>
       </section>
 
-      <section className="settings-section">
-        <h2>About</h2>
-        <p className="settings-description">
-          AssistSupport - Local AI-powered support ticket assistant
-        </p>
-        <div className="about-info">
-          <p>{formatAppVersion(APP_VERSION)}</p>
-          <p>All processing happens locally on your machine.</p>
-        </div>
-      </section>
+      <AboutSection appVersionLabel={formatAppVersion(APP_VERSION)} />
     </div>
   );
+}
+
+export function SettingsTab() {
+  return <SettingsTabOrchestrator />;
 }

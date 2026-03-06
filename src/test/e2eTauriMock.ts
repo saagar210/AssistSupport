@@ -596,6 +596,30 @@ export function setupE2eTauriMock(): void {
             message: 'Connected',
             base_url: 'http://localhost:3000',
           };
+        case 'get_database_stats_cmd':
+          return {
+            file_size_bytes: 1_048_576,
+            document_count: 2,
+            chunk_count: 8,
+            draft_count: draftStore.filter(d => !d.is_autosave).length,
+            job_count: 0,
+            page_count: 256,
+            freelist_count: 4,
+            last_vacuum: '2026-02-01T10:00:00Z',
+            last_optimize: '2026-02-03T10:00:00Z',
+            last_wal_checkpoint: '2026-02-03T10:00:00Z',
+            journal_mode: 'wal',
+            wal_checkpoint_busy: 0,
+            wal_log_frames: 22,
+            wal_checkpointed_frames: 22,
+          };
+        case 'run_database_maintenance_cmd':
+          return {
+            component: 'database',
+            success: true,
+            action_taken: 'PRAGMA optimize, WAL checkpoint, VACUUM skipped',
+            message: null,
+          };
         case 'hybrid_search':
           return {
             status: 'success',

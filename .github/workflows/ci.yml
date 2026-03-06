@@ -44,6 +44,9 @@ jobs:
       - name: Workflow command drift
         run: pnpm run check:workflow-drift
 
+      - name: Contract fixture JSON sanity
+        run: pnpm run check:contract-fixtures
+
       - name: Typecheck and lint gate
         run: pnpm run ui:gate:static
 
@@ -109,6 +112,9 @@ jobs:
       - name: Run smoke lane
         run: pnpm run test:e2e:smoke
 
+      - name: Run golden journey lane
+        run: pnpm run test:e2e:journey
+
       - name: Run visual + accessibility gates
         run: pnpm run ui:gate:regression
 
@@ -153,11 +159,32 @@ jobs:
       - name: Create frontend dist stub
         run: mkdir -p dist && echo '<html></html>' > dist/index.html
 
+      - name: Run Tauri command registry gate
+        run: bash scripts/ci/run-backend-gate.sh command-registry artifacts/backend/command-registry-gate.log "pnpm run ci:backend:gate:command-registry"
+
+      - name: Run command lifecycle policy gate
+        run: bash scripts/ci/run-backend-gate.sh command-lifecycle artifacts/backend/command-lifecycle-gate.log "pnpm run ci:backend:gate:command-lifecycle"
+
+      - name: Run lock policy gate
+        run: bash scripts/ci/run-backend-gate.sh lock-policy artifacts/backend/lock-policy-gate.log "pnpm run ci:backend:gate:lock-policy"
+
       - name: Run backend tests
-        run: pnpm run test:ci
+        run: bash scripts/ci/run-backend-gate.sh backend-tests artifacts/backend/backend-tests.log "pnpm run ci:backend:gate:backend-tests"
+
+      - name: Run Rust contract fixture gate
+        run: bash scripts/ci/run-backend-gate.sh contracts-fixtures artifacts/backend/contracts-gate.log "pnpm run ci:backend:gate:contracts"
 
       - name: Run security-focused Rust tests
-        run: pnpm run test:security-regression
+        run: bash scripts/ci/run-backend-gate.sh security-regression artifacts/backend/security-regression.log "pnpm run ci:backend:gate:security"
+
+      - name: Upload backend gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-gate-logs
+          path: artifacts/backend
+          if-no-files-found: ignore
+          retention-days: 14
 
   search-api-tests:
     name: Search API Tests

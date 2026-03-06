@@ -25,6 +25,8 @@ export function HybridSearchTab() {
     error,
     apiHealthy,
     apiStatusMessage,
+    degradedReason,
+    degradedGuidance,
     search,
     submitFeedback,
     getStats,
@@ -104,6 +106,11 @@ export function HybridSearchTab() {
         {apiStatusMessage && (
           <p className={`api-status-detail ${apiHealthy === false ? 'unhealthy' : ''}`}>
             {apiStatusMessage}
+          </p>
+        )}
+        {degradedReason && degradedGuidance && (
+          <p className="api-status-detail unhealthy">
+            Degraded mode: {degradedReason} - {degradedGuidance}
           </p>
         )}
         <p className="hybrid-search-subtitle">

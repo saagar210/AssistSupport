@@ -7,6 +7,10 @@ const summary = {
   bundle: readJson(".perf-results/bundle.json"),
   build: readJson(".perf-results/build-time.json"),
   memory: readJson(".perf-results/memory.json"),
+  startup: readJson(".perf-results/startup.json"),
+  generation: readJson(".perf-results/generation.json"),
+  search: readJson(".perf-results/search.json"),
+  dora: readJson(".perf-results/dora.json"),
   api: readJson(".perf-results/api-summary.json"),
 };
 

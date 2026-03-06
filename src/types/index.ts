@@ -655,6 +655,27 @@ export interface QuickHealthResult {
   issues: string[];
 }
 
+export interface DatabaseStats {
+  file_size_bytes: number;
+  document_count: number;
+  chunk_count: number;
+  draft_count: number;
+  job_count: number;
+  page_count: number;
+  freelist_count: number;
+  last_vacuum: string | null;
+  last_optimize: string | null;
+  last_wal_checkpoint: string | null;
+  last_maintenance_at: string | null;
+  maintenance_interval_hours: number;
+  maintenance_due: boolean;
+  maintenance_due_reason: string;
+  journal_mode: string;
+  wal_checkpoint_busy: number;
+  wal_log_frames: number;
+  wal_checkpointed_frames: number;
+}
+
 // v0.4.0 Types
 
 export interface DocumentReviewInfo {

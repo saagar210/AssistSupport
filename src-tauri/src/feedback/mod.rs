@@ -21,8 +21,7 @@ const MAX_RESPONSE_LEN: usize = 4_096;
 const MAX_COMMENT_LEN: usize = 1_024;
 
 static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
-        .expect("invalid email regex")
+    Regex::new(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b").expect("invalid email regex")
 });
 static US_PHONE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
@@ -75,9 +74,7 @@ fn sanitize_operator_id(input: &str) -> Result<String, String> {
     }
     for c in normalized.chars() {
         if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' {
-            return Err(
-                "Operator ID contains invalid characters (allowed: a-z, 0-9, '-')".into(),
-            );
+            return Err("Operator ID contains invalid characters (allowed: a-z, 0-9, '-')".into());
         }
     }
     Ok(normalized)
@@ -218,14 +215,7 @@ pub fn log_query(
         .execute(
             "INSERT INTO pilot_query_logs (id, query, response, category, user_id, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                id,
-                query,
-                response,
-                category.to_string(),
-                operator_id,
-                now
-            ],
+            rusqlite::params![id, query, response, category.to_string(), operator_id, now],
         )
         .map_err(|e| format!("Failed to log query: {}", e))?;
 

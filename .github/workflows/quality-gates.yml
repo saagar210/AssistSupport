@@ -45,6 +45,12 @@ jobs:
       - name: Workflow command drift
         run: pnpm run check:workflow-drift
 
+      - name: Contract fixture JSON sanity
+        run: pnpm run check:contract-fixtures
+
+      - name: Command lifecycle policy
+        run: pnpm run check:command-lifecycle
+
       - name: Verify commands
         env:
           VERIFY_SKIP_REGEX: ${{ github.event_name == 'push' && '^pnpm git:guard:all$' || '' }}

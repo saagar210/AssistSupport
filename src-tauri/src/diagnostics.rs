@@ -116,6 +116,128 @@ pub struct RepairResult {
     pub message: Option<String>,
 }
 
+const DB_MAINTENANCE_INTERVAL_HOURS_ENV: &str = "ASSISTSUPPORT_DB_MAINTENANCE_INTERVAL_HOURS";
+const DB_MAINTENANCE_INTERVAL_HOURS_DEFAULT: i64 = 24;
+const DB_MAINTENANCE_INTERVAL_HOURS_MIN: i64 = 1;
+const DB_MAINTENANCE_INTERVAL_HOURS_MAX: i64 = 24 * 30;
+
+/// Cadence policy and current due-state for database maintenance.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DatabaseMaintenanceCadence {
+    /// Maintenance interval policy in hours.
+    pub maintenance_interval_hours: i64,
+    /// Most recent maintenance timestamp derived from optimize/checkpoint/vacuum keys.
+    pub last_maintenance_at: Option<String>,
+    /// Whether maintenance should run now.
+    pub maintenance_due: bool,
+    /// Deterministic reason for due state.
+    pub maintenance_due_reason: String,
+}
+
+fn maintenance_interval_hours_from_env() -> i64 {
+    std::env::var(DB_MAINTENANCE_INTERVAL_HOURS_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<i64>().ok())
+        .unwrap_or(DB_MAINTENANCE_INTERVAL_HOURS_DEFAULT)
+        .clamp(
+            DB_MAINTENANCE_INTERVAL_HOURS_MIN,
+            DB_MAINTENANCE_INTERVAL_HOURS_MAX,
+        )
+}
+
+fn read_setting_value(db: &crate::db::Database, key: &str) -> Option<String> {
+    db.conn()
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+}
+
+fn parse_rfc3339_utc(timestamp: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .map(|parsed| parsed.with_timezone(&chrono::Utc))
+}
+
+fn latest_timestamp_from_candidates(
+    candidates: &[Option<String>],
+) -> Option<(String, chrono::DateTime<chrono::Utc>)> {
+    candidates
+        .iter()
+        .filter_map(|value| value.as_deref())
+        .filter_map(|value| parse_rfc3339_utc(value).map(|parsed| (value.to_string(), parsed)))
+        .max_by_key(|(_, parsed)| parsed.to_owned())
+}
+
+fn compute_database_maintenance_cadence(
+    last_optimize: Option<String>,
+    last_wal_checkpoint: Option<String>,
+    last_vacuum: Option<String>,
+) -> DatabaseMaintenanceCadence {
+    let interval_hours = maintenance_interval_hours_from_env();
+    let now = chrono::Utc::now();
+    let candidates = [last_optimize, last_wal_checkpoint, last_vacuum];
+    let raw_timestamp_exists = candidates.iter().any(|value| value.is_some());
+    let latest = latest_timestamp_from_candidates(&candidates);
+
+    let (last_maintenance_at, maintenance_due, maintenance_due_reason) = match latest {
+        Some((raw_timestamp, parsed_timestamp)) => {
+            let elapsed = now.signed_duration_since(parsed_timestamp);
+            if elapsed >= chrono::Duration::hours(interval_hours) {
+                (
+                    Some(raw_timestamp),
+                    true,
+                    "interval_elapsed".to_string(),
+                )
+            } else {
+                (
+                    Some(raw_timestamp),
+                    false,
+                    "within_interval".to_string(),
+                )
+            }
+        }
+        None if raw_timestamp_exists => (
+            candidates
+                .iter()
+                .find_map(|value| value.as_ref())
+                .map(|value| value.to_string()),
+            true,
+            "invalid_timestamp".to_string(),
+        ),
+        None => (None, true, "no_maintenance_history".to_string()),
+    };
+
+    DatabaseMaintenanceCadence {
+        maintenance_interval_hours: interval_hours,
+        last_maintenance_at,
+        maintenance_due,
+        maintenance_due_reason,
+    }
+}
+
+/// Read current maintenance cadence state from persisted settings.
+pub fn get_database_maintenance_cadence(db: &crate::db::Database) -> DatabaseMaintenanceCadence {
+    compute_database_maintenance_cadence(
+        read_setting_value(db, "last_optimize"),
+        read_setting_value(db, "last_wal_checkpoint"),
+        read_setting_value(db, "last_vacuum"),
+    )
+}
+
+/// Evaluate cadence policy and run maintenance when due.
+/// Returns `Some(RepairResult)` only when a run was triggered.
+pub fn run_database_maintenance_if_due(db: &crate::db::Database) -> Option<RepairResult> {
+    let cadence = get_database_maintenance_cadence(db);
+    if cadence.maintenance_due {
+        Some(run_database_maintenance(db))
+    } else {
+        None
+    }
+}
+
 /// Check database health
 pub fn check_database_health(db: &crate::db::Database) -> ComponentHealth {
     // Check integrity
@@ -465,6 +587,26 @@ pub struct DatabaseStats {
     pub freelist_count: i64,
     /// Last vacuum timestamp if stored
     pub last_vacuum: Option<String>,
+    /// Last optimize timestamp if stored
+    pub last_optimize: Option<String>,
+    /// Last WAL checkpoint timestamp if stored
+    pub last_wal_checkpoint: Option<String>,
+    /// Most recent maintenance timestamp across optimize/checkpoint/vacuum.
+    pub last_maintenance_at: Option<String>,
+    /// Configured maintenance cadence interval in hours.
+    pub maintenance_interval_hours: i64,
+    /// Whether maintenance is currently due per policy.
+    pub maintenance_due: bool,
+    /// Deterministic reason for current due state.
+    pub maintenance_due_reason: String,
+    /// Active SQLite journal mode
+    pub journal_mode: String,
+    /// WAL checkpoint busy pages
+    pub wal_checkpoint_busy: i64,
+    /// WAL log frames observed
+    pub wal_log_frames: i64,
+    /// WAL checkpointed frames observed
+    pub wal_checkpointed_frames: i64,
 }
 
 /// Get database statistics for monitoring
@@ -504,14 +646,27 @@ pub fn get_database_stats(
         .query_row("PRAGMA freelist_count", [], |r| r.get(0))
         .unwrap_or(0);
 
-    let last_vacuum: Option<String> = db
+    let last_vacuum = read_setting_value(db, "last_vacuum");
+    let last_optimize = read_setting_value(db, "last_optimize");
+    let last_wal_checkpoint = read_setting_value(db, "last_wal_checkpoint");
+
+    let cadence = compute_database_maintenance_cadence(
+        last_optimize.clone(),
+        last_wal_checkpoint.clone(),
+        last_vacuum.clone(),
+    );
+
+    let journal_mode: String = db
         .conn()
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'last_vacuum'",
-            [],
-            |r| r.get(0),
-        )
-        .ok();
+        .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    let (wal_checkpoint_busy, wal_log_frames, wal_checkpointed_frames) = db
+        .conn()
+        .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap_or((0, 0, 0));
 
     Ok(DatabaseStats {
         file_size_bytes,
@@ -522,11 +677,65 @@ pub fn get_database_stats(
         page_count,
         freelist_count,
         last_vacuum,
+        last_optimize,
+        last_wal_checkpoint,
+        last_maintenance_at: cadence.last_maintenance_at,
+        maintenance_interval_hours: cadence.maintenance_interval_hours,
+        maintenance_due: cadence.maintenance_due,
+        maintenance_due_reason: cadence.maintenance_due_reason,
+        journal_mode,
+        wal_checkpoint_busy,
+        wal_log_frames,
+        wal_checkpointed_frames,
     })
 }
 
 /// Run scheduled database maintenance (VACUUM if needed)
 pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let optimize_result = db.conn().execute("PRAGMA optimize", []);
+    if optimize_result.is_ok() {
+        let _ = db.conn().execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_optimize', ?)",
+            [&now],
+        );
+    }
+
+    let wal_checkpoint = db.conn().query_row(
+        "PRAGMA wal_checkpoint(PASSIVE)",
+        [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+    );
+    if wal_checkpoint.is_ok() {
+        let _ = db.conn().execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_wal_checkpoint', ?)",
+            [&now],
+        );
+    }
+
+    let mut maintenance_actions = Vec::new();
+    match optimize_result {
+        Ok(_) => maintenance_actions.push("PRAGMA optimize"),
+        Err(_) => maintenance_actions.push("PRAGMA optimize (failed)"),
+    }
+    match wal_checkpoint {
+        Ok((busy, log, checkpointed)) => {
+            maintenance_actions.push("WAL checkpoint");
+            maintenance_actions.push(if busy == 0 {
+                "WAL busy=0"
+            } else {
+                "WAL busy>0"
+            });
+            maintenance_actions.push(if log >= checkpointed {
+                "WAL progress-ok"
+            } else {
+                "WAL progress-anomaly"
+            });
+        }
+        Err(_) => maintenance_actions.push("WAL checkpoint (failed)"),
+    }
+
     // Check if VACUUM is needed (freelist > 10% of pages)
     let page_count: i64 = db
         .conn()
@@ -545,7 +754,10 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
         return RepairResult {
             component: "Database".to_string(),
             success: true,
-            action_taken: "Checked database - no maintenance needed".to_string(),
+            action_taken: format!(
+                "{}; no VACUUM needed",
+                maintenance_actions.join(", ")
+            ),
             message: Some(format!(
                 "Fragmentation at {:.1}% (threshold: 10%)",
                 fragmentation_pct
@@ -557,7 +769,6 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
     match db.conn().execute("VACUUM", []) {
         Ok(_) => {
             // Record timestamp
-            let now = chrono::Utc::now().to_rfc3339();
             let _ = db.conn().execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_vacuum', ?)",
                 [&now],
@@ -567,7 +778,8 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
                 component: "Database".to_string(),
                 success: true,
                 action_taken: format!(
-                    "VACUUM completed (was {:.1}% fragmented)",
+                    "{}; VACUUM completed (was {:.1}% fragmented)",
+                    maintenance_actions.join(", "),
                     fragmentation_pct
                 ),
                 message: Some("Database optimized successfully".to_string()),
@@ -576,7 +788,7 @@ pub fn run_database_maintenance(db: &crate::db::Database) -> RepairResult {
         Err(e) => RepairResult {
             component: "Database".to_string(),
             success: false,
-            action_taken: "VACUUM failed".to_string(),
+            action_taken: format!("{}; VACUUM failed", maintenance_actions.join(", ")),
             message: Some(e.to_string()),
         },
     }

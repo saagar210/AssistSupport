@@ -5,6 +5,10 @@ import type {
   SearchApiHealthStatus,
   SearchApiStatsData,
 } from '../types';
+import {
+  classifySearchApiFailure,
+  classifySearchApiHealthStatus,
+} from '../features/integrations/degradedSemantics';
 
 export interface HybridSearchState {
   response: HybridSearchResponse | null;
@@ -12,6 +16,8 @@ export interface HybridSearchState {
   error: string | null;
   apiHealthy: boolean | null;
   apiStatusMessage: string | null;
+  degradedReason: string | null;
+  degradedGuidance: string | null;
 }
 
 export function useHybridSearch() {
@@ -21,10 +27,18 @@ export function useHybridSearch() {
     error: null,
     apiHealthy: null,
     apiStatusMessage: null,
+    degradedReason: null,
+    degradedGuidance: null,
   });
 
   const search = useCallback(async (query: string, topK = 10): Promise<HybridSearchResponse | null> => {
-    setState(prev => ({ ...prev, searching: true, error: null }));
+    setState(prev => ({
+      ...prev,
+      searching: true,
+      error: null,
+      degradedReason: null,
+      degradedGuidance: null,
+    }));
     try {
       const response = await invoke<HybridSearchResponse>('hybrid_search', {
         query,
@@ -36,16 +50,21 @@ export function useHybridSearch() {
         response,
         apiHealthy: true,
         apiStatusMessage: 'Connected',
+        degradedReason: null,
+        degradedGuidance: null,
       }));
       return response;
     } catch (e) {
       const msg = String(e);
+      const classified = classifySearchApiFailure(msg);
       setState(prev => ({
         ...prev,
         searching: false,
         error: msg,
-        apiHealthy: msg.includes('unavailable') ? false : prev.apiHealthy,
-        apiStatusMessage: msg.includes('unavailable') ? msg : prev.apiStatusMessage,
+        apiHealthy: classified.status === 'offline' ? false : prev.apiHealthy,
+        apiStatusMessage: classified.guidance,
+        degradedReason: classified.reason,
+        degradedGuidance: classified.guidance,
       }));
       return null;
     }
@@ -83,10 +102,13 @@ export function useHybridSearch() {
   const checkHealth = useCallback(async (): Promise<boolean> => {
     try {
       const health = await invoke<SearchApiHealthStatus>('get_search_api_health_status');
+      const classified = classifySearchApiHealthStatus(health.status, health.message);
       setState(prev => ({
         ...prev,
         apiHealthy: health.healthy,
-        apiStatusMessage: health.message,
+        apiStatusMessage: health.healthy ? health.message : classified.guidance,
+        degradedReason: health.healthy ? null : classified.reason,
+        degradedGuidance: health.healthy ? null : classified.guidance,
       }));
       return health.healthy;
     } catch {
@@ -94,13 +116,21 @@ export function useHybridSearch() {
         ...prev,
         apiHealthy: false,
         apiStatusMessage: 'Unable to check Search API health',
+        degradedReason: 'offline',
+        degradedGuidance: 'Search API health check failed. Confirm local service is running.',
       }));
       return false;
     }
   }, []);
 
   const clearResults = useCallback(() => {
-    setState(prev => ({ ...prev, response: null, error: null }));
+    setState(prev => ({
+      ...prev,
+      response: null,
+      error: null,
+      degradedReason: null,
+      degradedGuidance: null,
+    }));
   }, []);
 
   return {

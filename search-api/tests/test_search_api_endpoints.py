@@ -20,7 +20,10 @@ if "hybrid_search" not in sys.modules:
     hybrid_search_stub.HybridSearchEngine = _PlaceholderHybridSearchEngine
     sys.modules["hybrid_search"] = hybrid_search_stub
 
-if "intent_detection" not in sys.modules:
+try:
+    # Prefer the real module so intent-detection unit tests are not polluted by a stub.
+    import intent_detection  # noqa: F401
+except Exception:
     intent_detection_stub = types.ModuleType("intent_detection")
 
     class _PlaceholderIntentDetector:

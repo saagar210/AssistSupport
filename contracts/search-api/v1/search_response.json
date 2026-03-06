@@ -1,0 +1,32 @@
+{
+  "status": "success",
+  "query": "Can I use a flash drive?",
+  "query_id": "query-123",
+  "intent": "policy",
+  "intent_confidence": 0.88,
+  "results_count": 1,
+  "results": [
+    {
+      "rank": 1,
+      "article_id": "article-1",
+      "title": "USB Policy",
+      "category": "POLICY",
+      "preview": "USB devices are restricted",
+      "source_document": "doc-1",
+      "section": "Policy > USB",
+      "scores": {
+        "bm25": 1.2,
+        "vector": 0.81,
+        "fused": 0.94
+      }
+    }
+  ],
+  "metrics": {
+    "latency_ms": 16.2,
+    "embedding_time_ms": 2.1,
+    "search_time_ms": 6.7,
+    "rerank_time_ms": 0.0,
+    "result_count": 1,
+    "timestamp": "2026-03-05T00:00:00+00:00"
+  }
+}

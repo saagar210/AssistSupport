@@ -1,6 +1,9 @@
 pnpm check:workstation-preflight
+pnpm check:contract-fixtures
+pnpm check:command-lifecycle
 pnpm ui:gate:static
 pnpm test
+pnpm ui:gate:journeys
 pnpm ui:gate:regression
 pnpm git:guard:all
 pnpm perf:bundle

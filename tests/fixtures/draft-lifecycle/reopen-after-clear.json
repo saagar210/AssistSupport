@@ -1,0 +1,32 @@
+[
+  {
+    "type": "generation_started",
+    "at": "2026-03-06T00:01:00.000Z"
+  },
+  {
+    "type": "generation_succeeded",
+    "at": "2026-03-06T00:01:04.000Z",
+    "payload": {
+      "hasResponse": true
+    }
+  },
+  {
+    "type": "draft_saved",
+    "at": "2026-03-06T00:01:08.000Z",
+    "payload": {
+      "draftId": "draft-abc"
+    }
+  },
+  {
+    "type": "draft_cleared",
+    "at": "2026-03-06T00:01:20.000Z"
+  },
+  {
+    "type": "draft_loaded",
+    "at": "2026-03-06T00:01:40.000Z",
+    "payload": {
+      "draftId": "draft-abc",
+      "hasResponse": true
+    }
+  }
+]

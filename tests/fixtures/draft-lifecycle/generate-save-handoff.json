@@ -1,0 +1,24 @@
+[
+  {
+    "type": "generation_started",
+    "at": "2026-03-06T00:00:00.000Z"
+  },
+  {
+    "type": "generation_succeeded",
+    "at": "2026-03-06T00:00:02.000Z",
+    "payload": {
+      "hasResponse": true
+    }
+  },
+  {
+    "type": "draft_saved",
+    "at": "2026-03-06T00:00:05.000Z",
+    "payload": {
+      "draftId": "draft-123"
+    }
+  },
+  {
+    "type": "handoff_completed",
+    "at": "2026-03-06T00:00:07.000Z"
+  }
+]

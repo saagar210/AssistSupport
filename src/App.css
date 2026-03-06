@@ -81,6 +81,12 @@ html, body, #root {
   min-height: 0;
 }
 
+.tab-loading-fallback {
+  padding: var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
 /* Mobile navigation - only visible on small screens */
 .mobile-nav {
   display: none;

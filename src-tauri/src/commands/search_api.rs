@@ -243,6 +243,146 @@ fn classify_health_response(
     }
 }
 
+/// Transitional service seam for Search API network operations.
+/// Commands remain stable facades while transport concerns are centralized here.
+struct SearchApiService {
+    client: reqwest::Client,
+    base_url: String,
+    auth_token: Option<String>,
+}
+
+impl SearchApiService {
+    fn with_auth() -> Result<Self, String> {
+        Ok(Self {
+            client: reqwest::Client::new(),
+            base_url: search_api_base()?,
+            auth_token: Some(search_api_auth_token()?),
+        })
+    }
+
+    fn for_health() -> Result<Self, String> {
+        Ok(Self {
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .map_err(|e| e.to_string())?,
+            base_url: search_api_base()?,
+            auth_token: None,
+        })
+    }
+
+    async fn hybrid_search(
+        &self,
+        request: SearchApiRequest,
+    ) -> Result<HybridSearchResponse, String> {
+        let mut req = self
+            .client
+            .post(format!("{}/search", self.base_url))
+            .json(&request);
+
+        if let Some(token) = &self.auth_token {
+            req = req.bearer_auth(token);
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| format!("Search API unavailable: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Search API error ({}): {}", status, body));
+        }
+
+        response
+            .json::<HybridSearchResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse search response: {}", e))
+    }
+
+    async fn submit_feedback(&self, feedback: FeedbackApiRequest) -> Result<(), String> {
+        let mut req = self
+            .client
+            .post(format!("{}/feedback", self.base_url))
+            .json(&feedback);
+
+        if let Some(token) = &self.auth_token {
+            req = req.bearer_auth(token);
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| format!("Feedback submission failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Feedback API error ({}): {}", status, body));
+        }
+
+        Ok(())
+    }
+
+    async fn stats(&self) -> Result<SearchApiStatsData, String> {
+        let mut req = self.client.get(format!("{}/stats", self.base_url));
+        if let Some(token) = &self.auth_token {
+            req = req.bearer_auth(token);
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| format!("Stats API unavailable: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Stats API error ({}): {}", status, body));
+        }
+
+        let stats: StatsApiResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse stats response: {}", e))?;
+
+        Ok(stats.data)
+    }
+
+    async fn health_status(&self) -> SearchApiHealthStatus {
+        match self
+            .client
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                let status_code = response.status();
+                let content_type = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|h| h.to_str().ok())
+                    .map(|s| s.to_string());
+                let body = response.text().await.unwrap_or_default();
+
+                classify_health_response(
+                    status_code,
+                    content_type.as_deref(),
+                    &body,
+                    &self.base_url,
+                )
+            }
+            Err(e) => SearchApiHealthStatus {
+                healthy: false,
+                status: "offline".to_string(),
+                message: format!("Search API unavailable at {}: {}", self.base_url, e),
+                base_url: self.base_url.clone(),
+            },
+        }
+    }
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 /// Execute a hybrid search against the PostgreSQL search API.
@@ -251,10 +391,7 @@ pub async fn hybrid_search(
     query: String,
     top_k: Option<usize>,
 ) -> Result<HybridSearchResponse, String> {
-    let client = reqwest::Client::new();
-    let base_url = search_api_base()?;
-    let auth_token = search_api_auth_token()?;
-
+    let service = SearchApiService::with_auth()?;
     let request = SearchApiRequest {
         query,
         top_k: sanitize_top_k(top_k),
@@ -262,24 +399,7 @@ pub async fn hybrid_search(
         fusion_strategy: "adaptive".to_string(),
     };
 
-    let response = client
-        .post(format!("{}/search", base_url))
-        .bearer_auth(auth_token)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| format!("Search API unavailable: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Search API error ({}): {}", status, body));
-    }
-
-    response
-        .json::<HybridSearchResponse>()
-        .await
-        .map_err(|e| format!("Failed to parse search response: {}", e))
+    service.hybrid_search(request).await
 }
 
 /// Submit feedback on a search result (helpful / not_helpful / incorrect).
@@ -297,9 +417,7 @@ pub async fn submit_search_feedback(
         ));
     }
 
-    let client = reqwest::Client::new();
-    let base_url = search_api_base()?;
-    let auth_token = search_api_auth_token()?;
+    let service = SearchApiService::with_auth()?;
 
     let feedback = FeedbackApiRequest {
         query_id,
@@ -308,19 +426,7 @@ pub async fn submit_search_feedback(
         comment: comment.unwrap_or_default(),
     };
 
-    let response = client
-        .post(format!("{}/feedback", base_url))
-        .bearer_auth(auth_token)
-        .json(&feedback)
-        .send()
-        .await
-        .map_err(|e| format!("Feedback submission failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Feedback API error ({}): {}", status, body));
-    }
+    service.submit_feedback(feedback).await?;
 
     Ok("Feedback submitted".to_string())
 }
@@ -328,39 +434,14 @@ pub async fn submit_search_feedback(
 /// Get search monitoring statistics (last 24 hours).
 #[tauri::command]
 pub async fn get_search_api_stats() -> Result<SearchApiStatsData, String> {
-    let client = reqwest::Client::new();
-    let base_url = search_api_base()?;
-    let auth_token = search_api_auth_token()?;
-
-    let response = client
-        .get(format!("{}/stats", base_url))
-        .bearer_auth(auth_token)
-        .send()
-        .await
-        .map_err(|e| format!("Stats API unavailable: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Stats API error ({}): {}", status, body));
-    }
-
-    let stats: StatsApiResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse stats response: {}", e))?;
-
-    Ok(stats.data)
+    let service = SearchApiService::with_auth()?;
+    service.stats().await
 }
 
 /// Diagnose search API health with actionable status.
 #[tauri::command]
 pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let base_url = match search_api_base() {
+    let service = match SearchApiService::for_health() {
         Ok(value) => value,
         Err(message) => {
             return Ok(SearchApiHealthStatus {
@@ -372,30 +453,7 @@ pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, Str
         }
     };
 
-    match client.get(format!("{}/health", base_url)).send().await {
-        Ok(response) => {
-            let status_code = response.status();
-            let content_type = response
-                .headers()
-                .get(reqwest::header::CONTENT_TYPE)
-                .and_then(|h| h.to_str().ok())
-                .map(|s| s.to_string());
-            let body = response.text().await.unwrap_or_default();
-
-            Ok(classify_health_response(
-                status_code,
-                content_type.as_deref(),
-                &body,
-                &base_url,
-            ))
-        }
-        Err(e) => Ok(SearchApiHealthStatus {
-            healthy: false,
-            status: "offline".to_string(),
-            message: format!("Search API unavailable at {}: {}", base_url, e),
-            base_url,
-        }),
-    }
+    Ok(service.health_status().await)
 }
 
 /// Check if the search API is healthy.

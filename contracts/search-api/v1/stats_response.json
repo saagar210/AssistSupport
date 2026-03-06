@@ -1,0 +1,22 @@
+{
+  "status": "success",
+  "data": {
+    "queries_total": 10,
+    "queries_24h": 3,
+    "latency_ms": {
+      "avg": 12.3,
+      "p50": 11.0,
+      "p95": 19.1,
+      "p99": 22.0
+    },
+    "intent_distribution": {
+      "policy": 2,
+      "procedure": 1
+    },
+    "feedback_stats": {
+      "helpful": 2,
+      "incorrect": 1
+    }
+  },
+  "timestamp": "2026-03-05T00:00:00+00:00"
+}

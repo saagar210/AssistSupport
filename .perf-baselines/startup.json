@@ -1,0 +1,6 @@
+{
+  "total_ms": 398.61,
+  "probe": "pnpm run check:workstation-preflight",
+  "capturedAt": "2026-03-06T16:12:30.907Z",
+  "source": "bootstrap-from-runtime-probes"
+}
