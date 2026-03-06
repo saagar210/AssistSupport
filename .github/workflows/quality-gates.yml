@@ -53,7 +53,9 @@ jobs:
 
       - name: Verify commands
         env:
-          VERIFY_SKIP_REGEX: ${{ github.event_name == 'push' && '^pnpm git:guard:all$' || '' }}
+          # Backend gates are executed in CI's dedicated Rust/macOS lane.
+          # Skip the aggregated git guard command here to avoid duplicate backend execution.
+          VERIFY_SKIP_REGEX: "^pnpm git:guard:all$"
         run: bash .codex/scripts/run_verify_commands.sh
 
       - name: Generate coverage report
