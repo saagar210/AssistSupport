@@ -1,4 +1,5 @@
 use super::*;
+use crate::validation::ValidationError;
 
 pub(crate) fn has_hf_token_impl() -> Result<bool, String> {
     FileKeyStore::get_token(TOKEN_HUGGINGFACE)

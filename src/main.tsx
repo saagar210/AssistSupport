@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/shared/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import "./styles/design-tokens.css";
@@ -30,11 +31,13 @@ async function bootstrap() {
 
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
-        <ThemeProvider>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </ThemeProvider>
+        <ErrorBoundary fallbackTitle="AssistSupport encountered an unexpected error">
+          <ThemeProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </ThemeProvider>
+        </ErrorBoundary>
       </React.StrictMode>,
     );
   } catch (e) {

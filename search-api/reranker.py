@@ -20,6 +20,7 @@ class Reranker:
     FUSION_WEIGHT = 0.85
 
     def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        self.model_name = model_name
         self.model = CrossEncoder(model_name)
         print(f"Reranker initialized: {model_name}")
 

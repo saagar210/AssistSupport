@@ -75,10 +75,9 @@
   padding: var(--space-3);
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
-  overflow-x: auto;
+  overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
   max-height: 200px;
-  overflow-y: auto;
 }

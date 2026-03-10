@@ -259,10 +259,10 @@ impl VectorStore {
 
     /// Check if LanceDB supports encryption
     ///
-    /// As of LanceDB 0.17, native encryption is not yet supported.
+    /// Native encryption at rest is not available in the local OSS setup we ship today.
     /// This function documents the status and returns false.
     pub fn check_encryption_support() -> bool {
-        // LanceDB 0.17 does not support native encryption
+        // The current local LanceDB configuration does not support native encryption at rest.
         false
     }
 
@@ -345,14 +345,36 @@ impl VectorStore {
         ]))
     }
 
-    /// Check if the table has the new schema with namespace_id
-    async fn table_has_namespace(&self) -> Result<bool, VectorError> {
+    async fn table_has_field(&self, field_name: &str) -> Result<bool, VectorError> {
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
         let schema = table
             .schema()
             .await
             .map_err(|e| VectorError::LanceDb(e.to_string()))?;
-        Ok(schema.field_with_name("namespace_id").is_ok())
+        Ok(schema.field_with_name(field_name).is_ok())
+    }
+
+    async fn has_metadata_columns(&self) -> Result<bool, VectorError> {
+        Ok(self.table_has_field("namespace_id").await?
+            && self.table_has_field("document_id").await?)
+    }
+
+    async fn has_legacy_rows(&self) -> Result<bool, VectorError> {
+        let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
+        let legacy_rows = table
+            .count_rows(Some("document_id = ''".to_string()))
+            .await
+            .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+        Ok(legacy_rows > 0)
+    }
+
+    /// Check whether the current table needs a metadata rebuild before it can be trusted.
+    pub async fn requires_rebuild(&self) -> Result<bool, VectorError> {
+        if !self.has_metadata_columns().await? {
+            return Ok(true);
+        }
+
+        self.has_legacy_rows().await
     }
 
     /// Create or open the chunks table
@@ -378,11 +400,10 @@ impl VectorStore {
                 .map_err(|e| VectorError::LanceDb(e.to_string()))?;
             self.table = Some(table);
 
-            // Check if migration is needed (table doesn't have namespace_id)
-            if !self.table_has_namespace().await? {
-                // For now, we'll just log a warning. In production, you might want to
-                // migrate the data or recreate the table.
-                tracing::warn!("Vector table is using legacy schema without namespace_id. Consider rebuilding vectors.");
+            if self.requires_rebuild().await? {
+                tracing::warn!(
+                    "Vector table requires rebuild before use because it is missing metadata columns or contains legacy rows."
+                );
             }
         } else {
             // Create with initial empty data using the new schema
@@ -424,6 +445,29 @@ impl VectorStore {
         Ok(())
     }
 
+    /// Drop and recreate the chunks table using the current schema.
+    pub async fn reset_table(&mut self) -> Result<(), VectorError> {
+        let conn = self
+            .connection
+            .as_ref()
+            .ok_or(VectorError::NotInitialized)?;
+
+        let table_names = conn
+            .table_names()
+            .execute()
+            .await
+            .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+
+        if table_names.contains(&"chunks".to_string()) {
+            conn.drop_table("chunks", &[])
+                .await
+                .map_err(|e| VectorError::LanceDb(e.to_string()))?;
+        }
+
+        self.table = None;
+        self.create_table().await
+    }
+
     /// Insert embeddings into the vector store with metadata
     pub async fn insert_embeddings_with_metadata(
         &self,
@@ -431,10 +475,6 @@ impl VectorStore {
         embeddings: &[Vec<f32>],
         metadata: &[VectorMetadata],
     ) -> Result<(), VectorError> {
-        if !self.enabled {
-            return Err(VectorError::Disabled);
-        }
-
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
         if ids.len() != embeddings.len() || ids.len() != metadata.len() {
@@ -446,6 +486,9 @@ impl VectorStore {
         if ids.is_empty() {
             return Ok(());
         }
+
+        // Replace existing rows so repeated rebuild/generate operations do not duplicate vectors.
+        self.delete_by_ids(ids).await?;
 
         // Build arrays
         let id_array = StringArray::from(ids.to_vec());
@@ -496,13 +539,12 @@ impl VectorStore {
         Ok(())
     }
 
-    /// Insert embeddings into the vector store (legacy method without metadata)
-    pub async fn insert_embeddings(
+    #[cfg(test)]
+    async fn insert_embeddings(
         &self,
         ids: &[String],
         embeddings: &[Vec<f32>],
     ) -> Result<(), VectorError> {
-        // Create default metadata for backward compatibility
         let metadata: Vec<VectorMetadata> = ids
             .iter()
             .map(|_| VectorMetadata {
@@ -606,10 +648,6 @@ impl VectorStore {
 
     /// Delete vectors by chunk IDs
     pub async fn delete_by_ids(&self, ids: &[String]) -> Result<(), VectorError> {
-        if !self.enabled {
-            return Err(VectorError::Disabled);
-        }
-
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
         if ids.is_empty() {
@@ -638,10 +676,6 @@ impl VectorStore {
 
     /// Delete all vectors for a specific document
     pub async fn delete_by_document(&self, document_id: &str) -> Result<(), VectorError> {
-        if !self.enabled {
-            return Err(VectorError::Disabled);
-        }
-
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
         // Sanitize document_id to prevent injection
@@ -659,10 +693,6 @@ impl VectorStore {
 
     /// Delete all vectors for a specific namespace
     pub async fn delete_by_namespace(&self, namespace_id: &str) -> Result<(), VectorError> {
-        if !self.enabled {
-            return Err(VectorError::Disabled);
-        }
-
         let table = self.table.as_ref().ok_or(VectorError::NotInitialized)?;
 
         // Sanitize namespace_id to prevent injection
@@ -713,7 +743,7 @@ impl EncryptionStatus {
     pub fn current() -> Self {
         Self {
             supported: VectorStore::check_encryption_support(),
-            reason: "LanceDB 0.17 does not yet support native encryption for data at rest".into(),
+            reason: "The local LanceDB setup does not yet support native encryption for data at rest".into(),
             recommendation: "Vector search stores embeddings unencrypted. Enable only if you understand the security implications.".into(),
         }
     }
@@ -722,10 +752,19 @@ impl EncryptionStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    fn test_store_config(path: &Path) -> VectorStoreConfig {
+        VectorStoreConfig {
+            path: path.to_path_buf(),
+            embedding_dim: 4,
+            encryption_enabled: false,
+        }
+    }
 
     #[test]
     fn test_encryption_not_supported() {
-        // LanceDB 0.17 does not support encryption
+        // The local LanceDB setup does not support native encryption at rest.
         assert!(!VectorStore::check_encryption_support());
     }
 
@@ -887,5 +926,95 @@ mod tests {
         assert!(is_unicode_confusable('\u{2212}')); // minus sign
         assert!(!is_unicode_confusable('a')); // regular ascii
         assert!(!is_unicode_confusable('-')); // regular hyphen
+    }
+
+    #[tokio::test]
+    async fn test_requires_rebuild_after_legacy_insert() {
+        let dir = tempdir().unwrap();
+        let mut store = VectorStore::new(test_store_config(dir.path()));
+        store.init().await.unwrap();
+        store.create_table().await.unwrap();
+        store.enable(true).unwrap();
+
+        let ids = vec!["chunk_legacy".to_string()];
+        let embeddings = vec![vec![1.0, 0.0, 0.0, 0.0]];
+        store.insert_embeddings(&ids, &embeddings).await.unwrap();
+
+        assert!(store.requires_rebuild().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_reset_table_clears_legacy_rows_and_rebuild_flag() {
+        let dir = tempdir().unwrap();
+        let mut store = VectorStore::new(test_store_config(dir.path()));
+        store.init().await.unwrap();
+        store.create_table().await.unwrap();
+        store.enable(true).unwrap();
+
+        let ids = vec!["chunk_legacy".to_string()];
+        let embeddings = vec![vec![1.0, 0.0, 0.0, 0.0]];
+        store.insert_embeddings(&ids, &embeddings).await.unwrap();
+        assert!(store.requires_rebuild().await.unwrap());
+
+        store.reset_table().await.unwrap();
+
+        assert_eq!(store.count().await.unwrap(), 0);
+        assert!(!store.requires_rebuild().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_namespace_filtered_search_and_delete_lifecycle() {
+        let dir = tempdir().unwrap();
+        let mut store = VectorStore::new(test_store_config(dir.path()));
+        store.init().await.unwrap();
+        store.create_table().await.unwrap();
+        store.enable(true).unwrap();
+
+        let ids = vec!["chunk_internal".to_string(), "chunk_external".to_string()];
+        let embeddings = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
+        let metadata = vec![
+            VectorMetadata {
+                namespace_id: "internal".to_string(),
+                document_id: "doc_internal".to_string(),
+            },
+            VectorMetadata {
+                namespace_id: "external".to_string(),
+                document_id: "doc_external".to_string(),
+            },
+        ];
+
+        store
+            .insert_embeddings_with_metadata(&ids, &embeddings, &metadata)
+            .await
+            .unwrap();
+
+        let internal_results = store
+            .search_similar_in_namespace(&[1.0, 0.0, 0.0, 0.0], Some("internal"), 5)
+            .await
+            .unwrap();
+        assert_eq!(internal_results.len(), 1);
+        assert_eq!(internal_results[0].chunk_id, "chunk_internal");
+        assert_eq!(
+            internal_results[0].document_id.as_deref(),
+            Some("doc_internal")
+        );
+
+        let external_results = store
+            .search_similar_in_namespace(&[0.0, 1.0, 0.0, 0.0], Some("external"), 5)
+            .await
+            .unwrap();
+        assert_eq!(external_results.len(), 1);
+        assert_eq!(external_results[0].chunk_id, "chunk_external");
+
+        store.delete_by_document("doc_internal").await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 1);
+        let internal_after_delete = store
+            .search_similar_in_namespace(&[1.0, 0.0, 0.0, 0.0], Some("internal"), 5)
+            .await
+            .unwrap();
+        assert!(internal_after_delete.is_empty());
+
+        store.delete_by_namespace("external").await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 0);
     }
 }

@@ -1,0 +1,74 @@
+.passphrase-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background:
+    radial-gradient(circle at top, rgba(14, 165, 233, 0.12), transparent 42%),
+    linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+}
+
+.passphrase-card {
+  width: min(100%, 440px);
+  padding: var(--space-8);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.passphrase-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
+.passphrase-description {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.passphrase-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.passphrase-label {
+  font-weight: var(--weight-medium);
+}
+
+.passphrase-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.passphrase-input:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.passphrase-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}

@@ -571,84 +571,169 @@ fn test_wrapped_key_components() {
 // SSRF Protection Tests (Network Module)
 // ============================================================================
 
-#[test]
-#[allow(deprecated)]
-fn test_ssrf_blocks_localhost_variants() {
-    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+#[tokio::test]
+async fn test_ssrf_blocks_localhost_variants() {
+    use assistsupport_lib::kb::dns::PinnedDnsResolver;
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
-    let config = SsrfConfig::default();
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .expect("resolver");
 
     // Standard localhost
-    assert!(validate_url_for_ssrf("http://localhost/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://localhost:8080/", &config).is_err());
-    assert!(validate_url_for_ssrf("https://localhost/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://localhost/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://localhost:8080/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("https://localhost/", &resolver)
+            .await
+            .is_err()
+    );
 
     // IPv4 loopback
-    assert!(validate_url_for_ssrf("http://127.0.0.1/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://127.0.0.1:3000/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://127.0.0.1/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://127.0.0.1:3000/", &resolver)
+            .await
+            .is_err()
+    );
 
     // IPv6 loopback
-    assert!(validate_url_for_ssrf("http://[::1]/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://[::1]:8080/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://[::1]/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://[::1]:8080/", &resolver)
+            .await
+            .is_err()
+    );
 }
 
-#[test]
-#[allow(deprecated)]
-fn test_ssrf_blocks_private_ranges() {
-    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+#[tokio::test]
+async fn test_ssrf_blocks_private_ranges() {
+    use assistsupport_lib::kb::dns::PinnedDnsResolver;
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
-    let config = SsrfConfig::default();
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .expect("resolver");
 
     // 10.0.0.0/8
-    assert!(validate_url_for_ssrf("http://10.0.0.1/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://10.255.255.255/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://10.0.0.1/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://10.255.255.255/", &resolver)
+            .await
+            .is_err()
+    );
 
     // 172.16.0.0/12
-    assert!(validate_url_for_ssrf("http://172.16.0.1/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://172.31.255.255/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://172.16.0.1/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://172.31.255.255/", &resolver)
+            .await
+            .is_err()
+    );
 
     // 192.168.0.0/16
-    assert!(validate_url_for_ssrf("http://192.168.0.1/", &config).is_err());
-    assert!(validate_url_for_ssrf("http://192.168.255.255/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://192.168.0.1/", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://192.168.255.255/", &resolver)
+            .await
+            .is_err()
+    );
 }
 
-#[test]
-#[allow(deprecated)]
-fn test_ssrf_blocks_invalid_schemes() {
-    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+#[tokio::test]
+async fn test_ssrf_blocks_invalid_schemes() {
+    use assistsupport_lib::kb::dns::PinnedDnsResolver;
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
-    let config = SsrfConfig::default();
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .expect("resolver");
 
     // File protocol (dangerous!)
-    assert!(validate_url_for_ssrf("file:///etc/passwd", &config).is_err());
-    assert!(validate_url_for_ssrf("file:///Users/secret", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("file:///etc/passwd", &resolver)
+            .await
+            .is_err()
+    );
+    assert!(
+        validate_url_for_ssrf_with_pinning("file:///Users/secret", &resolver)
+            .await
+            .is_err()
+    );
 
     // FTP
-    assert!(validate_url_for_ssrf("ftp://example.com/file.txt", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("ftp://example.com/file.txt", &resolver)
+            .await
+            .is_err()
+    );
 
     // Gopher (used in SSRF attacks)
-    assert!(validate_url_for_ssrf("gopher://localhost:9000/_test", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("gopher://localhost:9000/_test", &resolver)
+            .await
+            .is_err()
+    );
 }
 
-#[test]
-#[allow(deprecated)]
-fn test_ssrf_allowlist_bypass() {
-    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+#[tokio::test]
+async fn test_ssrf_allowlist_bypass() {
+    use assistsupport_lib::kb::dns::PinnedDnsResolver;
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
     let mut config = SsrfConfig::default();
     config.allowlist.push("localhost".into());
+    let resolver = PinnedDnsResolver::new(config).await.expect("resolver");
 
     // Allowlisted hosts should be allowed
-    assert!(validate_url_for_ssrf("http://localhost/", &config).is_ok());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://localhost/", &resolver)
+            .await
+            .is_ok()
+    );
 }
 
-#[test]
-#[allow(deprecated)]
-fn test_ssrf_metadata_endpoints() {
-    use assistsupport_lib::kb::network::{validate_url_for_ssrf, SsrfConfig};
+#[tokio::test]
+async fn test_ssrf_metadata_endpoints() {
+    use assistsupport_lib::kb::dns::PinnedDnsResolver;
+    use assistsupport_lib::kb::network::{validate_url_for_ssrf_with_pinning, SsrfConfig};
 
-    let config = SsrfConfig::default();
+    let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+        .await
+        .expect("resolver");
 
     // AWS metadata endpoint (link-local)
-    assert!(validate_url_for_ssrf("http://169.254.169.254/latest/meta-data/", &config).is_err());
+    assert!(
+        validate_url_for_ssrf_with_pinning("http://169.254.169.254/latest/meta-data/", &resolver)
+            .await
+            .is_err()
+    );
 }

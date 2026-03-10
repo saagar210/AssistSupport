@@ -6,6 +6,8 @@ import { Button } from './components/shared/Button';
 import { CommandPalette, useCommandPalette } from './components/shared/CommandPalette';
 import { KeyboardShortcuts, useKeyboardShortcutsHelp } from './components/shared/KeyboardShortcuts';
 import { OnboardingWizard } from './components/shared/OnboardingWizard';
+import { PassphraseUnlockScreen } from './components/shared/PassphraseUnlockScreen';
+import { RecoveryScreen } from './components/shared/RecoveryScreen';
 import { useInitialize } from './hooks/useInitialize';
 import { useToastContext } from './contexts/ToastContext';
 import { AppStatusProvider } from './contexts/AppStatusContext';
@@ -23,7 +25,7 @@ import { RevampShell } from './features/revamp/shell/RevampShell';
 import './App.css';
 
 function AppContent() {
-  const { initResult, loading, error } = useInitialize();
+  const { initResult, loading, error, unlockWithPassphrase } = useInitialize();
   const { toasts, addToast, removeToast } = useToastContext();
   const draftRef = useRef<DraftTabHandle>(null);
   const commandPalette = useCommandPalette();
@@ -109,6 +111,15 @@ function AppContent() {
   }
 
   if (error) {
+    if (initResult?.passphrase_required) {
+      return (
+        <PassphraseUnlockScreen
+          error={error}
+          onUnlock={unlockWithPassphrase}
+        />
+      );
+    }
+
     return (
       <div className="app-error">
         <h1>Initialization Error</h1>
@@ -123,21 +134,36 @@ function AppContent() {
     );
   }
 
-  const activeTabContent = (
-    <main className="app-main">
-      {renderActiveTab({
-        activeTab,
-        draftRef,
-        sourceSearchQuery,
-        pendingQueueView,
-        onSearchQueryConsumed: consumeSourceSearchQuery,
-        onQueueViewConsumed: consumePendingQueueView,
-        onNavigateToSource: handleNavigateToSource,
-        onNavigateToQueue: handleNavigateToQueue,
-        onLoadDraft: handleLoadDraft,
-        revampFlags,
-      })}
-    </main>
+  if (initResult?.passphrase_required) {
+    return (
+      <PassphraseUnlockScreen
+        error={null}
+        onUnlock={unlockWithPassphrase}
+      />
+    );
+  }
+
+  if (initResult?.recovery_issue) {
+    return <RecoveryScreen issue={initResult.recovery_issue} />;
+  }
+
+  const renderedTabContent = renderActiveTab({
+    activeTab,
+    draftRef,
+    sourceSearchQuery,
+    pendingQueueView,
+    onSearchQueryConsumed: consumeSourceSearchQuery,
+    onQueueViewConsumed: consumePendingQueueView,
+    onNavigateToSource: handleNavigateToSource,
+    onNavigateToQueue: handleNavigateToQueue,
+    onLoadDraft: handleLoadDraft,
+    revampFlags,
+  });
+
+  const activeTabContent = revampFlags.ASSISTSUPPORT_REVAMP_APP_SHELL ? (
+    <div className="app-main">{renderedTabContent}</div>
+  ) : (
+    <main className="app-main">{renderedTabContent}</main>
   );
 
   const legacyLayout = (

@@ -14,8 +14,11 @@ pub mod jira_commands;
 pub mod kb_commands;
 pub mod memory_kernel;
 pub mod model_commands;
+pub mod pilot_feedback;
 pub mod search_api;
 pub mod security_commands;
+pub mod startup_commands;
+pub mod vector_runtime;
 
 // Re-export commands from submodules
 pub use backup::{export_backup, export_draft, import_backup, preview_backup_import, ExportFormat};
@@ -29,24 +32,36 @@ pub use memory_kernel::{
     get_memory_kernel_integration_pin, get_memory_kernel_preflight_status, memory_kernel_query_ask,
     MemoryKernelEnrichmentResult, MemoryKernelIntegrationPin, MemoryKernelPreflightStatus,
 };
+pub use pilot_feedback::{
+    export_pilot_data, get_pilot_logging_policy, get_pilot_query_logs, get_pilot_stats,
+    log_pilot_query, submit_pilot_feedback, PilotLoggingPolicy,
+};
 pub use search_api::{
     check_search_api_health, get_search_api_health_status, get_search_api_stats, hybrid_search,
     submit_search_feedback, HybridSearchResponse, SearchApiHealthStatus, SearchApiStatsData,
 };
+pub use startup_commands::{
+    check_keychain_available, initialize_app, unlock_with_passphrase, InitResult,
+};
+pub(crate) use vector_runtime::{
+    ensure_vector_store_initialized, purge_vectors_for_document, purge_vectors_for_namespace,
+    vector_store_requires_rebuild,
+};
 
-use crate::audit::{self, AuditLogger};
-use crate::db::{get_app_data_dir, get_db_path, get_vectors_dir, Database, GenerationQualityEvent};
-use crate::kb::vectors::{VectorStore, VectorStoreConfig};
+use crate::audit::{self};
+use crate::db::{
+    get_app_data_dir, ChunkEmbeddingRecord, CURRENT_VECTOR_STORE_VERSION, GenerationQualityEvent,
+};
+use crate::kb::vectors::VectorMetadata;
 use crate::llm::{GenerationParams, LlmEngine, ModelInfo};
 use crate::model_integrity::{verify_model_integrity, ModelAllowlist, VerificationResult};
 use crate::security::{
-    FileKeyStore, KeyStorageMode, TOKEN_HUGGINGFACE, TOKEN_JIRA, TOKEN_MEMORYKERNEL_SERVICE,
-    TOKEN_SEARCH_API,
+    FileKeyStore, TOKEN_HUGGINGFACE, TOKEN_JIRA, TOKEN_MEMORYKERNEL_SERVICE, TOKEN_SEARCH_API,
 };
 use crate::validation::{
     is_http_url, normalize_and_validate_namespace_id, validate_non_empty, validate_text_size,
-    validate_output_file_within_home, validate_ticket_id, validate_within_home, ValidationError,
-    MAX_QUERY_BYTES, MAX_TEXT_INPUT_BYTES,
+    validate_ticket_id, validate_within_home, ValidationError, MAX_QUERY_BYTES,
+    MAX_TEXT_INPUT_BYTES,
 };
 use crate::AppState;
 use once_cell::sync::Lazy;
@@ -61,58 +76,6 @@ static GENERATION_CANCEL_FLAG: Lazy<Arc<AtomicBool>> =
     Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 const GITHUB_TOKEN_PREFIX: &str = "github_token:";
-
-// Pilot logging is a quality/UX feature that can persist user-entered text.
-// For compliance defaults, we keep it *off unless explicitly enabled*.
-const PILOT_LOGGING_POLICY_ENV: &str = "ASSISTSUPPORT_ENABLE_PILOT_LOGGING";
-const PILOT_RETENTION_DAYS_ENV: &str = "ASSISTSUPPORT_PILOT_RETENTION_DAYS";
-const PILOT_MAX_ROWS_ENV: &str = "ASSISTSUPPORT_PILOT_MAX_ROWS";
-
-fn parse_bool_env(var: &str, default: bool) -> bool {
-    std::env::var(var)
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase())
-        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(default)
-}
-
-fn parse_i64_env(var: &str, default: i64) -> i64 {
-    std::env::var(var)
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .unwrap_or(default)
-}
-
-fn pilot_logging_enabled() -> bool {
-    parse_bool_env(PILOT_LOGGING_POLICY_ENV, false)
-}
-
-fn require_pilot_logging_enabled() -> Result<(), String> {
-    if pilot_logging_enabled() {
-        Ok(())
-    } else {
-        Err(format!(
-            "Pilot logging is disabled by policy. Set {}=1 and restart AssistSupport to enable.",
-            PILOT_LOGGING_POLICY_ENV
-        ))
-    }
-}
-
-#[derive(serde::Serialize, Clone)]
-pub struct PilotLoggingPolicy {
-    pub enabled: bool,
-    pub retention_days: i64,
-    pub max_rows: i64,
-}
-
-#[tauri::command]
-pub fn get_pilot_logging_policy() -> PilotLoggingPolicy {
-    PilotLoggingPolicy {
-        enabled: pilot_logging_enabled(),
-        retention_days: parse_i64_env(PILOT_RETENTION_DAYS_ENV, 14).clamp(1, 365),
-        max_rows: parse_i64_env(PILOT_MAX_ROWS_ENV, 500).clamp(50, 50_000),
-    }
-}
 
 fn normalize_github_host(host: &str) -> Result<String, String> {
     let trimmed = host.trim();
@@ -130,161 +93,6 @@ fn normalize_github_host(host: &str) -> Result<String, String> {
     }
 
     Ok(trimmed.to_lowercase())
-}
-
-/// Initialize the application
-#[tauri::command]
-pub async fn initialize_app(state: State<'_, AppState>) -> Result<InitResult, String> {
-    let init_start = std::time::Instant::now();
-
-    // Run data migration from old path (com.d.assistsupport -> AssistSupport)
-    // This must happen BEFORE any other operations to ensure data is in the right place
-    match crate::migration::migrate_data_directories() {
-        Ok(report) => {
-            if report.migration_performed {
-                tracing::info!(
-                    "Data migration completed: {} items migrated, {} skipped, {} conflicts",
-                    report.migrated.len(),
-                    report.skipped.len(),
-                    report.conflicts.len()
-                );
-                for item in &report.migrated {
-                    tracing::info!("  Migrated: {}", item.name);
-                }
-                for conflict in &report.conflicts {
-                    tracing::warn!("  Conflict: {} - {}", conflict.name, conflict.reason);
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("Data migration failed: {}", e);
-            // Continue anyway - migration failures shouldn't block app startup
-        }
-    }
-
-    // Ensure app data directory exists with secure permissions (0o700)
-    let app_dir = get_app_data_dir();
-    crate::security::create_secure_dir(&app_dir).map_err(|e| e.to_string())?;
-
-    // Initialize audit logger
-    let _ = AuditLogger::init();
-
-    // Check if this is first run (no master key in any storage)
-    // FileKeyStore::get_master_key() handles migration from legacy/Keychain automatically
-    let is_first_run = !FileKeyStore::has_master_key();
-
-    // Get or create master key (handles passphrase mode check internally)
-    let master_key = match FileKeyStore::get_master_key() {
-        Ok(key) => key,
-        Err(crate::security::SecurityError::PassphraseRequired) => {
-            // Passphrase mode - return special result indicating passphrase needed
-            return Ok(InitResult {
-                is_first_run,
-                vector_enabled: false,
-                vector_store_ready: false,
-                key_storage_mode: KeyStorageMode::Passphrase.to_string(),
-                passphrase_required: true,
-            });
-        }
-        Err(e) => return Err(e.to_string()),
-    };
-
-    // Log app initialization
-    audit::audit_app_initialized(is_first_run);
-
-    // Open database
-    let db_path = get_db_path();
-    let db = Database::open(&db_path, &master_key).map_err(|e| e.to_string())?;
-    db.initialize().map_err(|e| e.to_string())?;
-
-    // Seed built-in decision trees on first run
-    db.seed_builtin_trees().map_err(|e| e.to_string())?;
-
-    // Ensure response_templates table exists
-    db.ensure_templates_table().map_err(|e| e.to_string())?;
-
-    // Migrate namespace IDs to canonical normalized form
-    match db.migrate_namespace_ids() {
-        Ok(migrated) => {
-            if !migrated.is_empty() {
-                tracing::info!(
-                    "Namespace ID migration: {} namespaces updated",
-                    migrated.len()
-                );
-                for (old_id, new_id) in &migrated {
-                    tracing::info!("  '{}' -> '{}'", old_id, new_id);
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("Namespace ID migration failed: {}", e);
-            // Continue anyway - this shouldn't block app startup
-        }
-    }
-
-    // Check vector consent from database
-    let vector_enabled = db.get_vector_consent().map(|c| c.enabled).unwrap_or(false);
-
-    // Store in app state - use scope to ensure lock is dropped before async operations
-    {
-        let mut db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        *db_lock = Some(db);
-    } // db_lock dropped here
-
-    // Initialize vector store if consent given
-    let vector_store_ready = if vector_enabled {
-        let vectors_path = get_vectors_dir();
-        let config = VectorStoreConfig {
-            path: vectors_path,
-            embedding_dim: 768, // nomic-embed-text default
-            encryption_enabled: false,
-        };
-
-        let mut vector_store = VectorStore::new(config);
-        match vector_store.init().await {
-            Ok(()) => {
-                // Enable with user consent (already given)
-                let _ = vector_store.enable(true);
-                // Create table if needed
-                let _ = vector_store.create_table().await;
-                *state.vectors.write().await = Some(vector_store);
-                true
-            }
-            Err(e) => {
-                eprintln!(
-                    "Vector store init failed (continuing without vectors): {}",
-                    e
-                );
-                false
-            }
-        }
-    } else {
-        false
-    };
-
-    // Record startup metrics
-    let init_app_ms = init_start.elapsed().as_millis() as i64;
-    {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        if let Some(db) = db_lock.as_ref() {
-            let _ = db.record_startup_metric(
-                &chrono::Utc::now().to_rfc3339(),
-                None,
-                Some(init_app_ms),
-                Some(init_app_ms),
-                false,
-            );
-        }
-    }
-    tracing::info!("App initialized in {}ms", init_app_ms);
-
-    Ok(InitResult {
-        is_first_run,
-        vector_enabled,
-        vector_store_ready,
-        key_storage_mode: KeyStorageMode::Keychain.to_string(),
-        passphrase_required: false,
-    })
 }
 
 /// Verify FTS5 is available (release gate command)
@@ -323,13 +131,6 @@ pub fn set_vector_consent(
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.set_vector_consent(enabled, encryption_supported)
         .map_err(|e| e.to_string())
-}
-
-/// Check if credential storage is available
-/// (Always true now that we use file-based storage)
-#[tauri::command]
-pub fn check_keychain_available() -> bool {
-    true // File-based storage is always available
 }
 
 /// Search options for advanced search tuning
@@ -480,16 +281,6 @@ pub fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-/// Initialization result
-#[derive(serde::Serialize)]
-pub struct InitResult {
-    pub is_first_run: bool,
-    pub vector_enabled: bool,
-    pub vector_store_ready: bool,
-    pub key_storage_mode: String,
-    pub passphrase_required: bool,
-}
-
 // ============================================================================
 // LLM Commands
 // ============================================================================
@@ -500,7 +291,8 @@ pub fn init_llm_engine(state: State<'_, AppState>) -> Result<(), String> {
     if state.llm.read().is_some() {
         return Ok(());
     }
-    let engine = LlmEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
+    let backend = state.llama_backend()?;
+    let engine = LlmEngine::new(backend).map_err(|e| e.to_string())?;
     *state.llm.write() = Some(engine);
     Ok(())
 }
@@ -2423,8 +2215,11 @@ pub struct KbDocumentInfo {
 
 /// Remove a document from the KB index
 #[tauri::command]
-pub fn remove_kb_document(file_path: String, state: State<'_, AppState>) -> Result<bool, String> {
-    kb_commands::remove_kb_document_impl(file_path, state)
+pub async fn remove_kb_document(
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    kb_commands::remove_kb_document_impl(file_path, state).await
 }
 
 /// Start watching KB folder for changes
@@ -2448,25 +2243,25 @@ pub fn is_kb_watcher_running() -> Result<bool, String> {
     kb_commands::is_kb_watcher_running_impl()
 }
 
-/// Generate embeddings for all KB chunks
-/// This should be called after indexing if vector search is enabled
-#[tauri::command]
-pub async fn generate_kb_embeddings(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
+pub(super) async fn generate_kb_embeddings_internal(
+    state: &AppState,
+    app_handle: &tauri::AppHandle,
+    reset_table: bool,
 ) -> Result<EmbeddingGenerationResult, String> {
-    // Check if vector search is enabled and embedding model is loaded
+    let consent_enabled = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.get_vector_consent()
+            .map_err(|e| e.to_string())?
+            .enabled
+    };
+
+    if !consent_enabled {
+        return Err("Vector search is disabled".into());
+    }
+
     {
-        let vectors_lock = state.vectors.read().await;
         let embeddings_lock = state.embeddings.read();
-
-        let vectors = vectors_lock
-            .as_ref()
-            .ok_or("Vector store not initialized")?;
-        if !vectors.is_enabled() {
-            return Err("Vector search is disabled".into());
-        }
-
         let embeddings = embeddings_lock
             .as_ref()
             .ok_or("Embedding engine not initialized")?;
@@ -2475,15 +2270,65 @@ pub async fn generate_kb_embeddings(
         }
     }
 
-    // Get all chunks from database
-    let chunks: Vec<(String, String)> = {
+    ensure_vector_store_initialized(state).await?;
+
+    let chunks: Vec<ChunkEmbeddingRecord> = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
         db.get_all_chunks_for_embedding()
             .map_err(|e| e.to_string())?
     };
 
+    let requires_rebuild = {
+        let tracked_vector_version = {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.get_vector_store_version().map_err(|e| e.to_string())?
+        };
+        let vectors_lock = state.vectors.read().await;
+        let store = vectors_lock
+            .as_ref()
+            .ok_or("Vector store not initialized")?;
+        vector_store_requires_rebuild(tracked_vector_version, store).await?
+    };
+
+    if reset_table || requires_rebuild {
+        {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.set_vector_store_version(0).map_err(|e| e.to_string())?;
+        }
+
+        let mut vectors_lock = state.vectors.write().await;
+        let store = vectors_lock
+            .as_mut()
+            .ok_or("Vector store not initialized")?;
+        store.disable();
+        store.reset_table().await.map_err(|e| e.to_string())?;
+    }
+
     if chunks.is_empty() {
+        {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.set_vector_store_version(CURRENT_VECTOR_STORE_VERSION)
+                .map_err(|e| e.to_string())?;
+        }
+
+        let mut vectors_lock = state.vectors.write().await;
+        if let Some(store) = vectors_lock.as_mut() {
+            store.enable(true).map_err(|e| e.to_string())?;
+        }
+
+        let _ = app_handle.emit(
+            "kb:embeddings:complete",
+            serde_json::json!({
+                "vectors_created": 0
+            }),
+        );
+
+        audit::audit_vector_store_rebuilt("0 chunks");
+
         return Ok(EmbeddingGenerationResult {
             chunks_processed: 0,
             vectors_created: 0,
@@ -2491,10 +2336,9 @@ pub async fn generate_kb_embeddings(
     }
 
     let total_chunks = chunks.len();
-    let batch_size = 32; // Process in batches for efficiency
+    let batch_size = 32;
     let mut vectors_created = 0;
 
-    // Emit start event
     let _ = app_handle.emit(
         "kb:embeddings:start",
         serde_json::json!({
@@ -2502,12 +2346,17 @@ pub async fn generate_kb_embeddings(
         }),
     );
 
-    // Process chunks in batches
     for (batch_idx, batch) in chunks.chunks(batch_size).enumerate() {
-        let chunk_ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
-        let chunk_texts: Vec<String> = batch.iter().map(|(_, text)| text.clone()).collect();
+        let chunk_ids: Vec<String> = batch.iter().map(|chunk| chunk.chunk_id.clone()).collect();
+        let chunk_texts: Vec<String> = batch.iter().map(|chunk| chunk.content.clone()).collect();
+        let metadata: Vec<VectorMetadata> = batch
+            .iter()
+            .map(|chunk| VectorMetadata {
+                namespace_id: chunk.namespace_id.clone(),
+                document_id: chunk.document_id.clone(),
+            })
+            .collect();
 
-        // Generate embeddings (sync operation)
         let embeddings: Vec<Vec<f32>> = {
             let embeddings_lock = state.embeddings.read();
             let engine = embeddings_lock
@@ -2518,19 +2367,17 @@ pub async fn generate_kb_embeddings(
                 .map_err(|e| e.to_string())?
         };
 
-        // Store in vector store (async operation)
         {
             let vectors_lock = state.vectors.read().await;
             let vectors = vectors_lock.as_ref().ok_or("Vector store not available")?;
             vectors
-                .insert_embeddings(&chunk_ids, &embeddings)
+                .insert_embeddings_with_metadata(&chunk_ids, &embeddings, &metadata)
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
         vectors_created += embeddings.len();
 
-        // Emit progress event
         let progress = ((batch_idx + 1) * batch_size).min(total_chunks);
         let _ = app_handle.emit(
             "kb:embeddings:progress",
@@ -2542,7 +2389,20 @@ pub async fn generate_kb_embeddings(
         );
     }
 
-    // Emit complete event
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.set_vector_store_version(CURRENT_VECTOR_STORE_VERSION)
+            .map_err(|e| e.to_string())?;
+    }
+
+    {
+        let mut vectors_lock = state.vectors.write().await;
+        if let Some(store) = vectors_lock.as_mut() {
+            store.enable(true).map_err(|e| e.to_string())?;
+        }
+    }
+
     let _ = app_handle.emit(
         "kb:embeddings:complete",
         serde_json::json!({
@@ -2550,10 +2410,25 @@ pub async fn generate_kb_embeddings(
         }),
     );
 
+    audit::audit_vector_store_rebuilt(&format!(
+        "{} chunks / {} vectors",
+        total_chunks, vectors_created
+    ));
+
     Ok(EmbeddingGenerationResult {
         chunks_processed: total_chunks,
         vectors_created,
     })
+}
+
+/// Generate embeddings for all KB chunks
+/// This should be called after indexing if vector search is enabled
+#[tauri::command]
+pub async fn generate_kb_embeddings(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<EmbeddingGenerationResult, String> {
+    generate_kb_embeddings_internal(state.inner(), &app_handle, true).await
 }
 
 /// Result of embedding generation
@@ -2576,7 +2451,8 @@ pub fn init_embedding_engine(state: State<'_, AppState>) -> Result<(), String> {
     if state.embeddings.read().is_some() {
         return Ok(());
     }
-    let engine = EmbeddingEngine::new(state.backend.clone()).map_err(|e| e.to_string())?;
+    let backend = state.llama_backend()?;
+    let engine = EmbeddingEngine::new(backend).map_err(|e| e.to_string())?;
     *state.embeddings.write() = Some(engine);
     Ok(())
 }
@@ -2687,50 +2563,61 @@ pub fn is_embedding_model_loaded(state: State<'_, AppState>) -> Result<bool, Str
 /// Initialize the vector store
 #[tauri::command]
 pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String> {
-    let app_dir = get_app_data_dir();
-    let vectors_path = app_dir.join("vectors");
+    ensure_vector_store_initialized(state.inner()).await?;
 
-    // Get embedding dimension from loaded model, or use default
-    let embedding_dim = {
-        let emb_guard = state.embeddings.read();
-        emb_guard
+    let ready = {
+        let tracked_vector_version = {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.get_vector_store_version().map_err(|e| e.to_string())?
+        };
+        let vectors_lock = state.vectors.read().await;
+        let store = vectors_lock
             .as_ref()
-            .and_then(|e| e.embedding_dim())
-            .unwrap_or(768)
+            .ok_or("Vector store not initialized")?;
+        !vector_store_requires_rebuild(tracked_vector_version, store).await?
     };
 
-    let config = VectorStoreConfig {
-        path: vectors_path,
-        embedding_dim,
-        encryption_enabled: false,
-    };
+    if ready {
+        let consented = {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.get_vector_consent()
+                .map_err(|e| e.to_string())?
+                .enabled
+        };
 
-    let mut store = VectorStore::new(config);
-    store.init().await.map_err(|e| e.to_string())?;
-    store.create_table().await.map_err(|e| e.to_string())?;
-
-    // Check if user has consented to vector search
-    let consented = {
-        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-        if let Some(db) = db_lock.as_ref() {
-            db.get_vector_consent().map(|c| c.enabled).unwrap_or(false)
-        } else {
-            false
+        if consented {
+            let mut vectors_lock = state.vectors.write().await;
+            if let Some(store) = vectors_lock.as_mut() {
+                store.enable(true).map_err(|e| e.to_string())?;
+            }
         }
-    };
-
-    // Enable if user has consented
-    if consented {
-        store.enable(true).map_err(|e| e.to_string())?;
     }
 
-    *state.vectors.write().await = Some(store);
     Ok(())
 }
 
 /// Enable or disable vector search
 #[tauri::command]
 pub async fn set_vector_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    ensure_vector_store_initialized(state.inner()).await?;
+
+    if enabled {
+        let tracked_vector_version = {
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            db.get_vector_store_version().map_err(|e| e.to_string())?
+        };
+        let vectors_lock = state.vectors.read().await;
+        let store = vectors_lock
+            .as_ref()
+            .ok_or("Vector store not initialized")?;
+        if vector_store_requires_rebuild(tracked_vector_version, store).await? {
+            return Err("Vector store requires rebuild before it can be enabled".into());
+        }
+    }
+
     let mut vectors_lock = state.vectors.write().await;
     let store = vectors_lock
         .as_mut()
@@ -4034,7 +3921,9 @@ pub fn rename_namespace(
 
 /// Delete a namespace and all its content
 #[tauri::command]
-pub fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn delete_namespace(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    purge_vectors_for_namespace(state.inner(), &name).await?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
     db.delete_namespace(&name).map_err(|e| e.to_string())
@@ -4276,10 +4165,14 @@ pub struct DocumentChunk {
 
 /// Delete a specific document
 #[tauri::command]
-pub fn delete_kb_document(state: State<'_, AppState>, document_id: String) -> Result<(), String> {
+pub async fn delete_kb_document(
+    state: State<'_, AppState>,
+    document_id: String,
+) -> Result<(), String> {
+    purge_vectors_for_document(state.inner(), &document_id).await?;
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
     db.conn()
         .execute("DELETE FROM kb_documents WHERE id = ?", [&document_id])
         .map_err(|e| e.to_string())?;
@@ -4289,7 +4182,7 @@ pub fn delete_kb_document(state: State<'_, AppState>, document_id: String) -> Re
 
 /// Clear all knowledge data, optionally for a specific namespace
 #[tauri::command]
-pub fn clear_knowledge_data(
+pub async fn clear_knowledge_data(
     state: State<'_, AppState>,
     namespace_id: Option<String>,
 ) -> Result<(), String> {
@@ -4299,11 +4192,12 @@ pub fn clear_knowledge_data(
         .transpose()
         .map_err(|e| e.to_string())?;
 
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
     match namespace_id {
         Some(ns) => {
+            purge_vectors_for_namespace(state.inner(), &ns).await?;
+
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
             // Clear only the specified namespace
             db.conn()
                 .execute("DELETE FROM kb_documents WHERE namespace_id = ?", [&ns])
@@ -4313,6 +4207,16 @@ pub fn clear_knowledge_data(
                 .map_err(|e| e.to_string())?;
         }
         None => {
+            ensure_vector_store_initialized(state.inner()).await?;
+            {
+                let mut vectors_lock = state.vectors.write().await;
+                if let Some(store) = vectors_lock.as_mut() {
+                    store.reset_table().await.map_err(|e| e.to_string())?;
+                }
+            }
+
+            let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+            let db = db_lock.as_ref().ok_or("Database not initialized")?;
             // Clear all knowledge data
             db.conn()
                 .execute("DELETE FROM kb_chunks", [])
@@ -4325,6 +4229,8 @@ pub fn clear_knowledge_data(
                 .map_err(|e| e.to_string())?;
             db.conn()
                 .execute("DELETE FROM ingest_sources", [])
+                .map_err(|e| e.to_string())?;
+            db.set_vector_store_version(CURRENT_VECTOR_STORE_VERSION)
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -6144,96 +6050,4 @@ pub struct StartupMetricsResult {
     pub total_ms: i64,
     pub init_app_ms: i64,
     pub models_cached: bool,
-}
-
-// ── Pilot Feedback commands ─────────────────────────────────────────────
-
-/// Log a query and its response for pilot tracking
-#[tauri::command]
-pub fn log_pilot_query(
-    state: State<'_, AppState>,
-    query: String,
-    response: String,
-    operator_id: String,
-) -> Result<String, String> {
-    require_pilot_logging_enabled()?;
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::log_query(db, &query, &response, &operator_id)
-}
-
-/// Submit user feedback on a pilot query response
-#[tauri::command]
-pub fn submit_pilot_feedback(
-    state: State<'_, AppState>,
-    query_log_id: String,
-    operator_id: String,
-    accuracy: i32,
-    clarity: i32,
-    helpfulness: i32,
-    comment: Option<String>,
-) -> Result<String, String> {
-    require_pilot_logging_enabled()?;
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::submit_feedback(
-        db,
-        &query_log_id,
-        &operator_id,
-        accuracy,
-        clarity,
-        helpfulness,
-        comment.as_deref(),
-    )
-}
-
-/// Get pilot dashboard summary stats
-#[tauri::command]
-pub fn get_pilot_stats(state: State<'_, AppState>) -> Result<crate::feedback::PilotStats, String> {
-    require_pilot_logging_enabled()?;
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::get_pilot_stats(db)
-}
-
-/// Get all pilot query logs
-#[tauri::command]
-pub fn get_pilot_query_logs(
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::feedback::QueryLog>, String> {
-    require_pilot_logging_enabled()?;
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::get_query_logs(db)
-}
-
-/// Export pilot data to CSV
-#[tauri::command]
-pub fn export_pilot_data(state: State<'_, AppState>, path: String) -> Result<usize, String> {
-    use std::path::Path;
-
-    require_pilot_logging_enabled()?;
-
-    let candidate = Path::new(&path);
-    let ext = candidate
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if ext != "csv" {
-        return Err("Export path must be a .csv file".into());
-    }
-
-    let validated_path = validate_output_file_within_home(candidate).map_err(|e| match e {
-        ValidationError::PathTraversal => "Export path must be within your home directory".into(),
-        ValidationError::PathNotFound(_) => "Export parent directory does not exist".into(),
-        ValidationError::InvalidFormat(msg) if msg.contains("sensitive") => {
-            "This export path is blocked because it contains sensitive data".into()
-        }
-        _ => format!("Invalid export path: {}", e),
-    })?;
-
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    crate::feedback::export::export_to_csv(db, validated_path.as_path())
 }

@@ -1,15 +1,17 @@
 # AssistSupport
 
-**ML-Powered Semantic Search for IT Support — Fully Local, Fully Encrypted, Zero Cloud**
+**ML-Powered Semantic Search for IT Support — Local-First, Encrypted Core Data, Zero Cloud**
 
 ![Version](https://img.shields.io/badge/version-1.0.0-10a37f)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Tests](https://img.shields.io/badge/tests-gated-blue)
 ![Coverage](https://img.shields.io/badge/coverage-enforced-blue)
-[![Compliance](https://img.shields.io/badge/compliance-HIPAA%20%7C%20GDPR%20%7C%20FISMA%20%7C%20SOC2%20%7C%20ISO%2027001-blue)](#security-and-compliance)
+[![Security](https://img.shields.io/badge/security-local--first-blue)](#security-and-privacy)
 
-AssistSupport combines local LLM inference with an ML-powered hybrid search pipeline to generate accurate, KB-informed IT support responses. An ML intent classifier understands query meaning, a cross-encoder reranker sharpens relevance, and a feedback loop continuously improves results — all running on your machine with no data leaving your network.
+AssistSupport combines local LLM inference with an ML-powered hybrid search pipeline to generate accurate, KB-informed IT support responses. An ML intent classifier understands query meaning, a cross-encoder reranker sharpens relevance, and a feedback loop continuously improves results while keeping the core app and search stack on your machine.
+
+Core workspace data is encrypted locally. Optional vector-search embeddings are stored locally as well, but they are not currently encrypted at rest when vector search is enabled.
 
 ```
 User asks:    "Can I use a flash drive?"
@@ -28,9 +30,9 @@ You copy:     Paste into Jira — done in under a minute
 |----------|---------|
 | **ML-Powered Search** | TF-IDF + Logistic Regression intent classifier (85.7% accuracy), cross-encoder reranker (ms-marco-MiniLM-L-6-v2), adaptive score fusion |
 | **Sub-25ms Latency** | p50: 8ms, p95: 82ms, avg: 21ms across 3,536 articles — 6x faster than target |
-| **Fully Offline** | All AI inference, search, and encryption run locally. Zero cloud dependencies. No telemetry |
-| **Military-Grade Encryption** | AES-256-CBC (database), AES-256-GCM (tokens), Argon2id key derivation, macOS Keychain integration |
-| **Compliance Validated** | Assessed against HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, NIST SP 800-53 |
+| **Local-First Runtime** | The app, search sidecar, and model inference run on the local machine. No cloud dependency is required for the core workflow |
+| **Encrypted Core Data** | The main local database and stored secrets are protected locally with wrapped keys and encrypted-at-rest storage for the primary SQLite workspace |
+| **Security Review in Progress** | The repo includes hardening gates, dependency audits, and local-only guardrails, but formal compliance validation is not currently claimed |
 | **Trust-Gated Responses** | Confidence modes (answer/clarify/abstain), claim grounding map, citation-aware copy safety for low-confidence output |
 | **Self-Improving** | Feedback loop + KB gap detector surfaces repeated low-confidence/low-rating topics and tracks remediation |
 | **Ops-Ready** | Built-in Operations workspace for deployment preflight/rollback, eval harness runs, triage clustering, and runbook sessions |
@@ -136,7 +138,7 @@ User Question: "Can I work from home?"
 
 ## Quick Start
 
-Operational runbooks were removed in the size-optimized profile of this repository.
+Key operator runbooks now live in `docs/runbooks/` for safe mode recovery, vector rebuilds, search-api startup, and dependency advisory handling.
 
 ### Prerequisites
 
@@ -225,7 +227,7 @@ ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_S
 
 ### First Run
 
-1. **Key Storage** — Choose Keychain (recommended) or passphrase mode
+1. **Key Storage** — New workspaces use the keychain-backed default path; existing passphrase-protected workspaces unlock through the dedicated recovery/startup flow
 2. **Model Selection** — Pick an LLM model (Llama 3.2 3B recommended)
 3. **Knowledge Base** — Point to your team's documentation folder
 4. **Generate** — Type a ticket summary, search your KB, get a draft response
@@ -292,9 +294,9 @@ ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_S
 
 ### Security & Privacy
 - **Fully local** — all processing on your machine, zero cloud dependencies, no telemetry
-- **AES-256-CBC database encryption** via SQLCipher with 0600 file permissions
-- **AES-256-GCM token encryption** for stored credentials (Jira, HuggingFace, GitHub)
-- **macOS Keychain** or Argon2id passphrase-wrapped key storage (64 MiB memory, 3 iterations)
+- **Encrypted core database** via SQLCipher with 0600 file permissions
+- **Encrypted stored tokens** for local credentials (Jira, HuggingFace, GitHub)
+- **Keychain-backed local key storage** for the primary setup path, with dedicated passphrase unlock support for existing protected workspaces
 - **Model integrity** — SHA-256 verification with built-in allowlist; custom models flagged as unverified
 - **SSRF protection** — private IP blocking, IPv6-mapped IPv4 detection, cloud metadata endpoint blocking, DNS pinning
 - **Path traversal protection** — home directory restriction, symlink skipping, sensitive directory blocking (.ssh, .gnupg, Keychains)
@@ -302,7 +304,8 @@ ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_S
 - **Audit logging** — JSON-line format, thread-safe, 5 MB rotation, covers key generation/rotation, token ops, HTTP opt-in, path failures
 - **Filter injection prevention** — Unicode NFC normalization, SQL keyword detection
 - **Content Security Policy** — strict CSP headers for XSS prevention
-- **Compliance alignment** targets HIPAA, GDPR, FISMA, SOC2, ISO 27001, PCI DSS, and NIST SP 800-53
+- **Vector-search note** — optional local embeddings improve semantic search, but that vector store is not currently encrypted at rest when enabled
+- **Compliance posture** — the project is security-minded and local-first, but it does not currently claim formal HIPAA, GDPR, FISMA, SOC2, ISO 27001, or PCI DSS validation
 
 ### Productivity
 - Command palette (Cmd+K) and full keyboard-first workflow (30+ shortcuts)
@@ -324,7 +327,7 @@ ENVIRONMENT=production ASSISTSUPPORT_API_KEY=test-key ASSISTSUPPORT_RATE_LIMIT_S
 | **Intent Detection** | ML classifier (85.7%) | No | No |
 | **Reranking** | Cross-encoder | No | No |
 | **Self-Improving** | Feedback loop | No | No |
-| **HIPAA Compliant** | Yes | No | Depends on plan |
+| **Formal compliance validation** | Not currently claimed | No | Depends on plan |
 | **IT-Specific** | Yes — built for support | Generic | Generic AI add-on |
 | **Encryption** | AES-256 + Argon2id | Provider-managed | Provider-managed |
 | **Cost** | Free (MIT) | $0.001-0.003/token | $50-500+/month |

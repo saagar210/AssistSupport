@@ -14,11 +14,36 @@ const diff = execSync(`git diff --name-only ${baseRef}...HEAD`, { encoding: 'utf
   .map((line) => line.trim())
   .filter(Boolean);
 
-const isProdCode = (file) => /^(src|app|server|api)\//.test(file) && !/\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
-const isTest = (file) => /^tests\//.test(file) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
-const isDoc = (file) => /^docs\//.test(file) || /^openapi\//.test(file) || file === 'README.md';
-const isApiSurface = (file) => /^(src|app|server|api)\/.*(route|controller|handler|webhook|api|command)/.test(file);
-const isArchChange = (file) => /^src\/(auth|db|infra|queue|events|architecture)\//.test(file) || /^infra\//.test(file);
+const isJsTest = (file) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
+const isRustTest = (file) => /^src-tauri\/tests\//.test(file);
+const isPythonTest = (file) => /^search-api\/tests\//.test(file) || /^search-api\/test_.*\.py$/.test(file);
+
+const isProdCode = (file) =>
+  ((/^(src|app|server|api)\//.test(file) && !isJsTest(file)) ||
+    /^src-tauri\/src\//.test(file) ||
+    (/^search-api\//.test(file) &&
+      !/^search-api\/tests\//.test(file) &&
+      !/^search-api\/README\.md$/.test(file)));
+
+const isTest = (file) =>
+  /^tests\//.test(file) || isJsTest(file) || isRustTest(file) || isPythonTest(file);
+
+const isDoc = (file) =>
+  /^docs\//.test(file) ||
+  /^openapi\//.test(file) ||
+  file === 'README.md' ||
+  file === 'search-api/README.md';
+
+const isApiSurface = (file) =>
+  /^(src|app|server|api)\/.*(route|controller|handler|webhook|api|command)/.test(file) ||
+  /^src-tauri\/src\/commands\//.test(file) ||
+  /^search-api\/(search_api|wsgi)\.py$/.test(file);
+
+const isArchChange = (file) =>
+  /^src\/(auth|db|infra|queue|events|architecture)\//.test(file) ||
+  /^src-tauri\/src\/(db|kb|commands|backup|migration)\//.test(file) ||
+  /^search-api\/(db_config|hybrid_search|search_api|wsgi)\.py$/.test(file) ||
+  /^infra\//.test(file);
 const isAdr = (file) => /^docs\/adr\/\d{4}-.*\.md$/.test(file);
 
 const prodChanged = diff.some(isProdCode);

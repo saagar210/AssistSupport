@@ -83,7 +83,6 @@
 .timeline-item-current .timeline-content {
   background: var(--accent-light);
   border: 1px solid var(--accent-primary);
-  border-opacity: 0.2;
 }
 
 /* Timeline metadata */

@@ -10,27 +10,44 @@ if str(SEARCH_API_DIR) not in sys.path:
     sys.path.insert(0, str(SEARCH_API_DIR))
 
 
+ORIGINAL_HYBRID_SEARCH = sys.modules.get("hybrid_search")
+ORIGINAL_INTENT_DETECTION = sys.modules.get("intent_detection")
+
+
 # Stub heavy modules before importing the Flask app module.
-if "hybrid_search" not in sys.modules:
-    hybrid_search_stub = types.ModuleType("hybrid_search")
+hybrid_search_stub = types.ModuleType("hybrid_search")
 
-    class _PlaceholderHybridSearchEngine:
-        pass
 
-    hybrid_search_stub.HybridSearchEngine = _PlaceholderHybridSearchEngine
-    sys.modules["hybrid_search"] = hybrid_search_stub
+class _PlaceholderHybridSearchEngine:
+    pass
 
-if "intent_detection" not in sys.modules:
-    intent_detection_stub = types.ModuleType("intent_detection")
 
-    class _PlaceholderIntentDetector:
-        pass
+hybrid_search_stub.HybridSearchEngine = _PlaceholderHybridSearchEngine
+sys.modules["hybrid_search"] = hybrid_search_stub
 
-    intent_detection_stub.IntentDetector = _PlaceholderIntentDetector
-    sys.modules["intent_detection"] = intent_detection_stub
+intent_detection_stub = types.ModuleType("intent_detection")
+
+
+class _PlaceholderIntentDetector:
+    pass
+
+
+intent_detection_stub.IntentDetector = _PlaceholderIntentDetector
+sys.modules["intent_detection"] = intent_detection_stub
 
 import search_api  # noqa: E402
 from runtime_config import RuntimeConfigError  # noqa: E402
+
+
+if ORIGINAL_HYBRID_SEARCH is not None:
+    sys.modules["hybrid_search"] = ORIGINAL_HYBRID_SEARCH
+else:
+    sys.modules.pop("hybrid_search", None)
+
+if ORIGINAL_INTENT_DETECTION is not None:
+    sys.modules["intent_detection"] = ORIGINAL_INTENT_DETECTION
+else:
+    sys.modules.pop("intent_detection", None)
 
 
 class FakeEngine:
@@ -90,6 +107,12 @@ class FakeEngine:
             "feedback_stats": {"helpful": 2, "incorrect": 1},
         }
 
+    def get_component_status(self):
+        return {
+            "embedder": {"status": "ok", "model_name": "fake-embedder", "dimension": 2},
+            "reranker": {"status": "ok", "model_name": "fake-reranker"},
+        }
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -109,6 +132,91 @@ def test_health_endpoint(client):
     body = response.get_json()
     assert body["status"] == "ok"
     assert "timestamp" in body
+
+
+def test_ready_endpoint_reports_ready(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(search_api, "_check_runtime_config", lambda: {"status": "ok"})
+    monkeypatch.setattr(search_api, "_check_database", lambda: {"status": "ok"})
+    monkeypatch.setattr(
+        search_api,
+        "_check_rate_limit_backend",
+        lambda: {"status": "ok", "backend": "memory"},
+    )
+    monkeypatch.setattr(
+        search_api,
+        "_check_model_components",
+        lambda: {
+            "status": "ok",
+            "details": {
+                "embedder": {"status": "ok"},
+                "reranker": {"status": "ok"},
+            },
+        },
+    )
+
+    response = test_client.get("/ready")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"]["status"] == "ok"
+    assert body["checks"]["rate_limit_backend"]["status"] == "ok"
+    assert body["checks"]["models"]["status"] == "ok"
+
+
+def test_ready_endpoint_reports_degraded_dependencies(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(
+        search_api,
+        "_check_runtime_config",
+        lambda: {"status": "error", "errors": ["default API key configured"]},
+    )
+    monkeypatch.setattr(
+        search_api,
+        "_check_database",
+        lambda: {"status": "error", "error": "db unavailable"},
+    )
+    monkeypatch.setattr(
+        search_api,
+        "_check_rate_limit_backend",
+        lambda: {"status": "error", "backend": "redis", "error": "redis unavailable"},
+    )
+    monkeypatch.setattr(
+        search_api,
+        "_check_model_components",
+        lambda: {"status": "error", "error": "embedder unavailable"},
+    )
+
+    response = test_client.get("/ready")
+    assert response.status_code == 503
+    body = response.get_json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["runtime_config"]["status"] == "error"
+    assert body["checks"]["database"]["status"] == "error"
+    assert body["checks"]["rate_limit_backend"]["status"] == "error"
+    assert body["checks"]["models"]["status"] == "error"
+
+
+def test_ready_endpoint_does_not_require_auth(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(search_api, "AUTH_REQUIRED", True)
+    monkeypatch.setattr(search_api, "API_KEY", "secret-key")
+    monkeypatch.setattr(search_api, "_check_runtime_config", lambda: {"status": "ok"})
+    monkeypatch.setattr(search_api, "_check_database", lambda: {"status": "ok"})
+    monkeypatch.setattr(
+        search_api,
+        "_check_rate_limit_backend",
+        lambda: {"status": "ok", "backend": "memory"},
+    )
+    monkeypatch.setattr(
+        search_api,
+        "_check_model_components",
+        lambda: {"status": "ok", "details": {}},
+    )
+
+    response = test_client.get("/ready")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
 
 
 def test_search_happy_path_with_scores(client, monkeypatch):
@@ -216,6 +324,9 @@ def test_stats_and_not_found_endpoints(client):
     assert not_found.status_code == 404
     assert not_found.get_json()["error"] == "Endpoint not found"
 
+    removed_config = test_client.get("/config")
+    assert removed_config.status_code == 404
+
 
 def test_authentication_checks_apply_in_production(client, monkeypatch):
     test_client, _ = client
@@ -290,4 +401,13 @@ def test_run_server_rejects_default_rate_limit_storage_in_production(monkeypatch
     monkeypatch.setenv("ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI", "memory://")
 
     with pytest.raises(RuntimeConfigError, match="ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI"):
+        search_api.run_server()
+
+
+def test_run_server_requires_wsgi_in_production(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ASSISTSUPPORT_API_KEY", "secret-key")
+    monkeypatch.setenv("ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI", "redis://127.0.0.1:6379/0")
+
+    with pytest.raises(RuntimeConfigError, match="WSGI entrypoint"):
         search_api.run_server()

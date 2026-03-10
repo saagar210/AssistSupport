@@ -6,6 +6,16 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "dialog:default"
+    "dialog:default",
+    "startup-core",
+    "diagnostics-and-recovery",
+    "vector-and-model-runtime",
+    "knowledge-base",
+    "drafts-and-templates",
+    "customization-and-workspace",
+    "integrations-and-secrets",
+    "search-sidecar",
+    "jobs-and-evals",
+    "operations-and-analytics"
   ]
 }

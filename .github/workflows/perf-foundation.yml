@@ -12,10 +12,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -35,10 +35,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -57,10 +57,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -82,10 +82,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -106,9 +106,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: grafana/setup-k6-action@ffe7d7290dfa715e48c2ccc924d068444c94bde2
-      - run: k6 run tests/perf/api.k6.js --summary-export=.perf-results/api-summary.json
+      - run: pnpm perf:api
         env:
           BASE_URL: ${{ vars.PERF_BASE_URL }}
+          AUTH_TOKEN: ${{ secrets.PERF_API_KEY }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -125,4 +126,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - run: psql "${{ vars.PERF_DATABASE_URL }}" -f scripts/perf/db/check-pg-stat.sql
+      - run: pnpm perf:db
+        env:
+          DATABASE_URL: ${{ vars.PERF_DATABASE_URL }}

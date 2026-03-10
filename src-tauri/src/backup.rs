@@ -9,9 +9,10 @@ use crate::db::{CustomVariable, Database, DecisionTree, ResponseTemplate, SavedD
 use crate::security::ExportCrypto;
 use crate::validation::validate_within_home;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
@@ -21,6 +22,7 @@ const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES: u64 = 500 * 1024 * 1024; // 500MB
 const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES: u64 = 100 * 1024 * 1024; // 100MB
 const MAX_ZIP_JSON_ENTRY_BYTES: u64 = 20 * 1024 * 1024; // 20MB per JSON file
+const MAX_BACKUP_FILE_BYTES: u64 = 512 * 1024 * 1024; // 512MB on-disk input cap
 
 /// Current backup format version
 const BACKUP_VERSION: &str = "1";
@@ -92,6 +94,10 @@ pub struct EncryptedBackupHeader {
     pub version: String,
     pub salt: [u8; 32],
     pub nonce: [u8; 12],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plaintext_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ciphertext_size: Option<u64>,
 }
 
 const ENCRYPTED_MAGIC: &str = "ASSISTSUPPORT_ENCRYPTED_BACKUP";
@@ -206,6 +212,8 @@ pub fn export_backup(
             version: BACKUP_VERSION.to_string(),
             salt,
             nonce,
+            plaintext_size: Some(zip_buffer.len() as u64),
+            ciphertext_size: Some(ciphertext.len() as u64),
         };
         let header_json = serde_json::to_vec(&header)?;
         let header_len = (header_json.len() as u32).to_le_bytes();
@@ -259,6 +267,7 @@ fn is_encrypted_backup(path: &Path) -> Result<Option<EncryptedBackupHeader>, Bac
 
 /// Decrypt an encrypted backup file and return the ZIP data
 fn decrypt_backup(path: &Path, password: &str) -> Result<Vec<u8>, BackupError> {
+    validate_backup_file_size(path)?;
     let mut file = File::open(path)?;
 
     // Read header length
@@ -275,63 +284,75 @@ fn decrypt_backup(path: &Path, password: &str) -> Result<Vec<u8>, BackupError> {
         return Err(BackupError::InvalidBackup("Not an encrypted backup".into()));
     }
 
+    if let Some(plaintext_size) = header.plaintext_size {
+        if plaintext_size > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES {
+            return Err(BackupError::InvalidBackup(format!(
+                "Encrypted backup payload too large: {} bytes (max {} bytes)",
+                plaintext_size, MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES
+            )));
+        }
+    }
+
     // Read ciphertext
+    let ciphertext_len = file.metadata()?.len().saturating_sub(4 + header_len as u64);
+    if ciphertext_len > MAX_BACKUP_FILE_BYTES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Encrypted backup file too large: {} bytes (max {} bytes)",
+            ciphertext_len, MAX_BACKUP_FILE_BYTES
+        )));
+    }
+    if let Some(expected_ciphertext_size) = header.ciphertext_size {
+        if expected_ciphertext_size > MAX_BACKUP_FILE_BYTES {
+            return Err(BackupError::InvalidBackup(format!(
+                "Encrypted backup ciphertext too large: {} bytes (max {} bytes)",
+                expected_ciphertext_size, MAX_BACKUP_FILE_BYTES
+            )));
+        }
+        if expected_ciphertext_size != ciphertext_len {
+            return Err(BackupError::InvalidBackup(format!(
+                "Encrypted backup size mismatch: header={} bytes, file={} bytes",
+                expected_ciphertext_size, ciphertext_len
+            )));
+        }
+    }
+
     let mut ciphertext = Vec::new();
     file.read_to_end(&mut ciphertext)?;
 
     // Decrypt
-    ExportCrypto::decrypt_export(&ciphertext, &header.salt, &header.nonce, password)
-        .map_err(|_| BackupError::DecryptionFailed)
-}
+    let zip_data = ExportCrypto::decrypt_export(&ciphertext, &header.salt, &header.nonce, password)
+        .map_err(|_| BackupError::DecryptionFailed)?;
 
-/// Preview what will be imported from a backup file (with optional password for encrypted backups)
-pub fn preview_import(
-    backup_path: &Path,
-    password: Option<&str>,
-) -> Result<ImportPreview, BackupError> {
-    let path_str = backup_path.display().to_string();
-
-    // Check if encrypted
-    if let Some(_header) = is_encrypted_backup(backup_path)? {
-        // Encrypted backup - need password to preview contents
-        let pwd = password.ok_or(BackupError::EncryptionRequired)?;
-        let zip_data = decrypt_backup(backup_path, pwd)?;
-
-        let cursor = Cursor::new(zip_data);
-        let mut archive = ZipArchive::new(cursor)?;
-        validate_zip_archive_limits(&mut archive)?;
-
-        let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
-        if version.version != BACKUP_VERSION {
-            return Err(BackupError::InvalidBackup(format!(
-                "Unsupported backup version: {}",
-                version.version
-            )));
-        }
-
-        let drafts: Vec<SavedDraft> = read_json_from_zip(&mut archive, "drafts.json")?;
-        let templates: Vec<ResponseTemplate> = read_json_from_zip(&mut archive, "templates.json")?;
-        let variables: Vec<CustomVariable> = read_json_from_zip(&mut archive, "variables.json")?;
-        let trees: Vec<DecisionTree> = read_json_from_zip(&mut archive, "trees.json")?;
-
-        return Ok(ImportPreview {
-            version: version.version,
-            drafts_count: drafts.len(),
-            templates_count: templates.len(),
-            variables_count: variables.len(),
-            trees_count: trees.len(),
-            encrypted: true,
-            path: Some(path_str),
-        });
+    if zip_data.len() as u64 > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Decrypted backup payload too large: {} bytes (max {} bytes)",
+            zip_data.len(),
+            MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES
+        )));
     }
 
-    // Unencrypted backup
-    let file = File::open(backup_path)?;
-    let mut archive = ZipArchive::new(file)?;
-    validate_zip_archive_limits(&mut archive)?;
+    Ok(zip_data)
+}
 
-    // Read version
-    let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
+fn validate_backup_file_size(path: &Path) -> Result<(), BackupError> {
+    let file_size = fs::metadata(path)?.len();
+    if file_size > MAX_BACKUP_FILE_BYTES {
+        return Err(BackupError::InvalidBackup(format!(
+            "Backup file too large: {} bytes (max {} bytes)",
+            file_size, MAX_BACKUP_FILE_BYTES
+        )));
+    }
+    Ok(())
+}
+
+fn preview_import_archive<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    encrypted: bool,
+    path_str: String,
+) -> Result<ImportPreview, BackupError> {
+    validate_zip_archive_limits(archive)?;
+
+    let version = read_json_from_zip::<BackupVersion, _>(archive, "version.json")?;
     if version.version != BACKUP_VERSION {
         return Err(BackupError::InvalidBackup(format!(
             "Unsupported backup version: {}",
@@ -339,11 +360,10 @@ pub fn preview_import(
         )));
     }
 
-    // Count entries
-    let drafts: Vec<SavedDraft> = read_json_from_zip(&mut archive, "drafts.json")?;
-    let templates: Vec<ResponseTemplate> = read_json_from_zip(&mut archive, "templates.json")?;
-    let variables: Vec<CustomVariable> = read_json_from_zip(&mut archive, "variables.json")?;
-    let trees: Vec<DecisionTree> = read_json_from_zip(&mut archive, "trees.json")?;
+    let drafts: Vec<SavedDraft> = read_json_from_zip(archive, "drafts.json")?;
+    let templates: Vec<ResponseTemplate> = read_json_from_zip(archive, "templates.json")?;
+    let variables: Vec<CustomVariable> = read_json_from_zip(archive, "variables.json")?;
+    let trees: Vec<DecisionTree> = read_json_from_zip(archive, "trees.json")?;
 
     Ok(ImportPreview {
         version: version.version,
@@ -351,39 +371,39 @@ pub fn preview_import(
         templates_count: templates.len(),
         variables_count: variables.len(),
         trees_count: trees.len(),
-        encrypted: false,
+        encrypted,
         path: Some(path_str),
     })
 }
 
-/// Import data from a backup file (with optional password for encrypted backups)
-/// Merge strategy: insert new, skip existing (by ID)
-pub fn import_backup(
-    db: &Database,
+/// Preview what will be imported from a backup file (with optional password for encrypted backups)
+pub fn preview_import(
     backup_path: &Path,
     password: Option<&str>,
+) -> Result<ImportPreview, BackupError> {
+    validate_backup_file_size(backup_path)?;
+    let path_str = backup_path.display().to_string();
+
+    if is_encrypted_backup(backup_path)?.is_some() {
+        let pwd = password.ok_or(BackupError::EncryptionRequired)?;
+        let zip_data = decrypt_backup(backup_path, pwd)?;
+        let cursor = Cursor::new(zip_data);
+        let mut archive = ZipArchive::new(cursor)?;
+        return preview_import_archive(&mut archive, true, path_str);
+    }
+
+    let file = File::open(backup_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    preview_import_archive(&mut archive, false, path_str)
+}
+
+fn import_backup_archive<R: Read + std::io::Seek>(
+    db: &Database,
+    archive: &mut ZipArchive<R>,
 ) -> Result<ImportSummary, BackupError> {
-    // Check if encrypted and get archive
-    let archive_result: Result<ZipArchive<Cursor<Vec<u8>>>, BackupError> =
-        if let Some(_header) = is_encrypted_backup(backup_path)? {
-            let pwd = password.ok_or(BackupError::EncryptionRequired)?;
-            let zip_data = decrypt_backup(backup_path, pwd)?;
-            let cursor = Cursor::new(zip_data);
-            Ok(ZipArchive::new(cursor)?)
-        } else {
-            // For unencrypted, read the file into memory to use same type
-            let mut file = File::open(backup_path)?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)?;
-            let cursor = Cursor::new(data);
-            Ok(ZipArchive::new(cursor)?)
-        };
+    validate_zip_archive_limits(archive)?;
 
-    let mut archive = archive_result?;
-    validate_zip_archive_limits(&mut archive)?;
-
-    // Verify version
-    let version = read_json_from_zip::<BackupVersion, _>(&mut archive, "version.json")?;
+    let version = read_json_from_zip::<BackupVersion, _>(archive, "version.json")?;
     if version.version != BACKUP_VERSION {
         return Err(BackupError::InvalidBackup(format!(
             "Unsupported backup version: {}",
@@ -396,8 +416,7 @@ pub fn import_backup(
     let mut variables_imported = 0;
     let mut trees_imported = 0;
 
-    // Import drafts (skip existing by ID)
-    let drafts: Vec<SavedDraft> = read_json_from_zip(&mut archive, "drafts.json")?;
+    let drafts: Vec<SavedDraft> = read_json_from_zip(archive, "drafts.json")?;
     for draft in drafts {
         if db.get_draft(&draft.id).is_err() {
             db.save_draft(&draft)
@@ -406,8 +425,7 @@ pub fn import_backup(
         }
     }
 
-    // Import templates (skip existing by ID)
-    let templates: Vec<ResponseTemplate> = read_json_from_zip(&mut archive, "templates.json")?;
+    let templates: Vec<ResponseTemplate> = read_json_from_zip(archive, "templates.json")?;
     for template in templates {
         if db.get_template(&template.id).is_err() {
             db.save_template(&template)
@@ -416,8 +434,7 @@ pub fn import_backup(
         }
     }
 
-    // Import variables (skip existing by name)
-    let variables: Vec<CustomVariable> = read_json_from_zip(&mut archive, "variables.json")?;
+    let variables: Vec<CustomVariable> = read_json_from_zip(archive, "variables.json")?;
     let existing_vars = db
         .list_custom_variables()
         .map_err(|e| BackupError::Database(e.to_string()))?;
@@ -431,8 +448,7 @@ pub fn import_backup(
         }
     }
 
-    // Import custom trees (skip existing by ID)
-    let trees: Vec<DecisionTree> = read_json_from_zip(&mut archive, "trees.json")?;
+    let trees: Vec<DecisionTree> = read_json_from_zip(archive, "trees.json")?;
     for tree in trees {
         if db.get_decision_tree(&tree.id).is_err() {
             db.save_decision_tree(&tree)
@@ -441,8 +457,7 @@ pub fn import_backup(
         }
     }
 
-    // Import settings (merge, skip schema_version)
-    if let Ok(settings) = read_json_from_zip::<SettingsExport, _>(&mut archive, "settings.json") {
+    if let Ok(settings) = read_json_from_zip::<SettingsExport, _>(archive, "settings.json") {
         for entry in settings.entries {
             if entry.key != "schema_version" {
                 import_setting(db, &entry.key, &entry.value)?;
@@ -450,8 +465,7 @@ pub fn import_backup(
         }
     }
 
-    // Import KB config
-    if let Ok(kb_config) = read_json_from_zip::<KbConfig, _>(&mut archive, "kb_config.json") {
+    if let Ok(kb_config) = read_json_from_zip::<KbConfig, _>(archive, "kb_config.json") {
         if let Some(folder_path) = kb_config.folder_path {
             import_setting(db, "kb_folder", &folder_path)?;
         }
@@ -463,6 +477,117 @@ pub fn import_backup(
         variables_imported,
         trees_imported,
     })
+}
+
+/// Import data from a backup file (with optional password for encrypted backups)
+/// Merge strategy: insert new, skip existing (by ID)
+pub fn import_backup(
+    db: &Database,
+    backup_path: &Path,
+    password: Option<&str>,
+) -> Result<ImportSummary, BackupError> {
+    validate_backup_file_size(backup_path)?;
+
+    if is_encrypted_backup(backup_path)?.is_some() {
+        let pwd = password.ok_or(BackupError::EncryptionRequired)?;
+        let zip_data = decrypt_backup(backup_path, pwd)?;
+        let cursor = Cursor::new(zip_data);
+        let mut archive = ZipArchive::new(cursor)?;
+        return import_backup_archive(db, &mut archive);
+    }
+
+    let file = File::open(backup_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    import_backup_archive(db, &mut archive)
+}
+
+#[derive(Debug)]
+struct ArchivedDatabaseFile {
+    original_path: PathBuf,
+    archived_path: PathBuf,
+}
+
+fn archived_database_paths(db_path: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![db_path.to_path_buf()];
+
+    if let Some(path_str) = db_path.to_str() {
+        paths.push(PathBuf::from(format!("{}-wal", path_str)));
+        paths.push(PathBuf::from(format!("{}-shm", path_str)));
+    }
+
+    paths
+}
+
+fn archive_existing_database_files(db_path: &Path) -> Result<Vec<ArchivedDatabaseFile>, BackupError> {
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let mut archived = Vec::new();
+
+    for path in archived_database_paths(db_path) {
+        if !path.exists() {
+            continue;
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| BackupError::InvalidBackup("Invalid database file path".to_string()))?;
+        let archived_path = path.with_file_name(format!("{}.recovery-{}", file_name, timestamp));
+        fs::rename(&path, &archived_path)?;
+        archived.push(ArchivedDatabaseFile {
+            original_path: path,
+            archived_path,
+        });
+    }
+
+    Ok(archived)
+}
+
+fn restore_archived_database_files(
+    archived_files: &[ArchivedDatabaseFile],
+) -> Result<(), BackupError> {
+    for archived in archived_files.iter().rev() {
+        if archived.original_path.exists() {
+            fs::remove_file(&archived.original_path)?;
+        }
+        fs::rename(&archived.archived_path, &archived.original_path)?;
+    }
+    Ok(())
+}
+
+fn cleanup_database_files(db_path: &Path) -> Result<(), BackupError> {
+    for path in archived_database_paths(db_path) {
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Restore backup data into a fresh encrypted database, preserving the previous files
+/// under a timestamped `.recovery-*` suffix for manual rollback if needed.
+pub fn restore_backup_into_fresh_database(
+    db_path: &Path,
+    master_key: &crate::security::MasterKey,
+    backup_path: &Path,
+    password: Option<&str>,
+) -> Result<ImportSummary, BackupError> {
+    let archived = archive_existing_database_files(db_path)?;
+
+    let restore_result = (|| {
+        let db = Database::open(db_path, master_key).map_err(|e| BackupError::Database(e.to_string()))?;
+        db.initialize()
+            .map_err(|e| BackupError::Database(e.to_string()))?;
+        import_backup(&db, backup_path, password)
+    })();
+
+    match restore_result {
+        Ok(summary) => Ok(summary),
+        Err(error) => {
+            let _ = cleanup_database_files(db_path);
+            let _ = restore_archived_database_files(&archived);
+            Err(error)
+        }
+    }
 }
 
 /// Helper: Read JSON from a ZIP archive (generic over reader type)

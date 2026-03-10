@@ -14,17 +14,17 @@ jobs:
     name: Weekly Dependency and Advisory Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
 
@@ -32,10 +32,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: stable
 
       - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
+        uses: taiki-e/install-action@1929cdef3ca26202efbfbb4719c58ecf43e84097
 
       - name: Run frontend high-severity audit
         id: pnpm_audit
@@ -107,7 +109,7 @@ jobs:
 
       - name: Create or update dependency alert issue
         if: steps.pnpm_audit.outputs.exit_code != '0' || steps.cargo_summary.outputs.warning_count != '0' || steps.cargo_summary.outputs.vuln_count != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           PNPM_AUDIT_EXIT: ${{ steps.pnpm_audit.outputs.exit_code }}
@@ -166,7 +168,7 @@ jobs:
 
       - name: Upload dependency reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: dependency-watch-reports
           path: |

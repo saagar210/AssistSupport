@@ -50,14 +50,23 @@ python3 validate_runtime.py --check-backends
 python3 search_api.py
 ```
 
+The service exposes:
+
+- `GET /health` for cheap liveness only
+- `GET /ready` for dependency-backed readiness (DB, rate-limit backend when external, and model initialization)
+
 ## Production WSGI Serving
 
 ```bash
-# Example using gunicorn (install separately in deployment environment)
+# Example using gunicorn from the repo root (install separately in deployment environment)
+gunicorn --chdir search-api --bind 127.0.0.1:${ASSISTSUPPORT_API_PORT:-3000} wsgi:app
+
+# Or from inside search-api/
+cd search-api
 gunicorn --bind 127.0.0.1:${ASSISTSUPPORT_API_PORT:-3000} wsgi:app
 ```
 
-`wsgi.py` validates runtime configuration before exposing the app.
+`wsgi.py` bootstraps its own import path and validates runtime configuration before exposing the app.
 
 ## Test and Smoke Checks
 
@@ -65,12 +74,20 @@ gunicorn --bind 127.0.0.1:${ASSISTSUPPORT_API_PORT:-3000} wsgi:app
 cd search-api
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements-test.txt
+pip install -r requirements.txt -r requirements-test.txt
 pytest -q
 
-# Production smoke check
+# Production smoke check (expects /health, /ready, and auth enforcement)
 ENVIRONMENT=production \
 ASSISTSUPPORT_API_KEY=test-key \
 ASSISTSUPPORT_RATE_LIMIT_STORAGE_URI=redis://127.0.0.1:6379/0 \
 python3 smoke_search_api.py
+
+# Regenerate the checked-in API contract
+python3 generate_openapi.py > ../openapi/openapi.generated.json
 ```
+
+Related operator docs:
+
+- `docs/runbooks/search-api-local-deployment.md`
+- `docs/runbooks/dependency-advisory-triage.md`

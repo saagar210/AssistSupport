@@ -17,6 +17,19 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import { resolveRevampFlags } from '../../features/revamp/flags';
+import {
+  AboutSection,
+  AppearanceSection,
+  MemoryKernelSection,
+  PolicyGatesSection,
+  SettingsHero,
+} from './sections/SettingsOverviewSections';
+import {
+  AuditLogsSection,
+  BackupSection,
+  DeploymentSection,
+  QualityThresholdSection,
+} from './sections/SettingsOpsSections';
 import appPackage from '../../../package.json';
 import { formatAppVersion } from './versionLabel';
 import type {
@@ -681,182 +694,31 @@ export function SettingsTab() {
     <div className="settings-tab">
       {error && <div className="settings-error">{error}</div>}
 
-      <header className="settings-hero" aria-label="Settings overview">
-        <div className="settings-hero__title">
-          <h1>Operator console</h1>
-          <p className="settings-hero__sub">
-            Local-only configuration and health checks. Offline-first by default.
-          </p>
-        </div>
-        <div className="settings-hero__pills" aria-label="System readiness summary">
-          <span className={['settings-pill', loadedModel ? 'is-good' : 'is-warn'].join(' ')}>
-            LLM: {loadedModel ? 'Loaded' : 'Not loaded'}
-          </span>
-          <span className={['settings-pill', kbFolder ? 'is-good' : 'is-warn'].join(' ')}>
-            KB: {kbFolder ? 'Set' : 'Not set'}
-          </span>
-          <span className={['settings-pill', isEmbeddingLoaded ? 'is-good' : 'is-warn'].join(' ')}>
-            Embeddings: {isEmbeddingLoaded ? 'Loaded' : embeddingDownloaded ? 'Downloaded' : 'Not downloaded'}
-          </span>
-          <span
-            className={[
-              'settings-pill',
-              memoryKernelPreflight?.status === 'ready' ? 'is-good' : 'is-warn',
-            ].join(' ')}
-          >
-            MemoryKernel: {memoryKernelPreflight ? memoryKernelPreflight.status : 'Unavailable'}
-          </span>
-        </div>
-      </header>
+      <SettingsHero
+        loadedModel={loadedModel}
+        kbFolder={kbFolder}
+        isEmbeddingLoaded={isEmbeddingLoaded}
+        embeddingDownloaded={embeddingDownloaded}
+        memoryKernelPreflight={memoryKernelPreflight}
+      />
 
-      <section className="settings-section" aria-label="Policy gates">
-        <h2>Policy Gates</h2>
-        <p className="settings-description">
-          These switches control whether potentially sensitive UI surfaces can appear. Outside development builds,
-          policy flags are environment-variable authoritative (local overrides are ignored).
-        </p>
-        <div className="settings-grid">
-          <div className="settings-card">
-            <h4>Admin Tabs</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Effective (UI):</strong>{' '}
-                {revampFlags.ASSISTSUPPORT_ENABLE_ADMIN_TABS ? 'Enabled' : 'Disabled'}
-              </li>
-              <li>
-                <strong>Enable:</strong> set <code>VITE_ASSISTSUPPORT_ENABLE_ADMIN_TABS=1</code>
-              </li>
-              <li>
-                <strong>Default:</strong> disabled
-              </li>
-            </ul>
-          </div>
-          <div className="settings-card">
-            <h4>Network Ingest</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Effective (UI):</strong>{' '}
-                {revampFlags.ASSISTSUPPORT_ENABLE_NETWORK_INGEST ? 'Enabled' : 'Disabled'}
-              </li>
-              <li>
-                <strong>Enable (UI):</strong> set <code>VITE_ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1</code>
-              </li>
-              <li>
-                <strong>Enable (backend):</strong> set <code>ASSISTSUPPORT_ENABLE_NETWORK_INGEST=1</code>
-              </li>
-              <li>
-                <strong>Default:</strong> disabled
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <PolicyGatesSection
+        adminTabsEnabled={revampFlags.ASSISTSUPPORT_ENABLE_ADMIN_TABS}
+        networkIngestEnabled={revampFlags.ASSISTSUPPORT_ENABLE_NETWORK_INGEST}
+      />
 
-      <section className="settings-section" aria-label="MemoryKernel integration">
-        <h2>MemoryKernel</h2>
-        <p className="settings-description">
-          Optional local enrichment. If unavailable, AssistSupport keeps running with deterministic fallback and no runtime cutover.
-        </p>
-        <div className="settings-grid">
-          <div className="settings-card">
-            <h4>Integration Status</h4>
-            <ul className="settings-list">
-              <li><strong>Enabled:</strong> {memoryKernelPreflight?.enabled ? 'Yes' : 'No'}</li>
-              <li><strong>Ready:</strong> {memoryKernelPreflight?.ready ? 'Yes' : 'No'}</li>
-              <li><strong>Enrichment:</strong> {memoryKernelPreflight?.enrichment_enabled ? 'Enabled' : 'Disabled'}</li>
-              <li><strong>Base URL:</strong> {memoryKernelPreflight?.base_url ? <code>{memoryKernelPreflight.base_url}</code> : 'Unavailable'}</li>
-            </ul>
-            <div className="settings-actions-row">
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={refreshMemoryKernelStatus}
-                disabled={memoryKernelLoading}
-              >
-                {memoryKernelLoading ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            </div>
-          </div>
-          <div className="settings-card">
-            <h4>Contract Pins</h4>
-            <ul className="settings-list">
-              <li>
-                <strong>Release:</strong>{' '}
-                {memoryKernelPreflight ? (
-                  <>
-                    <code>{memoryKernelPreflight.release_tag}</code> · <code>{memoryKernelPreflight.commit_sha}</code>
-                  </>
-                ) : (
-                  'Unavailable'
-                )}
-              </li>
-              <li>
-                <strong>Service contract:</strong>{' '}
-                {memoryKernelPreflight?.service_contract_version ? (
-                  <code>{memoryKernelPreflight.service_contract_version}</code>
-                ) : (
-                  'Unavailable'
-                )}
-                {' '}
-                (expected <code>{memoryKernelPreflight?.expected_service_contract_version ?? '—'}</code>)
-              </li>
-              <li>
-                <strong>API contract:</strong>{' '}
-                {memoryKernelPreflight?.api_contract_version ? (
-                  <code>{memoryKernelPreflight.api_contract_version}</code>
-                ) : (
-                  'Unavailable'
-                )}
-                {' '}
-                (expected <code>{memoryKernelPreflight?.expected_api_contract_version ?? '—'}</code>)
-              </li>
-              <li>
-                <strong>Baseline:</strong>{' '}
-                {memoryKernelPreflight ? <code>{memoryKernelPreflight.integration_baseline}</code> : 'Unavailable'}
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <MemoryKernelSection
+        memoryKernelPreflight={memoryKernelPreflight}
+        memoryKernelLoading={memoryKernelLoading}
+        onRefresh={() => {
+          void refreshMemoryKernelStatus();
+        }}
+      />
 
-      <section className="settings-section">
-        <h2>Appearance</h2>
-        <p className="settings-description">
-          Choose your preferred color theme.
-        </p>
-        <div className="theme-selector">
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="light"
-              checked={theme === 'light'}
-              onChange={() => setTheme('light')}
-            />
-            <span>Light</span>
-          </label>
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="dark"
-              checked={theme === 'dark'}
-              onChange={() => setTheme('dark')}
-            />
-            <span>Dark</span>
-          </label>
-          <label className="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value="system"
-              checked={theme === 'system'}
-              onChange={() => setTheme('system')}
-            />
-            <span>System</span>
-          </label>
-        </div>
-      </section>
+      <AppearanceSection
+        theme={theme}
+        onThemeChange={setTheme}
+      />
 
       <section className="settings-section">
         <h2>Language Model</h2>
@@ -1433,361 +1295,66 @@ export function SettingsTab() {
         )}
       </section>
 
-      <section className="settings-section">
-        <h2>Deployment &amp; Integrations</h2>
-        <p className="settings-description">
-          Deployment health, preflight validation, and integration toggles for ServiceNow/Slack/Teams.
-        </p>
-        <div className="settings-row">
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={handleRunDeploymentPreflight}
-            disabled={deployPreflightRunning}
-          >
-            {deployPreflightRunning ? 'Running preflight...' : 'Run Deployment Preflight'}
-          </Button>
-        </div>
-        {deploymentHealth && (
-          <div className="startup-metrics">
-            <p className="text-sm text-secondary">
-              Signed artifacts: {deploymentHealth.signed_artifacts}/{deploymentHealth.total_artifacts}
-            </p>
-            {deploymentHealth.last_run && (
-              <p className="text-sm text-secondary">
-                Last run: {deploymentHealth.last_run.status} ({deploymentHealth.last_run.target_channel})
-              </p>
-            )}
-          </div>
-        )}
-        {deployPreflightChecks.length > 0 && (
-          <ul className="audit-list">
-            {deployPreflightChecks.map((check, idx) => (
-              <li key={`${check}-${idx}`} className="audit-row">{check}</li>
-            ))}
-          </ul>
-        )}
-        <div className="settings-row">
-          {['servicenow', 'slack', 'teams'].map(type => {
-            const current = integrations.find(i => i.integration_type === type);
-            const enabled = current?.enabled ?? false;
-            return (
-              <label key={type} className="toggle-option">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => void handleToggleIntegration(type, e.target.checked)}
-                />
-                <span>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
-              </label>
-            );
-          })}
-        </div>
-      </section>
+      <DeploymentSection
+        deploymentHealth={deploymentHealth}
+        deployPreflightChecks={deployPreflightChecks}
+        deployPreflightRunning={deployPreflightRunning}
+        integrations={integrations}
+        onRunDeploymentPreflight={() => {
+          void handleRunDeploymentPreflight();
+        }}
+        onToggleIntegration={(integrationType, enabled) => {
+          void handleToggleIntegration(integrationType, enabled);
+        }}
+      />
 
-      <section className="settings-section">
-        <h2>Data Backup</h2>
-        <p className="settings-description">
-          Export or import your drafts, templates, variables, and settings.
-        </p>
-        <div className="backup-actions">
-          <div className="backup-row">
-            <div className="backup-info">
-              <strong>Export</strong>
-              <span>Save all your data to a ZIP file for backup.</span>
-            </div>
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={handleExportBackup}
-              disabled={backupLoading === 'export'}
-            >
-              {backupLoading === 'export' ? 'Exporting...' : 'Export Data'}
-            </Button>
-          </div>
-          <div className="backup-row">
-            <div className="backup-info">
-              <strong>Import</strong>
-              <span>Restore data from a backup ZIP file.</span>
-            </div>
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={handleImportBackup}
-              disabled={backupLoading === 'import'}
-            >
-              {backupLoading === 'import' ? 'Importing...' : 'Import Data'}
-            </Button>
-          </div>
-        </div>
-      </section>
+      <BackupSection
+        backupLoading={backupLoading}
+        onExportBackup={() => {
+          void handleExportBackup();
+        }}
+        onImportBackup={() => {
+          void handleImportBackup();
+        }}
+      />
 
-      <section className="settings-section">
-        <h2>Response Quality Coaching</h2>
-        <p className="settings-description">
-          Tune coaching severity bands used in Analytics. These thresholds are local to this workspace and can be calibrated for your support team.
-        </p>
-        <div className="quality-threshold-grid">
-          <div className="quality-threshold-card">
-            <h3>Edit Ratio (%)</h3>
-            <div className="quality-threshold-fields">
-              <label>
-                Watch
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.editRatioWatch * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'editRatioWatch',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Action
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.editRatioAction * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'editRatioAction',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-            </div>
-          </div>
-          <div className="quality-threshold-card">
-            <h3>Time to Draft (seconds)</h3>
-            <div className="quality-threshold-fields">
-              <label>
-                Watch
-                <input
-                  type="number"
-                  min={1}
-                  step={5}
-                  value={Math.round(qualityThresholds.timeToDraftWatchMs / 1000)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'timeToDraftWatchMs',
-                      Math.max(1, Number(e.target.value || 1)) * 1000,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Action
-                <input
-                  type="number"
-                  min={1}
-                  step={5}
-                  value={Math.round(qualityThresholds.timeToDraftActionMs / 1000)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'timeToDraftActionMs',
-                      Math.max(1, Number(e.target.value || 1)) * 1000,
-                    )
-                  }
-                />
-              </label>
-            </div>
-          </div>
-          <div className="quality-threshold-card">
-            <h3>Copy per Save (%)</h3>
-            <div className="quality-threshold-fields">
-              <label>
-                Watch
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.copyPerSaveWatch * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'copyPerSaveWatch',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Action
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.copyPerSaveAction * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'copyPerSaveAction',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-            </div>
-          </div>
-          <div className="quality-threshold-card">
-            <h3>Edited Save Rate (%)</h3>
-            <div className="quality-threshold-fields">
-              <label>
-                Watch
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.editedSaveRateWatch * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'editedSaveRateWatch',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Action
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={(qualityThresholds.editedSaveRateAction * 100).toFixed(0)}
-                  onChange={(e) =>
-                    updateQualityThreshold(
-                      'editedSaveRateAction',
-                      Number(e.target.value || 0) / 100,
-                    )
-                  }
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-        {qualityThresholdError && (
-          <div className="settings-error">{qualityThresholdError}</div>
-        )}
-        <div className="quality-threshold-actions">
-          <Button variant="secondary" size="small" onClick={handleSaveQualityThresholds}>
-            Save Thresholds
-          </Button>
-          <Button variant="ghost" size="small" onClick={handleResetQualityThresholds}>
-            Reset Defaults
-          </Button>
-        </div>
-      </section>
+      <QualityThresholdSection
+        qualityThresholds={qualityThresholds}
+        qualityThresholdError={qualityThresholdError}
+        onThresholdChange={updateQualityThreshold}
+        onSave={handleSaveQualityThresholds}
+        onReset={handleResetQualityThresholds}
+      />
 
-      <section className="settings-section">
-        <h2>Audit Logs</h2>
-        <p className="settings-description">
-          Security and system events recorded locally. Export for review or compliance.
-        </p>
-        <div className="audit-actions">
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={loadAuditEntries}
-            disabled={auditLoading}
-          >
-            {auditLoading ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          <Button
-            variant="secondary"
-            size="small"
-            onClick={handleExportAuditLog}
-            disabled={auditExporting}
-          >
-            {auditExporting ? 'Exporting...' : 'Export JSON'}
-          </Button>
-        </div>
-        <div className="audit-filters">
-          <label className="audit-filter-label">
-            Severity
-            <select
-              aria-label="Audit severity filter"
-              value={auditSeverityFilter}
-              onChange={(e) => {
-                setAuditSeverityFilter(e.target.value as typeof auditSeverityFilter);
-                setAuditPage(1);
-              }}
-            >
-              <option value="all">All</option>
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="error">Error</option>
-              <option value="critical">Critical</option>
-            </select>
-          </label>
-          <input
-            className="input"
-            value={auditSearchQuery}
-            onChange={(e) => {
-              setAuditSearchQuery(e.target.value);
-              setAuditPage(1);
-            }}
-            placeholder="Search event/message"
-          />
-        </div>
-        <div className="audit-list">
-          {pagedAuditEntries.length === 0 ? (
-            <p className="audit-empty">No audit entries yet.</p>
-          ) : (
-            pagedAuditEntries.map((entry, index) => (
-              <div className="audit-row" key={`${entry.timestamp}-${index}`}>
-                <span className={`audit-severity ${entry.severity}`}>{entry.severity}</span>
-                <span className="audit-event">{formatAuditEvent(entry.event)}</span>
-                <span className="audit-message">{entry.message}</span>
-                <span className="audit-time">{new Date(entry.timestamp).toLocaleString()}</span>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="audit-pagination">
-          <span className="text-sm text-secondary">
-            {filteredAuditEntries.length} entries • Page {auditPage} of {auditTotalPages}
-          </span>
-          <div className="audit-pagination-actions">
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
-              disabled={auditPage <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
-              disabled={auditPage >= auditTotalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      </section>
+      <AuditLogsSection
+        auditLoading={auditLoading}
+        auditExporting={auditExporting}
+        auditSeverityFilter={auditSeverityFilter}
+        auditSearchQuery={auditSearchQuery}
+        filteredAuditEntriesCount={filteredAuditEntries.length}
+        pagedAuditEntries={pagedAuditEntries}
+        auditPage={auditPage}
+        auditTotalPages={auditTotalPages}
+        formatAuditEvent={formatAuditEvent}
+        onRefresh={() => {
+          void loadAuditEntries();
+        }}
+        onExport={() => {
+          void handleExportAuditLog();
+        }}
+        onSeverityChange={(value) => {
+          setAuditSeverityFilter(value);
+          setAuditPage(1);
+        }}
+        onSearchQueryChange={(value) => {
+          setAuditSearchQuery(value);
+          setAuditPage(1);
+        }}
+        onPreviousPage={() => setAuditPage((p) => Math.max(1, p - 1))}
+        onNextPage={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
+      />
 
-      <section className="settings-section">
-        <h2>About</h2>
-        <p className="settings-description">
-          AssistSupport - Local AI-powered support ticket assistant
-        </p>
-        <div className="about-info">
-          <p>{formatAppVersion(APP_VERSION)}</p>
-          <p>All processing happens locally on your machine.</p>
-        </div>
-      </section>
+      <AboutSection versionLabel={formatAppVersion(APP_VERSION)} />
     </div>
   );
 }

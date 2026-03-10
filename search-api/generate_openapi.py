@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""Generate the checked-in OpenAPI contract for AssistSupport search-api."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def repo_version() -> str:
+    package_json = json.loads((REPO_ROOT / "package.json").read_text())
+    return str(package_json.get("version", "1.0.0"))
+
+
+def build_spec() -> dict:
+    version = repo_version()
+
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "AssistSupport Search API",
+            "version": version,
+            "description": (
+                "Local loopback search sidecar used by AssistSupport for hybrid KB search, "
+                "feedback capture, readiness checks, and operational stats."
+            ),
+        },
+        "servers": [
+            {
+                "url": "http://127.0.0.1:3000",
+                "description": "Default local search-api base URL",
+            }
+        ],
+        "components": {
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "API key",
+                }
+            },
+            "schemas": {
+                "HealthResponse": {
+                    "type": "object",
+                    "required": ["status", "service", "timestamp"],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["ok"]},
+                        "service": {"type": "string"},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                    },
+                },
+                "ReadyCheck": {
+                    "type": "object",
+                    "required": ["status"],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["ok", "error"]},
+                        "error": {"type": "string"},
+                        "backend": {"type": "string"},
+                        "details": {"type": "object", "additionalProperties": True},
+                        "errors": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "additionalProperties": True,
+                },
+                "ReadyResponse": {
+                    "type": "object",
+                    "required": ["status", "service", "timestamp", "checks"],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["ok", "degraded"]},
+                        "service": {"type": "string"},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                        "checks": {
+                            "type": "object",
+                            "properties": {
+                                "runtime_config": {"$ref": "#/components/schemas/ReadyCheck"},
+                                "database": {"$ref": "#/components/schemas/ReadyCheck"},
+                                "rate_limit_backend": {"$ref": "#/components/schemas/ReadyCheck"},
+                                "models": {"$ref": "#/components/schemas/ReadyCheck"},
+                            },
+                            "required": [
+                                "runtime_config",
+                                "database",
+                                "rate_limit_backend",
+                                "models",
+                            ],
+                        },
+                    },
+                },
+                "SearchRequest": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1},
+                        "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                        "include_scores": {"type": "boolean", "default": False},
+                        "fusion_strategy": {
+                            "type": "string",
+                            "enum": ["adaptive", "rrf", "weighted", "rerank"],
+                            "default": "adaptive",
+                        },
+                    },
+                },
+                "SearchResultScores": {
+                    "type": "object",
+                    "required": ["bm25", "vector", "fused"],
+                    "properties": {
+                        "bm25": {"type": "number"},
+                        "vector": {"type": "number"},
+                        "fused": {"type": "number"},
+                    },
+                },
+                "SearchResult": {
+                    "type": "object",
+                    "required": ["rank", "article_id", "title", "category", "preview"],
+                    "properties": {
+                        "rank": {"type": "integer"},
+                        "article_id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "category": {"type": "string"},
+                        "preview": {"type": "string"},
+                        "source_document": {"type": ["string", "null"]},
+                        "section": {"type": ["string", "null"]},
+                        "scores": {"$ref": "#/components/schemas/SearchResultScores"},
+                    },
+                },
+                "SearchMetrics": {
+                    "type": "object",
+                    "required": [
+                        "latency_ms",
+                        "embedding_time_ms",
+                        "search_time_ms",
+                        "rerank_time_ms",
+                        "result_count",
+                        "timestamp",
+                    ],
+                    "properties": {
+                        "latency_ms": {"type": "number"},
+                        "embedding_time_ms": {"type": "number"},
+                        "search_time_ms": {"type": "number"},
+                        "rerank_time_ms": {"type": "number"},
+                        "result_count": {"type": "integer"},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                    },
+                },
+                "SearchResponse": {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "query",
+                        "intent",
+                        "intent_confidence",
+                        "results_count",
+                        "results",
+                        "metrics",
+                    ],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["success"]},
+                        "query": {"type": "string"},
+                        "query_id": {"type": ["string", "null"]},
+                        "intent": {"type": "string"},
+                        "intent_confidence": {"type": "number"},
+                        "results_count": {"type": "integer"},
+                        "results": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/SearchResult"},
+                        },
+                        "metrics": {"$ref": "#/components/schemas/SearchMetrics"},
+                    },
+                },
+                "FeedbackRequest": {
+                    "type": "object",
+                    "required": ["query_id", "result_rank", "rating"],
+                    "properties": {
+                        "query_id": {"type": "string", "minLength": 1},
+                        "result_rank": {"type": "integer", "minimum": 1},
+                        "rating": {
+                            "type": "string",
+                            "enum": ["helpful", "not_helpful", "incorrect"],
+                        },
+                        "comment": {"type": "string"},
+                        "article_id": {"type": "string"},
+                    },
+                },
+                "FeedbackResponse": {
+                    "type": "object",
+                    "required": ["status", "message", "timestamp"],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["success"]},
+                        "message": {"type": "string"},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                    },
+                },
+                "StatsResponse": {
+                    "type": "object",
+                    "required": ["status", "data", "timestamp"],
+                    "properties": {
+                        "status": {"type": "string", "enum": ["success"]},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                        "data": {
+                            "type": "object",
+                            "required": [
+                                "queries_total",
+                                "queries_24h",
+                                "latency_ms",
+                                "intent_distribution",
+                                "feedback_stats",
+                            ],
+                            "properties": {
+                                "queries_total": {"type": "integer"},
+                                "queries_24h": {"type": "integer"},
+                                "latency_ms": {
+                                    "type": "object",
+                                    "required": ["avg", "p50", "p95", "p99"],
+                                    "properties": {
+                                        "avg": {"type": "number"},
+                                        "p50": {"type": "number"},
+                                        "p95": {"type": "number"},
+                                        "p99": {"type": "number"},
+                                    },
+                                },
+                                "intent_distribution": {
+                                    "type": "object",
+                                    "additionalProperties": {"type": "integer"},
+                                },
+                                "feedback_stats": {
+                                    "type": "object",
+                                    "additionalProperties": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
+                },
+                "ErrorResponse": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "error": {"type": "string"},
+                        "message": {"type": "string"},
+                        "path": {"type": "string"},
+                        "timestamp": {"type": "string", "format": "date-time"},
+                    },
+                    "additionalProperties": True,
+                },
+            },
+        },
+        "paths": {
+            "/health": {
+                "get": {
+                    "summary": "Liveness health check",
+                    "responses": {
+                        "200": {
+                            "description": "Service process is up",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/HealthResponse"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/ready": {
+                "get": {
+                    "summary": "Dependency-backed readiness check",
+                    "responses": {
+                        "200": {
+                            "description": "All required dependencies are ready",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ReadyResponse"}
+                                }
+                            },
+                        },
+                        "503": {
+                            "description": "One or more dependencies are degraded",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ReadyResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/search": {
+                "post": {
+                    "summary": "Execute a hybrid KB search",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/SearchRequest"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Search succeeded",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/SearchResponse"}
+                                }
+                            },
+                        },
+                        "400": {
+                            "description": "Validation error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "401": {
+                            "description": "Missing or invalid bearer header",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "403": {
+                            "description": "Invalid API key",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "500": {
+                            "description": "Internal error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/feedback": {
+                "post": {
+                    "summary": "Submit feedback for a search result",
+                    "security": [{"bearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/FeedbackRequest"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Feedback recorded",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/FeedbackResponse"}
+                                }
+                            },
+                        },
+                        "400": {
+                            "description": "Validation error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "401": {
+                            "description": "Missing or invalid bearer header",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "403": {
+                            "description": "Invalid API key",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "500": {
+                            "description": "Internal error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/stats": {
+                "get": {
+                    "summary": "Fetch aggregate query and feedback stats",
+                    "security": [{"bearerAuth": []}],
+                    "responses": {
+                        "200": {
+                            "description": "Stats payload",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/StatsResponse"}
+                                }
+                            },
+                        },
+                        "401": {
+                            "description": "Missing or invalid bearer header",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "403": {
+                            "description": "Invalid API key",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                        "500": {
+                            "description": "Internal error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+        },
+    }
+
+
+def main() -> None:
+    print(json.dumps(build_spec(), indent=2))
+
+
+if __name__ == "__main__":
+    main()

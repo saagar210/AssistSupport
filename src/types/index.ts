@@ -1,9 +1,35 @@
 // App initialization types
 export interface InitResult {
   is_first_run: boolean;
-  keychain_available: boolean;
-  fts5_available: boolean;
+  vector_enabled: boolean;
   vector_store_ready: boolean;
+  key_storage_mode: string;
+  passphrase_required: boolean;
+  recovery_issue: StartupRecoveryIssue | null;
+}
+
+export interface StartupRecoveryConflict {
+  name: string;
+  old_path: string;
+  new_path: string;
+  reason: string;
+}
+
+export interface StartupRecoveryIssue {
+  code: string;
+  summary: string;
+  details: string | null;
+  can_repair: boolean;
+  can_restore_backup: boolean;
+  requires_manual_resolution: boolean;
+  migration_conflicts: StartupRecoveryConflict[];
+}
+
+export interface ImportSummary {
+  drafts_imported: number;
+  templates_imported: number;
+  variables_imported: number;
+  trees_imported: number;
 }
 
 export interface ModelStateResult {

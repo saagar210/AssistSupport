@@ -18,7 +18,19 @@ pub async fn get_system_health(state: State<'_, AppState>) -> Result<SystemHealt
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         match db_lock.as_ref() {
             Some(db) => check_database_health(db),
-            None => ComponentHealth::unavailable("Database", "Not initialized"),
+            None => {
+                let recovery_lock = state.recovery.lock().map_err(|e| e.to_string())?;
+                if let Some(recovery) = recovery_lock.as_ref() {
+                    ComponentHealth::error(
+                        "Database",
+                        &recovery.issue.summary,
+                        recovery.issue.details.as_deref(),
+                        recovery.issue.can_repair,
+                    )
+                } else {
+                    ComponentHealth::unavailable("Database", "Not initialized")
+                }
+            }
         }
     };
 
@@ -65,15 +77,45 @@ pub async fn get_system_health(state: State<'_, AppState>) -> Result<SystemHealt
 /// Attempt to repair the database
 #[tauri::command]
 pub fn repair_database_cmd(state: State<'_, AppState>) -> Result<RepairResult, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    Ok(repair_database(db))
+    {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = db_lock.as_ref() {
+            return Ok(repair_database(db));
+        }
+    }
+
+    let recovery_lock = state.recovery.lock().map_err(|e| e.to_string())?;
+    let recovery = recovery_lock.as_ref().ok_or("Database not initialized")?;
+    let db_path = recovery
+        .db_path
+        .as_ref()
+        .ok_or("Database repair is not available for this recovery issue")?;
+    let master_key = recovery
+        .master_key
+        .as_ref()
+        .ok_or("Database repair is not available for this recovery issue")?;
+
+    let db = crate::db::Database::open(db_path, master_key).map_err(|e| e.to_string())?;
+    Ok(repair_database(&db))
 }
 
-/// Get guidance on rebuilding vector store
+/// Rebuild the vector store using authoritative SQLite chunk metadata.
 #[tauri::command]
-pub fn rebuild_vector_store() -> RepairResult {
-    crate::diagnostics::get_vector_rebuild_guidance()
+pub async fn rebuild_vector_store(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<RepairResult, String> {
+    let result = super::generate_kb_embeddings_internal(state.inner(), &app_handle, true).await?;
+
+    Ok(RepairResult {
+        component: "Vector Store".to_string(),
+        success: true,
+        action_taken: "Rebuilt vector table and regenerated embeddings".to_string(),
+        message: Some(format!(
+            "Rebuilt vector store for {} chunks and created {} vectors.",
+            result.chunks_processed, result.vectors_created
+        )),
+    })
 }
 
 /// Get list of known failure modes and their solutions
@@ -102,7 +144,12 @@ pub async fn run_quick_health_check(
                 issues.push("Database integrity check failed".to_string());
             }
         } else {
-            issues.push("Database not initialized".to_string());
+            let recovery_lock = state.recovery.lock().map_err(|e| e.to_string())?;
+            if let Some(recovery) = recovery_lock.as_ref() {
+                issues.push(recovery.issue.summary.clone());
+            } else {
+                issues.push("Database not initialized".to_string());
+            }
         }
     }
 

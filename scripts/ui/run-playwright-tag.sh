@@ -19,4 +19,4 @@ if ! find tests/ui -type f -name "*.spec.ts" -print -quit | grep -q .; then
   exit 1
 fi
 
-pnpm exec playwright test tests/ui --grep "$tag" "$@"
+pnpm exec playwright test tests/ui --workers=1 --grep "$tag" "$@"

@@ -8,7 +8,9 @@ cd "$repo_root/src-tauri"
 # dependencies while upstream remediation paths are tracked.
 #
 # Owner: Platform Engineering
-# Review date: 2026-03-01
+# Review date: 2026-03-09
+# Last remediation update: quinn-proto upgraded to 0.11.14 to clear
+# RUSTSEC-2026-0037.
 # Umbrella tracking issue: https://github.com/saagar210/AssistSupport/issues/11
 #
 # GTK3/Tauri Linux runtime chain (issue #12):

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '../shared/Button';
+import { Dialog } from '../shared/Dialog';
 import { Skeleton } from '../shared/Skeleton';
 import { useKb } from '../../hooks/useKb';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -18,7 +19,7 @@ export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: Source
   const { getKbFolder, listFiles, rebuildIndex, getIndexStats, search, removeDocument } = useKb();
   const { success: showSuccess, error: showError } = useToastContext();
 
-  const [kbFolder, setKbFolder] = useState<string | null>(null);
+  const [kbFolder, setKbFolder] = useState<string | null | undefined>(undefined);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [stats, setStats] = useState<{ total_chunks: number; total_files: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -152,6 +153,17 @@ export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: Source
     return path.replace(kbFolder, '').replace(/^\//, '');
   }
 
+  if (kbFolder === undefined) {
+    return (
+      <div className="sources-tab">
+        <div className="sources-empty">
+          <h2>Loading Knowledge Base</h2>
+          <p>Checking your current folder and index status.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!kbFolder) {
     return (
       <div className="sources-tab">
@@ -215,6 +227,7 @@ export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: Source
       <div className="sources-search">
         <div className="search-mode-toggle">
           <button
+            type="button"
             className={`toggle-btn ${searchMode === 'files' ? 'active' : ''}`}
             onClick={() => {
               setSearchMode('files');
@@ -224,6 +237,7 @@ export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: Source
             Filter Files
           </button>
           <button
+            type="button"
             className={`toggle-btn ${searchMode === 'content' ? 'active' : ''}`}
             onClick={() => setSearchMode('content')}
           >
@@ -355,29 +369,39 @@ export function SourcesTab({ initialSearchQuery, onSearchQueryConsumed }: Source
       )}
 
       {/* Remove Confirmation Modal */}
-      {removeConfirm && (
-        <div className="modal-overlay" onClick={() => setRemoveConfirm(null)}>
-          <div className="modal-content modal-confirm" onClick={(e) => e.stopPropagation()}>
-            <h3>Remove from Knowledge Base</h3>
-            <p>
-              Are you sure you want to remove this file from the index? The original file will not be deleted.
-            </p>
-            <p className="modal-file-path">{formatPath(removeConfirm)}</p>
-            <div className="modal-actions">
-              <Button variant="ghost" onClick={() => setRemoveConfirm(null)} disabled={removing}>
-                Cancel
-              </Button>
+      <Dialog
+        open={removeConfirm !== null}
+        labelledBy="sources-remove-title"
+        describedBy="sources-remove-description"
+        onClose={() => {
+          if (!removing) {
+            setRemoveConfirm(null);
+          }
+        }}
+      >
+        <div className="modal-content modal-confirm">
+          <h3 id="sources-remove-title">Remove from Knowledge Base</h3>
+          <p id="sources-remove-description">
+            Are you sure you want to remove this file from the index? The original file will not be deleted.
+          </p>
+          {removeConfirm && <p className="modal-file-path">{formatPath(removeConfirm)}</p>}
+          <div className="modal-actions">
+            <Button variant="ghost" onClick={() => setRemoveConfirm(null)} disabled={removing}>
+              Cancel
+            </Button>
+            {removeConfirm && (
               <Button
                 variant="primary"
                 onClick={() => handleRemoveFile(removeConfirm)}
                 disabled={removing}
+                loading={removing}
               >
-                {removing ? 'Removing...' : 'Remove'}
+                Remove
               </Button>
-            </div>
+            )}
           </div>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

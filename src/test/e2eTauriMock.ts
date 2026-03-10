@@ -146,12 +146,14 @@ export function setupE2eTauriMock(): void {
     async (cmd, payload) => {
       switch (cmd) {
         case 'initialize_app':
+        case 'unlock_with_passphrase':
           return {
             is_first_run: false,
             vector_enabled: false,
             vector_store_ready: false,
-            key_storage_mode: 'Keychain',
+            key_storage_mode: 'keychain',
             passphrase_required: false,
+            recovery_issue: null,
           };
         case 'check_fts5_enabled':
           return true;

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useDownload } from '../../hooks/useDownload';
+import { Dialog } from './Dialog';
 import { Icon } from './Icon';
 import './OnboardingWizard.css';
 
@@ -32,8 +33,8 @@ const STEPS: Record<Step, StepInfo> = {
     icon: 'sparkles',
   },
   security: {
-    title: 'Choose Your Security Mode',
-    description: 'How should we protect your encryption keys?',
+    title: 'Secure Local Storage',
+    description: 'AssistSupport will use your Mac login to protect local encryption keys.',
     icon: 'shield',
   },
   model: {
@@ -60,7 +61,7 @@ const STEPS: Record<Step, StepInfo> = {
 
 const STEP_ORDER: Step[] = ['welcome', 'security', 'model', 'kb', 'shortcuts', 'complete'];
 
-type SecurityMode = 'keychain' | 'passphrase';
+type SecurityMode = 'keychain';
 
 const SHORTCUTS = [
   { keys: ['Cmd', 'K'], description: 'Open command palette' },
@@ -244,23 +245,12 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                   <li><Icon name="check" size={14} /> No password to remember</li>
                 </ul>
               </button>
-
-              <button
-                className={`security-option ${securityMode === 'passphrase' ? 'selected' : ''}`}
-                onClick={() => configureSecurity('passphrase')}
-              >
-                <div className="security-option-header">
-                  <Icon name="terminal" size={24} />
-                  <strong>Passphrase</strong>
-                </div>
-                <p>Enter a passphrase each time you open the app. More portable across devices.</p>
-                <ul className="security-features">
-                  <li><Icon name="check" size={14} /> Works if Keychain unavailable</li>
-                  <li><Icon name="check" size={14} /> Exportable to other Macs</li>
-                  <li><Icon name="x" size={14} className="con" /> Requires passphrase at startup</li>
-                </ul>
-              </button>
             </div>
+            <p className="onboarding-hint">
+              Passphrase-based unlock is supported for existing workspaces, but new setup is
+              temporarily limited to the default secure storage path while we finish the full
+              recovery flow.
+            </p>
             {securityConfigured && (
               <p className="onboarding-success-text">
                 <Icon name="checkCircle" size={16} /> Security mode configured
@@ -402,14 +392,20 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
   };
 
   return (
-    <div className="onboarding-overlay">
-      <div className="onboarding-modal">
+    <Dialog
+      open
+      labelledBy="onboarding-title"
+      describedBy="onboarding-description"
+      panelClassName="onboarding-modal"
+      closeOnOverlayClick={false}
+    >
+      <div>
         <div className="onboarding-header">
           <div className="onboarding-icon">
             <Icon name={stepInfo.icon as any} size={32} />
           </div>
-          <h2>{stepInfo.title}</h2>
-          <p>{stepInfo.description}</p>
+          <h2 id="onboarding-title">{stepInfo.title}</h2>
+          <p id="onboarding-description">{stepInfo.description}</p>
         </div>
 
         <div className="onboarding-progress">
@@ -472,6 +468,6 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           )}
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

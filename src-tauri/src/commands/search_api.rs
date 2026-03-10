@@ -126,6 +126,26 @@ struct HealthApiResponse {
     timestamp: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ReadyCheckResponse {
+    status: Option<String>,
+    #[allow(dead_code)]
+    error: Option<String>,
+    #[allow(dead_code)]
+    errors: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadyApiResponse {
+    status: String,
+    #[allow(dead_code)]
+    service: Option<String>,
+    #[allow(dead_code)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    checks: std::collections::HashMap<String, ReadyCheckResponse>,
+}
+
 fn search_api_base() -> Result<String, String> {
     let from_env = std::env::var("ASSISTSUPPORT_SEARCH_API_BASE_URL")
         .ok()
@@ -237,6 +257,78 @@ fn classify_health_response(
         status: "invalid-response".to_string(),
         message: format!(
             "Search API health endpoint returned an unexpected response at {}/health",
+            base_url
+        ),
+        base_url: base,
+    }
+}
+
+fn classify_ready_response(
+    status_code: StatusCode,
+    content_type: Option<&str>,
+    body: &str,
+    base_url: &str,
+) -> SearchApiHealthStatus {
+    let base = base_url.to_string();
+
+    if let Ok(ready) = serde_json::from_str::<ReadyApiResponse>(body) {
+        if ready.status == "ok" {
+            return SearchApiHealthStatus {
+                healthy: true,
+                status: "ok".to_string(),
+                message: "Search API is ready".to_string(),
+                base_url: base,
+            };
+        }
+
+        let failing_checks = ready
+            .checks
+            .iter()
+            .filter(|(_, check)| check.status.as_deref() != Some("ok"))
+            .map(|(name, check)| {
+                if let Some(error) = &check.error {
+                    format!("{}: {}", name, error)
+                } else if let Some(errors) = &check.errors {
+                    format!("{}: {}", name, errors.join(", "))
+                } else {
+                    format!("{}: not ready", name)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        return SearchApiHealthStatus {
+            healthy: false,
+            status: "degraded".to_string(),
+            message: if failing_checks.is_empty() {
+                "Search API reported degraded readiness".to_string()
+            } else {
+                format!("Search API degraded: {}", failing_checks.join("; "))
+            },
+            base_url: base,
+        };
+    }
+
+    if is_html_payload(content_type, body) {
+        return SearchApiHealthStatus {
+            healthy: false,
+            status: "wrong-service".to_string(),
+            message: format!(
+                "Port 3000 is serving HTML instead of AssistSupport Search API JSON. Start search-api and ensure {}/ready returns JSON.",
+                base_url
+            ),
+            base_url: base,
+        };
+    }
+
+    SearchApiHealthStatus {
+        healthy: false,
+        status: if status_code.is_success() {
+            "invalid-response".to_string()
+        } else {
+            "degraded".to_string()
+        },
+        message: format!(
+            "Search API readiness endpoint returned an unexpected response at {}/ready",
             base_url
         ),
         base_url: base,
@@ -372,8 +464,30 @@ pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, Str
         }
     };
 
-    match client.get(format!("{}/health", base_url)).send().await {
+    match client.get(format!("{}/ready", base_url)).send().await {
         Ok(response) => {
+            if response.status() == StatusCode::NOT_FOUND {
+                let fallback = client
+                    .get(format!("{}/health", base_url))
+                    .send()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let status_code = fallback.status();
+                let content_type = fallback
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|h| h.to_str().ok())
+                    .map(|s| s.to_string());
+                let body = fallback.text().await.unwrap_or_default();
+
+                return Ok(classify_health_response(
+                    status_code,
+                    content_type.as_deref(),
+                    &body,
+                    &base_url,
+                ));
+            }
+
             let status_code = response.status();
             let content_type = response
                 .headers()
@@ -382,7 +496,7 @@ pub async fn get_search_api_health_status() -> Result<SearchApiHealthStatus, Str
                 .map(|s| s.to_string());
             let body = response.text().await.unwrap_or_default();
 
-            Ok(classify_health_response(
+            Ok(classify_ready_response(
                 status_code,
                 content_type.as_deref(),
                 &body,
@@ -478,6 +592,31 @@ mod tests {
         );
         assert!(!status.healthy);
         assert_eq!(status.status, "offline");
+    }
+
+    #[test]
+    fn classify_ready_response_accepts_ready_json() {
+        let status = classify_ready_response(
+            StatusCode::OK,
+            Some("application/json"),
+            r#"{"status":"ok","service":"search-api","checks":{"database":{"status":"ok"}}}"#,
+            "http://localhost:3000",
+        );
+        assert!(status.healthy);
+        assert_eq!(status.status, "ok");
+    }
+
+    #[test]
+    fn classify_ready_response_surfaces_degraded_checks() {
+        let status = classify_ready_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Some("application/json"),
+            r#"{"status":"degraded","checks":{"database":{"status":"error","error":"connection refused"},"models":{"status":"ok"}}}"#,
+            "http://localhost:3000",
+        );
+        assert!(!status.healthy);
+        assert_eq!(status.status, "degraded");
+        assert!(status.message.contains("database: connection refused"));
     }
 
     #[test]

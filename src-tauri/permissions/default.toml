@@ -1,0 +1,289 @@
+"$schema" = "schemas/schema.json"
+
+[[permission]]
+identifier = "startup-core"
+description = "Enables startup, unlock, and base session commands required by the main desktop shell."
+commands.allow = [
+  "greet",
+  "initialize_app",
+  "unlock_with_passphrase",
+  "check_db_integrity",
+  "check_fts5_enabled",
+  "check_keychain_available",
+  "get_startup_metrics",
+]
+
+[[permission]]
+identifier = "diagnostics-and-recovery"
+description = "Enables backup, recovery, and diagnostics commands that inspect or repair the local workspace."
+commands.allow = [
+  "export_backup",
+  "import_backup",
+  "preview_backup_import",
+  "get_database_stats_cmd",
+  "get_failure_modes_cmd",
+  "get_resource_metrics_cmd",
+  "get_system_health",
+  "get_vector_maintenance_info_cmd",
+  "rebuild_vector_store",
+  "repair_database_cmd",
+  "run_database_maintenance_cmd",
+  "run_quick_health_check",
+  "export_audit_log",
+  "get_audit_entries",
+]
+
+[[permission]]
+identifier = "vector-and-model-runtime"
+description = "Enables local model, embedding, OCR, and vector runtime commands."
+commands.allow = [
+  "cancel_download",
+  "check_ytdlp_available",
+  "delete_downloaded_model",
+  "download_model",
+  "generate_kb_embeddings",
+  "get_embedding_model_info",
+  "get_embedding_model_path",
+  "get_model_info",
+  "get_model_state",
+  "get_models_dir",
+  "get_recommended_models",
+  "get_vector_consent",
+  "get_vector_stats",
+  "init_embedding_engine",
+  "init_llm_engine",
+  "init_vector_store",
+  "is_embedding_model_downloaded",
+  "is_embedding_model_loaded",
+  "is_model_loaded",
+  "is_ocr_available",
+  "is_vector_enabled",
+  "list_downloaded_models",
+  "load_custom_model",
+  "load_embedding_model",
+  "load_model",
+  "process_ocr",
+  "process_ocr_bytes",
+  "set_llm_resource_limits",
+  "set_vector_consent",
+  "set_vector_enabled",
+  "test_model",
+  "unload_embedding_model",
+  "unload_model",
+  "validate_gguf_file",
+  "get_llm_resource_limits",
+]
+
+[[permission]]
+identifier = "knowledge-base"
+description = "Enables knowledge-base ingestion, search, document review, and source maintenance commands."
+commands.allow = [
+  "add_namespace_rule",
+  "clear_knowledge_data",
+  "create_namespace",
+  "delete_ingest_source",
+  "delete_kb_document",
+  "delete_namespace",
+  "delete_namespace_rule",
+  "get_document_chunks",
+  "get_documents_needing_review",
+  "get_kb_folder",
+  "get_kb_gap_candidates",
+  "get_kb_health_stats",
+  "get_kb_stats",
+  "get_kb_usage_stats",
+  "get_search_context",
+  "get_source_health",
+  "get_stale_sources",
+  "index_kb",
+  "ingest_github",
+  "ingest_github_remote",
+  "ingest_kb_from_disk",
+  "ingest_url",
+  "ingest_youtube",
+  "is_kb_watcher_running",
+  "list_document_versions",
+  "list_ingest_sources",
+  "list_kb_documents",
+  "list_namespace_rules",
+  "list_namespaces",
+  "list_namespaces_with_counts",
+  "mark_document_reviewed",
+  "mark_stale_sources",
+  "process_source_file",
+  "remove_kb_document",
+  "rename_namespace",
+  "retry_source",
+  "rollback_document",
+  "search_kb",
+  "search_kb_with_options",
+  "set_kb_folder",
+  "set_source_pinned",
+  "set_source_review_status",
+  "start_kb_watcher",
+  "stop_kb_watcher",
+  "update_chunk_content",
+  "update_kb_gap_status",
+  "update_source_trust",
+]
+
+[[permission]]
+identifier = "drafts-and-templates"
+description = "Enables draft authoring, template management, and response-generation commands."
+commands.allow = [
+  "archive_draft",
+  "export_draft",
+  "choose_alternative",
+  "cleanup_autosaves",
+  "create_draft_version",
+  "delete_draft",
+  "delete_template",
+  "finalize_draft",
+  "find_similar_saved_responses",
+  "format_draft_for_clipboard",
+  "generate_first_response",
+  "generate_streaming",
+  "generate_text",
+  "generate_with_context",
+  "get_alternatives_for_draft",
+  "get_context_window",
+  "get_draft",
+  "get_draft_rating",
+  "get_draft_versions",
+  "get_template",
+  "increment_saved_template_usage",
+  "list_autosaves",
+  "list_draft_versions",
+  "list_drafts",
+  "list_saved_response_templates",
+  "list_templates",
+  "rate_response",
+  "restore_draft_version",
+  "save_draft",
+  "save_response_alternative",
+  "save_response_as_template",
+  "save_template",
+  "search_drafts",
+  "set_context_window",
+  "update_draft_handoff",
+  "export_draft_formatted",
+]
+
+[[permission]]
+identifier = "customization-and-workspace"
+description = "Enables local shortcut, variable, and workspace-role customization commands."
+commands.allow = [
+  "delete_action_shortcut",
+  "delete_custom_variable",
+  "get_action_shortcut",
+  "get_custom_variable",
+  "list_action_shortcuts",
+  "list_custom_variables",
+  "list_workspace_roles",
+  "save_action_shortcut",
+  "save_custom_variable",
+  "set_workspace_role",
+]
+
+[[permission]]
+identifier = "integrations-and-secrets"
+description = "Enables integration configuration, secure token storage, and external ticketing/service commands."
+commands.allow = [
+  "add_jira_comment",
+  "clear_github_token",
+  "clear_hf_token",
+  "clear_jira_config",
+  "clear_memorykernel_service_token",
+  "clear_search_api_token",
+  "configure_integration",
+  "configure_jira",
+  "get_jira_config",
+  "get_jira_ticket",
+  "get_jira_transitions",
+  "has_github_token",
+  "has_hf_token",
+  "has_memorykernel_service_token",
+  "has_search_api_token",
+  "is_jira_configured",
+  "list_integrations",
+  "get_memory_kernel_integration_pin",
+  "get_memory_kernel_preflight_status",
+  "memory_kernel_query_ask",
+  "post_and_transition",
+  "push_draft_to_jira",
+  "set_github_token",
+  "set_hf_token",
+  "set_memorykernel_service_token",
+  "set_search_api_token",
+  "transition_jira_ticket",
+]
+
+[[permission]]
+identifier = "search-sidecar"
+description = "Enables localhost search sidecar health, query, and feedback commands."
+commands.allow = [
+  "check_search_api_health",
+  "get_search_api_health_status",
+  "get_search_api_stats",
+  "hybrid_search",
+  "submit_search_feedback",
+]
+
+[[permission]]
+identifier = "jobs-and-evals"
+description = "Enables batch generation, background jobs, and evaluation execution commands."
+commands.allow = [
+  "batch_generate",
+  "cancel_generation",
+  "cancel_job",
+  "cleanup_old_jobs",
+  "create_job",
+  "export_batch_results",
+  "get_batch_status",
+  "get_job",
+  "get_job_counts",
+  "get_job_logs",
+  "list_eval_runs",
+  "list_jobs",
+  "run_eval_harness",
+]
+
+[[permission]]
+identifier = "operations-and-analytics"
+description = "Enables pilot analytics, deployment operations, runbook workflows, and audit-oriented reporting commands."
+commands.allow = [
+  "advance_runbook_session",
+  "audit_response_copy_override",
+  "cluster_tickets_for_triage",
+  "export_pilot_data",
+  "generate_troubleshooting_checklist",
+  "get_analytics_for_article",
+  "get_analytics_summary",
+  "get_decision_tree",
+  "get_deployment_health_summary",
+  "get_low_rating_analysis",
+  "get_pilot_logging_policy",
+  "get_pilot_query_logs",
+  "get_pilot_stats",
+  "get_playbook",
+  "get_rating_stats",
+  "get_response_quality_drilldown_examples",
+  "get_response_quality_summary",
+  "list_decision_trees",
+  "list_deployment_artifacts",
+  "list_playbooks",
+  "list_recent_triage_clusters",
+  "list_runbook_sessions",
+  "log_analytics_event",
+  "log_pilot_query",
+  "record_deployment_artifact",
+  "delete_playbook",
+  "rollback_deployment_run",
+  "run_deployment_preflight",
+  "save_playbook",
+  "start_runbook_session",
+  "submit_pilot_feedback",
+  "update_troubleshooting_checklist",
+  "use_playbook",
+  "verify_signed_artifact",
+]

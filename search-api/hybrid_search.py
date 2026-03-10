@@ -9,10 +9,12 @@ import os
 import time
 import logging
 import hashlib
-from typing import List, Dict, Tuple
+import threading
+from contextlib import contextmanager
+from typing import Callable, ContextManager, Dict, List, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from db_config import connect_db
+from db_config import pooled_connection
 from embedding_service import EmbeddingService
 from score_fusion import ScoreFusion
 from intent_detection import IntentDetector
@@ -25,30 +27,62 @@ logger = logging.getLogger(__name__)
 class HybridSearchEngine:
     """Production hybrid search combining FTS + vector + intent detection"""
 
-    def __init__(self, *, store_raw_query_text: bool = False):
-        self.conn = connect_db()
-        self.conn.autocommit = True
-        self.cur = self.conn.cursor()
-        # Set HNSW ef_search once at connection time
-        self.cur.execute("SET hnsw.ef_search = 100")
-        self.vector_search_enabled = self._detect_vector_capability()
+    EF_SEARCH = 100
+
+    def __init__(
+        self,
+        *,
+        store_raw_query_text: bool = False,
+        connection_provider: Callable[[], ContextManager] | None = None,
+    ):
+        self.store_raw_query_text = store_raw_query_text
+        self._connection_provider = connection_provider or pooled_connection
+        self._embed_lock = threading.Lock()
+        self._rerank_lock = threading.Lock()
         self.embedder = EmbeddingService()
         self.reranker = Reranker()
-        self.store_raw_query_text = store_raw_query_text
         logger.info("Hybrid search engine initialized")
 
-    def _detect_vector_capability(self) -> bool:
+    @contextmanager
+    def _session(self):
+        with self._connection_provider() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET hnsw.ef_search = %s", (self.EF_SEARCH,))
+                yield conn, cur
+
+    def _detect_vector_capability(self, cur) -> bool:
         """Detect whether pgvector is available before issuing vector SQL."""
         try:
-            self.cur.execute("SELECT to_regtype('vector') IS NOT NULL")
-            row = self.cur.fetchone()
+            cur.execute("SELECT to_regtype('vector') IS NOT NULL")
+            row = cur.fetchone()
             enabled = bool(row and row[0])
             if not enabled:
                 logger.warning("pgvector extension not available; vector search disabled")
             return enabled
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to detect vector capability")
             return False
+
+    def get_component_status(self) -> Dict[str, Dict[str, object]]:
+        return {
+            "embedder": {
+                "status": "ok",
+                "model_name": getattr(self.embedder, "model_name", self.embedder.__class__.__name__),
+                "dimension": getattr(self.embedder, "dimension", None),
+            },
+            "reranker": {
+                "status": "ok",
+                "model_name": getattr(self.reranker, "model_name", self.reranker.__class__.__name__),
+            },
+        }
+
+    def get_readiness(self) -> Dict[str, bool]:
+        """Backward-compatible readiness shape for existing callers/tests."""
+        status = self.get_component_status()
+        return {
+            "embedder_ready": status["embedder"]["status"] == "ok",
+            "reranker_ready": status["reranker"]["status"] == "ok",
+        }
 
     def search(
         self,
@@ -69,63 +103,74 @@ class HybridSearchEngine:
 
         # Step 2: Generate query embedding
         start_embed = time.time()
-        query_embedding = self.embedder.embed_query(query)
+        with self._embed_lock:
+            query_embedding = self.embedder.embed_query(query)
         embed_time = (time.time() - start_embed) * 1000
 
-        # Step 3: Execute both searches
-        start_search = time.time()
-        bm25_results = self._bm25_search(query)
-        vector_results = self._vector_search(query_embedding, limit * 2)
-        search_time = (time.time() - start_search) * 1000
+        with self._session() as (conn, cur):
+            vector_search_enabled = self._detect_vector_capability(cur)
 
-        # Step 4: Fuse scores
-        start_fusion = time.time()
-        if fusion_strategy == "rrf":
-            fused = ScoreFusion.reciprocal_rank_fusion(bm25_results, vector_results)
-        elif fusion_strategy == "weighted":
-            fused = ScoreFusion.weighted_combination(bm25_results, vector_results)
-        else:  # adaptive
-            fused = ScoreFusion.adaptive_fusion(bm25_results, vector_results, intent)
-        fusion_time = (time.time() - start_fusion) * 1000
-
-        # Step 5: Category boost for intent-matching results
-        if intent in ("policy", "procedure", "reference") and intent_conf >= 0.3:
-            fused = self._apply_category_boost(fused, intent)
-
-        # Step 5.5: Apply quality score from feedback loop
-        fused = self._apply_quality_scores(fused)
-
-        # Step 6: Deduplicate
-        if use_deduplication:
-            fused = self._deduplicate_results(fused)
-
-        # Step 7: Fetch full articles
-        results = self._fetch_and_format_results(
-            fused, bm25_results, vector_results, limit
-        )
-
-        # Step 8: Cross-encoder re-ranking (optional, disabled by default)
-        rerank_time = 0
-        if fusion_strategy == "rerank":
-            rerank_pool_results = self._fetch_and_format_results(
-                fused, bm25_results, vector_results, min(limit * 2, 20)
+            # Step 3: Execute both searches
+            start_search = time.time()
+            bm25_results = self._bm25_search(cur, query)
+            vector_results = self._vector_search(
+                cur,
+                query_embedding,
+                limit * 2,
+                vector_search_enabled=vector_search_enabled,
             )
-            start_rerank = time.time()
-            results = self.reranker.rerank(query, rerank_pool_results, top_k=limit)
-            rerank_time = (time.time() - start_rerank) * 1000
+            search_time = (time.time() - start_search) * 1000
 
-        # Step 9: Log query
-        total_time = (time.time() - start_total) * 1000
-        query_id = self._log_query(
-            query,
-            intent,
-            intent_conf,
-            len(bm25_results),
-            len(vector_results),
-            len(results),
-            total_time,
-            fusion_strategy,
-        )
+            # Step 4: Fuse scores
+            start_fusion = time.time()
+            if fusion_strategy == "rrf":
+                fused = ScoreFusion.reciprocal_rank_fusion(bm25_results, vector_results)
+            elif fusion_strategy == "weighted":
+                fused = ScoreFusion.weighted_combination(bm25_results, vector_results)
+            else:  # adaptive
+                fused = ScoreFusion.adaptive_fusion(bm25_results, vector_results, intent)
+            fusion_time = (time.time() - start_fusion) * 1000
+
+            # Step 5: Category boost for intent-matching results
+            if intent in ("policy", "procedure", "reference") and intent_conf >= 0.3:
+                fused = self._apply_category_boost(cur, fused, intent)
+
+            # Step 5.5: Apply quality score from feedback loop
+            fused = self._apply_quality_scores(conn, fused)
+
+            # Step 6: Deduplicate
+            if use_deduplication:
+                fused = self._deduplicate_results(cur, fused)
+
+            # Step 7: Fetch full articles
+            results = self._fetch_and_format_results(
+                cur, fused, bm25_results, vector_results, limit
+            )
+
+            # Step 8: Cross-encoder re-ranking (optional, disabled by default)
+            rerank_time = 0
+            if fusion_strategy == "rerank":
+                rerank_pool_results = self._fetch_and_format_results(
+                    cur, fused, bm25_results, vector_results, min(limit * 2, 20)
+                )
+                start_rerank = time.time()
+                with self._rerank_lock:
+                    results = self.reranker.rerank(query, rerank_pool_results, top_k=limit)
+                rerank_time = (time.time() - start_rerank) * 1000
+
+            # Step 9: Log query
+            total_time = (time.time() - start_total) * 1000
+            query_id = self._log_query(
+                cur,
+                query,
+                intent,
+                intent_conf,
+                len(bm25_results),
+                len(vector_results),
+                len(results),
+                total_time,
+                fusion_strategy,
+            )
 
         return {
             "query": query,
@@ -143,10 +188,10 @@ class HybridSearchEngine:
             },
         }
 
-    def _bm25_search(self, query: str) -> List[Tuple[str, float]]:
+    def _bm25_search(self, cur, query: str) -> List[Tuple[str, float]]:
         """Execute BM25 keyword search via FTS using plainto_tsquery"""
         try:
-            self.cur.execute(
+            cur.execute(
                 """
                 SELECT id, ts_rank(fts_content, query) as bm25_score
                 FROM kb_articles, plainto_tsquery('english', %s) query
@@ -156,13 +201,14 @@ class HybridSearchEngine:
                 """,
                 (query,),
             )
-            return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
-        except Exception as e:
+            return [(str(row[0]), float(row[1])) for row in cur.fetchall()]
+        except Exception:
             logger.exception("BM25 search error")
             return []
 
     def _apply_category_boost(
         self,
+        cur,
         fused_results: List[Tuple[str, float]],
         intent: str,
     ) -> List[Tuple[str, float]]:
@@ -182,11 +228,11 @@ class HybridSearchEngine:
             return fused_results
 
         placeholders = ",".join(["%s"] * len(article_ids))
-        self.cur.execute(
+        cur.execute(
             f"SELECT id, category FROM kb_articles WHERE id IN ({placeholders})",
             article_ids,
         )
-        category_map = {str(row[0]): row[1] for row in self.cur.fetchall()}
+        category_map = {str(row[0]): row[1] for row in cur.fetchall()}
 
         boosted = []
         for article_id, score in fused_results:
@@ -198,13 +244,13 @@ class HybridSearchEngine:
         return sorted(boosted, key=lambda x: x[1], reverse=True)
 
     def _apply_quality_scores(
-        self, fused_results: List[Tuple[str, float]]
+        self, conn, fused_results: List[Tuple[str, float]]
     ) -> List[Tuple[str, float]]:
         """Multiply fusion scores by per-article quality scores from feedback."""
         article_ids = [r[0] for r in fused_results[:30]]
         if not article_ids:
             return fused_results
-        q_scores = get_quality_scores(self.conn, article_ids)
+        q_scores = get_quality_scores(conn, article_ids)
         adjusted = []
         for article_id, score in fused_results:
             qs = q_scores.get(article_id, 1.0)
@@ -212,15 +258,15 @@ class HybridSearchEngine:
         return sorted(adjusted, key=lambda x: x[1], reverse=True)
 
     def _vector_search(
-        self, query_embedding, limit: int
+        self, cur, query_embedding, limit: int, *, vector_search_enabled: bool
     ) -> List[Tuple[str, float]]:
         """Execute HNSW vector semantic search"""
-        if not self.vector_search_enabled:
+        if not vector_search_enabled:
             return []
 
         embedding_str = "[" + ",".join(f"{x:.6f}" for x in query_embedding) + "]"
         try:
-            self.cur.execute(
+            cur.execute(
                 """
                 SELECT id, 1 - (embedding <=> %s::vector) as cosine_similarity
                 FROM kb_articles
@@ -230,14 +276,13 @@ class HybridSearchEngine:
                 """,
                 (embedding_str, embedding_str, limit),
             )
-            return [(str(row[0]), float(row[1])) for row in self.cur.fetchall()]
-        except Exception as e:
+            return [(str(row[0]), float(row[1])) for row in cur.fetchall()]
+        except Exception:
             logger.exception("Vector search unavailable; falling back to BM25 only")
-            self.vector_search_enabled = False
             return []
 
     def _deduplicate_results(
-        self, fused_results: List[Tuple[str, float]]
+        self, cur, fused_results: List[Tuple[str, float]]
     ) -> List[Tuple[str, float]]:
         """Remove near-duplicate articles (same source document)"""
         article_ids = [r[0] for r in fused_results]
@@ -245,7 +290,7 @@ class HybridSearchEngine:
             return fused_results
 
         placeholders = ",".join(["%s"] * len(article_ids))
-        self.cur.execute(
+        cur.execute(
             f"""
             SELECT id, source_document_id, chunk_index
             FROM kb_articles WHERE id IN ({placeholders})
@@ -253,7 +298,7 @@ class HybridSearchEngine:
             article_ids,
         )
 
-        doc_map = {str(row[0]): (row[1], row[2]) for row in self.cur.fetchall()}
+        doc_map = {str(row[0]): (row[1], row[2]) for row in cur.fetchall()}
 
         seen_docs = {}
         deduplicated = []
@@ -274,6 +319,7 @@ class HybridSearchEngine:
 
     def _fetch_and_format_results(
         self,
+        cur,
         fused: List[Tuple[str, float]],
         bm25_results: List[Tuple[str, float]],
         vector_results: List[Tuple[str, float]],
@@ -288,7 +334,7 @@ class HybridSearchEngine:
             return []
 
         placeholders = ",".join(["%s"] * len(article_ids))
-        self.cur.execute(
+        cur.execute(
             f"""
             SELECT id, title, content, category, source_document_id, chunk_index, heading_path
             FROM kb_articles WHERE id IN ({placeholders})
@@ -296,7 +342,7 @@ class HybridSearchEngine:
             article_ids,
         )
 
-        articles = {str(row[0]): row for row in self.cur.fetchall()}
+        articles = {str(row[0]): row for row in cur.fetchall()}
 
         results = []
         for article_id, fusion_score in fused[:limit]:
@@ -324,6 +370,7 @@ class HybridSearchEngine:
 
     def _log_query(
         self,
+        cur,
         query: str,
         intent: str,
         confidence: float,
@@ -340,7 +387,7 @@ class HybridSearchEngine:
                 if self.store_raw_query_text
                 else f"sha256:{hashlib.sha256(query.encode('utf-8')).hexdigest()}"
             )
-            self.cur.execute(
+            cur.execute(
                 """
                 INSERT INTO query_performance
                     (query_text, ef_search_used, bm25_results_count,
@@ -362,9 +409,9 @@ class HybridSearchEngine:
                     fusion_strategy,
                 ),
             )
-            row = self.cur.fetchone()
+            row = cur.fetchone()
             return str(row[0]) if row else None
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to log query")
             return None
 
@@ -374,61 +421,64 @@ class HybridSearchEngine:
     ):
         """Log user feedback on search results"""
         try:
-            self.cur.execute(
-                """
-                INSERT INTO search_feedback (query_id, result_rank, rating, comment, article_id)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (query_id, result_rank, rating, comment, article_id),
-            )
-        except Exception as e:
+            with self._session() as (_conn, cur):
+                cur.execute(
+                    """
+                    INSERT INTO search_feedback (query_id, result_rank, rating, comment, article_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (query_id, result_rank, rating, comment, article_id),
+                )
+        except Exception:
             logger.exception("Feedback logging error")
+            raise
 
     def _get_stats(self) -> dict:
         """Get search statistics for monitoring"""
-        self.cur.execute("SELECT COUNT(*) FROM query_performance")
-        total_queries = self.cur.fetchone()[0]
+        with self._session() as (_conn, cur):
+            cur.execute("SELECT COUNT(*) FROM query_performance")
+            total_queries = cur.fetchone()[0]
 
-        self.cur.execute(
-            """
-            SELECT COUNT(*) FROM query_performance
-            WHERE created_at > NOW() - INTERVAL '24 hours'
-            """
-        )
-        queries_24h = self.cur.fetchone()[0]
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM query_performance
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                """
+            )
+            queries_24h = cur.fetchone()[0]
 
-        self.cur.execute(
-            """
-            SELECT
-                ROUND(AVG(response_time_ms)::numeric, 1) as avg_latency,
-                ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p50,
-                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p95,
-                ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p99
-            FROM query_performance
-            WHERE created_at > NOW() - INTERVAL '24 hours'
-            """
-        )
-        lat = self.cur.fetchone()
+            cur.execute(
+                """
+                SELECT
+                    ROUND(AVG(response_time_ms)::numeric, 1) as avg_latency,
+                    ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p50,
+                    ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p95,
+                    ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY response_time_ms)::numeric, 1) as p99
+                FROM query_performance
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                """
+            )
+            lat = cur.fetchone()
 
-        self.cur.execute(
-            """
-            SELECT category_filter, COUNT(*)
-            FROM query_performance
-            WHERE created_at > NOW() - INTERVAL '24 hours'
-            AND category_filter IS NOT NULL
-            GROUP BY category_filter
-            """
-        )
-        intent_dist = {row[0]: row[1] for row in self.cur.fetchall()}
+            cur.execute(
+                """
+                SELECT category_filter, COUNT(*)
+                FROM query_performance
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                AND category_filter IS NOT NULL
+                GROUP BY category_filter
+                """
+            )
+            intent_dist = {row[0]: row[1] for row in cur.fetchall()}
 
-        self.cur.execute(
-            """
-            SELECT rating, COUNT(*) FROM search_feedback
-            WHERE created_at > NOW() - INTERVAL '24 hours'
-            GROUP BY rating
-            """
-        )
-        feedback_stats = {row[0]: row[1] for row in self.cur.fetchall()}
+            cur.execute(
+                """
+                SELECT rating, COUNT(*) FROM search_feedback
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                GROUP BY rating
+                """
+            )
+            feedback_stats = {row[0]: row[1] for row in cur.fetchall()}
 
         return {
             "queries_total": total_queries,
@@ -444,8 +494,7 @@ class HybridSearchEngine:
         }
 
     def close(self):
-        self.cur.close()
-        self.conn.close()
+        return None
 
 
 if __name__ == "__main__":

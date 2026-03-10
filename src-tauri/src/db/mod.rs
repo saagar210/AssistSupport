@@ -2,10 +2,15 @@
 //! SQLCipher encrypted database with FTS5 full-text search
 
 pub mod executor;
+mod job_store;
+mod path_helpers;
 
 pub use executor::{DbExecutor, DbExecutorError};
+pub use path_helpers::{
+    get_app_data_dir, get_attachments_dir, get_cache_dir, get_db_path, get_downloads_dir,
+    get_logs_dir, get_models_dir, get_vectors_dir,
+};
 
-use crate::jobs::{Job, JobLog, JobStatus, JobType, LogLevel};
 use crate::security::{MasterKey, SecurityError};
 use crate::validation::{normalize_and_validate_namespace_id, ValidationError};
 use chrono::Utc;
@@ -15,6 +20,8 @@ use thiserror::Error;
 use zeroize::Zeroize;
 
 const CURRENT_SCHEMA_VERSION: i32 = 13;
+const VECTOR_STORE_VERSION_KEY: &str = "vector_store_version";
+pub const CURRENT_VECTOR_STORE_VERSION: i32 = 2;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -30,6 +37,8 @@ pub enum DbError {
     Migration(String),
     #[error("Database corruption detected")]
     Corruption,
+    #[error("Database integrity check failed: {0}")]
+    Integrity(String),
     #[error("FTS5 not available in this build")]
     Fts5NotAvailable,
     #[error("IO error: {0}")]
@@ -42,6 +51,15 @@ pub enum DbError {
 pub struct Database {
     conn: Connection,
     path: PathBuf,
+}
+
+/// Chunk payload used when generating vector embeddings.
+#[derive(Debug, Clone)]
+pub struct ChunkEmbeddingRecord {
+    pub chunk_id: String,
+    pub content: String,
+    pub document_id: String,
+    pub namespace_id: String,
 }
 
 /// Metrics payload recorded for generation quality monitoring.
@@ -159,7 +177,34 @@ impl Database {
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
 
         if result != "ok" {
-            return Err(DbError::Corruption);
+            return Err(DbError::Integrity(result));
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare("PRAGMA foreign_key_check")
+            .map_err(DbError::Sqlite)?;
+        let mut rows = stmt.query([])?;
+        let mut violations = Vec::new();
+        while let Some(row) = rows.next()? {
+            let table: String = row.get(0)?;
+            let row_id: i64 = row.get(1)?;
+            let parent: String = row.get(2)?;
+            let fk_index: i64 = row.get(3)?;
+            violations.push(format!(
+                "table={} rowid={} parent={} fk_index={}",
+                table, row_id, parent, fk_index
+            ));
+            if violations.len() >= 5 {
+                break;
+            }
+        }
+
+        if !violations.is_empty() {
+            return Err(DbError::Integrity(format!(
+                "foreign key violations detected: {}",
+                violations.join("; ")
+            )));
         }
 
         Ok(())
@@ -198,6 +243,43 @@ impl Database {
             params![version.to_string()],
         )?;
         Ok(())
+    }
+
+    fn get_setting(&self, key: &str) -> Result<Option<String>, DbError> {
+        let value: SqliteResult<String> = self
+            .conn
+            .query_row("SELECT value FROM settings WHERE key = ?", [key], |row| row.get(0));
+
+        match value {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
+    }
+
+    fn set_setting(&self, key: &str, value: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Get the current vector store version tracked in SQLite settings.
+    pub fn get_vector_store_version(&self) -> Result<i32, DbError> {
+        self.get_setting(VECTOR_STORE_VERSION_KEY)?
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|_| DbError::Migration("Invalid vector store version".into()))
+            })
+            .transpose()
+            .map(|value| value.unwrap_or(0))
+    }
+
+    /// Persist the vector store version tracked in SQLite settings.
+    pub fn set_vector_store_version(&self, version: i32) -> Result<(), DbError> {
+        self.set_setting(VECTOR_STORE_VERSION_KEY, &version.to_string())
     }
 
     /// Run database migrations
@@ -2071,19 +2153,39 @@ impl Database {
         Ok(())
     }
 
-    /// Get all chunk IDs and content for embedding generation
-    pub fn get_all_chunks_for_embedding(&self) -> Result<Vec<(String, String)>, DbError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, content FROM kb_chunks ORDER BY document_id, chunk_index")?;
+    /// Get all chunk records needed for embedding generation.
+    pub fn get_all_chunks_for_embedding(&self) -> Result<Vec<ChunkEmbeddingRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, document_id, namespace_id
+             FROM kb_chunks
+             ORDER BY document_id, chunk_index",
+        )?;
 
         let chunks = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok(ChunkEmbeddingRecord {
+                    chunk_id: row.get::<_, String>(0)?,
+                    content: row.get::<_, String>(1)?,
+                    document_id: row.get::<_, String>(2)?,
+                    namespace_id: row.get::<_, String>(3)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(chunks)
+    }
+
+    /// Look up a KB document ID by file path.
+    pub fn get_document_id_by_path(&self, file_path: &str) -> Result<Option<String>, DbError> {
+        match self.conn.query_row(
+            "SELECT id FROM kb_documents WHERE file_path = ?",
+            [file_path],
+            |row| row.get(0),
+        ) {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::Sqlite(e)),
+        }
     }
 
     /// Get chunk content by ID
@@ -2769,262 +2871,6 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(entries)
-    }
-
-    // ============================================================================
-    // Job Methods
-    // ============================================================================
-
-    /// Create a new job
-    pub fn create_job(&self, job: &Job) -> Result<(), DbError> {
-        let metadata_json = job.metadata.as_ref().map(|m| m.to_string());
-        self.conn.execute(
-            "INSERT INTO jobs (id, job_type, status, created_at, updated_at, started_at, completed_at,
-                    progress, progress_message, error, metadata_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                job.id,
-                job.job_type.to_string(),
-                job.status.to_string(),
-                job.created_at.to_rfc3339(),
-                job.updated_at.to_rfc3339(),
-                job.started_at.map(|t| t.to_rfc3339()),
-                job.completed_at.map(|t| t.to_rfc3339()),
-                job.progress,
-                job.progress_message,
-                job.error,
-                metadata_json,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Get a job by ID
-    pub fn get_job(&self, job_id: &str) -> Result<Option<Job>, DbError> {
-        match self.conn.query_row(
-            "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
-                    progress, progress_message, error, metadata_json
-             FROM jobs WHERE id = ?",
-            [job_id],
-            |row| {
-                let status_str: String = row.get(2)?;
-                let metadata_json: Option<String> = row.get(10)?;
-                Ok(Job {
-                    id: row.get(0)?,
-                    job_type: row
-                        .get::<_, String>(1)?
-                        .parse::<JobType>()
-                        .unwrap_or(JobType::Custom("unknown".into())),
-                    status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
-                    created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .map(|t| t.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .map(|t| t.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    started_at: row
-                        .get::<_, Option<String>>(5)?
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                        .map(|t| t.with_timezone(&Utc)),
-                    completed_at: row
-                        .get::<_, Option<String>>(6)?
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                        .map(|t| t.with_timezone(&Utc)),
-                    progress: row.get(7)?,
-                    progress_message: row.get(8)?,
-                    error: row.get(9)?,
-                    metadata: metadata_json.and_then(|s| serde_json::from_str(&s).ok()),
-                })
-            },
-        ) {
-            Ok(job) => Ok(Some(job)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(DbError::Sqlite(e)),
-        }
-    }
-
-    /// List jobs, optionally filtered by status
-    pub fn list_jobs(&self, status: Option<JobStatus>, limit: usize) -> Result<Vec<Job>, DbError> {
-        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<Job> {
-            let status_str: String = row.get(2)?;
-            let metadata_json: Option<String> = row.get(10)?;
-            Ok(Job {
-                id: row.get(0)?,
-                job_type: row
-                    .get::<_, String>(1)?
-                    .parse::<JobType>()
-                    .unwrap_or(JobType::Custom("unknown".into())),
-                status: status_str.parse::<JobStatus>().unwrap_or(JobStatus::Queued),
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                    .map(|t| t.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .map(|t| t.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
-                started_at: row
-                    .get::<_, Option<String>>(5)?
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|t| t.with_timezone(&Utc)),
-                completed_at: row
-                    .get::<_, Option<String>>(6)?
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|t| t.with_timezone(&Utc)),
-                progress: row.get(7)?,
-                progress_message: row.get(8)?,
-                error: row.get(9)?,
-                metadata: metadata_json.and_then(|s| serde_json::from_str(&s).ok()),
-            })
-        };
-
-        let jobs: Vec<Job> = match status {
-            Some(s) => {
-                let mut stmt = self.conn.prepare(
-                    "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
-                            progress, progress_message, error, metadata_json
-                     FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                )?;
-                let result: Vec<Job> = stmt
-                    .query_map(params![s.to_string(), limit as i64], map_row)?
-                    .collect::<Result<Vec<_>, _>>()?;
-                result
-            }
-            None => {
-                let mut stmt = self.conn.prepare(
-                    "SELECT id, job_type, status, created_at, updated_at, started_at, completed_at,
-                            progress, progress_message, error, metadata_json
-                     FROM jobs ORDER BY created_at DESC LIMIT ?",
-                )?;
-                let result: Vec<Job> = stmt
-                    .query_map(params![limit as i64], map_row)?
-                    .collect::<Result<Vec<_>, _>>()?;
-                result
-            }
-        };
-
-        Ok(jobs)
-    }
-
-    /// Update job status
-    pub fn update_job_status(
-        &self,
-        job_id: &str,
-        status: JobStatus,
-        error: Option<&str>,
-    ) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        let started_at = if status == JobStatus::Running {
-            Some(now.clone())
-        } else {
-            None
-        };
-        let completed_at = if status.is_terminal() {
-            Some(now.clone())
-        } else {
-            None
-        };
-
-        self.conn.execute(
-            "UPDATE jobs SET status = ?, updated_at = ?, started_at = COALESCE(?, started_at),
-                    completed_at = COALESCE(?, completed_at), error = COALESCE(?, error)
-             WHERE id = ?",
-            params![
-                status.to_string(),
-                now,
-                started_at,
-                completed_at,
-                error,
-                job_id
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Update job progress
-    pub fn update_job_progress(
-        &self,
-        job_id: &str,
-        progress: f32,
-        message: Option<&str>,
-    ) -> Result<(), DbError> {
-        let now = Utc::now().to_rfc3339();
-        self.conn.execute(
-            "UPDATE jobs SET progress = ?, progress_message = ?, updated_at = ? WHERE id = ?",
-            params![progress, message, now, job_id],
-        )?;
-        Ok(())
-    }
-
-    /// Add a log entry for a job
-    pub fn add_job_log(
-        &self,
-        job_id: &str,
-        level: LogLevel,
-        message: &str,
-    ) -> Result<i64, DbError> {
-        let now = Utc::now().to_rfc3339();
-        self.conn.execute(
-            "INSERT INTO job_logs (job_id, timestamp, level, message) VALUES (?, ?, ?, ?)",
-            params![job_id, now, level.to_string(), message],
-        )?;
-        Ok(self.conn.last_insert_rowid())
-    }
-
-    /// Get logs for a job
-    pub fn get_job_logs(&self, job_id: &str, limit: usize) -> Result<Vec<JobLog>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, job_id, timestamp, level, message
-             FROM job_logs WHERE job_id = ? ORDER BY timestamp DESC LIMIT ?",
-        )?;
-
-        let logs = stmt
-            .query_map(params![job_id, limit as i64], |row| {
-                let level_str: String = row.get(3)?;
-                let level = match level_str.as_str() {
-                    "debug" => LogLevel::Debug,
-                    "info" => LogLevel::Info,
-                    "warning" => LogLevel::Warning,
-                    "error" => LogLevel::Error,
-                    _ => LogLevel::Info,
-                };
-                Ok(JobLog {
-                    id: row.get(0)?,
-                    job_id: row.get(1)?,
-                    timestamp: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                        .map(|t| t.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    level,
-                    message: row.get(4)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(logs)
-    }
-
-    /// Delete old completed jobs
-    pub fn cleanup_old_jobs(&self, keep_days: i64) -> Result<usize, DbError> {
-        let cutoff = (Utc::now() - chrono::Duration::days(keep_days)).to_rfc3339();
-        let deleted = self.conn.execute(
-            "DELETE FROM jobs WHERE status IN ('succeeded', 'failed', 'cancelled')
-             AND completed_at < ?",
-            params![cutoff],
-        )?;
-        Ok(deleted)
-    }
-
-    /// Get count of jobs by status
-    pub fn get_job_counts(&self) -> Result<Vec<(String, i64)>, DbError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT status, COUNT(*) FROM jobs GROUP BY status")?;
-
-        let counts = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(counts)
     }
 
     // ============================================================================
@@ -5735,53 +5581,6 @@ const BUILTIN_TREES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-/// Get the application data directory
-pub fn get_app_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .expect("Platform data directory must be available")
-        .join("AssistSupport")
-}
-
-/// Get database path
-pub fn get_db_path() -> PathBuf {
-    get_app_data_dir().join("assistsupport.db")
-}
-
-/// Get attachments directory
-pub fn get_attachments_dir() -> PathBuf {
-    get_app_data_dir().join("attachments")
-}
-
-/// Get models directory
-pub fn get_models_dir() -> PathBuf {
-    get_app_data_dir().join("models")
-}
-
-/// Get vectors directory (LanceDB)
-pub fn get_vectors_dir() -> PathBuf {
-    get_app_data_dir().join("vectors")
-}
-
-/// Get downloads directory
-pub fn get_downloads_dir() -> PathBuf {
-    get_app_data_dir().join("downloads")
-}
-
-/// Get logs directory
-pub fn get_logs_dir() -> PathBuf {
-    dirs::data_dir()
-        .expect("Platform data directory must be available")
-        .join("Logs")
-        .join("AssistSupport")
-}
-
-/// Get cache directory
-pub fn get_cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .expect("Platform cache directory must be available")
-        .join("AssistSupport")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5959,6 +5758,55 @@ mod tests {
     }
 
     #[test]
+    fn test_get_all_chunks_for_embedding_includes_document_metadata() {
+        let (db, _dir) = create_test_db();
+
+        db.create_namespace("internal", Some("Internal"), None)
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO kb_documents (id, file_path, file_hash, indexed_at, namespace_id, source_type)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+                params![
+                    "doc_internal",
+                    "/test/internal.md",
+                    "hash1",
+                    "2024-01-01",
+                    "internal",
+                    "file"
+                ],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO kb_chunks (id, document_id, chunk_index, heading_path, content, word_count, namespace_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "chunk_internal",
+                    "doc_internal",
+                    0,
+                    "Heading",
+                    "Internal runbook content",
+                    3,
+                    "internal"
+                ],
+            )
+            .unwrap();
+
+        let chunks = db.get_all_chunks_for_embedding().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].chunk_id, "chunk_internal");
+        assert_eq!(chunks[0].document_id, "doc_internal");
+        assert_eq!(chunks[0].namespace_id, "internal");
+        assert!(chunks[0].content.contains("runbook"));
+        assert_eq!(
+            db.get_document_id_by_path("/test/internal.md").unwrap(),
+            Some("doc_internal".to_string())
+        );
+        assert_eq!(db.get_document_id_by_path("/missing.md").unwrap(), None);
+    }
+
+    #[test]
     fn test_set_integration_config_accepts_json_object() {
         let (db, _dir) = create_test_db();
 
@@ -6075,132 +5923,4 @@ mod tests {
         assert_eq!(examples.edited_save_rate[0].draft_id, "draft-example-1");
     }
 
-    #[test]
-    fn test_job_crud() {
-        let (db, _dir) = create_test_db();
-
-        // Create a job
-        let job = Job::new(JobType::IngestWeb);
-        let job_id = job.id.clone();
-        db.create_job(&job).unwrap();
-
-        // Get the job
-        let retrieved = db.get_job(&job_id).unwrap();
-        assert!(retrieved.is_some());
-        let retrieved = retrieved.unwrap();
-        assert_eq!(retrieved.id, job_id);
-        assert_eq!(retrieved.status, JobStatus::Queued);
-
-        // Update status to running
-        db.update_job_status(&job_id, JobStatus::Running, None)
-            .unwrap();
-        let retrieved = db.get_job(&job_id).unwrap().unwrap();
-        assert_eq!(retrieved.status, JobStatus::Running);
-        assert!(retrieved.started_at.is_some());
-
-        // Update progress
-        db.update_job_progress(&job_id, 0.5, Some("Halfway done"))
-            .unwrap();
-        let retrieved = db.get_job(&job_id).unwrap().unwrap();
-        assert_eq!(retrieved.progress, 0.5);
-        assert_eq!(retrieved.progress_message, Some("Halfway done".to_string()));
-
-        // Complete the job
-        db.update_job_status(&job_id, JobStatus::Succeeded, None)
-            .unwrap();
-        let retrieved = db.get_job(&job_id).unwrap().unwrap();
-        assert_eq!(retrieved.status, JobStatus::Succeeded);
-        assert!(retrieved.completed_at.is_some());
-    }
-
-    #[test]
-    fn test_job_logs() {
-        let (db, _dir) = create_test_db();
-
-        // Create a job
-        let job = Job::new(JobType::IngestYoutube);
-        let job_id = job.id.clone();
-        db.create_job(&job).unwrap();
-
-        // Add logs
-        db.add_job_log(&job_id, LogLevel::Info, "Starting ingestion")
-            .unwrap();
-        db.add_job_log(&job_id, LogLevel::Debug, "Fetching content")
-            .unwrap();
-        db.add_job_log(&job_id, LogLevel::Warning, "Content is large")
-            .unwrap();
-        db.add_job_log(&job_id, LogLevel::Info, "Completed")
-            .unwrap();
-
-        // Get logs
-        let logs = db.get_job_logs(&job_id, 10).unwrap();
-        assert_eq!(logs.len(), 4);
-
-        // Logs should be in reverse order (most recent first)
-        assert_eq!(logs[0].message, "Completed");
-        assert_eq!(logs[3].message, "Starting ingestion");
-    }
-
-    #[test]
-    fn test_list_jobs_by_status() {
-        let (db, _dir) = create_test_db();
-
-        // Create jobs with different statuses
-        let job1 = Job::new(JobType::IngestWeb);
-        let job2 = Job::new(JobType::IngestYoutube);
-        let job3 = Job::new(JobType::IndexKb);
-
-        db.create_job(&job1).unwrap();
-        db.create_job(&job2).unwrap();
-        db.create_job(&job3).unwrap();
-
-        // Update statuses
-        db.update_job_status(&job1.id, JobStatus::Running, None)
-            .unwrap();
-        db.update_job_status(&job2.id, JobStatus::Succeeded, None)
-            .unwrap();
-
-        // List all jobs
-        let all_jobs = db.list_jobs(None, 10).unwrap();
-        assert_eq!(all_jobs.len(), 3);
-
-        // List only queued jobs
-        let queued = db.list_jobs(Some(JobStatus::Queued), 10).unwrap();
-        assert_eq!(queued.len(), 1);
-
-        // List only running jobs
-        let running = db.list_jobs(Some(JobStatus::Running), 10).unwrap();
-        assert_eq!(running.len(), 1);
-
-        // List only succeeded jobs
-        let succeeded = db.list_jobs(Some(JobStatus::Succeeded), 10).unwrap();
-        assert_eq!(succeeded.len(), 1);
-    }
-
-    #[test]
-    fn test_job_counts() {
-        let (db, _dir) = create_test_db();
-
-        // Create jobs
-        let job1 = Job::new(JobType::IngestWeb);
-        let job2 = Job::new(JobType::IngestYoutube);
-        let job3 = Job::new(JobType::IndexKb);
-
-        db.create_job(&job1).unwrap();
-        db.create_job(&job2).unwrap();
-        db.create_job(&job3).unwrap();
-
-        db.update_job_status(&job1.id, JobStatus::Succeeded, None)
-            .unwrap();
-        db.update_job_status(&job2.id, JobStatus::Failed, Some("Test error"))
-            .unwrap();
-
-        // Get counts
-        let counts = db.get_job_counts().unwrap();
-        assert!(!counts.is_empty());
-
-        // Check failed job has error
-        let failed_job = db.get_job(&job2.id).unwrap().unwrap();
-        assert_eq!(failed_job.error, Some("Test error".to_string()));
-    }
 }

@@ -6,17 +6,45 @@ on:
     branches: [main, master]
 
 jobs:
+  perf-policy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate enforced performance profile configuration
+        run: |
+          if [[ "${{ vars.PERF_PROFILE }}" != "production" ]]; then
+            echo "PERF_PROFILE is not production; enforced performance lanes are advisory only."
+            exit 0
+          fi
+
+          missing=0
+          if [[ -z "${{ vars.PERF_BASE_URL }}" ]]; then
+            echo "PERF_BASE_URL must be set when PERF_PROFILE=production."
+            missing=1
+          fi
+
+          if [[ -z "${{ vars.PERF_DATABASE_URL }}" ]]; then
+            echo "PERF_DATABASE_URL must be set when PERF_PROFILE=production."
+            missing=1
+          fi
+
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
   perf-bundle:
     if: ${{ vars.PERF_PROFILE == 'production' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -27,15 +55,16 @@ jobs:
 
   perf-build:
     if: ${{ vars.PERF_PROFILE == 'production' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -45,6 +74,7 @@ jobs:
 
   perf-assets:
     if: ${{ vars.PERF_PROFILE == 'production' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,15 +84,16 @@ jobs:
 
   perf-memory:
     if: ${{ vars.PERF_PROFILE == 'production' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -71,15 +102,16 @@ jobs:
 
   perf-lighthouse:
     if: ${{ vars.PERF_PROFILE == 'production' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061
+      - uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
         with:
           version: 10.28.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 20
           cache: pnpm
@@ -89,20 +121,23 @@ jobs:
 
   perf-api:
     if: ${{ vars.PERF_PROFILE == 'production' && vars.PERF_BASE_URL != '' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: grafana/setup-k6-action@ffe7d7290dfa715e48c2ccc924d068444c94bde2
-      - run: k6 run tests/perf/api.k6.js --summary-export=.perf-results/api-summary.json
+      - run: pnpm perf:api
         env:
           BASE_URL: ${{ vars.PERF_BASE_URL }}
+          AUTH_TOKEN: ${{ secrets.PERF_API_KEY }}
           API_P95_MS: "250"
           API_P99_MS: "700"
 
   perf-db:
     if: ${{ vars.PERF_PROFILE == 'production' && vars.PERF_DATABASE_URL != '' }}
+    needs: perf-policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,7 +145,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - run: bash scripts/perf/db/enforce-pg-stat.sh
+      - run: pnpm perf:db:enforce
         env:
           DATABASE_URL: ${{ vars.PERF_DATABASE_URL }}
           DB_MIN_CALLS: "50"

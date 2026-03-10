@@ -1,0 +1,132 @@
+.recovery-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 14%, transparent), transparent 42%),
+    linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+}
+
+.recovery-card {
+  width: min(760px, 100%);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
+  padding: 2rem;
+}
+
+.recovery-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.recovery-header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+}
+
+.recovery-subtitle,
+.recovery-details {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.recovery-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-warning, #d97706) 18%, transparent);
+  color: var(--color-warning, #d97706);
+  flex-shrink: 0;
+}
+
+.recovery-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.recovery-message,
+.recovery-error {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+}
+
+.recovery-message {
+  background: color-mix(in srgb, var(--color-success, #15803d) 12%, transparent);
+  color: var(--color-success, #15803d);
+}
+
+.recovery-error {
+  background: color-mix(in srgb, var(--color-error, #b91c1c) 12%, transparent);
+  color: var(--color-error, #b91c1c);
+}
+
+.recovery-conflicts,
+.recovery-notes {
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1rem 1.125rem;
+  background: var(--bg-secondary);
+}
+
+.recovery-conflicts h2,
+.recovery-notes h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.recovery-conflicts ul,
+.recovery-notes ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.625rem;
+}
+
+.recovery-conflicts li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.recovery-conflicts code {
+  font-size: 0.825rem;
+  white-space: normal;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .recovery-screen {
+    padding: 1rem;
+  }
+
+  .recovery-card {
+    padding: 1.25rem;
+  }
+
+  .recovery-header {
+    flex-direction: column;
+  }
+
+  .recovery-actions {
+    flex-direction: column;
+  }
+}

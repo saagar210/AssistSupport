@@ -25,8 +25,10 @@ use crate::jobs::JobManager;
 use crate::kb::embeddings::EmbeddingEngine;
 use crate::kb::vectors::VectorStore;
 use crate::llm::LlmEngine;
+use crate::security::MasterKey;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use parking_lot::RwLock;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock as TokioRwLock;
 
@@ -41,22 +43,69 @@ fn configure_ggml_metal_env() {
 }
 
 /// Application state
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StartupRecoveryConflict {
+    pub name: String,
+    pub old_path: String,
+    pub new_path: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StartupRecoveryIssue {
+    pub code: String,
+    pub summary: String,
+    pub details: Option<String>,
+    pub can_repair: bool,
+    pub can_restore_backup: bool,
+    pub requires_manual_resolution: bool,
+    pub migration_conflicts: Vec<StartupRecoveryConflict>,
+}
+
+pub struct PendingRecoveryContext {
+    pub issue: StartupRecoveryIssue,
+    pub db_path: Option<PathBuf>,
+    pub master_key: Option<MasterKey>,
+    pub key_storage_mode: Option<String>,
+}
+
 pub struct AppState {
     /// Shared llama.cpp backend — initialized once, shared by LLM and embedding engines
-    pub backend: Arc<LlamaBackend>,
+    pub backend: Option<Arc<LlamaBackend>>,
+    pub backend_init_error: Option<String>,
     pub db: Mutex<Option<Database>>,
+    pub recovery: Mutex<Option<PendingRecoveryContext>>,
     pub llm: Arc<RwLock<Option<LlmEngine>>>,
     pub embeddings: Arc<RwLock<Option<EmbeddingEngine>>>,
     pub vectors: Arc<TokioRwLock<Option<VectorStore>>>,
     pub jobs: Arc<JobManager>,
 }
 
+impl AppState {
+    pub fn llama_backend(&self) -> Result<Arc<LlamaBackend>, String> {
+        self.backend.clone().ok_or_else(|| {
+            self.backend_init_error
+                .clone()
+                .unwrap_or_else(|| "LLM backend is unavailable on this machine".to_string())
+        })
+    }
+}
+
 impl Default for AppState {
     fn default() -> Self {
-        let backend = Arc::new(LlamaBackend::init().expect("Failed to initialize llama backend"));
+        let (backend, backend_init_error) = match LlamaBackend::init() {
+            Ok(backend) => (Some(Arc::new(backend)), None),
+            Err(error) => {
+                let message = format!("Failed to initialize llama backend: {}", error);
+                tracing::error!("{}", message);
+                (None, Some(message))
+            }
+        };
         Self {
             backend,
+            backend_init_error,
             db: Mutex::new(None),
+            recovery: Mutex::new(None),
             llm: Arc::new(RwLock::new(None)),
             embeddings: Arc::new(RwLock::new(None)),
             vectors: Arc::new(TokioRwLock::new(None)),
@@ -70,18 +119,19 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     configure_ggml_metal_env();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::greet,
-            commands::initialize_app,
+            commands::startup_commands::initialize_app,
+            commands::startup_commands::unlock_with_passphrase,
             commands::check_fts5_enabled,
             commands::check_db_integrity,
             commands::get_vector_consent,
             commands::set_vector_consent,
-            commands::check_keychain_available,
+            commands::startup_commands::check_keychain_available,
             commands::search_kb,
             commands::search_kb_with_options,
             commands::get_search_context,
@@ -325,12 +375,12 @@ pub fn run() {
             commands::get_model_state,
             commands::get_startup_metrics,
             // v0.6.0: Pilot Feedback
-            commands::get_pilot_logging_policy,
-            commands::log_pilot_query,
-            commands::submit_pilot_feedback,
-            commands::get_pilot_stats,
-            commands::get_pilot_query_logs,
-            commands::export_pilot_data,
+            commands::pilot_feedback::get_pilot_logging_policy,
+            commands::pilot_feedback::log_pilot_query,
+            commands::pilot_feedback::submit_pilot_feedback,
+            commands::pilot_feedback::get_pilot_stats,
+            commands::pilot_feedback::get_pilot_query_logs,
+            commands::pilot_feedback::export_pilot_data,
             // PostgreSQL Hybrid Search API (Week 4)
             commands::search_api::hybrid_search,
             commands::search_api::submit_search_feedback,
@@ -341,9 +391,12 @@ pub fn run() {
             commands::memory_kernel::get_memory_kernel_integration_pin,
             commands::memory_kernel::get_memory_kernel_preflight_status,
             commands::memory_kernel::memory_kernel_query_ask,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        ]);
+
+    if let Err(error) = builder.run(tauri::generate_context!()) {
+        tracing::error!("error while running tauri application: {}", error);
+        eprintln!("AssistSupport failed to start: {}", error);
+    }
 }
 
 #[cfg(test)]

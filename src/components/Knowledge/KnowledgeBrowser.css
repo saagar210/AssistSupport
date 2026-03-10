@@ -64,10 +64,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.25rem;
   margin-bottom: 0.25rem;
   border-radius: 4px;
-  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -86,6 +86,29 @@
   gap: 0.75rem;
   min-width: 0;
   flex: 1;
+}
+
+.kb-list-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.kb-list-button:focus-visible,
+.kb-item-delete:focus-visible,
+.kb-chunk-edit-btn:focus-visible,
+.kb-chunk-content:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .kb-item-icon {
@@ -127,7 +150,8 @@
   transition: all 0.15s;
 }
 
-.kb-list-item:hover .kb-item-delete {
+.kb-list-item:hover .kb-item-delete,
+.kb-list-item:focus-within .kb-item-delete {
   opacity: 1;
 }
 
@@ -207,6 +231,10 @@
 }
 
 .kb-chunk-content {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
   padding: 0.75rem;
   font-size: 0.875rem;
   line-height: 1.5;
@@ -224,10 +252,7 @@
 /* Confirmation Modal */
 .confirm-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;

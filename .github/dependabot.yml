@@ -41,3 +41,18 @@ updates:
         update-types:
           - patch
           - minor
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - security
+      - intake
+    commit-message:
+      prefix: "build(deps)"

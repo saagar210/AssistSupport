@@ -4,7 +4,7 @@
 //! and using IP-based URLs to bypass DNS resolution at connection time.
 //!
 //! The TOCTOU vulnerability exists when:
-//! 1. validate_url_for_ssrf() resolves DNS to 8.8.8.8 (public, allowed)
+//! 1. A legacy validator resolves DNS to 8.8.8.8 (public, allowed)
 //! 2. Attacker changes DNS record to 127.0.0.1 (private, blocked)
 //! 3. reqwest re-resolves DNS and connects to 127.0.0.1
 //!

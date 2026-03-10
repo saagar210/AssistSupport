@@ -112,45 +112,91 @@ export function useInitialize() {
     }
   }, []);
 
+  const finishInitializedState = useCallback(async (result: InitResult) => {
+    const fts5 = await invoke<boolean>('check_fts5_enabled');
+    if (!fts5) {
+      throw new Error('FTS5 full-text search is not available');
+    }
+
+    let consent: VectorConsent | null = null;
+    try {
+      consent = await invoke<VectorConsent>('get_vector_consent');
+    } catch (e) {
+      logNonFatal('Vector consent check failed (using defaults):', e);
+      consent = { enabled: false, consented_at: null, encryption_supported: false };
+    }
+
+    setState({
+      initialized: true,
+      loading: false,
+      error: null,
+      initResult: result,
+      vectorConsent: consent,
+      memoryKernelPreflight: null,
+      enginesReady: false,
+    });
+
+    refreshMemoryKernelPreflightInBackground();
+    initEnginesInBackground();
+  }, [initEnginesInBackground, refreshMemoryKernelPreflightInBackground]);
+
+  const setRecoveryState = useCallback((result: InitResult) => {
+    setState({
+      initialized: false,
+      loading: false,
+      error: null,
+      initResult: result,
+      vectorConsent: null,
+      memoryKernelPreflight: null,
+      enginesReady: false,
+    });
+  }, []);
+
+  const unlockWithPassphrase = useCallback(async (passphrase: string) => {
+    try {
+      const result = await invoke<InitResult>('unlock_with_passphrase', { passphrase });
+      if (result.recovery_issue) {
+        setRecoveryState(result);
+        return;
+      }
+      await finishInitializedState(result);
+    } catch (e) {
+      if (IS_DEV) {
+        // eslint-disable-next-line no-console
+        console.error('Passphrase unlock failed:', e);
+      }
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: String(e),
+      }));
+      throw e;
+    }
+  }, [finishInitializedState, setRecoveryState]);
+
   useEffect(() => {
     async function initialize() {
       try {
         // CRITICAL PATH: Initialize the app (creates DB, loads master key)
         const result = await invoke<InitResult>('initialize_app');
 
-        // CRITICAL PATH: Verify FTS5 is available (required for search)
-        const fts5 = await invoke<boolean>('check_fts5_enabled');
-        if (!fts5) {
-          throw new Error('FTS5 full-text search is not available');
+        if (result.passphrase_required) {
+          setState({
+            initialized: false,
+            loading: false,
+            error: null,
+            initResult: result,
+            vectorConsent: null,
+            memoryKernelPreflight: null,
+            enginesReady: false,
+          });
+          return;
         }
-
-        // NON-CRITICAL: Check vector consent status (can fail gracefully)
-        let consent: VectorConsent | null = null;
-        try {
-          consent = await invoke<VectorConsent>('get_vector_consent');
-        } catch (e) {
-          logNonFatal('Vector consent check failed (using defaults):', e);
-          consent = { enabled: false, consented_at: null, encryption_supported: false };
+        if (result.recovery_issue) {
+          setRecoveryState(result);
+          return;
         }
-
-        // Mark as initialized - UI can render now
-        setState({
-          initialized: true,
-          loading: false,
-          error: null,
-          initResult: result,
-          vectorConsent: consent,
-          memoryKernelPreflight: null,
-          enginesReady: false,
-        });
-
-        // Refresh optional MemoryKernel status after startup is complete.
-        // This must never block the UI from becoming interactive.
-        refreshMemoryKernelPreflightInBackground();
-
-        // Start background initialization of LLM/embedding engines
-        // This runs AFTER the UI is ready, so users see the app immediately
-        initEnginesInBackground();
+        await finishInitializedState(result);
 
       } catch (e) {
         if (IS_DEV) {
@@ -166,7 +212,10 @@ export function useInitialize() {
     }
 
     initialize();
-  }, [initEnginesInBackground, refreshMemoryKernelPreflightInBackground]);
+  }, [finishInitializedState, setRecoveryState]);
 
-  return state;
+  return {
+    ...state,
+    unlockWithPassphrase,
+  };
 }

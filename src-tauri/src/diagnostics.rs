@@ -173,6 +173,28 @@ pub async fn check_vector_store_health(
 ) -> ComponentHealth {
     match vectors {
         Some(store) => {
+            match store.requires_rebuild().await {
+                Ok(true) => {
+                    return ComponentHealth::error(
+                        "Vector Store",
+                        "Rebuild required",
+                        Some(
+                            "The vector table still contains legacy metadata or legacy schema and must be rebuilt before semantic search can be trusted.",
+                        ),
+                        true,
+                    );
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    return ComponentHealth::error(
+                        "Vector Store",
+                        "Health check failed",
+                        Some(&e.to_string()),
+                        true,
+                    );
+                }
+            }
+
             if !store.is_enabled() {
                 return ComponentHealth::warning(
                     "Vector Store",

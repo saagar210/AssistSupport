@@ -14,15 +14,24 @@ an implementation-level companion to `SECURITY.md`.
 
 - Local database encryption uses SQLCipher (`AES-256`) in the Rust backend.
 - Token material is encrypted before persistence.
-- Key storage supports macOS Keychain and passphrase-derived key wrapping.
+- New workspace setup uses macOS Keychain-backed key storage by default.
+- Existing passphrase-protected workspaces are still supported through the dedicated unlock flow.
+- Optional vector-search embeddings stay local, but they are not currently encrypted at rest when vector search is enabled.
 - Sensitive key material is zeroized after use where practical.
 
 ## Network and Input Hardening
 
 - Search API requires bearer auth by default and enforces request limits.
 - Runtime validation blocks unsafe production configuration.
+- `GET /health` is liveness-only; `GET /ready` is the dependency-backed readiness signal for operators and CI.
 - SSRF and path-validation tests exist in `src-tauri/tests/`.
 - Request payloads are size-limited in the search API to reduce abuse risk.
+
+## Recovery and Diagnostics
+
+- Startup can enter recovery mode before normal DB initialization when corruption or migration conflicts are detected.
+- Recovery diagnostics run both `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.
+- Backup import now validates archive size bounds before full restore and can restore a fresh encrypted database from recovery mode.
 
 ## Verification and Gates
 

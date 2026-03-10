@@ -91,8 +91,7 @@
 .sidebar-nav {
   flex: 1;
   padding: var(--space-2) 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden auto;
 }
 
 .nav-list {

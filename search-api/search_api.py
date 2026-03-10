@@ -7,6 +7,7 @@ Hybrid search endpoint with authentication, rate limiting, and monitoring
 import sys
 import os
 import logging
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,9 +18,13 @@ from functools import wraps
 from datetime import datetime, timezone
 from runtime_config import (
     DEFAULT_API_KEY,
+    DEFAULT_RATE_LIMIT_STORAGE_URI,
     load_runtime_config,
     ensure_valid_runtime_config,
+    validate_runtime_config,
+    RuntimeConfigError,
 )
+from db_config import check_db_connection
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -45,6 +50,7 @@ limiter = Limiter(
 
 # Global search engine instance (initialized on first request)
 _engine = None
+_engine_lock = threading.Lock()
 
 
 def is_production() -> bool:
@@ -55,11 +61,105 @@ def _get_engine():
     """Lazy-initialize the search engine singleton"""
     global _engine
     if _engine is None:
-        from hybrid_search import HybridSearchEngine
+        with _engine_lock:
+            if _engine is None:
+                from hybrid_search import HybridSearchEngine
 
-        _engine = HybridSearchEngine(store_raw_query_text=_RUNTIME_CONFIG.store_raw_query_text)
-        app.logger.info("Search engine initialized")
+                _engine = HybridSearchEngine(store_raw_query_text=_RUNTIME_CONFIG.store_raw_query_text)
+                app.logger.info("Search engine initialized")
     return _engine
+
+
+def _check_runtime_config():
+    errors = validate_runtime_config(_RUNTIME_CONFIG, check_backends=False)
+    if errors:
+        return {"status": "error", "errors": errors}
+    return {"status": "ok"}
+
+
+def _check_database():
+    try:
+        if check_db_connection():
+            return {"status": "ok"}
+        return {"status": "error", "error": "Database connectivity check returned False"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+def _check_rate_limit_backend():
+    uri = _RUNTIME_CONFIG.rate_limit_storage_uri
+    if _RUNTIME_CONFIG.is_production and uri == DEFAULT_RATE_LIMIT_STORAGE_URI:
+        return {
+            "status": "error",
+            "backend": "memory",
+            "error": "In-memory rate limiting is not allowed in production",
+        }
+
+    if not uri.startswith(("redis://", "rediss://")):
+        return {
+            "status": "ok",
+            "backend": uri.split(":", 1)[0] or "memory",
+            "details": "Reachability check skipped for non-Redis limiter backend",
+        }
+
+    try:
+        import redis  # type: ignore
+
+        client = redis.Redis.from_url(
+            uri,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        client.ping()
+        return {"status": "ok", "backend": "redis"}
+    except Exception as exc:
+        return {"status": "error", "backend": "redis", "error": str(exc)}
+
+
+def _check_model_components():
+    def _components_ready(components):
+        if not components:
+            return True
+        statuses = []
+        for value in components.values():
+            if isinstance(value, dict):
+                statuses.append(value.get("status") == "ok")
+            else:
+                statuses.append(bool(value))
+        return all(statuses)
+
+    try:
+        engine = _get_engine()
+        if hasattr(engine, "get_component_status"):
+            engine_checks = engine.get_component_status()
+        elif hasattr(engine, "get_readiness"):
+            engine_checks = engine.get_readiness()
+        else:
+            engine_checks = {}
+        return {
+            "status": "ok" if _components_ready(engine_checks) else "error",
+            "details": engine_checks,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+def _build_ready_payload():
+    """Collect dependency-backed readiness details."""
+    checks = {
+        "runtime_config": _check_runtime_config(),
+        "database": _check_database(),
+        "rate_limit_backend": _check_rate_limit_backend(),
+        "models": _check_model_components(),
+    }
+
+    ready = all(check["status"] == "ok" for check in checks.values())
+    return {
+        "status": "ok" if ready else "degraded",
+        "service": "AssistSupport Hybrid Search API",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": checks,
+    }, (200 if ready else 503)
 
 
 def internal_error_response(error: Exception, *, context: str):
@@ -127,6 +227,13 @@ def health():
         ),
         200,
     )
+
+
+@app.route("/ready", methods=["GET"])
+def ready():
+    """Dependency-backed readiness endpoint."""
+    payload, status_code = _build_ready_payload()
+    return jsonify(payload), status_code
 
 
 @app.route("/search", methods=["POST"])
@@ -324,25 +431,6 @@ def stats():
         return internal_error_response(e, context="Stats error")
 
 
-@app.route("/config", methods=["GET"])
-def config():
-    """Configuration endpoint (no auth required)"""
-    return (
-        jsonify(
-            {
-                "api_url": f"http://localhost:{API_PORT}",
-                "version": "1.0.0",
-                "features": {
-                    "hybrid_search": True,
-                    "intent_detection": True,
-                    "feedback_collection": True,
-                },
-            }
-        ),
-        200,
-    )
-
-
 @app.errorhandler(429)
 def ratelimit_handler(e):
     return jsonify({"error": "Rate limit exceeded", "message": str(e.description)}), 429
@@ -356,7 +444,15 @@ def not_found(e):
 def run_server():
     """Start the API server"""
     runtime_config = load_runtime_config()
-    ensure_valid_runtime_config(runtime_config, check_backends=True)
+    ensure_valid_runtime_config(
+        runtime_config,
+        check_backends=not runtime_config.is_production,
+    )
+
+    if runtime_config.is_production:
+        raise RuntimeConfigError(
+            "run_server() is for development only; use the WSGI entrypoint in production"
+        )
 
     # Ensure we have a sane default logger in bare CLI mode.
     if not logging.getLogger().handlers:

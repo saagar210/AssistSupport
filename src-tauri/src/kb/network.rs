@@ -5,7 +5,7 @@
 //! Use `validate_url_for_ssrf_with_pinning()` for the most secure validation,
 //! which returns both the validated URL and the pinned IP addresses.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
 use url::Url;
 
@@ -245,79 +245,6 @@ fn is_host_in_allowlist(host: &str, allowlist: &[String]) -> bool {
         }
     }
     false
-}
-
-/// Validate a URL for SSRF protection (legacy, without DNS pinning)
-///
-/// WARNING: This function is vulnerable to DNS rebinding attacks.
-/// Use `validate_url_for_ssrf_with_pinning()` for new code.
-///
-/// This function:
-/// 1. Parses and validates the URL
-/// 2. Checks if the host is in the allowlist (bypass other checks if so)
-/// 3. Resolves DNS and checks all resulting IPs against blocked ranges
-///
-/// Returns Ok(()) if the URL is safe to access, Err otherwise.
-#[deprecated(
-    since = "0.3.1",
-    note = "Use validate_url_for_ssrf_with_pinning to prevent DNS rebinding"
-)]
-pub fn validate_url_for_ssrf(url_str: &str, config: &SsrfConfig) -> Result<Url, NetworkError> {
-    // Parse URL
-    let url = Url::parse(url_str).map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
-
-    // Only allow http and https schemes
-    match url.scheme() {
-        "http" | "https" => {}
-        scheme => {
-            return Err(NetworkError::InvalidUrl(format!(
-                "Invalid scheme '{}'. Only http and https are allowed.",
-                scheme
-            )));
-        }
-    }
-
-    // Get host
-    let host = url
-        .host_str()
-        .ok_or_else(|| NetworkError::InvalidUrl("URL has no host".into()))?;
-
-    // Check allowlist first (explicit user opt-in bypasses other checks)
-    if is_host_in_allowlist(host, &config.allowlist) {
-        return Ok(url);
-    }
-
-    // Get port (default to 80/443)
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| NetworkError::InvalidUrl("Cannot determine port".into()))?;
-
-    // Resolve DNS and check all resulting IPs
-    let socket_addr = format!("{}:{}", host, port);
-    let addrs: Vec<_> = socket_addr
-        .to_socket_addrs()
-        .map_err(|e| NetworkError::DnsResolutionFailed(e.to_string()))?
-        .collect();
-
-    if addrs.is_empty() {
-        return Err(NetworkError::DnsResolutionFailed(
-            "DNS resolution returned no addresses".into(),
-        ));
-    }
-
-    // Check ALL resolved IPs (DNS rebinding protection)
-    for addr in &addrs {
-        if let Some(reason) = is_ip_blocked(&addr.ip(), config) {
-            return Err(NetworkError::SsrfBlocked(format!(
-                "Host '{}' resolves to blocked IP {}: {}",
-                host,
-                addr.ip(),
-                reason
-            )));
-        }
-    }
-
-    Ok(url)
 }
 
 /// Validate a URL for SSRF protection with DNS pinning
@@ -637,35 +564,70 @@ mod tests {
         ));
     }
 
-    #[test]
-    #[allow(deprecated)]
-    fn test_validate_url_blocked() {
-        let config = SsrfConfig::default();
+    #[tokio::test]
+    async fn test_validate_url_blocked() {
+        let resolver = PinnedDnsResolver::new(SsrfConfig::default())
+            .await
+            .expect("resolver");
 
         // These should be blocked
-        assert!(validate_url_for_ssrf("http://localhost/", &config).is_err());
-        assert!(validate_url_for_ssrf("http://127.0.0.1/", &config).is_err());
-        assert!(validate_url_for_ssrf("http://[::1]/", &config).is_err());
-        assert!(validate_url_for_ssrf("http://192.168.1.1/", &config).is_err());
-        assert!(validate_url_for_ssrf("http://10.0.0.1/", &config).is_err());
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://localhost/", &resolver)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://127.0.0.1/", &resolver)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://[::1]/", &resolver)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://192.168.1.1/", &resolver)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://10.0.0.1/", &resolver)
+                .await
+                .is_err()
+        );
 
         // Invalid schemes
-        assert!(validate_url_for_ssrf("ftp://example.com/", &config).is_err());
-        assert!(validate_url_for_ssrf("file:///etc/passwd", &config).is_err());
+        assert!(
+            validate_url_for_ssrf_with_pinning("ftp://example.com/", &resolver)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_url_for_ssrf_with_pinning("file:///etc/passwd", &resolver)
+                .await
+                .is_err()
+        );
     }
 
-    #[test]
-    #[allow(deprecated)]
-    fn test_validate_url_allowed() {
+    #[tokio::test]
+    async fn test_validate_url_allowed() {
         let mut config = SsrfConfig::default();
+        let resolver = {
+            config.allowlist.push("localhost".into());
+            PinnedDnsResolver::new(config).await.expect("resolver")
+        };
 
         // Public IPs should be allowed
         // Note: This test requires DNS resolution, so it may fail in isolated environments
-        // assert!(validate_url_for_ssrf("https://example.com/", &config).is_ok());
+        // assert!(validate_url_for_ssrf_with_pinning("https://example.com/", &resolver).await.is_ok());
 
         // Allowlist should bypass checks
-        config.allowlist.push("localhost".into());
-        assert!(validate_url_for_ssrf("http://localhost/", &config).is_ok());
+        assert!(
+            validate_url_for_ssrf_with_pinning("http://localhost/", &resolver)
+                .await
+                .is_ok()
+        );
     }
 
     #[test]

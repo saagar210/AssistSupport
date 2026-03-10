@@ -170,9 +170,6 @@ pub async fn import_backup(
     state: State<'_, AppState>,
     password: Option<String>,
 ) -> Result<ImportSummary, String> {
-    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-
     // Show open file dialog (accept both ZIP and encrypted backups)
     let file_handle = app
         .dialog()
@@ -188,8 +185,42 @@ pub async fn import_backup(
                 .as_path()
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
-            crate::backup::import_backup(db, file_path, password.as_deref())
-                .map_err(|e| e.to_string())
+            {
+                let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+                if let Some(db) = db_lock.as_ref() {
+                    return crate::backup::import_backup(db, file_path, password.as_deref())
+                        .map_err(|e| e.to_string());
+                }
+            }
+
+            let restore_result = {
+                let recovery_lock = state.recovery.lock().map_err(|e| e.to_string())?;
+                let recovery = recovery_lock
+                    .as_ref()
+                    .ok_or("Database not initialized")?;
+                let db_path = recovery
+                    .db_path
+                    .as_ref()
+                    .ok_or("Backup restore is not available for this recovery issue")?;
+                let master_key = recovery
+                    .master_key
+                    .as_ref()
+                    .ok_or("Backup restore is not available for this recovery issue")?;
+
+                crate::backup::restore_backup_into_fresh_database(
+                    db_path,
+                    master_key,
+                    file_path,
+                    password.as_deref(),
+                )
+            };
+
+            if restore_result.is_ok() {
+                let mut recovery_lock = state.recovery.lock().map_err(|e| e.to_string())?;
+                *recovery_lock = None;
+            }
+
+            restore_result.map_err(|e| e.to_string())
         }
         None => Err("Import cancelled".to_string()),
     }

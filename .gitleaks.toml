@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore false positive in canonical remediation plan"
+paths = [
+  '''(^|/)docs/plans/current-remediation-plan\.md$''',
+]

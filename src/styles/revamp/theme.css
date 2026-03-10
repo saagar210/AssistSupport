@@ -1,5 +1,5 @@
-@import "@fontsource-variable/ibm-plex-sans/index.css";
-@import "@fontsource-variable/jetbrains-mono/index.css";
+@import url("@fontsource-variable/ibm-plex-sans/index.css");
+@import url("@fontsource-variable/jetbrains-mono/index.css");
 
 .app-shell-revamp {
   color: var(--as-text-1);

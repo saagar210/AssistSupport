@@ -2,6 +2,7 @@ use super::*;
 use std::sync::Mutex as StdMutex;
 
 use crate::kb::watcher::KbWatcher;
+use crate::validation::ValidationError;
 
 /// Global watcher instance
 static KB_WATCHER: Lazy<StdMutex<Option<KbWatcher>>> = Lazy::new(|| StdMutex::new(None));
@@ -137,10 +138,21 @@ pub(crate) fn list_kb_documents_impl(
         .collect())
 }
 
-pub(crate) fn remove_kb_document_impl(
+pub(crate) async fn remove_kb_document_impl(
     file_path: String,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    let document_id = {
+        let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        db.get_document_id_by_path(&file_path)
+            .map_err(|e| e.to_string())?
+    };
+
+    if let Some(document_id) = document_id.as_deref() {
+        purge_vectors_for_document(state.inner(), document_id).await?;
+    }
+
     let db_lock = state.db.lock().map_err(|e| e.to_string())?;
     let db = db_lock.as_ref().ok_or("Database not initialized")?;
 

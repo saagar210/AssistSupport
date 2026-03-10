@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useToastContext } from '../../contexts/ToastContext';
 import { Button } from '../shared/Button';
+import { Dialog } from '../shared/Dialog';
 import { KbHealthPanel } from './KbHealthPanel';
 import { ChunkEditor } from './ChunkEditor';
 import './KnowledgeBrowser.css';
@@ -100,29 +101,33 @@ export function KnowledgeBrowser() {
     <div className="knowledge-browser">
       <KbHealthPanel onRefresh={() => { loadNamespaces(true); }} />
 
-      {/* Confirmation Modal */}
-      {confirmDelete && (
-        <div className="confirm-modal-overlay">
-          <div className="confirm-modal">
-            <h3>Confirm Delete</h3>
-            <p>
+      <Dialog
+        open={confirmDelete !== null}
+        labelledBy="knowledge-confirm-title"
+        describedBy="knowledge-confirm-description"
+        onClose={() => setConfirmDelete(null)}
+      >
+        <div className="confirm-modal">
+          <h3 id="knowledge-confirm-title">Confirm Delete</h3>
+          {confirmDelete && (
+            <p id="knowledge-confirm-description">
               {confirmDelete.type === 'clear'
                 ? confirmDelete.id === 'all'
                   ? 'This will permanently delete ALL knowledge data from ALL namespaces. This cannot be undone.'
                   : `This will delete all documents and sources from "${confirmDelete.name}". This cannot be undone.`
                 : `Are you sure you want to delete ${confirmDelete.type} "${confirmDelete.name}"? This cannot be undone.`}
             </p>
-            <div className="confirm-modal-actions">
-              <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={handleDeleteConfirm}>
-                Delete
-              </Button>
-            </div>
+          )}
+          <div className="confirm-modal-actions">
+            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDeleteConfirm}>
+              Delete
+            </Button>
           </div>
         </div>
-      )}
+      </Dialog>
 
       <div className="kb-grid">
         {/* Namespace List */}
@@ -149,16 +154,23 @@ export function KnowledgeBrowser() {
                   <li
                     key={ns.id}
                     className={`kb-list-item ${selectedNamespace === ns.id ? 'selected' : ''}`}
-                    onClick={() => selectNamespace(ns.id)}
                   >
-                    <div className="kb-item-main">
-                      <span className="kb-item-name">{ns.name}</span>
-                      <span className="kb-item-counts">
-                        {ns.documentCount} docs, {ns.sourceCount} sources
-                      </span>
-                    </div>
+                    <button
+                      type="button"
+                      className="kb-list-button"
+                      onClick={() => selectNamespace(ns.id)}
+                      aria-pressed={selectedNamespace === ns.id}
+                    >
+                      <div className="kb-item-main">
+                        <span className="kb-item-name">{ns.name}</span>
+                        <span className="kb-item-counts">
+                          {ns.documentCount} docs, {ns.sourceCount} sources
+                        </span>
+                      </div>
+                    </button>
                     {ns.id !== 'default' && (
                       <button
+                        type="button"
                         className="kb-item-delete"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -209,23 +221,30 @@ export function KnowledgeBrowser() {
                   <li
                     key={doc.id}
                     className={`kb-list-item ${selectedDocument?.id === doc.id ? 'selected' : ''}`}
-                    onClick={() => selectDocument(doc)}
                   >
-                    <div className="kb-item-main">
-                      <span className="kb-item-icon">{getSourceTypeIcon(doc.source_type)}</span>
-                      <div className="kb-item-info">
-                        <span className="kb-item-title">{doc.title || doc.file_path}</span>
-                        <span className="kb-item-meta">
-                          {doc.chunk_count} chunks · {formatDate(doc.indexed_at)}
-                          {doc.last_reviewed_at ? (
-                            <span className="review-badge review-badge-reviewed" title={`Reviewed ${formatDate(doc.last_reviewed_at)}`}>Reviewed</span>
-                          ) : (
-                            <span className="review-badge review-badge-never" title="Never reviewed">Unreviewed</span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
                     <button
+                      type="button"
+                      className="kb-list-button"
+                      onClick={() => selectDocument(doc)}
+                      aria-pressed={selectedDocument?.id === doc.id}
+                    >
+                      <div className="kb-item-main">
+                        <span className="kb-item-icon">{getSourceTypeIcon(doc.source_type)}</span>
+                        <div className="kb-item-info">
+                          <span className="kb-item-title">{doc.title || doc.file_path}</span>
+                          <span className="kb-item-meta">
+                            {doc.chunk_count} chunks · {formatDate(doc.indexed_at)}
+                            {doc.last_reviewed_at ? (
+                              <span className="review-badge review-badge-reviewed" title={`Reviewed ${formatDate(doc.last_reviewed_at)}`}>Reviewed</span>
+                            ) : (
+                              <span className="review-badge review-badge-never" title="Never reviewed">Unreviewed</span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
                       className="kb-item-delete"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -274,6 +293,7 @@ export function KnowledgeBrowser() {
                         <span className="kb-chunk-words">{chunk.word_count} words</span>
                       )}
                       <button
+                        type="button"
                         className="kb-chunk-edit-btn"
                         onClick={() => setEditingChunkId(editingChunkId === chunk.id ? null : chunk.id)}
                         title="Edit chunk"
@@ -294,13 +314,14 @@ export function KnowledgeBrowser() {
                         onCancel={() => setEditingChunkId(null)}
                       />
                     ) : (
-                      <div
+                      <button
+                        type="button"
                         className="kb-chunk-content"
                         onClick={() => setEditingChunkId(chunk.id)}
                         title="Click to edit"
                       >
                         {chunk.content}
-                      </div>
+                      </button>
                     )}
                   </div>
                 ))}
