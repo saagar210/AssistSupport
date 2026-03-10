@@ -1,7 +1,9 @@
 # Title
+
 AssistSupport Deep Audit and Multi-Phase Hardening Program
 
 # Executive Summary
+
 - Short current-state assessment: AssistSupport is a tabbed desktop app built from a React frontend, a large Tauri/Rust command layer, an encrypted local SQLite core, an optional LanceDB vector store, and a localhost Flask search sidecar. The frontend builds cleanly, baseline static/unit/a11y checks mostly pass, and the repo already contains meaningful SSRF/path-validation/security regression tests. The system is not broadly broken, but several trust claims and recovery guarantees are not currently true end to end.
 - Top risk themes: vector-store isolation/deletion/privacy, Python search-api concurrency and deployment readiness, release gates that do not prove the real runtime, and documentation/contracts that materially overstate encryption/compliance and lag the shipped code.
 - What is healthy: SQLCipher/key-wrapping and file-permission posture in [src-tauri/src/security.rs#L1](/Users/d/Projects/AssistSupport/src-tauri/src/security.rs#L1) and [src-tauri/src/db/mod.rs#L58](/Users/d/Projects/AssistSupport/src-tauri/src/db/mod.rs#L58) are comparatively strong; loopback URL validation and SSRF protections are stronger than average in [src-tauri/src/commands/search_api.rs#L129](/Users/d/Projects/AssistSupport/src-tauri/src/commands/search_api.rs#L129) and [src-tauri/src/kb/network.rs#L1](/Users/d/Projects/AssistSupport/src-tauri/src/kb/network.rs#L1); `pnpm build`, `pnpm ui:gate:static`, `pnpm test`, `pnpm ui:test:a11y`, isolated Python `pytest`, `pip-audit`, and Rust security-regression tests passed.
@@ -12,6 +14,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 # Findings Baseline
 
 ## P1
+
 - `P1-01` Vector-store isolation, deletion guarantees, and privacy posture are not trustworthy.
   Why it matters: namespace-scoped search can return the wrong tenant/document, and deleted KB content can remain in the on-disk vector store; because vectors are currently plaintext when enabled, that is both an integrity and privacy failure.
   Likely root cause: embedding generation still uses a legacy insert path that drops namespace/document metadata, while delete/clear commands only mutate SQLite and never purge LanceDB rows.
@@ -45,6 +48,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   Proof we will require later: clean `cargo audit`, reviewed lockfile diff, and a documented expiry/removal plan for any temporary override.
 
 ## P2
+
 - `P2-01` Recovery, backup, and data-migration flows are unsafe or misleading.
   Why it matters: corrupted DBs can block startup before repair is reachable, hostile backup imports can allocate/decrypt too early, upgrade-time data migration conflicts are only logged, and backup UI copy can overstate what is actually preserved.
   Likely root cause: integrity check happens during normal startup before a safe-mode path exists; backup import reads full archive/plaintext before practical limits; migration conflict handling is log-only; backup scope is narrower than the most general UI wording.
@@ -94,6 +98,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   Proof we will require later: increased changed-surface coverage across frontend/Rust/Python lanes, stable visual baselines, and regression tests for every finding closed in this program.
 
 ## P3
+
 - `P3-01` Policy and lifecycle consistency still have cleanup gaps.
   Why it matters: even after the major issues are fixed, some commands can still bypass intended policy checks, and some lifecycle paths still fail by aborting instead of degrading.
   Likely root cause: enable/initialize policy checks are not centralized, and several startup/background paths still use `expect()`.
@@ -121,6 +126,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 # Remediation Program
 
 ## Phase 1 — Immediate Containment and Truth Correction
+
 - Objective: stop shipping unsafe vector/runtime behavior and align public claims with actual shipped guarantees.
 - Why this phase comes now: unresolved P1s currently weaken trust more than any incremental feature work could offset.
 - Workstreams: quarantine vector search/generation and show a clear “temporarily unavailable pending rebuild” state; remediate or override the active Rust advisory until `cargo audit` is clean; make the search-api CI lane install runtime deps and exercise authenticated `/search`; remove unsupported “fully encrypted/compliance validated” messaging and state that vectors are plaintext when enabled.
@@ -130,6 +136,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: all P1 blockers are either fixed or explicitly time-bounded with an ADR, vector features are quarantined safely, and docs/UI no longer overclaim.
 
 ## Phase 2 — Security and Trust-Boundary Hardening
+
 - Objective: restore trustworthy isolation, consent enforcement, and least-privilege structure.
 - Why this phase comes now: after containment, the highest-value work is fixing the underlying trust boundaries rather than adding more UI or process around them.
 - Workstreams: replace legacy vector inserts with metadata-rich writes; make document/namespace delete and clear purge vectors; add a true vector rebuild command; refactor the Python service to pooled per-request DB access; add `/ready`; align `initialize_app`/frontend types; add a dedicated passphrase-unlock command for existing users; remove or auth-gate unused `/config`; create Tauri app-defined permission groups for sensitive command families.
@@ -139,6 +146,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: vector isolation/delete tests pass, Python threaded-load tests pass, init contract is aligned, passphrase-required users can unlock deterministically, and Tauri permissions are documented and enforced.
 
 ## Phase 3 — Reliability, Recovery, and Startup Safety
+
 - Objective: make corrupted, partially migrated, or dependency-degraded states recoverable without silent data loss or hard aborts.
 - Why this phase comes now: once trust boundaries are correct, the next highest risk is startup/recovery failure during real operator incidents.
 - Workstreams: add a pre-init safe mode; run `integrity_check` plus `foreign_key_check` in diagnostics/recovery; make repair/restore reachable before normal DB initialization; validate backup sizes before full plaintext allocation; surface migration conflicts to the user; replace user-facing `expect()`/panic paths with explicit degraded states.
@@ -148,6 +156,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: corruption, migration-conflict, backup-abuse, and missing-optional-dependency scenarios all end in explicit recoverable states with runbook coverage.
 
 ## Phase 4 — UX and Accessibility Hardening
+
 - Objective: make the app shell, dialogs, and knowledge-management surfaces resilient for real users.
 - Why this phase comes now: after the backend contracts stabilize, user-facing confidence becomes the next biggest source of release risk.
 - Workstreams: add a root error boundary; create a shared modal/dialog primitive with focus trap, Escape, and focus restore; fix Knowledge browser keyboard interaction and semantic controls; clean up loading/empty/error/disabled/focus-visible state handling in audited surfaces; remove nested `main` landmarks.
@@ -157,6 +166,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: keyboard-only usage works for the audited surfaces, axe passes on shell/dialog flows, and shell-level faults are contained without collapsing the entire app.
 
 ## Phase 5 — Verification and Release Governance Expansion
+
 - Objective: make green builds mean something stronger than “the happy-path mocks passed.”
 - Why this phase comes now: once the product behavior is corrected, the repository needs automation that proves those corrections stay fixed.
 - Workstreams: extend CI to cover real search-api runtime lanes; add `pip-audit`; add backend/python changed-surface coverage expectations; broaden UI e2e/a11y/visual scenarios; generate real OpenAPI; extend the tests/docs/OpenAPI diff gate to `search-api/` and command/API changes; normalize workflow toolchains; make performance lanes fail closed when required by release policy.
@@ -166,6 +176,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: required lanes prove real runtime behavior, generated artifacts are current, Python security automation is present, and release blocking criteria are mechanically enforced.
 
 ## Phase 6 — Maintainability, Ownership, and Documentation Cleanup
+
 - Objective: make the stabilized system understandable and safely maintainable by lower-level engineers.
 - Why this phase comes now: refactors and ownership boundaries are safest after the behavior is pinned by tests and contracts.
 - Workstreams: split the largest Rust/TS files by subsystem; add CODEOWNERS; create ADRs for vector privacy, search-api topology, command zoning, and recovery mode; add operator runbooks for safe mode, vector rebuild, search-api deployment, and advisory handling; normalize version surfaces so the Python service version is not hardcoded independently.
@@ -175,6 +186,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Definition of done: hot-spot modules are split, CODEOWNERS exists, ADRs/runbooks are present, and the repo is handoff-ready without tribal knowledge.
 
 # Public Interface / Contract Changes
+
 - Tauri init contract: align `initialize_app` and frontend `InitResult`; remove stale `keychain_available`/`fts5_available` assumptions and use `vector_enabled`, `vector_store_ready`, `key_storage_mode`, and `passphrase_required` as the canonical fields.
 - Tauri unlock path: add an explicit `unlock_with_passphrase(passphrase)` command for existing passphrase users instead of pretending onboarding already configures it.
 - Tauri vector semantics: `generate_kb_embeddings`, `delete_kb_document`, and `clear_knowledge_data` change behavior to require metadata-correct writes and vector purge; `rebuild_vector_store` becomes a real mutating rebuild command, not guidance-only output.
@@ -186,6 +198,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Versioning surfaces: remove hardcoded search-api version drift and derive service/version strings from one authoritative repo version source or an explicit service contract version file.
 
 # Test and Proof Plan
+
 - Unit tests: vector metadata builders and delete guards; runtime-config parsing; init-contract parsing; dialog focus-management hook; per-command consent guards; migration-conflict classification; backup-scope labeling logic.
 - Integration tests: Rust two-namespace KB/vector roundtrip; delete/clear proving vector purge; corrupted-DB safe-mode entry; `integrity_check` plus `foreign_key_check` failure handling; oversized encrypted/unencrypted backup rejection; passphrase-required startup; repo-root and service-dir WSGI launch behavior; Tauri permission checks for sensitive commands.
 - End-to-end tests: fresh install with default key-storage flow; existing passphrase-user unlock flow; shell-level error fallback; Sources/Knowledge/Follow-ups state matrix; keyboard-only KB browsing/edit/delete; backup export/import messaging and degraded recovery surfaces.
@@ -198,6 +211,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Manual verification where needed: one corruption-recovery walkthrough, one passphrase-user unlock walkthrough, one vector-rebuild walkthrough, and one “delete sensitive KB document then confirm vector purge” walkthrough.
 
 # Execution Order
+
 - Recommended implementation order: Phase 1 release blockers first; then Phase 2 vector/search trust-boundary fixes; then Phase 3 recovery/startup safety; then Phase 4 UX/accessibility; then Phase 5 verification/governance; then Phase 6 structural cleanup.
 - What can be parallelized: after Phase 1, Python pooling/readiness work can run in parallel with frontend dialog/error-boundary work; documentation and ADR drafting can start once Phase 2 interfaces settle; module-split planning can happen in parallel with CI expansion but should not merge first.
 - What must be sequential: vector rebuild design follows the metadata fix; safe mode follows init-contract alignment; OpenAPI/ADR freeze follows endpoint/command contract stabilization; CODEOWNERS/refactors follow the new regression net.
@@ -205,6 +219,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - What can be deferred safely: file splitting, CODEOWNERS, toolchain normalization, performance gate fail-closed semantics, and minor UX semantics only after the safety net and release blockers are green.
 
 # Assumptions and Defaults
+
 - The app remains a single-window local-first Tauri desktop app with a localhost-only search sidecar; this program does not rewrite the architecture.
 - Vector search stays default-off and quarantined until the metadata/delete fixes and rebuild path ship; pre-fix vector stores are not trusted.
 - Existing SSRF/path-validation/loopback restrictions stay in place; no new bypass was confirmed in shipped paths during this audit.
@@ -222,6 +237,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 # Execution Notes
 
 ## 2026-03-09 Progress Update
+
 - Completed a Phase 1 / Phase 2 vector-store hardening slice in Rust/Tauri:
   - embedding generation now rebuilds from authoritative SQLite chunk metadata
   - vector writes carry namespace and document metadata
@@ -236,11 +252,12 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - targeted Vitest coverage for the passphrase unlock screen passed
 
 ## Discoveries / Deviations
+
 - Several planned building blocks were already partially present in the workspace before this execution pass:
   - `unlock_with_passphrase` backend command
   - `PassphraseUnlockScreen` frontend component
   - vector-store version tracking in SQLite settings
-  This pass completed the missing wiring, lifecycle enforcement, and verification around those pieces.
+    This pass completed the missing wiring, lifecycle enforcement, and verification around those pieces.
 - The Python search-api hardening slice is being developed in a parallel fork and has not yet been merged into this branch at the time of this update.
 - Remaining plan areas are still open:
   - Python search-api concurrency/readiness/runtime fixes
@@ -249,6 +266,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - broader recovery, accessibility, and maintainability phases
 
 ## 2026-03-09 Search API Hardening Update
+
 - Completed the scoped Python search-api reliability slice:
   - replaced per-process shared DB connection/cursor usage with pooled per-request sessions backed by `psycopg2.pool.ThreadedConnectionPool`
   - added dependency-backed `GET /ready` while keeping `GET /health` liveness-only
@@ -263,6 +281,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - `/tmp/assistsupport-search-api-venv/bin/python -m pytest search-api/tests -q` passed (`37 passed`)
 
 ## 2026-03-09 Governance and Contract Update
+
 - Completed the Phase 5 governance slice for the remediated search path:
   - generated and checked in a non-empty OpenAPI contract for the Python search-api surface
   - extended the production-code/tests/docs policy gate to include `search-api/` and `src-tauri/` command/backend changes
@@ -290,6 +309,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
     - `pnpm run ui:test:a11y` passed
 
 ## 2026-03-10 Stabilization Closure Update
+
 - Completed the remaining Phase 5 / Phase 6 closure work for the remediation branch:
   - added app-owned Tauri permission zoning in `src-tauri/permissions/default.toml`
   - updated `src-tauri/capabilities/default.json` to reference the app permission groups
@@ -339,6 +359,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - The only intentionally deferred items are lower-severity maintainability refactors such as splitting the largest files along subsystem seams; those remain worthwhile P3 follow-up work but are not blocking release under the locked execution-order decisions above.
 
 ## 2026-03-10 Final Review Loop
+
 - Re-read this plan file first before the final review pass and reconciled it against the actual branch worktree so closure was based on the canonical execution document, not memory.
 - Completed one last manual senior-review sweep across the highest-risk changed areas because the background reviewer agent did not return within the available wait window:
   - verified the app shell still renders a single `main` landmark in both legacy and revamp layouts
@@ -351,6 +372,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - no additional corrective implementation was required after this final review pass
 
 ## 2026-03-10 Maintainability Follow-up Completion
+
 - Completed the three deferred maintainability items that were left open after the main stabilization closure:
   - split additional large Rust and TypeScript hotspots along low-risk subsystem seams
   - expanded responsive/mobile parity coverage beyond the original shell smoke
@@ -419,6 +441,7 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
   - any future file-splitting beyond these seams is optional P3 cleanup, not open remediation scope
 
 ## 2026-03-10 Hosted CI Merge-Blocker Fixes
+
 - The first hosted PR run surfaced three merge blockers that were not reproduced by the earlier local gate run:
   - the GitHub-side `dtolnay/rust-toolchain` action now required an explicit `toolchain` input in the affected workflows
   - the gitleaks PR scan produced a false positive against this canonical remediation plan file
@@ -431,3 +454,30 @@ AssistSupport Deep Audit and Multi-Phase Hardening Program
 - Targeted verification completed after these hosted-CI fixes:
   - `pnpm run check:workflow-drift`
   - `pnpm test:e2e:smoke`
+
+## 2026-03-10 Mainline Merge Closeout
+
+- The main stabilization + maintainability delivery landed on `master` through PR `#43` with squash merge commit `56156de00e320bd637b36df68bfd5574fff2a5ef`.
+- The last branch-protection blocker after required CI completed was `required_conversation_resolution`; merge became available only after resolving two bot-created review threads on:
+  - `.stylelintrc.json`
+  - `docs/plans/current-remediation-plan.md`
+- The two non-required third-party checks that remained red at merge time were:
+  - `SonarCloud Code Analysis`
+  - `Codacy Static Code Analysis`
+- Those external checks did not block merge because the `master` branch protection source of truth required only:
+  - `quality-gates`
+  - `CodeQL`
+  - `commitlint`
+  - `enforce`
+  - `perf-bundle`
+  - `Frontend Static Gates`
+  - `Frontend Unit + Coverage`
+  - `UI Visual + A11y`
+  - `Rust Backend Tests`
+  - `Search API Tests`
+  - `Dependency Security Audit`
+  - `Build (macOS)`
+- Closeout status at the time of this note:
+  - the stabilization program defined in this canonical plan is landed on `master`
+  - no P1 remediation work remains open from this program
+  - any further work is optional post-stabilization P3 cleanup outside the committed remediation scope
