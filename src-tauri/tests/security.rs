@@ -731,9 +731,10 @@ async fn test_ssrf_metadata_endpoints() {
         .expect("resolver");
 
     // AWS metadata endpoint (link-local)
-    assert!(
-        validate_url_for_ssrf_with_pinning("http://169.254.169.254/latest/meta-data/", &resolver)
-            .await
-            .is_err()
-    );
+    assert!(validate_url_for_ssrf_with_pinning(
+        "http://169.254.169.254/latest/meta-data/",
+        &resolver
+    )
+    .await
+    .is_err());
 }

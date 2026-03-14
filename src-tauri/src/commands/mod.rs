@@ -58,7 +58,7 @@ pub(crate) use vector_runtime::{
 
 use crate::audit::{self};
 use crate::db::{
-    get_app_data_dir, ChunkEmbeddingRecord, CURRENT_VECTOR_STORE_VERSION, GenerationQualityEvent,
+    get_app_data_dir, ChunkEmbeddingRecord, GenerationQualityEvent, CURRENT_VECTOR_STORE_VERSION,
 };
 use crate::kb::vectors::VectorMetadata;
 use crate::llm::{GenerationParams, LlmEngine, ModelInfo};
@@ -84,6 +84,7 @@ static GENERATION_CANCEL_FLAG: Lazy<Arc<AtomicBool>> =
     Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static DOWNLOAD_CANCEL_FLAG: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 const GITHUB_TOKEN_PREFIX: &str = "github_token:";
+const ALLOW_UNVERIFIED_LOCAL_MODELS_KEY: &str = "allow_unverified_local_models";
 
 fn normalize_github_host(host: &str) -> Result<String, String> {
     let trimmed = host.trim();
@@ -101,6 +102,55 @@ fn normalize_github_host(host: &str) -> Result<String, String> {
     }
 
     Ok(trimmed.to_lowercase())
+}
+
+fn allow_unverified_local_models(state: &AppState) -> Result<bool, String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    let value = db
+        .get_setting_value(ALLOW_UNVERIFIED_LOCAL_MODELS_KEY)
+        .map_err(|e| e.to_string())?;
+    Ok(matches!(
+        value.as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("True")
+    ))
+}
+
+fn custom_model_verification_status(
+    verification: VerificationResult,
+    allow_unverified: bool,
+) -> Result<(String, Option<String>), String> {
+    match verification {
+        VerificationResult::Verified { sha256, .. } => Ok(("verified".to_string(), Some(sha256))),
+        VerificationResult::Unverified { sha256, .. } => {
+            if !allow_unverified {
+                return Err(
+                    "This model is not on the verified allowlist. Enable the advanced override in Settings to load unverified local models."
+                        .to_string(),
+                );
+            }
+            Ok(("unverified".to_string(), Some(sha256)))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_allow_unverified_local_models(state: State<'_, AppState>) -> Result<bool, String> {
+    allow_unverified_local_models(state.inner())
+}
+
+#[tauri::command]
+pub fn set_allow_unverified_local_models(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|e| e.to_string())?;
+    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+    db.set_setting_value(
+        ALLOW_UNVERIFIED_LOCAL_MODELS_KEY,
+        if enabled { "true" } else { "false" },
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Verify FTS5 is available (release gate command)
@@ -407,19 +457,30 @@ pub fn load_custom_model(
 
     // Custom models are permitted, but should be treated as unverified unless allowlisted.
     // Log a warning/audit entry so operators understand the trust tradeoff.
-    match verify_model_integrity(&validated_path, false) {
-        Ok(VerificationResult::Verified { sha256, .. }) => {
-            audit::audit_model_integrity_verified(&model_id, &sha256);
+    let allow_unverified = allow_unverified_local_models(state.inner())?;
+    let (verification_status, verification_sha256) = custom_model_verification_status(
+        verify_model_integrity(&validated_path, false)
+            .map_err(|e| format!("Model integrity verification failed: {}", e))?,
+        allow_unverified,
+    )?;
+
+    match verification_status.as_str() {
+        "verified" => {
+            if let Some(sha256) = verification_sha256.as_deref() {
+                audit::audit_model_integrity_verified(&model_id, sha256);
+            }
         }
-        Ok(VerificationResult::Unverified { sha256, .. }) => {
-            audit::audit_model_integrity_unverified(&model_id, &sha256);
-            tracing::warn!(
-                "Loading unverified model '{}' (sha256: {}). Prefer allowlisted models.",
-                model_id,
-                sha256
-            );
+        "unverified" => {
+            if let Some(sha256) = verification_sha256.as_deref() {
+                audit::audit_model_integrity_unverified(&model_id, sha256);
+                tracing::warn!(
+                    "Loading unverified model '{}' (sha256: {}). Prefer allowlisted models.",
+                    model_id,
+                    sha256
+                );
+            }
         }
-        Err(e) => return Err(format!("Model integrity verification failed: {}", e)),
+        _ => {}
     }
 
     let llm_guard = state.llm.read();
@@ -427,9 +488,23 @@ pub fn load_custom_model(
 
     let layers = n_gpu_layers.unwrap_or(1000); // Default to full GPU offload
 
-    engine
+    let mut info = engine
         .load_model(&validated_path, layers, model_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    info.verification_status = Some(verification_status);
+
+    if let Ok(db_lock) = state.db.lock() {
+        if let Some(db) = db_lock.as_ref() {
+            let _ = db.save_model_state(
+                "llm",
+                validated_path.to_string_lossy().as_ref(),
+                Some(info.id.as_str()),
+                None,
+            );
+        }
+    }
+
+    Ok(info)
 }
 
 /// Validate a GGUF file without loading it (returns model metadata)
@@ -484,11 +559,18 @@ pub fn validate_gguf_file(model_path: String) -> Result<GgufFileInfo, String> {
         return Err("Invalid GGUF file: magic bytes mismatch".into());
     }
 
+    let integrity_status = match verify_model_integrity(&validated_path, false) {
+        Ok(VerificationResult::Verified { .. }) => "verified".to_string(),
+        Ok(VerificationResult::Unverified { .. }) => "unverified".to_string(),
+        Err(e) => return Err(format!("Model integrity verification failed: {}", e)),
+    };
+
     Ok(GgufFileInfo {
         path: validated_path.to_string_lossy().to_string(),
         filename,
         size_bytes: metadata.len(),
         is_valid: true,
+        integrity_status,
     })
 }
 
@@ -501,6 +583,7 @@ pub struct GgufFileInfo {
     #[serde(rename = "file_size")]
     pub size_bytes: u64,
     pub is_valid: bool,
+    pub integrity_status: String,
 }
 
 /// Unload the current model
@@ -2259,9 +2342,7 @@ pub(super) async fn generate_kb_embeddings_internal(
     let consent_enabled = {
         let db_lock = state.db.lock().map_err(|e| e.to_string())?;
         let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        db.get_vector_consent()
-            .map_err(|e| e.to_string())?
-            .enabled
+        db.get_vector_consent().map_err(|e| e.to_string())?.enabled
     };
 
     if !consent_enabled {
@@ -2590,9 +2671,7 @@ pub async fn init_vector_store(state: State<'_, AppState>) -> Result<(), String>
         let consented = {
             let db_lock = state.db.lock().map_err(|e| e.to_string())?;
             let db = db_lock.as_ref().ok_or("Database not initialized")?;
-            db.get_vector_consent()
-                .map_err(|e| e.to_string())?
-                .enabled
+            db.get_vector_consent().map_err(|e| e.to_string())?.enabled
         };
 
         if consented {
@@ -5105,7 +5184,7 @@ pub async fn list_runbook_sessions(
         status.as_deref(),
         scope_key.as_deref(),
     )
-        .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())
 }
 
 /// Reassign runbook sessions from one workspace scope to another.
@@ -6096,4 +6175,39 @@ pub struct StartupMetricsResult {
     pub total_ms: i64,
     pub init_app_ms: i64,
     pub models_cached: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::custom_model_verification_status;
+    use crate::model_integrity::VerificationResult;
+
+    #[test]
+    fn unverified_custom_models_are_rejected_by_default() {
+        let result = custom_model_verification_status(
+            VerificationResult::Unverified {
+                filename: "custom.gguf".to_string(),
+                sha256: "abc123".to_string(),
+            },
+            false,
+        );
+
+        let err = result.expect_err("unverified models should be rejected without override");
+        assert!(err.contains("advanced override"));
+    }
+
+    #[test]
+    fn unverified_custom_models_are_allowed_only_when_override_is_enabled() {
+        let result = custom_model_verification_status(
+            VerificationResult::Unverified {
+                filename: "custom.gguf".to_string(),
+                sha256: "abc123".to_string(),
+            },
+            true,
+        )
+        .expect("override should allow unverified models");
+
+        assert_eq!(result.0, "unverified");
+        assert_eq!(result.1.as_deref(), Some("abc123"));
+    }
 }

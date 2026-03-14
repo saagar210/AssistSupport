@@ -1,6 +1,6 @@
 [package]
 name = "assistsupport"
-version = "1.0.0"
+version = "1.2.0"
 description = "Intelligent IT support with semantic search"
 authors = ["you"]
 edition = "2021"

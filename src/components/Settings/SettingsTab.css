@@ -27,8 +27,16 @@
   border-radius: 12px;
   border: 1px solid var(--border-color);
   background:
-    radial-gradient(600px 220px at 0% 0%, rgba(0, 178, 255, 0.18), transparent 60%),
-    radial-gradient(420px 220px at 100% 0%, rgba(88, 255, 173, 0.14), transparent 55%),
+    radial-gradient(
+      600px 220px at 0% 0%,
+      rgba(0, 178, 255, 0.18),
+      transparent 60%
+    ),
+    radial-gradient(
+      420px 220px at 100% 0%,
+      rgba(88, 255, 173, 0.14),
+      transparent 55%
+    ),
     linear-gradient(180deg, var(--bg-secondary), var(--bg-tertiary));
 }
 
@@ -118,6 +126,28 @@
   border-radius: 6px;
   font-size: 14px;
   color: var(--success);
+}
+
+.verification-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.verification-badge.verified {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.verification-badge.unverified {
+  background: var(--warning-light, #fff3cd);
+  color: var(--warning, #856404);
 }
 
 .model-list {
@@ -220,11 +250,11 @@
 }
 
 .download-size {
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
 }
 
 .download-speed {
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   color: var(--text-muted);
 }
 
@@ -260,8 +290,16 @@
   border-radius: var(--as-radius-3);
   border: 1px solid var(--as-border-1);
   background:
-    radial-gradient(900px 400px at 10% 0%, var(--as-accent-surface-1), transparent 55%),
-    radial-gradient(700px 360px at 90% 0%, var(--as-info-surface), transparent 55%),
+    radial-gradient(
+      900px 400px at 10% 0%,
+      var(--as-accent-surface-1),
+      transparent 55%
+    ),
+    radial-gradient(
+      700px 360px at 90% 0%,
+      var(--as-info-surface),
+      transparent 55%
+    ),
     linear-gradient(180deg, var(--as-surface-3), var(--as-surface-1));
 }
 
@@ -318,7 +356,11 @@
 
 .app-shell-revamp .model-card.loaded {
   border-color: var(--as-good-border);
-  background: linear-gradient(180deg, var(--as-good-surface), var(--as-glass-1));
+  background: linear-gradient(
+    180deg,
+    var(--as-good-surface),
+    var(--as-glass-1)
+  );
 }
 
 .app-shell-revamp .model-info h3 {
@@ -368,6 +410,14 @@
   margin-bottom: 12px;
 }
 
+.advanced-model-toggle {
+  margin-bottom: 6px;
+}
+
+.advanced-model-note {
+  margin-bottom: 12px;
+}
+
 .kb-config {
   display: flex;
   flex-direction: column;
@@ -393,7 +443,7 @@
 }
 
 .kb-folder-display code {
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   color: var(--text-primary);
 }
 
@@ -653,6 +703,11 @@
   color: var(--success);
 }
 
+.status-badge.error {
+  background: var(--error-light);
+  color: var(--error);
+}
+
 .embedding-info {
   display: flex;
   flex-direction: column;
@@ -692,6 +747,24 @@
 }
 
 .generate-embeddings-row .setting-note {
+  padding-left: 0;
+}
+
+.semantic-model-grid {
+  align-items: start;
+}
+
+.semantic-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.semantic-model-card .settings-description {
+  margin-bottom: 0;
+}
+
+.semantic-model-note {
   padding-left: 0;
 }
 
@@ -1022,7 +1095,7 @@
 }
 
 .settings-list li code {
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   font-size: 12px;
   color: var(--text-primary);
 }

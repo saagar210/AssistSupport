@@ -50,6 +50,8 @@ pub struct ModelInfo {
     pub n_ctx_train: u32,
     pub n_embd: u32,
     pub n_vocab: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_status: Option<String>,
 }
 
 /// Generation parameters
@@ -195,6 +197,7 @@ impl LlmEngine {
             n_ctx_train: model.n_ctx_train(),
             n_embd: model.n_embd() as u32,
             n_vocab: model.n_vocab() as u32,
+            verification_status: None,
         };
 
         state.model = Some(model);

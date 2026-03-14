@@ -3,10 +3,14 @@
 //! These commands proxy requests to the Python Flask API running on localhost:3000,
 //! which performs hybrid BM25 + HNSW vector search against PostgreSQL.
 
+use crate::db::get_app_data_dir;
 use crate::security::{FileKeyStore, TOKEN_SEARCH_API};
 use crate::validation::validate_loopback_http_base_url;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::process::Command;
+use tauri::Manager;
 
 const SEARCH_API_BASE: &str = "http://localhost:3000";
 const SEARCH_API_TOKEN_ENV: &str = "ASSISTSUPPORT_SEARCH_API_KEY";
@@ -14,6 +18,7 @@ const SEARCH_API_LEGACY_TOKEN_ENV: &str = "ASSISTSUPPORT_API_KEY";
 const DEFAULT_TOP_K: usize = 10;
 const MAX_TOP_K: usize = 50;
 const MIN_TOP_K: usize = 1;
+const SEARCH_API_EMBEDDING_MANAGER_SCRIPT: &str = "managed_embedding_model.py";
 
 // ── Request / Response types ──────────────────────────────────────────────────
 
@@ -106,6 +111,16 @@ pub struct SearchApiHealthStatus {
     pub status: String,
     pub message: String,
     pub base_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchApiEmbeddingModelStatus {
+    pub installed: bool,
+    pub ready: bool,
+    pub model_name: String,
+    pub revision: String,
+    pub local_path: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -335,7 +350,113 @@ fn classify_ready_response(
     }
 }
 
+fn dev_search_api_runner() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .join("scripts")
+        .join("search-api")
+        .join("run-python.sh");
+    path.exists().then_some(path)
+}
+
+fn bundled_search_api_manager_script(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|dir| {
+            dir.join("search-api")
+                .join(SEARCH_API_EMBEDDING_MANAGER_SCRIPT)
+        })
+        .filter(|path| path.exists())
+}
+
+fn repo_search_api_manager_script() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .join("search-api")
+        .join(SEARCH_API_EMBEDDING_MANAGER_SCRIPT);
+    path.exists().then_some(path)
+}
+
+fn parse_embedding_manager_output(
+    output: std::process::Output,
+) -> Result<SearchApiEmbeddingModelStatus, String> {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    let parsed = serde_json::from_str::<SearchApiEmbeddingModelStatus>(&stdout)
+        .map_err(|e| format!("Failed to parse embedding manager output: {}", e))?;
+
+    if output.status.success() {
+        return Ok(parsed);
+    }
+
+    Err(parsed.error.unwrap_or_else(|| {
+        if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            "Embedding manager failed".to_string()
+        }
+    }))
+}
+
+fn run_search_api_embedding_manager(
+    app: &tauri::AppHandle,
+    action: &str,
+) -> Result<SearchApiEmbeddingModelStatus, String> {
+    let app_data_dir = get_app_data_dir();
+    let app_data_dir_str = app_data_dir
+        .to_str()
+        .ok_or("App data directory contains invalid UTF-8")?;
+
+    if let Some(runner) = dev_search_api_runner() {
+        let output = Command::new(&runner)
+            .arg(SEARCH_API_EMBEDDING_MANAGER_SCRIPT)
+            .arg(action)
+            .arg("--json")
+            .arg("--app-data-dir")
+            .arg(app_data_dir_str)
+            .output()
+            .map_err(|e| format!("Failed to run search-api model manager: {}", e))?;
+        return parse_embedding_manager_output(output);
+    }
+
+    let script_path = bundled_search_api_manager_script(app)
+        .or_else(repo_search_api_manager_script)
+        .ok_or("Managed embedding model script is unavailable")?;
+
+    let output = Command::new("python3")
+        .arg(script_path)
+        .arg(action)
+        .arg("--json")
+        .arg("--app-data-dir")
+        .arg(app_data_dir_str)
+        .output()
+        .map_err(|e| format!("Failed to run python3 for search-api model manager: {}", e))?;
+    parse_embedding_manager_output(output)
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_search_api_embedding_model_status(
+    app: tauri::AppHandle,
+) -> Result<SearchApiEmbeddingModelStatus, String> {
+    tokio::task::spawn_blocking(move || run_search_api_embedding_manager(&app, "status"))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn install_search_api_embedding_model(
+    app: tauri::AppHandle,
+) -> Result<SearchApiEmbeddingModelStatus, String> {
+    tokio::task::spawn_blocking(move || run_search_api_embedding_manager(&app, "install"))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
 /// Execute a hybrid search against the PostgreSQL search API.
 #[tauri::command]

@@ -25,6 +25,7 @@ from runtime_config import (
     RuntimeConfigError,
 )
 from db_config import check_db_connection
+from managed_embedding_model import get_model_status
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -117,27 +118,37 @@ def _check_rate_limit_backend():
 
 
 def _check_model_components():
-    def _components_ready(components):
-        if not components:
-            return True
-        statuses = []
-        for value in components.values():
-            if isinstance(value, dict):
-                statuses.append(value.get("status") == "ok")
-            else:
-                statuses.append(bool(value))
-        return all(statuses)
-
     try:
+        embedding_status = get_model_status()
+        if not embedding_status.ready:
+            return {
+                "status": "error",
+                "details": {
+                    "embedder": {
+                        "status": "error",
+                        "model_name": embedding_status.model_name,
+                        "revision": embedding_status.revision,
+                        "local_path": embedding_status.local_path,
+                        "error": embedding_status.error,
+                    },
+                    "reranker": {
+                        "status": "optional",
+                        "message": "Reranker loads only when rerank fusion is requested",
+                    },
+                },
+                "error": embedding_status.error,
+            }
+
         engine = _get_engine()
-        if hasattr(engine, "get_component_status"):
-            engine_checks = engine.get_component_status()
-        elif hasattr(engine, "get_readiness"):
-            engine_checks = engine.get_readiness()
-        else:
-            engine_checks = {}
+        engine_checks = (
+            engine.get_component_status()
+            if hasattr(engine, "get_component_status")
+            else engine.get_readiness()
+            if hasattr(engine, "get_readiness")
+            else {}
+        )
         return {
-            "status": "ok" if _components_ready(engine_checks) else "error",
+            "status": "ok",
             "details": engine_checks,
         }
     except Exception as exc:

@@ -3,8 +3,7 @@ use std::fs;
 
 fn tauri_commands() -> BTreeSet<String> {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let lib_rs =
-        fs::read_to_string(format!("{manifest_dir}/src/lib.rs")).expect("read src/lib.rs");
+    let lib_rs = fs::read_to_string(format!("{manifest_dir}/src/lib.rs")).expect("read src/lib.rs");
     let body = lib_rs
         .split("invoke_handler(tauri::generate_handler![")
         .nth(1)
@@ -12,14 +11,24 @@ fn tauri_commands() -> BTreeSet<String> {
         .expect("invoke handler block");
 
     body.lines()
-        .filter_map(|line| line.find("commands::").map(|index| &line[index + "commands::".len()..]))
+        .filter_map(|line| {
+            line.find("commands::")
+                .map(|index| &line[index + "commands::".len()..])
+        })
         .filter_map(|line| {
             line.split(|ch: char| ch == ',' || ch.is_whitespace() || ch == ']')
                 .next()
         })
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
-        .map(|entry| entry.rsplit("::").next().unwrap_or(entry).trim().to_string())
+        .map(|entry| {
+            entry
+                .rsplit("::")
+                .next()
+                .unwrap_or(entry)
+                .trim()
+                .to_string()
+        })
         .collect()
 }
 
@@ -81,8 +90,8 @@ fn permission_manifest_covers_all_tauri_commands() {
 #[test]
 fn default_capability_references_expected_permission_groups() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let capability =
-        fs::read_to_string(format!("{manifest_dir}/capabilities/default.json")).expect("read capability");
+    let capability = fs::read_to_string(format!("{manifest_dir}/capabilities/default.json"))
+        .expect("read capability");
 
     for identifier in [
         "startup-core",

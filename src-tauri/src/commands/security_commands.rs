@@ -1,5 +1,5 @@
 use super::*;
-use crate::validation::ValidationError;
+use crate::validation::{validate_output_file_within_home, ValidationError};
 
 pub(crate) fn has_hf_token_impl() -> Result<bool, String> {
     FileKeyStore::get_token(TOKEN_HUGGINGFACE)
@@ -101,7 +101,7 @@ pub(crate) fn export_audit_log_impl(export_path: String) -> Result<String, Strin
     use std::path::Path;
 
     let path = Path::new(&export_path);
-    let validated = validate_within_home(path).map_err(|e| match e {
+    let validated = validate_output_file_within_home(path).map_err(|e| match e {
         ValidationError::PathTraversal => {
             "Export path must be within your home directory".to_string()
         }

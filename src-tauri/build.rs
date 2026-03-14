@@ -55,9 +55,8 @@ fn main() {
         .collect();
     let leaked_commands: &'static [&'static str] = Box::leak(leaked_commands.into_boxed_slice());
 
-    let attributes = tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(leaked_commands),
-    );
+    let attributes = tauri_build::Attributes::new()
+        .app_manifest(tauri_build::AppManifest::new().commands(leaked_commands));
 
     if let Err(error) = tauri_build::try_build(attributes) {
         let error = format!("{error:#}");

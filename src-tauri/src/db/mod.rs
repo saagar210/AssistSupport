@@ -246,9 +246,11 @@ impl Database {
     }
 
     fn get_setting(&self, key: &str) -> Result<Option<String>, DbError> {
-        let value: SqliteResult<String> = self
-            .conn
-            .query_row("SELECT value FROM settings WHERE key = ?", [key], |row| row.get(0));
+        let value: SqliteResult<String> =
+            self.conn
+                .query_row("SELECT value FROM settings WHERE key = ?", [key], |row| {
+                    row.get(0)
+                });
 
         match value {
             Ok(v) => Ok(Some(v)),
@@ -265,11 +267,7 @@ impl Database {
         Ok(())
     }
 
-    fn normalize_json_string_array(
-        &self,
-        raw: &str,
-        field_name: &str,
-    ) -> Result<String, DbError> {
+    fn normalize_json_string_array(&self, raw: &str, field_name: &str) -> Result<String, DbError> {
         let parsed: Vec<String> = serde_json::from_str(raw).map_err(|e| {
             DbError::InvalidInput(format!("{} must be a JSON string array: {}", field_name, e))
         })?;
@@ -315,6 +313,16 @@ impl Database {
     /// Persist the vector store version tracked in SQLite settings.
     pub fn set_vector_store_version(&self, version: i32) -> Result<(), DbError> {
         self.set_setting(VECTOR_STORE_VERSION_KEY, &version.to_string())
+    }
+
+    /// Get a raw string setting value by key.
+    pub fn get_setting_value(&self, key: &str) -> Result<Option<String>, DbError> {
+        self.get_setting(key)
+    }
+
+    /// Persist a raw string setting value by key.
+    pub fn set_setting_value(&self, key: &str, value: &str) -> Result<(), DbError> {
+        self.set_setting(key, value)
     }
 
     /// Run database migrations
@@ -4614,7 +4622,8 @@ impl Database {
         } else {
             template.created_at.clone()
         };
-        let steps_json = self.normalize_json_string_array(&template.steps_json, "runbook template steps")?;
+        let steps_json =
+            self.normalize_json_string_array(&template.steps_json, "runbook template steps")?;
         self.conn.execute(
             "INSERT INTO runbook_templates (id, name, scenario, steps_json, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?)
@@ -4623,7 +4632,14 @@ impl Database {
                 scenario = excluded.scenario,
                 steps_json = excluded.steps_json,
                 updated_at = excluded.updated_at",
-            params![&id, &template.name, &template.scenario, &steps_json, &created_at, &now],
+            params![
+                &id,
+                &template.name,
+                &template.scenario,
+                &steps_json,
+                &created_at,
+                &now
+            ],
         )?;
         Ok(id)
     }
@@ -4728,10 +4744,12 @@ impl Database {
         } else {
             kit.created_at.clone()
         };
-        let checklist_items_json =
-            self.normalize_json_string_array(&kit.checklist_items_json, "resolution kit checklist")?;
-        let kb_document_ids_json =
-            self.normalize_json_string_array(&kit.kb_document_ids_json, "resolution kit KB document ids")?;
+        let checklist_items_json = self
+            .normalize_json_string_array(&kit.checklist_items_json, "resolution kit checklist")?;
+        let kb_document_ids_json = self.normalize_json_string_array(
+            &kit.kb_document_ids_json,
+            "resolution kit KB document ids",
+        )?;
         self.conn.execute(
             "INSERT INTO resolution_kits
                 (id, name, summary, category, response_template, checklist_items_json, kb_document_ids_json, runbook_scenario, approval_hint, created_at, updated_at)
@@ -4937,7 +4955,10 @@ impl Database {
     }
 
     /// Get one dispatch history record.
-    pub fn get_dispatch_history(&self, dispatch_id: &str) -> Result<DispatchHistoryRecord, DbError> {
+    pub fn get_dispatch_history(
+        &self,
+        dispatch_id: &str,
+    ) -> Result<DispatchHistoryRecord, DbError> {
         self.conn.query_row(
             "SELECT id, integration_type, draft_id, title, destination_label, payload_preview, status, metadata_json, created_at, updated_at
              FROM dispatch_history
@@ -5006,12 +5027,18 @@ impl Database {
         } else {
             outcome.created_at.clone()
         };
-        let handoff_pack_json =
-            self.normalize_optional_json_object(outcome.handoff_pack_json.as_deref(), "case outcome handoff pack")?;
-        let kb_draft_json =
-            self.normalize_optional_json_object(outcome.kb_draft_json.as_deref(), "case outcome KB draft")?;
-        let evidence_pack_json =
-            self.normalize_optional_json_object(outcome.evidence_pack_json.as_deref(), "case outcome evidence pack")?;
+        let handoff_pack_json = self.normalize_optional_json_object(
+            outcome.handoff_pack_json.as_deref(),
+            "case outcome handoff pack",
+        )?;
+        let kb_draft_json = self.normalize_optional_json_object(
+            outcome.kb_draft_json.as_deref(),
+            "case outcome KB draft",
+        )?;
+        let evidence_pack_json = self.normalize_optional_json_object(
+            outcome.evidence_pack_json.as_deref(),
+            "case outcome evidence pack",
+        )?;
         let tags_json = match outcome.tags_json.as_deref() {
             Some(value) => Some(self.normalize_json_string_array(value, "case outcome tags")?),
             None => None,
@@ -6738,12 +6765,8 @@ mod tests {
             "draft:draft-1",
         )
         .expect("create first session");
-        db.create_runbook_session(
-            "access-request",
-            r#"["Verify","Approve"]"#,
-            "draft:draft-2",
-        )
-        .expect("create second session");
+        db.create_runbook_session("access-request", r#"["Verify","Approve"]"#, "draft:draft-2")
+            .expect("create second session");
 
         let draft_one_sessions = db
             .list_runbook_sessions(10, None, Some("draft:draft-1"))
@@ -6837,11 +6860,7 @@ mod tests {
             .expect("create first session");
 
         let err = db
-            .create_runbook_session(
-                "access-request",
-                r#"["Verify","Approve"]"#,
-                "draft:draft-1",
-            )
+            .create_runbook_session("access-request", r#"["Verify","Approve"]"#, "draft:draft-1")
             .expect_err("reject second live session");
         assert!(matches!(err, DbError::InvalidInput(_)));
 
@@ -6849,13 +6868,8 @@ mod tests {
             .expect("complete first session");
 
         let replacement = db
-            .create_runbook_session(
-                "access-request",
-                r#"["Verify","Approve"]"#,
-                "draft:draft-1",
-            )
+            .create_runbook_session("access-request", r#"["Verify","Approve"]"#, "draft:draft-1")
             .expect("allow new session after completion");
         assert_ne!(replacement.id, session.id);
     }
-
 }

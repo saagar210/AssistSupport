@@ -25,7 +25,8 @@
     "pr:notes": "bash scripts/git/generate-pr-notes.sh",
     "check:workstation-preflight": "node scripts/ci/check-workstation-preflight.mjs",
     "check:workflow-drift": "node scripts/ci/check-workflow-command-drift.mjs",
-    "check:monorepo-readiness": "pnpm check:workstation-preflight && pnpm ui:gate:static && pnpm test",
+    "check:version-parity": "node scripts/ci/check-version-parity.mjs",
+    "check:monorepo-readiness": "pnpm check:workstation-preflight && pnpm check:version-parity && pnpm ui:gate:static && pnpm test",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.reportsDirectory=coverage/frontend",
     "search-api:test": "bash scripts/search-api/run-python.sh -m pytest -q",
@@ -35,11 +36,12 @@
     "test:e2e:smoke": "bash scripts/ui/run-playwright-tag.sh @smoke",
     "test:security-regression": "bash scripts/security/run-security-regression.sh",
     "test:security:audit:rust": "bash scripts/security/run-cargo-audit.sh",
-    "test:security:audit:python": "python3 -m pip_audit -r search-api/requirements.txt",
+    "test:security:audit:python": "bash scripts/search-api/run-python.sh -m pip_audit -r requirements.txt",
     "test:ci": "cd src-tauri && cargo test",
     "lint": "tsc --noEmit",
     "stylelint": "stylelint \"src/**/*.css\"",
     "typecheck": "tsc --noEmit",
+    "version:sync": "node scripts/ci/check-version-parity.mjs --write",
     "build:ui": "tsc && vite build",
     "perf:bundle": "node scripts/perf/vite-bundle-report.mjs",
     "perf:build": "node scripts/perf/measure-build-time.mjs",
@@ -132,9 +134,11 @@
       "commitizen>lodash": "^4.17.23",
       "eslint>ajv": "^6.14.0",
       "external-editor>tmp": "^0.2.4",
+      "flatted": "^3.4.0",
       "minimatch": "^10.2.3",
       "rollup": "^4.59.0",
-      "tmp": "^0.2.4"
+      "tmp": "^0.2.4",
+      "yauzl": "^3.2.1"
     },
     "onlyBuiltDependencies": [
       "esbuild"

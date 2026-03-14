@@ -5,7 +5,9 @@
 
 mod common;
 
-use assistsupport_lib::validation::{validate_within_home, ValidationError};
+use assistsupport_lib::validation::{
+    validate_output_file_within_home, validate_within_home, ValidationError,
+};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -219,6 +221,38 @@ fn test_symlink_traversal_blocked() {
             );
         }
     }
+}
+
+#[test]
+fn test_output_file_validation_allows_new_file_in_home() {
+    let home = dirs::home_dir().expect("Home directory should exist");
+    let export_dir = home.join("Downloads");
+    if !export_dir.exists() {
+        return;
+    }
+
+    let file_name = format!("assist-support-audit-{}.json", Uuid::new_v4());
+    let export_path = export_dir.join(file_name);
+    let validated =
+        validate_output_file_within_home(&export_path).expect("new file path should validate");
+
+    assert_eq!(validated, export_path);
+    assert!(!validated.exists());
+}
+
+#[test]
+fn test_output_file_validation_rejects_directory_targets() {
+    let home = dirs::home_dir().expect("Home directory should exist");
+    let export_dir = home.join("Downloads");
+    if !export_dir.exists() {
+        return;
+    }
+
+    let result = validate_output_file_within_home(&export_dir);
+    assert!(
+        matches!(result, Err(ValidationError::InvalidFormat(_))),
+        "directory target should be rejected"
+    );
 }
 
 // ============================================================================

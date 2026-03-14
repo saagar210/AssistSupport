@@ -104,12 +104,24 @@ export interface ModelInfo {
   n_embd?: number;
   n_vocab?: number;
   n_gpu_layers?: number;
+  verification_status?: string | null;
 }
 
 export interface GgufFileInfo {
+  path: string;
   file_name: string;
   file_size: number;
   is_valid: boolean;
+  integrity_status: string;
+}
+
+export interface SearchApiEmbeddingModelStatus {
+  installed: boolean;
+  ready: boolean;
+  model_name: string;
+  revision: string;
+  local_path: string | null;
+  error: string | null;
 }
 
 export interface GenerationParams {
@@ -172,7 +184,7 @@ export interface GenerationMetrics {
   context_utilization: number;
 }
 
-export type ConfidenceMode = 'answer' | 'clarify' | 'abstain';
+export type ConfidenceMode = "answer" | "clarify" | "abstain";
 
 export interface ConfidenceAssessment {
   mode: ConfidenceMode;
@@ -209,8 +221,8 @@ export interface ContextSource {
   source_type: string | null;
 }
 
-export type ResponseLength = 'Short' | 'Medium' | 'Long';
-export type FirstResponseTone = 'slack' | 'jira';
+export type ResponseLength = "Short" | "Medium" | "Long";
+export type FirstResponseTone = "slack" | "jira";
 
 export interface FirstResponseParams {
   user_input: string;
@@ -276,7 +288,7 @@ export interface KbDocument {
   id: string;
   file_path: string;
   title?: string | null;
-  indexed_at?: string | null;  // ISO 8601 string
+  indexed_at?: string | null; // ISO 8601 string
   chunk_count?: number;
 }
 
@@ -284,7 +296,7 @@ export interface IndexedFile {
   file_path: string;
   title: string | null;
   chunk_count: number;
-  indexed_at: string;  // ISO 8601 string
+  indexed_at: string; // ISO 8601 string
 }
 
 export interface IndexStats {
@@ -309,7 +321,7 @@ export interface SearchResult {
   content: string;
   snippet: string;
   score: number;
-  source: 'Fts5' | 'Vector' | 'Hybrid';
+  source: "Fts5" | "Vector" | "Hybrid";
   namespace_id: string | null;
   source_type: string | null;
 }
@@ -425,7 +437,7 @@ export interface RunbookStepEvidenceRecord {
   id: string;
   session_id: string;
   step_index: number;
-  status: 'pending' | 'completed' | 'skipped' | 'failed';
+  status: "pending" | "completed" | "skipped" | "failed";
   evidence_text: string;
   skip_reason: string | null;
   created_at: string;
@@ -433,12 +445,12 @@ export interface RunbookStepEvidenceRecord {
 
 export interface DispatchHistoryRecord {
   id: string;
-  integration_type: 'jira' | 'servicenow' | 'slack' | 'teams';
+  integration_type: "jira" | "servicenow" | "slack" | "teams";
   draft_id: string | null;
   title: string;
   destination_label: string;
   payload_preview: string;
-  status: 'previewed' | 'sent' | 'cancelled' | 'failed';
+  status: "previewed" | "sent" | "cancelled" | "failed";
   metadata_json: string | null;
   created_at: string;
   updated_at: string;
@@ -472,9 +484,19 @@ export interface OcrResult {
 }
 
 // UI State types
-export type Tab = 'draft' | 'followups' | 'sources' | 'ingest' | 'knowledge' | 'analytics' | 'pilot' | 'search' | 'ops' | 'settings';
+export type Tab =
+  | "draft"
+  | "followups"
+  | "sources"
+  | "ingest"
+  | "knowledge"
+  | "analytics"
+  | "pilot"
+  | "search"
+  | "ops"
+  | "settings";
 
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = "light" | "dark" | "system";
 
 export interface Draft {
   id: string;
@@ -486,7 +508,7 @@ export interface Draft {
 }
 
 // Toast types
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
+export type ToastType = "success" | "error" | "info" | "warning";
 
 export interface Toast {
   id: string;
@@ -501,7 +523,7 @@ export interface DecisionTree {
   name: string;
   category: string | null;
   tree_json: string; // Serialized TreeStructure
-  source: 'builtin' | 'custom';
+  source: "builtin" | "custom";
   created_at: string;
   updated_at: string;
 }
@@ -513,7 +535,7 @@ export interface TreeStructure {
 
 export interface TreeNode {
   id: string;
-  type: 'question' | 'action' | 'terminal';
+  type: "question" | "action" | "terminal";
   title: string;
   content: string | null;
   options?: TreeOption[];
@@ -542,16 +564,19 @@ export interface TreePath {
   current_node_id: string;
 }
 
-export type DraftStatus = 'draft' | 'finalized' | 'archived';
-export type NoteAudience = 'internal-note' | 'customer-safe' | 'escalation-note';
-export type IntakeUrgency = 'low' | 'normal' | 'high' | 'critical';
+export type DraftStatus = "draft" | "finalized" | "archived";
+export type NoteAudience =
+  | "internal-note"
+  | "customer-safe"
+  | "escalation-note";
+export type IntakeUrgency = "low" | "normal" | "high" | "critical";
 export type NextActionKind =
-  | 'answer'
-  | 'clarify'
-  | 'runbook'
-  | 'escalate'
-  | 'approval'
-  | 'promote_kb';
+  | "answer"
+  | "clarify"
+  | "runbook"
+  | "escalate"
+  | "approval"
+  | "promote_kb";
 
 export interface CaseIntake {
   issue?: string | null;
@@ -609,7 +634,7 @@ export interface MissingQuestion {
   id: string;
   question: string;
   reason: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: "high" | "medium" | "low";
 }
 
 export interface NextActionRecommendation {
@@ -673,7 +698,7 @@ export interface ResolutionKitRecord {
 
 export interface WorkspaceFavorite {
   id: string;
-  kind: 'runbook' | 'policy' | 'kb' | 'kit';
+  kind: "runbook" | "policy" | "kb" | "kit";
   label: string;
   resource_id: string;
   metadata?: Record<string, string> | null;
@@ -683,7 +708,7 @@ export interface WorkspaceFavorite {
 
 export interface WorkspaceFavoriteRecord {
   id: string;
-  kind: 'runbook' | 'policy' | 'kb' | 'kit';
+  kind: "runbook" | "policy" | "kb" | "kit";
   label: string;
   resource_id: string;
   metadata_json: string | null;
@@ -715,7 +740,7 @@ export interface ApprovalGuidance {
 }
 
 export interface CollaborationDispatchPreview {
-  integration_type: 'jira' | 'servicenow' | 'slack' | 'teams';
+  integration_type: "jira" | "servicenow" | "slack" | "teams";
   title: string;
   destination_label: string;
   payload_preview: string;
@@ -738,8 +763,13 @@ export interface TicketWorkspaceSnapshot {
 export interface WorkspacePersonalization {
   preferred_note_audience: NoteAudience;
   preferred_output_length: ResponseLength;
-  favorite_queue_view: 'all' | 'unassigned' | 'at_risk' | 'in_progress' | 'resolved';
-  default_evidence_format: 'clipboard' | 'markdown';
+  favorite_queue_view:
+    | "all"
+    | "unassigned"
+    | "at_risk"
+    | "in_progress"
+    | "resolved";
+  default_evidence_format: "clipboard" | "markdown";
 }
 
 // Draft/Session types
@@ -790,7 +820,7 @@ export interface AuditEntry {
   // Serde serializes unit variants as strings ("key_generated") but
   // data variants like Custom(String) as objects ({"custom": "value"})
   event: string | Record<string, string>;
-  severity: 'info' | 'warning' | 'error' | 'critical';
+  severity: "info" | "warning" | "error" | "critical";
   message: string;
   context?: Record<string, unknown> | null;
 }
@@ -873,7 +903,7 @@ export interface SourceHealth {
   source_type: string;
   source_uri: string;
   title: string | null;
-  status: 'pending' | 'active' | 'stale' | 'error' | 'removed';
+  status: "pending" | "active" | "stale" | "error" | "removed";
   error_message: string | null;
   last_ingested_at: string | null;
   document_count: number;
@@ -890,7 +920,7 @@ export interface SourceHealthSummary {
 }
 
 // Diagnostics types
-export type HealthStatus = 'healthy' | 'warning' | 'error' | 'unavailable';
+export type HealthStatus = "healthy" | "warning" | "error" | "unavailable";
 
 export interface ComponentHealth {
   name: string;
@@ -984,7 +1014,7 @@ export interface ResponseAlternative {
   sources_json: string | null;
   metrics_json: string | null;
   generation_params_json: string | null;
-  chosen: 'original' | 'alternative' | null;
+  chosen: "original" | "alternative" | null;
   created_at: string;
 }
 

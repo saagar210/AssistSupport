@@ -12,6 +12,7 @@ if str(SEARCH_API_DIR) not in sys.path:
 
 ORIGINAL_HYBRID_SEARCH = sys.modules.get("hybrid_search")
 ORIGINAL_INTENT_DETECTION = sys.modules.get("intent_detection")
+ORIGINAL_DB_CONFIG = sys.modules.get("db_config")
 
 
 # Stub heavy modules before importing the Flask app module.
@@ -35,6 +36,10 @@ class _PlaceholderIntentDetector:
 intent_detection_stub.IntentDetector = _PlaceholderIntentDetector
 sys.modules["intent_detection"] = intent_detection_stub
 
+db_config_stub = types.ModuleType("db_config")
+db_config_stub.check_db_connection = lambda: True
+sys.modules["db_config"] = db_config_stub
+
 import search_api  # noqa: E402
 from runtime_config import RuntimeConfigError  # noqa: E402
 
@@ -48,6 +53,11 @@ if ORIGINAL_INTENT_DETECTION is not None:
     sys.modules["intent_detection"] = ORIGINAL_INTENT_DETECTION
 else:
     sys.modules.pop("intent_detection", None)
+
+if ORIGINAL_DB_CONFIG is not None:
+    sys.modules["db_config"] = ORIGINAL_DB_CONFIG
+else:
+    sys.modules.pop("db_config", None)
 
 
 class FakeEngine:
@@ -217,6 +227,32 @@ def test_ready_endpoint_does_not_require_auth(client, monkeypatch):
     response = test_client.get("/ready")
     assert response.status_code == 200
     assert response.get_json()["status"] == "ok"
+
+
+def test_model_component_check_reports_missing_managed_embedding(monkeypatch):
+    monkeypatch.setattr(
+        search_api,
+        'get_model_status',
+        lambda: type(
+            'Status',
+            (),
+            {
+                'ready': False,
+                'installed': False,
+                'model_name': 'sentence-transformers/all-MiniLM-L6-v2',
+                'revision': 'pinned-revision',
+                'local_path': None,
+                'error': 'Install it from AssistSupport Settings.',
+            },
+        )(),
+    )
+
+    result = search_api._check_model_components()
+
+    assert result['status'] == 'error'
+    assert result['details']['embedder']['status'] == 'error'
+    assert result['details']['embedder']['revision'] == 'pinned-revision'
+    assert 'Settings' in result['error']
 
 
 def test_search_happy_path_with_scores(client, monkeypatch):

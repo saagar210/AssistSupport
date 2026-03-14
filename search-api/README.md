@@ -76,6 +76,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-test.txt
 pytest -q
+python -m pip_audit -r requirements.txt
 
 # Production smoke check (expects /health, /ready, and auth enforcement)
 ENVIRONMENT=production \

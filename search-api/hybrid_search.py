@@ -40,7 +40,7 @@ class HybridSearchEngine:
         self._embed_lock = threading.Lock()
         self._rerank_lock = threading.Lock()
         self.embedder = EmbeddingService()
-        self.reranker = Reranker()
+        self.reranker = None
         logger.info("Hybrid search engine initialized")
 
     @contextmanager
@@ -69,10 +69,12 @@ class HybridSearchEngine:
                 "status": "ok",
                 "model_name": getattr(self.embedder, "model_name", self.embedder.__class__.__name__),
                 "dimension": getattr(self.embedder, "dimension", None),
+                "local_path": getattr(self.embedder, "model_path", None),
             },
             "reranker": {
-                "status": "ok",
-                "model_name": getattr(self.reranker, "model_name", self.reranker.__class__.__name__),
+                "status": "optional",
+                "model_name": getattr(self.reranker, "model_name", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+                "message": "Loads on demand with local_files_only when rerank fusion is requested",
             },
         }
 
@@ -154,9 +156,14 @@ class HybridSearchEngine:
                     cur, fused, bm25_results, vector_results, min(limit * 2, 20)
                 )
                 start_rerank = time.time()
-                with self._rerank_lock:
-                    results = self.reranker.rerank(query, rerank_pool_results, top_k=limit)
-                rerank_time = (time.time() - start_rerank) * 1000
+                try:
+                    with self._rerank_lock:
+                        if self.reranker is None:
+                            self.reranker = Reranker()
+                        results = self.reranker.rerank(query, rerank_pool_results, top_k=limit)
+                    rerank_time = (time.time() - start_rerank) * 1000
+                except Exception:
+                    logger.exception("Reranker unavailable, returning fused results without rerank")
 
             # Step 9: Log query
             total_time = (time.time() - start_total) * 1000

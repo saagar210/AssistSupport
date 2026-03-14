@@ -169,6 +169,8 @@ pub fn run() {
             commands::clear_memorykernel_service_token,
             commands::download_model,
             commands::cancel_download,
+            commands::get_allow_unverified_local_models,
+            commands::set_allow_unverified_local_models,
             // KB Indexer commands
             commands::set_kb_folder,
             commands::get_kb_folder,
@@ -405,6 +407,8 @@ pub fn run() {
             commands::search_api::get_search_api_stats,
             commands::search_api::get_search_api_health_status,
             commands::search_api::check_search_api_health,
+            commands::search_api::get_search_api_embedding_model_status,
+            commands::search_api::install_search_api_embedding_model,
             // MemoryKernel service integration
             commands::memory_kernel::get_memory_kernel_integration_pin,
             commands::memory_kernel::get_memory_kernel_preflight_status,

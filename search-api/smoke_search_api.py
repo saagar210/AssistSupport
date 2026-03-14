@@ -58,6 +58,18 @@ def main() -> int:
     smoke_engine = _SmokeEngine()
     search_api._engine = smoke_engine
     search_api._get_engine = lambda: smoke_engine
+    search_api.get_model_status = lambda: type(
+        "SmokeModelStatus",
+        (),
+        {
+            "installed": True,
+            "ready": True,
+            "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+            "revision": "smoke-test-revision",
+            "local_path": "/tmp/smoke-managed-search-model",
+            "error": None,
+        },
+    )()
 
     with search_api.app.test_client() as client:
         health = client.get("/health")

@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
 """
 AssistSupport Embedding Service
-Generates 768-dimensional embeddings using intfloat/e5-base-v2 (IR-optimized)
-Fallback: sentence-transformers/all-MiniLM-L6-v2 (384 dims)
+
+Loads the managed search-api embedding model from local disk only. The model
+must be installed ahead of time; runtime network downloads are not allowed.
 """
 
-import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from managed_embedding_model import MODEL_NAME, resolve_model_path
 
 
 class EmbeddingService:
     # Models that require "query: "/"passage: " prefixes
     PREFIX_MODELS = {"intfloat/e5-base-v2", "intfloat/e5-small-v2", "intfloat/e5-large-v2"}
 
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
-        """Initialize embedding service with local model"""
-        model_dir = os.path.expanduser("~/assistsupport-semantic-migration/models")
-        self.model = SentenceTransformer(model_name, cache_folder=model_dir)
+    def __init__(self, model_name=MODEL_NAME):
+        """Initialize embedding service with the managed local model."""
+        model_dir = resolve_model_path()
+        self.model = SentenceTransformer(str(model_dir), local_files_only=True)
         self.model_name = model_name
+        self.model_path = str(model_dir)
         self.dimension = self.model.get_sentence_embedding_dimension()
         self.uses_prefix = model_name in self.PREFIX_MODELS
         print(f"Embedding service initialized: {model_name}")
         print(f"  Dimension: {self.dimension}")
         print(f"  Device: {self.model.device}")
         print(f"  Uses prefix: {self.uses_prefix}")
+        print(f"  Local path: {self.model_path}")
 
     def embed_query(self, text: str) -> np.ndarray:
         """Generate embedding for a search query"""

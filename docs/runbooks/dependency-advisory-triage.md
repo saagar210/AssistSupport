@@ -8,7 +8,7 @@ Handle JS, Python, Rust, and workflow dependency alerts in a repeatable way with
 
 ```bash
 pnpm audit --audit-level high
-python3 -m pip_audit -r search-api/requirements.txt
+pnpm run test:security:audit:python
 pnpm run test:security:audit:rust
 ```
 

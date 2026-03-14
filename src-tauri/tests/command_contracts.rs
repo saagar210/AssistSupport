@@ -3,6 +3,7 @@ use assistsupport_lib::commands;
 use assistsupport_lib::commands::backup::ExportFormat;
 use assistsupport_lib::commands::search_api::{
     HybridSearchMetrics, HybridSearchResponse, HybridSearchResult, HybridSearchScores,
+    SearchApiEmbeddingModelStatus,
 };
 use assistsupport_lib::jira::{JiraConfig, JiraTicket};
 use serde_json::{json, Value};
@@ -199,6 +200,27 @@ fn export_format_deserialization_contract() {
     assert!(matches!(markdown, ExportFormat::Markdown));
     assert!(matches!(plain_text, ExportFormat::PlainText));
     assert!(matches!(html, ExportFormat::Html));
+}
+
+#[test]
+fn search_api_embedding_model_status_contract_roundtrip() {
+    let status = SearchApiEmbeddingModelStatus {
+        installed: true,
+        ready: true,
+        model_name: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+        revision: "c9745ed1d9f207416be6d2e6f8de32d1f16199bf".to_string(),
+        local_path: Some("/tmp/managed-model".to_string()),
+        error: None,
+    };
+
+    let serialized = serde_json::to_value(status).expect("serialize embedding status");
+    assert_eq!(serialized["installed"], true);
+    assert_eq!(serialized["ready"], true);
+    assert_eq!(
+        serialized["model_name"],
+        "sentence-transformers/all-MiniLM-L6-v2"
+    );
+    assert_eq!(serialized["local_path"], "/tmp/managed-model");
 }
 
 #[tokio::test]

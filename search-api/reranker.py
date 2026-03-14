@@ -10,6 +10,8 @@ content overriding good retrieval signals.
 import re
 from sentence_transformers import CrossEncoder
 from typing import List
+from pathlib import Path
+import os
 
 
 class Reranker:
@@ -21,8 +23,22 @@ class Reranker:
 
     def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
         self.model_name = model_name
-        self.model = CrossEncoder(model_name)
-        print(f"Reranker initialized: {model_name}")
+        self.model = None
+        model_dir = os.environ.get("ASSISTSUPPORT_SEARCH_API_RERANKER_CACHE")
+        if model_dir:
+            self.model_dir = model_dir
+        else:
+            self.model_dir = str(Path.home() / ".cache" / "assistsupport" / "reranker")
+
+    def _get_model(self):
+        if self.model is None:
+            self.model = CrossEncoder(
+                self.model_name,
+                cache_folder=self.model_dir,
+                local_files_only=True,
+            )
+            print(f"Reranker initialized: {self.model_name}")
+        return self.model
 
     def _clean_passage(self, text: str) -> str:
         """Remove noisy content from passage text before scoring."""
@@ -56,7 +72,7 @@ class Reranker:
             pairs.append((query, passage))
 
         # Score all pairs
-        raw_scores = self.model.predict(pairs)
+        raw_scores = self._get_model().predict(pairs)
 
         # Normalize cross-encoder scores to [0, 1]
         min_s = min(raw_scores)

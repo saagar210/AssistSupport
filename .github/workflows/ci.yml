@@ -44,6 +44,9 @@ jobs:
       - name: Workflow command drift
         run: pnpm run check:workflow-drift
 
+      - name: Version parity
+        run: pnpm run check:version-parity
+
       - name: Typecheck and lint gate
         run: pnpm run ui:gate:static
 

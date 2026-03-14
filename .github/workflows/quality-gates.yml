@@ -45,6 +45,9 @@ jobs:
       - name: Workflow command drift
         run: pnpm run check:workflow-drift
 
+      - name: Version parity
+        run: pnpm run check:version-parity
+
       - name: Verify commands
         env:
           VERIFY_SKIP_REGEX: ${{ github.event_name == 'push' && '^pnpm git:guard:all$' || '' }}

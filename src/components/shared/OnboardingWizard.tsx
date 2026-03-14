@@ -1,15 +1,16 @@
-import { useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
-import { useDownload } from '../../hooks/useDownload';
-import { Dialog } from './Dialog';
-import { Icon } from './Icon';
-import './OnboardingWizard.css';
+import { useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { useDownload } from "../../hooks/useDownload";
+import { Dialog } from "./Dialog";
+import { Icon } from "./Icon";
+import "./OnboardingWizard.css";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
@@ -18,7 +19,7 @@ interface OnboardingWizardProps {
   onSkip: () => void;
 }
 
-type Step = 'welcome' | 'security' | 'model' | 'kb' | 'shortcuts' | 'complete';
+type Step = "welcome" | "security" | "model" | "kb" | "shortcuts" | "complete";
 
 interface StepInfo {
   title: string;
@@ -28,48 +29,57 @@ interface StepInfo {
 
 const STEPS: Record<Step, StepInfo> = {
   welcome: {
-    title: 'Welcome to AssistSupport',
-    description: 'Your local AI-powered IT support assistant. All data stays on your device.',
-    icon: 'sparkles',
+    title: "Welcome to AssistSupport",
+    description:
+      "Your local AI-powered IT support assistant. All data stays on your device.",
+    icon: "sparkles",
   },
   security: {
-    title: 'Secure Local Storage',
-    description: 'AssistSupport will use your Mac login to protect local encryption keys.',
-    icon: 'shield',
+    title: "Secure Local Storage",
+    description:
+      "AssistSupport will use your Mac login to protect local encryption keys.",
+    icon: "shield",
   },
   model: {
-    title: 'Download an AI Model',
-    description: 'Choose a model to power your responses. Smaller models are faster, larger models are smarter.',
-    icon: 'cpu',
+    title: "Download an AI Model",
+    description:
+      "Choose a model to power your responses. Smaller models are faster, larger models are smarter.",
+    icon: "cpu",
   },
   kb: {
-    title: 'Set Up Your Knowledge Base',
-    description: 'Point to a folder with your documentation. The AI will use this to give accurate answers.',
-    icon: 'folderOpen',
+    title: "Set Up Your Knowledge Base",
+    description:
+      "Point to a folder with your documentation. The AI will use this to give accurate answers.",
+    icon: "folderOpen",
   },
   shortcuts: {
-    title: 'Keyboard Shortcuts',
-    description: 'Work faster with these essential shortcuts.',
-    icon: 'command',
+    title: "Keyboard Shortcuts",
+    description: "Work faster with these essential shortcuts.",
+    icon: "command",
   },
   complete: {
     title: "You're All Set!",
-    description: 'Start drafting responses with AI assistance.',
-    icon: 'checkCircle',
+    description: "Start drafting responses with AI assistance.",
+    icon: "checkCircle",
   },
 };
 
-const STEP_ORDER: Step[] = ['welcome', 'security', 'model', 'kb', 'shortcuts', 'complete'];
-
-type SecurityMode = 'keychain';
+const STEP_ORDER: Step[] = [
+  "welcome",
+  "security",
+  "model",
+  "kb",
+  "shortcuts",
+  "complete",
+];
 
 const SHORTCUTS = [
-  { keys: ['Cmd', 'K'], description: 'Open command palette' },
-  { keys: ['Cmd', 'Enter'], description: 'Generate response' },
-  { keys: ['Cmd', 'S'], description: 'Save draft' },
-  { keys: ['Cmd', 'N'], description: 'New draft' },
-  { keys: ['Cmd', '/'], description: 'Focus search' },
-  { keys: ['Cmd', '1-7'], description: 'Switch tabs' },
+  { keys: ["Cmd", "K"], description: "Open command palette" },
+  { keys: ["Cmd", "Enter"], description: "Generate response" },
+  { keys: ["Cmd", "S"], description: "Save draft" },
+  { keys: ["Cmd", "N"], description: "New draft" },
+  { keys: ["Cmd", "/"], description: "Focus search" },
+  { keys: ["Cmd", "1-7"], description: "Switch tabs" },
 ];
 
 interface ModelOption {
@@ -81,25 +91,27 @@ interface ModelOption {
 
 const MODEL_OPTIONS: ModelOption[] = [
   {
-    name: 'Llama 3.1 8B',
-    size: '4.9 GB',
-    description: 'Recommended: best quality and stability for agent-assist drafting',
-    modelId: 'llama-3.1-8b-instruct',
+    name: "Llama 3.1 8B",
+    size: "4.9 GB",
+    description:
+      "Recommended: best quality and stability for agent-assist drafting",
+    modelId: "llama-3.1-8b-instruct",
   },
   {
-    name: 'Llama 3.2 3B',
-    size: '2.0 GB',
-    description: 'Faster fallback: good for quick drafts on smaller machines',
-    modelId: 'llama-3.2-3b-instruct',
+    name: "Llama 3.2 3B",
+    size: "2.0 GB",
+    description: "Faster fallback: good for quick drafts on smaller machines",
+    modelId: "llama-3.2-3b-instruct",
   },
 ];
 
-export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) {
-  const [currentStep, setCurrentStep] = useState<Step>('welcome');
+export function OnboardingWizard({
+  onComplete,
+  onSkip,
+}: OnboardingWizardProps) {
+  const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [modelDownloaded, setModelDownloaded] = useState(false);
   const [kbFolder, setKbFolder] = useState<string | null>(null);
-  const [securityMode, setSecurityMode] = useState<SecurityMode>('keychain');
-  const [securityConfigured, setSecurityConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -133,26 +145,29 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     }
   }, [currentStepIndex]);
 
-  const downloadModel = useCallback(async (model: ModelOption) => {
-    setError(null);
-    try {
-      await startDownload(model.modelId);
-      setModelDownloaded(true);
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [startDownload]);
+  const downloadModel = useCallback(
+    async (model: ModelOption) => {
+      setError(null);
+      try {
+        await startDownload(model.modelId);
+        setModelDownloaded(true);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [startDownload],
+  );
 
   const selectKbFolder = useCallback(async () => {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select Knowledge Base Folder',
+        title: "Select Knowledge Base Folder",
       });
 
-      if (selected && typeof selected === 'string') {
-        await invoke('set_kb_folder', { folderPath: selected });
+      if (selected && typeof selected === "string") {
+        await invoke("set_kb_folder", { folderPath: selected });
         setKbFolder(selected);
         setError(null);
       }
@@ -161,21 +176,9 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     }
   }, []);
 
-  const configureSecurity = useCallback(async (mode: SecurityMode) => {
-    try {
-      setSecurityMode(mode);
-      // Security mode preference is stored in local state and applied
-      // when the master key is first generated during initial setup
-      setSecurityConfigured(true);
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
   const renderStepContent = () => {
     switch (currentStep) {
-      case 'welcome':
+      case "welcome":
         return (
           <div className="onboarding-welcome">
             <div className="onboarding-features">
@@ -225,41 +228,42 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           </div>
         );
 
-      case 'security':
+      case "security":
         return (
           <div className="onboarding-security">
             <div className="security-options">
-              <button
-                className={`security-option ${securityMode === 'keychain' ? 'selected' : ''}`}
-                onClick={() => configureSecurity('keychain')}
-              >
+              <div className="security-option selected">
                 <div className="security-option-header">
                   <Icon name="shield" size={24} />
                   <strong>macOS Keychain</strong>
-                  <span className="recommended-badge">Recommended</span>
+                  <span className="recommended-badge">Default</span>
                 </div>
-                <p>Uses your Mac's secure keychain to store encryption keys. No password needed.</p>
+                <p>
+                  AssistSupport uses your Mac login to protect local encryption
+                  keys. No extra setup is required during onboarding.
+                </p>
                 <ul className="security-features">
-                  <li><Icon name="check" size={14} /> Automatic unlock with macOS login</li>
-                  <li><Icon name="check" size={14} /> Protected by Secure Enclave</li>
-                  <li><Icon name="check" size={14} /> No password to remember</li>
+                  <li>
+                    <Icon name="check" size={14} /> Automatic unlock with macOS
+                    login
+                  </li>
+                  <li>
+                    <Icon name="check" size={14} /> Protected by Secure Enclave
+                  </li>
+                  <li>
+                    <Icon name="check" size={14} /> Local-first secret storage
+                  </li>
                 </ul>
-              </button>
+              </div>
             </div>
             <p className="onboarding-hint">
-              Passphrase-based unlock is supported for existing workspaces, but new setup is
-              temporarily limited to the default secure storage path while we finish the full
-              recovery flow.
+              Advanced security options and recovery settings live in Settings
+              after setup.
             </p>
-            {securityConfigured && (
-              <p className="onboarding-success-text">
-                <Icon name="checkCircle" size={16} /> Security mode configured
-              </p>
-            )}
           </div>
         );
 
-      case 'model':
+      case "model":
         return (
           <div className="onboarding-model">
             {downloadingModel ? (
@@ -272,16 +276,25 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 </div>
                 <p>
                   Downloading... {Math.round(downloadProgress)}%
-                  {downloadProgressState && downloadProgressState.speed_bps > 0 && (
-                    <span className="download-speed"> ({formatBytes(downloadProgressState.speed_bps)}/s)</span>
-                  )}
+                  {downloadProgressState &&
+                    downloadProgressState.speed_bps > 0 && (
+                      <span className="download-speed">
+                        {" "}
+                        ({formatBytes(downloadProgressState.speed_bps)}/s)
+                      </span>
+                    )}
                 </p>
-                {downloadProgressState && downloadProgressState.total_bytes > 0 && (
-                  <p className="download-detail">
-                    {formatBytes(downloadProgressState.downloaded_bytes)} / {formatBytes(downloadProgressState.total_bytes)}
-                  </p>
-                )}
-                <button className="onboarding-btn-ghost" onClick={cancelDownload}>
+                {downloadProgressState &&
+                  downloadProgressState.total_bytes > 0 && (
+                    <p className="download-detail">
+                      {formatBytes(downloadProgressState.downloaded_bytes)} /{" "}
+                      {formatBytes(downloadProgressState.total_bytes)}
+                    </p>
+                  )}
+                <button
+                  className="onboarding-btn-ghost"
+                  onClick={cancelDownload}
+                >
                   Cancel Download
                 </button>
               </div>
@@ -306,14 +319,15 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                   </button>
                 ))}
                 <p className="onboarding-hint">
-                  You can download more models later in Settings.
+                  You can download more chat models later in Settings.
+                  Semantic-search models are also managed there.
                 </p>
               </div>
             )}
           </div>
         );
 
-      case 'kb':
+      case "kb":
         return (
           <div className="onboarding-kb">
             {kbFolder ? (
@@ -337,15 +351,15 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                   Select Folder
                 </button>
                 <p className="onboarding-hint">
-                  Choose a folder containing your IT documentation, runbooks, or guides.
-                  Markdown and text files work best.
+                  Choose a folder containing your IT documentation, runbooks, or
+                  guides. Markdown and text files work best.
                 </p>
               </div>
             )}
           </div>
         );
 
-      case 'shortcuts':
+      case "shortcuts":
         return (
           <div className="onboarding-shortcuts">
             <div className="shortcuts-grid">
@@ -353,7 +367,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 <div key={index} className="shortcut-item">
                   <div className="shortcut-keys">
                     {shortcut.keys.map((key, i) => (
-                      <kbd key={i}>{key === 'Cmd' ? '⌘' : key}</kbd>
+                      <kbd key={i}>{key === "Cmd" ? "⌘" : key}</kbd>
                     ))}
                   </div>
                   <span className="shortcut-desc">{shortcut.description}</span>
@@ -361,30 +375,44 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
               ))}
             </div>
             <p className="onboarding-hint">
-              Press <kbd>⌘</kbd><kbd>Shift</kbd><kbd>/</kbd> anytime to see all shortcuts.
+              Press <kbd>⌘</kbd>
+              <kbd>Shift</kbd>
+              <kbd>/</kbd> anytime to see all shortcuts.
             </p>
           </div>
         );
 
-      case 'complete':
+      case "complete":
         return (
           <div className="onboarding-complete">
             <div className="onboarding-checklist">
-              <div className={`checklist-item ${securityConfigured ? 'done' : 'pending'}`}>
-                <Icon name={securityConfigured ? 'checkCircle' : 'circle'} size={20} />
-                <span>Security {securityConfigured ? `(${securityMode})` : 'not configured'}</span>
+              <div className="checklist-item done">
+                <Icon name="checkCircle" size={20} />
+                <span>Secure local storage active by default</span>
               </div>
-              <div className={`checklist-item ${modelDownloaded ? 'done' : 'pending'}`}>
-                <Icon name={modelDownloaded ? 'checkCircle' : 'circle'} size={20} />
-                <span>AI Model {modelDownloaded ? 'downloaded' : 'not downloaded'}</span>
+              <div
+                className={`checklist-item ${modelDownloaded ? "done" : "pending"}`}
+              >
+                <Icon
+                  name={modelDownloaded ? "checkCircle" : "circle"}
+                  size={20}
+                />
+                <span>
+                  AI Model {modelDownloaded ? "downloaded" : "not downloaded"}
+                </span>
               </div>
-              <div className={`checklist-item ${kbFolder ? 'done' : 'pending'}`}>
-                <Icon name={kbFolder ? 'checkCircle' : 'circle'} size={20} />
-                <span>Knowledge Base {kbFolder ? 'configured' : 'not configured'}</span>
+              <div
+                className={`checklist-item ${kbFolder ? "done" : "pending"}`}
+              >
+                <Icon name={kbFolder ? "checkCircle" : "circle"} size={20} />
+                <span>
+                  Knowledge Base {kbFolder ? "configured" : "not configured"}
+                </span>
               </div>
             </div>
             <p className="onboarding-hint">
-              You can always configure these later in Settings.
+              You can always finish model setup later in Settings, including
+              semantic-search downloads for the knowledge base and search API.
             </p>
           </div>
         );
@@ -412,7 +440,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           {STEP_ORDER.map((step, index) => (
             <div
               key={step}
-              className={`progress-dot ${index <= currentStepIndex ? 'active' : ''}`}
+              className={`progress-dot ${index <= currentStepIndex ? "active" : ""}`}
             />
           ))}
         </div>
@@ -424,12 +452,10 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           </div>
         )}
 
-        <div className="onboarding-content">
-          {renderStepContent()}
-        </div>
+        <div className="onboarding-content">{renderStepContent()}</div>
 
         <div className="onboarding-footer">
-          {currentStep === 'welcome' ? (
+          {currentStep === "welcome" ? (
             <>
               <button className="onboarding-btn-ghost" onClick={onSkip}>
                 Skip Setup
@@ -438,7 +464,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 Get Started
               </button>
             </>
-          ) : currentStep === 'complete' ? (
+          ) : currentStep === "complete" ? (
             <>
               <button className="onboarding-btn-ghost" onClick={goBack}>
                 Back
@@ -459,9 +485,11 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 <button
                   className="onboarding-btn-primary"
                   onClick={goNext}
-                  disabled={currentStep === 'model' && downloadingModel}
+                  disabled={currentStep === "model" && downloadingModel}
                 >
-                  {currentStep === 'model' && !modelDownloaded ? 'Continue Without Model' : 'Continue'}
+                  {currentStep === "model" && !modelDownloaded
+                    ? "Continue Without Model"
+                    : "Continue"}
                 </button>
               </div>
             </>
