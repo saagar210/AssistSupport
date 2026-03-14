@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/saagar210/AssistSupport/compare/app-v1.2.0...app-v1.3.0) (2026-03-14)
+
+
+### Features
+
+* harden model management and release gates ([bc02057](https://github.com/saagar210/AssistSupport/commit/bc020575f50188a5421a36367ad12c7a3fa7cc40))
+* **src:** manage local semantic search models ([c3e7bfb](https://github.com/saagar210/AssistSupport/commit/c3e7bfbe00b6e8ea6af1697067af4c5978a65e53))
+* **ui:** surface safer semantic search setup ([7fd32d1](https://github.com/saagar210/AssistSupport/commit/7fd32d1ec8590f1c60ae477bf1c24df00ce4f8bc))
+
+
+### Bug Fixes
+
+* **ci:** unblock hardening PR checks ([fe8878c](https://github.com/saagar210/AssistSupport/commit/fe8878cccbc29f447536f847aa772cff9c28801b))
+
 ## [1.2.0](https://github.com/saagar210/AssistSupport/compare/app-v1.1.0...app-v1.2.0) (2026-03-10)
 
 
